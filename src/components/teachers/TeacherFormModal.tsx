@@ -57,11 +57,16 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
     if (!isEdit) {
       getDocs(collection(db, 'users')).then((snap) => {
-        const docs = snap.docs.map(d => d.data() as { uid: string, email: string, teacherId?: string, role?: string, name?: string, username?: string })
+        const docs = snap.docs.map(d => {
+          const data = d.data() as { email: string, teacherId?: string, role?: string, name?: string, username?: string }
+          return { ...data, uid: d.id }
+        })
         const available = docs.filter(u => !u.teacherId && u.email && u.role !== 'admin')
+        console.log('Available candidates:', available)
         setCandidates(available)
         if (available.length > 0) {
           setSelectedUid(available[0].uid)
+          console.log('Set selectedUid to:', available[0].uid)
         }
       })
     }
