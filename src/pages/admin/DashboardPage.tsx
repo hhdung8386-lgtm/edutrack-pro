@@ -25,7 +25,7 @@ function KpiCard({ title, value, sub, icon: Icon, color, pulse }: {
     <Card className="relative overflow-hidden">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{title}</p>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{title}</p>
           <p className={`text-3xl font-bold mt-1.5 ${color}`}>{value}</p>
           {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
         </div>
@@ -131,8 +131,8 @@ export function DashboardPage() {
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Dashboard</h1>
-        <p className="text-sm text-slate-400 mt-1">Tổng quan hệ thống — {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+        <p className="text-sm text-slate-500 mt-1">Tổng quan hệ thống — {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
       </div>
 
       {/* KPI Cards */}
@@ -168,8 +168,8 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Today lessons */}
         <Card padding="none">
-          <div className="px-5 py-4 border-b border-slate-700">
-            <h3 className="text-base font-semibold text-slate-100">Buổi dạy hôm nay</h3>
+          <div className="px-5 py-4 border-b border-slate-200">
+            <h3 className="text-base font-semibold text-slate-900">Buổi dạy hôm nay</h3>
           </div>
           {todayLessons.length === 0 ? (
             <p className="text-center text-slate-500 text-sm py-8">Chưa có buổi dạy nào hôm nay</p>
@@ -177,26 +177,26 @@ export function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-700">
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Học viên</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider hidden sm:table-cell">Giáo viên</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider hidden md:table-cell">Phút</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Trạng thái</th>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Học viên</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden sm:table-cell">Giáo viên</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden md:table-cell">Phút</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
                   {todayLessons.map((lesson) => (
                     <tr
                       key={lesson.id}
-                      className="hover:bg-slate-700/30 cursor-pointer transition-colors"
+                      className="hover:bg-slate-100/30 cursor-pointer transition-colors"
                       onClick={() => navigate(`/admin/approvals`)}
                     >
                       <td className="px-4 py-3">
-                        <p className="font-medium text-slate-200">{lesson.studentName}</p>
+                        <p className="font-medium text-slate-700">{lesson.studentName}</p>
                         <p className="text-xs text-slate-500">{lesson.subjectName}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-300 hidden sm:table-cell">{lesson.teacherName}</td>
-                      <td className="px-4 py-3 text-slate-300 hidden md:table-cell">{lesson.minutes}'</td>
+                      <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{lesson.teacherName}</td>
+                      <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{lesson.minutes}'</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={lesson.status} />
                       </td>
@@ -210,8 +210,8 @@ export function DashboardPage() {
 
         {/* Pending approvals */}
         <Card padding="none">
-          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-100">Cần duyệt ngay</h3>
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-slate-900">Cần duyệt ngay</h3>
             <Button variant="ghost" size="sm" onClick={() => navigate('/admin/approvals')}>
               Xem tất cả
             </Button>
@@ -221,9 +221,9 @@ export function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-700/50">
               {pendingLessons.map((lesson) => (
-                <div key={lesson.id} className="px-5 py-3 flex items-center gap-3 hover:bg-slate-700/30 transition-colors">
+                <div key={lesson.id} className="px-5 py-3 flex items-center gap-3 hover:bg-slate-100/30 transition-colors">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate">{lesson.studentName}</p>
+                    <p className="text-sm font-medium text-slate-700 truncate">{lesson.studentName}</p>
                     <p className="text-xs text-slate-500">{lesson.teacherName} · {lesson.minutes} phút · {lesson.date}</p>
                   </div>
                   <Button

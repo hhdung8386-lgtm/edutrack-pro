@@ -38,8 +38,8 @@ export function TeachersPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Giáo viên</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{teachers.length} giáo viên</p>
+          <h1 className="text-2xl font-bold text-slate-900">Giáo viên</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{teachers.length} giáo viên</p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="w-4 h-4" />
@@ -69,16 +69,16 @@ export function TeachersPage() {
           <Card padding="none" className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-slate-700">
+                <thead className="border-b border-slate-200">
                   <tr>
                     {['Mã', 'Tên giáo viên', 'Môn dạy', 'Level', 'Trạng thái', 'Hành động'].map((h) => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase">{h}</th>
+                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
                   {filtered.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-slate-700/20 transition-colors">
+                    <tr key={teacher.id} className="hover:bg-slate-100/20 transition-colors">
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
                           {teacher.code}
@@ -93,21 +93,21 @@ export function TeachersPage() {
                               {teacher.name[0]}
                             </div>
                           )}
-                          <span className="font-medium text-slate-200">{teacher.name}</span>
+                          <span className="font-medium text-slate-700">{teacher.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">
+                      <td className="px-4 py-3 text-slate-500">
                         {(teacher.subjectNames || []).join(', ') || '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-slate-300 font-medium">×{teacher.level}</span>
+                        <span className="text-slate-600 font-medium">×{teacher.level}</span>
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={teacher.status} /></td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button
                             onClick={() => navigate(`/admin/teachers/${teacher.id}`)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
                             aria-label="Xem chi tiết"
                           >
                             <Eye className="w-4 h-4" />
@@ -139,7 +139,7 @@ export function TeachersPage() {
                       <span className="font-mono text-xs text-emerald-400">{teacher.code}</span>
                       <StatusBadge status={teacher.status} />
                     </div>
-                    <p className="font-semibold text-slate-100">{teacher.name}</p>
+                    <p className="font-semibold text-slate-900">{teacher.name}</p>
                     <p className="text-xs text-slate-500 mt-0.5">Level ×{teacher.level} · {(teacher.subjectNames || []).join(', ')}</p>
                   </div>
                 </div>

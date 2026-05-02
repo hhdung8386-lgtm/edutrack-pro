@@ -87,25 +87,25 @@ export function TrackingPage() {
   const shareUrl = window.location.href
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-slate-50">
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/10 via-transparent to-slate-900 pointer-events-none" />
 
       {/* Header */}
-      <header className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-10">
+      <header className="sticky top-0 bg-slate-50/95 backdrop-blur border-b border-slate-200 z-10">
         <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-4 h-4 text-white" />
+            <GraduationCap className="w-4 h-4 text-slate-900" />
           </div>
           <div className="flex-1">
-            <h1 className="text-base font-bold text-white leading-tight">EduTrack Pro</h1>
-            <p className="text-[10px] text-slate-400">Tra cứu thông tin học tập</p>
+            <h1 className="text-base font-bold text-slate-900 leading-tight">EduTrack Pro</h1>
+            <p className="text-[10px] text-slate-500">Tra cứu thông tin học tập</p>
           </div>
           {(studentResult || teacherResult) && (
             <button
               onClick={() => {
                 navigator.clipboard.writeText(shareUrl)
               }}
-              className="p-2 text-slate-400 hover:text-white transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-900 transition-colors"
               aria-label="Chia sẻ link"
             >
               <Share2 className="w-4 h-4" />
@@ -119,19 +119,19 @@ export function TrackingPage() {
           <div className="space-y-5">
             {(notFound || true) && (
               <div className="text-center py-4">
-                <h2 className="text-xl font-bold text-slate-100 mb-1">Tra cứu thông tin</h2>
-                <p className="text-sm text-slate-400">Nhập mã được cung cấp bởi trung tâm</p>
+                <h2 className="text-xl font-bold text-slate-900 mb-1">Tra cứu thông tin</h2>
+                <p className="text-sm text-slate-500">Nhập mã được cung cấp bởi trung tâm</p>
               </div>
             )}
 
             {/* Tab buttons */}
-            <div className="flex bg-slate-800 p-1 rounded-xl">
+            <div className="flex bg-white p-1 rounded-xl">
               {(['student', 'teacher'] as TrackTab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => { setTab(t); setNotFound(false) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2
-                    ${tab === t ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                    ${tab === t ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}
                 >
                   {t === 'student' ? <User className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
                   {t === 'student' ? 'Học viên' : 'Giáo viên'}
@@ -147,7 +147,7 @@ export function TrackingPage() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder={tab === 'student' ? 'VD: HS8X2K91' : 'VD: GV3K91A0'}
                 aria-label="Nhập mã tra cứu"
-                className="w-full rounded-xl bg-slate-800 border border-slate-600 text-slate-100 placeholder-slate-500
+                className="w-full rounded-xl bg-white border border-slate-300 text-slate-900 placeholder-slate-500
                   px-5 py-4 text-xl font-mono font-bold tracking-widest uppercase text-center
                   focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[60px]"
                 autoCapitalize="characters"
@@ -194,13 +194,13 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+      <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors">
         <ArrowLeft className="w-4 h-4" />
         Tra cứu khác
       </button>
 
       {/* Student info */}
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 space-y-3">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <span className="font-mono text-sm font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-lg">
             {student.code}
@@ -209,26 +209,26 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
         </div>
         <div className="space-y-1.5 text-sm">
           <div className="flex justify-between">
-            <span className="text-slate-400">Họ tên</span>
-            <span className="text-slate-100 font-semibold">{student.name}</span>
+            <span className="text-slate-500">Họ tên</span>
+            <span className="text-slate-900 font-semibold">{student.name}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Môn học</span>
-            <span className="text-slate-200">{student.subjectName}</span>
+            <span className="text-slate-500">Môn học</span>
+            <span className="text-slate-700">{student.subjectName}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">SĐT phụ huynh</span>
-            <span className="text-slate-200">{maskPhone(student.parentPhone)}</span>
+            <span className="text-slate-500">SĐT phụ huynh</span>
+            <span className="text-slate-700">{maskPhone(student.parentPhone)}</span>
           </div>
         </div>
       </div>
 
       {/* Progress */}
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold text-slate-300 mb-4">Tiến độ học tập</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-slate-600 mb-4">Tiến độ học tập</h3>
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="text-center">
-            <p className="text-2xl font-bold text-slate-100">{student.totalSessions}</p>
+            <p className="text-2xl font-bold text-slate-900">{student.totalSessions}</p>
             <p className="text-xs text-slate-500 mt-0.5">Tổng buổi</p>
           </div>
           <div className="text-center">
@@ -240,7 +240,7 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
             <p className="text-xs text-slate-500 mt-0.5">Còn lại</p>
           </div>
         </div>
-        <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-700 ${
               student.remainingSessions === 0 ? 'bg-rose-500' :
@@ -254,27 +254,27 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
 
       {/* Lessons */}
       <div>
-        <h3 className="text-sm font-semibold text-slate-300 mb-3">Lịch sử buổi học</h3>
+        <h3 className="text-sm font-semibold text-slate-600 mb-3">Lịch sử buổi học</h3>
         {lessons.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-6">Chưa có buổi học được duyệt</p>
         ) : (
           <div className="space-y-3">
             {lessons.map((lesson) => (
-              <div key={lesson.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-2">
+              <div key={lesson.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">{lesson.date}</span>
-                  <span className="text-slate-300">{lesson.teacherName} · {lesson.minutes}'</span>
+                  <span className="text-slate-500">{lesson.date}</span>
+                  <span className="text-slate-600">{lesson.teacherName} · {lesson.minutes}'</span>
                 </div>
                 {lesson.comment && (
                   <div>
                     <p className="text-xs text-slate-500 mb-0.5">Nhận xét</p>
-                    <p className="text-sm text-slate-200">{lesson.comment}</p>
+                    <p className="text-sm text-slate-700">{lesson.comment}</p>
                   </div>
                 )}
                 {lesson.homework && (
                   <div>
                     <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
-                    <p className="text-sm text-slate-200">{lesson.homework}</p>
+                    <p className="text-sm text-slate-700">{lesson.homework}</p>
                   </div>
                 )}
                 {lesson.imageURLs?.length > 0 && (
@@ -296,12 +296,12 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
 function TeacherResult({ teacher, lessonCount, onBack }: { teacher: Teacher; lessonCount: number; onBack: () => void }) {
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+      <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors">
         <ArrowLeft className="w-4 h-4" />
         Tra cứu khác
       </button>
 
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <div className="flex items-center gap-4 mb-4">
           {teacher.photoURL ? (
             <img src={teacher.photoURL} alt={teacher.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
@@ -311,9 +311,9 @@ function TeacherResult({ teacher, lessonCount, onBack }: { teacher: Teacher; les
             </div>
           )}
           <div>
-            <h2 className="text-xl font-bold text-slate-100">{teacher.name}</h2>
+            <h2 className="text-xl font-bold text-slate-900">{teacher.name}</h2>
             <span className="font-mono text-sm text-emerald-400">{teacher.code}</span>
-            <p className="text-sm text-slate-400 mt-1">Giáo viên cấp {teacher.level}</p>
+            <p className="text-sm text-slate-500 mt-1">Giáo viên cấp {teacher.level}</p>
           </div>
         </div>
 
@@ -326,12 +326,12 @@ function TeacherResult({ teacher, lessonCount, onBack }: { teacher: Teacher; les
         )}
 
         {teacher.bio && (
-          <p className="text-sm text-slate-400 leading-relaxed">{teacher.bio}</p>
+          <p className="text-sm text-slate-500 leading-relaxed">{teacher.bio}</p>
         )}
 
-        <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
-          <span className="text-sm text-slate-400">Số buổi đã dạy</span>
-          <span className="text-xl font-bold text-slate-100">{lessonCount}</span>
+        <div className="mt-4 pt-4 border-t border-slate-200 flex items-center justify-between">
+          <span className="text-sm text-slate-500">Số buổi đã dạy</span>
+          <span className="text-xl font-bold text-slate-900">{lessonCount}</span>
         </div>
       </div>
     </div>

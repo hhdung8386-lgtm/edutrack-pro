@@ -13,26 +13,26 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">
             {label}
           </label>
         )}
         <div className="relative">
           {leftIcon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
               {leftIcon}
             </div>
           )}
           <input
             ref={ref}
             className={`
-              w-full rounded-lg bg-slate-800 border text-slate-100 placeholder-slate-500
+              w-full rounded-lg bg-white border text-slate-900 placeholder-slate-500
               focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
               transition-colors duration-200 min-h-[44px]
               ${leftIcon ? 'pl-10' : 'pl-4'}
               ${rightElement ? 'pr-12' : 'pr-4'}
               py-2.5 text-sm
-              ${error ? 'border-rose-500' : 'border-slate-600 hover:border-slate-500'}
+              ${error ? 'border-rose-500' : 'border-slate-300 hover:border-slate-300'}
               ${className}
             `}
             {...props}
@@ -63,17 +63,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">
             {label}
           </label>
         )}
         <textarea
           ref={ref}
           className={`
-            w-full rounded-lg bg-slate-800 border text-slate-100 placeholder-slate-500
+            w-full rounded-lg bg-white border text-slate-900 placeholder-slate-500
             focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
             transition-colors duration-200 px-4 py-3 text-sm resize-none
-            ${error ? 'border-rose-500' : 'border-slate-600 hover:border-slate-500'}
+            ${error ? 'border-rose-500' : 'border-slate-300 hover:border-slate-300'}
             ${className}
           `}
           {...props}

@@ -177,8 +177,8 @@ export function AttendancePage() {
         <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center">
           <CheckCircle className="w-10 h-10 text-emerald-400" />
         </div>
-        <h2 className="text-xl font-bold text-slate-100">Đã gửi điểm danh!</h2>
-        <p className="text-slate-400 text-sm">Chờ admin duyệt...</p>
+        <h2 className="text-xl font-bold text-slate-900">Đã gửi điểm danh!</h2>
+        <p className="text-slate-500 text-sm">Chờ admin duyệt...</p>
       </div>
     )
   }
@@ -186,13 +186,13 @@ export function AttendancePage() {
   return (
     <div className="max-w-lg mx-auto space-y-5 pt-2 lg:pt-6 pb-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Điểm danh</h1>
-        <p className="text-sm text-slate-400 mt-0.5">Nhập mã học viên để bắt đầu</p>
+        <h1 className="text-2xl font-bold text-slate-900">Điểm danh</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Nhập mã học viên để bắt đầu</p>
       </div>
 
       {/* Step 1: Student code input */}
       <Card>
-        <label htmlFor="student-code" className="block text-sm font-medium text-slate-300 mb-2">Mã học viên</label>
+        <label htmlFor="student-code" className="block text-sm font-medium text-slate-600 mb-2">Mã học viên</label>
         <div className="flex gap-2">
           <input
             id="student-code"
@@ -201,7 +201,7 @@ export function AttendancePage() {
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === 'Enter' && searchStudent()}
             placeholder="VD: HS8X2K91"
-            className="flex-1 rounded-lg bg-slate-700 border border-slate-600 text-slate-100 placeholder-slate-500
+            className="flex-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-900 placeholder-slate-500
               px-4 py-3 text-xl font-mono font-bold tracking-widest uppercase
               focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[56px]"
             autoCapitalize="characters"
@@ -209,7 +209,7 @@ export function AttendancePage() {
           />
           {code && (
             <button onClick={() => { setCode(''); setStudent(null); setNotFound(false) }}
-              className="p-3 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              className="p-3 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
               aria-label="Xóa mã học viên"
             >
               <X className="w-5 h-5" />
@@ -235,9 +235,9 @@ export function AttendancePage() {
           <Card className={student.remainingSessions <= 0 ? 'border-rose-500/50' : ''}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xl font-bold text-slate-100">{student.name}</p>
+                <p className="text-xl font-bold text-slate-900">{student.name}</p>
                 <p className="font-mono text-sm text-indigo-400 mt-0.5">{student.code}</p>
-                <p className="text-sm text-slate-400 mt-1">{student.subjectName}</p>
+                <p className="text-sm text-slate-500 mt-1">{student.subjectName}</p>
               </div>
               <div className="text-right">
                 <p className={`text-3xl font-bold ${
@@ -254,7 +254,7 @@ export function AttendancePage() {
               <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold text-amber-300">Học viên đã hết khoá học</p>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {student.name} đã dùng hết {student.totalSessions} buổi.
                   Vui lòng liên hệ admin để gia hạn.
                 </p>
@@ -264,19 +264,19 @@ export function AttendancePage() {
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               {/* Date */}
               <div>
-                <label htmlFor="attendance-date" className="block text-sm font-medium text-slate-300 mb-1.5">Ngày học</label>
+                <label htmlFor="attendance-date" className="block text-sm font-medium text-slate-600 mb-1.5">Ngày học</label>
                 <input
                   id="attendance-date"
                   type="date"
                   max={today}
-                  className="w-full rounded-lg bg-slate-800 border border-slate-600 text-slate-100 px-4 py-3 text-sm min-h-[48px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-3 text-sm min-h-[48px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   {...register('date')}
                 />
               </div>
 
               {/* Minutes preset buttons */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Số phút</label>
+                <label className="block text-sm font-medium text-slate-600 mb-2">Số phút</label>
                 <div className="grid grid-cols-4 gap-2">
                   {MINUTE_PRESETS.map((min) => (
                     <button
@@ -286,7 +286,7 @@ export function AttendancePage() {
                       className={`py-3 rounded-xl text-sm font-bold transition-all
                         ${selectedMinutes === min
                           ? 'bg-indigo-500 text-white shadow-lg scale-105'
-                          : 'bg-slate-800 text-slate-400 border border-slate-600 hover:border-indigo-500/50 hover:text-white'
+                          : 'bg-white text-slate-500 border border-slate-300 hover:border-indigo-500/50 hover:text-slate-900'
                         }`}
                     >
                       {min}'
@@ -311,7 +311,7 @@ export function AttendancePage() {
 
               {/* Image upload */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label className="block text-sm font-medium text-slate-600 mb-2">
                   Hình ảnh ({images.length}/5)
                 </label>
                 <div className="flex gap-2 flex-wrap">
@@ -330,13 +330,13 @@ export function AttendancePage() {
                           className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center"
                           aria-label={`Xóa ảnh ${i + 1}`}
                         >
-                          <X className="w-3 h-3 text-white" />
+                          <X className="w-3 h-3 text-slate-900" />
                         </button>
                       )}
                     </div>
                   ))}
                   {images.length < 5 && (
-                    <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition-colors">
+                    <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition-colors">
                       <input
                         type="file"
                         accept="image/*"
@@ -353,8 +353,8 @@ export function AttendancePage() {
               </div>
 
               {/* Summary */}
-              <div className="bg-slate-800 rounded-xl p-4 text-sm border border-slate-700">
-                <p className="text-slate-300 font-medium">
+              <div className="bg-white rounded-xl p-4 text-sm border border-slate-200">
+                <p className="text-slate-600 font-medium">
                   {student.name} · {student.subjectName} · {selectedMinutes} phút · {watch('date')}
                 </p>
               </div>

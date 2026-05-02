@@ -66,16 +66,16 @@ export function LessonHistoryPage() {
   return (
     <div className="space-y-5 pt-2 lg:pt-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Lịch sử buổi dạy</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Lịch sử buổi dạy</h1>
       </div>
 
       {/* Month selector */}
       <div className="flex items-center gap-3">
-        <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" aria-label="Tháng trước">
+        <button onClick={prevMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg transition-colors" aria-label="Tháng trước">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <span className="text-base font-semibold text-slate-200 min-w-[180px] text-center">{monthLabel}</span>
-        <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" aria-label="Tháng sau">
+        <span className="text-base font-semibold text-slate-700 min-w-[180px] text-center">{monthLabel}</span>
+        <button onClick={nextMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg transition-colors" aria-label="Tháng sau">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
@@ -83,16 +83,16 @@ export function LessonHistoryPage() {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="text-center">
-          <p className="text-2xl font-bold text-slate-100">{approved.length}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Buổi đã dạy</p>
+          <p className="text-2xl font-bold text-slate-900">{approved.length}</p>
+          <p className="text-xs text-slate-500 mt-0.5">Buổi đã dạy</p>
         </Card>
         <Card className="text-center">
-          <p className="text-2xl font-bold text-slate-100">{totalMinutes}'</p>
-          <p className="text-xs text-slate-400 mt-0.5">Tổng phút</p>
+          <p className="text-2xl font-bold text-slate-900">{totalMinutes}'</p>
+          <p className="text-xs text-slate-500 mt-0.5">Tổng phút</p>
         </Card>
         <Card className="text-center">
           <p className="text-xl font-bold text-emerald-400">{formatVND(totalSalary)}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Lương tháng này</p>
+          <p className="text-xs text-slate-500 mt-0.5">Lương tháng này</p>
         </Card>
       </div>
 
@@ -118,10 +118,10 @@ export function LessonHistoryPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <StatusBadge status={lesson.status} />
-                          <span className="text-sm font-medium text-slate-200">{lesson.studentName}</span>
+                          <span className="text-sm font-medium text-slate-700">{lesson.studentName}</span>
                           <span className="text-xs text-slate-500">{lesson.studentCode}</span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-1">{lesson.subjectName} · {lesson.minutes} phút</p>
+                        <p className="text-xs text-slate-500 mt-1">{lesson.subjectName} · {lesson.minutes} phút</p>
                       </div>
                       <div className="text-right flex-shrink-0">
                         {lesson.status === 'approved' ? (
@@ -134,17 +134,17 @@ export function LessonHistoryPage() {
                     </div>
 
                     {expanded === lesson.id && (
-                      <div className="mt-3 pt-3 border-t border-slate-700 space-y-2 text-sm">
+                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-2 text-sm">
                         {lesson.comment && (
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">Nhận xét</p>
-                            <p className="text-slate-300">{lesson.comment}</p>
+                            <p className="text-slate-600">{lesson.comment}</p>
                           </div>
                         )}
                         {lesson.homework && (
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
-                            <p className="text-slate-300">{lesson.homework}</p>
+                            <p className="text-slate-600">{lesson.homework}</p>
                           </div>
                         )}
                         {lesson.imageURLs?.length > 0 && (

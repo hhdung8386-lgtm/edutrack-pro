@@ -40,17 +40,17 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
       />
       <div
         className={`
-          relative w-full ${sizes[size]} bg-slate-900 border border-slate-700
+          relative w-full ${sizes[size]} bg-slate-50 border border-slate-200
           rounded-t-2xl sm:rounded-xl shadow-modal z-10 animate-slide-up
           max-h-[90vh] flex flex-col overflow-hidden
         `}
       >
         {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 flex-shrink-0">
-            <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+              className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
               aria-label="Đóng"
             >
               <X className="w-5 h-5" />
@@ -63,7 +63,7 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
         {footer && (
-          <div className="flex-shrink-0 border-t border-slate-700 px-6 py-4">
+          <div className="flex-shrink-0 border-t border-slate-200 px-6 py-4">
             {footer}
           </div>
         )}

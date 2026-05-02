@@ -32,15 +32,15 @@ export function AdminSidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-navy-900 border-r border-slate-800 flex flex-col z-30">
+    <aside className="fixed left-0 top-0 h-full w-64 bg-slate-50 border-r border-slate-200 flex flex-col z-30">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-slate-800">
+      <div className="px-5 py-5 border-b border-slate-200">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-5 h-5 text-white" />
+            <GraduationCap className="w-5 h-5 text-slate-900" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-white leading-tight">EduTrack Pro</h1>
+            <h1 className="text-base font-bold text-slate-900 leading-tight">EduTrack Pro</h1>
             <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Admin</span>
           </div>
         </div>
@@ -56,13 +56,13 @@ export function AdminSidebar() {
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
               ${isActive
                 ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20'
-                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-white'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon className={`w-4.5 h-4.5 flex-shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'}`} />
+                <item.icon className={`w-4.5 h-4.5 flex-shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-600'}`} />
                 <span className="flex-1">{item.label}</span>
                 {item.hasBadge && pendingCount > 0 && (
                   <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
@@ -76,15 +76,15 @@ export function AdminSidebar() {
       </nav>
 
       {/* User footer */}
-      <div className="px-3 py-3 border-t border-slate-800">
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800 transition-colors group">
+      <div className="px-3 py-3 border-t border-slate-200">
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white transition-colors group">
           <div className="w-8 h-8 bg-indigo-500/20 border border-indigo-500/30 rounded-full flex items-center justify-center flex-shrink-0">
             <span className="text-xs font-bold text-indigo-400">
               {user?.email?.[0]?.toUpperCase() || 'A'}
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-slate-300 truncate">{user?.email}</p>
+            <p className="text-xs font-medium text-slate-600 truncate">{user?.email}</p>
             <p className="text-[10px] text-slate-500">Quản trị viên</p>
           </div>
           <button

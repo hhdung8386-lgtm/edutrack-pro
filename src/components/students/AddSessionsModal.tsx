@@ -76,9 +76,9 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
       }
     >
       <form id="add-sessions-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
-        <div className="bg-slate-800 rounded-xl p-4 text-sm">
-          <p className="text-slate-400 mb-1">Học viên</p>
-          <p className="font-semibold text-slate-100">{student.name}</p>
+        <div className="bg-white rounded-xl p-4 text-sm">
+          <p className="text-slate-500 mb-1">Học viên</p>
+          <p className="font-semibold text-slate-900">{student.name}</p>
           <p className="text-xs text-indigo-400 font-mono mt-0.5">{student.code}</p>
         </div>
 
@@ -100,15 +100,15 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         {/* Preview */}
         <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm space-y-1">
           <div className="flex justify-between">
-            <span className="text-slate-400">Hiện tại</span>
-            <span className="text-slate-200 font-medium">{student.remainingSessions} buổi</span>
+            <span className="text-slate-500">Hiện tại</span>
+            <span className="text-slate-700 font-medium">{student.remainingSessions} buổi</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Thêm</span>
+            <span className="text-slate-500">Thêm</span>
             <span className="text-emerald-400 font-medium">+ {sessionsToAdd} buổi</span>
           </div>
-          <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
-            <span className="text-slate-300 font-medium">Tổng sau khi thêm</span>
+          <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+            <span className="text-slate-600 font-medium">Tổng sau khi thêm</span>
             <span className="text-indigo-400 font-bold">{student.remainingSessions + Number(sessionsToAdd)} buổi</span>
           </div>
         </div>

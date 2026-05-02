@@ -110,17 +110,17 @@ export function ReportsPage() {
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Báo cáo</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Báo cáo</h1>
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 bg-slate-800 p-1 rounded-xl overflow-x-auto flex-wrap sm:flex-nowrap w-fit">
+      <div className="flex gap-1 bg-white p-1 rounded-xl overflow-x-auto flex-wrap sm:flex-nowrap w-fit">
         {TABS.map((t, i) => (
           <button
             key={t}
             onClick={() => setTab(i)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-              tab === i ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              tab === i ? 'bg-slate-100 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
             }`}
           >
             {t}
@@ -133,13 +133,13 @@ export function ReportsPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: 'Buổi tháng này', value: lessons.length, color: 'text-indigo-400' },
-              { label: 'Tổng phút', value: `${totalMinutes}'`, color: 'text-slate-200' },
+              { label: 'Tổng phút', value: `${totalMinutes}'`, color: 'text-slate-700' },
               { label: 'Tổng lương', value: formatVND(totalSalary), color: 'text-emerald-400' },
               { label: 'Giáo viên hoạt động', value: teacherStats.length, color: 'text-amber-400' },
             ].map((s) => (
               <Card key={s.label} className="text-center">
                 <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-slate-400 mt-1">{s.label}</p>
+                <p className="text-xs text-slate-500 mt-1">{s.label}</p>
               </Card>
             ))}
           </div>
@@ -179,11 +179,11 @@ export function ReportsPage() {
 
       {(tab === 1 || tab === 2 || tab === 3) && (
         <div className="flex items-center gap-3 mb-2">
-          <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg" aria-label="Tháng trước">
+          <button onClick={prevMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng trước">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="text-base font-semibold text-slate-200 min-w-[160px] text-center">{monthLabel}</span>
-          <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg" aria-label="Tháng sau">
+          <span className="text-base font-semibold text-slate-700 min-w-[160px] text-center">{monthLabel}</span>
+          <button onClick={nextMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng sau">
             <ChevronRight className="w-5 h-5" />
           </button>
         </div>
@@ -193,30 +193,30 @@ export function ReportsPage() {
         <Card padding="none">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-slate-700">
+              <thead className="border-b border-slate-200">
                 <tr>
                   {['Ngày', 'Học viên', 'Giáo viên', 'Môn', 'Phút', 'Lương', 'Trạng thái'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase">{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {lessons.map((l) => (
-                  <tr key={l.id} className="hover:bg-slate-700/20">
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{l.date}</td>
-                    <td className="px-4 py-3 text-slate-200">{l.studentName}</td>
-                    <td className="px-4 py-3 text-slate-300">{l.teacherName}</td>
-                    <td className="px-4 py-3 text-slate-400">{l.subjectName}</td>
-                    <td className="px-4 py-3 text-slate-300">{l.minutes}'</td>
+                  <tr key={l.id} className="hover:bg-slate-100/20">
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{l.date}</td>
+                    <td className="px-4 py-3 text-slate-700">{l.studentName}</td>
+                    <td className="px-4 py-3 text-slate-600">{l.teacherName}</td>
+                    <td className="px-4 py-3 text-slate-500">{l.subjectName}</td>
+                    <td className="px-4 py-3 text-slate-600">{l.minutes}'</td>
                     <td className="px-4 py-3 text-emerald-400 font-medium">{formatVND(l.salary || 0)}</td>
                     <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="border-t border-slate-600">
+              <tfoot className="border-t border-slate-300">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-slate-300">Tổng cộng</td>
-                  <td className="px-4 py-3 font-semibold text-slate-200">{totalMinutes}'</td>
+                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-slate-600">Tổng cộng</td>
+                  <td className="px-4 py-3 font-semibold text-slate-700">{totalMinutes}'</td>
                   <td className="px-4 py-3 font-semibold text-emerald-400">{formatVND(totalSalary)}</td>
                   <td />
                 </tr>
@@ -242,7 +242,7 @@ export function ReportsPage() {
                     </div>
                   )}
                   <div>
-                    <p className="font-medium text-slate-200">{t.name}</p>
+                    <p className="font-medium text-slate-700">{t.name}</p>
                     <p className="text-xs text-slate-500">×{t.level} · {t.lessonCount} buổi · {t.minutes} phút</p>
                   </div>
                 </div>
@@ -256,8 +256,8 @@ export function ReportsPage() {
       {tab === 3 && (
         <Card className="max-w-md">
           <CardHeader title="Xuất báo cáo" />
-          <p className="text-sm text-slate-400 mb-4">
-            Tháng <span className="text-slate-200 font-medium">{monthLabel}</span> · {lessons.length} buổi · Tổng {formatVND(totalSalary)}
+          <p className="text-sm text-slate-500 mb-4">
+            Tháng <span className="text-slate-700 font-medium">{monthLabel}</span> · {lessons.length} buổi · Tổng {formatVND(totalSalary)}
           </p>
           <Button onClick={exportCSV} fullWidth>
             <Download className="w-4 h-4" />

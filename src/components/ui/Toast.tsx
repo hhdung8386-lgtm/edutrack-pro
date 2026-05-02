@@ -63,7 +63,7 @@ function ToastItem({
       <p className={`text-sm flex-1 ${config.textColor}`}>{toast.message}</p>
       <button
         onClick={onClose}
-        className="text-slate-400 hover:text-white flex-shrink-0 ml-1"
+        className="text-slate-500 hover:text-slate-900 flex-shrink-0 ml-1"
         aria-label="Đóng"
       >
         <X className="w-4 h-4" />

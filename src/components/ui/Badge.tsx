@@ -16,12 +16,12 @@ export function Badge({
   pulse = false,
 }: BadgeProps) {
   const variants = {
-    default: 'bg-slate-700 text-slate-300',
+    default: 'bg-slate-100 text-slate-600',
     success: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
     warning: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
     danger: 'bg-rose-500/20 text-rose-400 border border-rose-500/30',
     info: 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30',
-    slate: 'bg-slate-600 text-slate-300',
+    slate: 'bg-slate-600 text-slate-600',
   }
 
   const dotColors = {

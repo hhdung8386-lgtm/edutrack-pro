@@ -110,9 +110,9 @@ export function StudentFormModal({ student, onClose }: Props) {
           {...register('parentPhone')}
         />
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Môn học *</label>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Môn học *</label>
           <select
-            className="w-full rounded-lg bg-slate-800 border border-slate-600 text-slate-100 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
             {...register('subjectId')}
           >
             <option value="">-- Chọn môn học --</option>

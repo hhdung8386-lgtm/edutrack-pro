@@ -108,7 +108,7 @@ export function PayrollPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Lương giáo viên</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Lương giáo viên</h1>
         </div>
         <div className="flex gap-2">
           {selected.size > 0 && (
@@ -126,18 +126,18 @@ export function PayrollPage() {
 
       {/* Month selector */}
       <div className="flex items-center gap-3">
-        <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg" aria-label="Tháng trước">
+        <button onClick={prevMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng trước">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <span className="text-base font-semibold text-slate-200 min-w-[160px] text-center">{monthLabel}</span>
-        <button onClick={nextMonth} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg" aria-label="Tháng sau">
+        <span className="text-base font-semibold text-slate-700 min-w-[160px] text-center">{monthLabel}</span>
+        <button onClick={nextMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng sau">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
 
       {/* Total */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
-        <p className="text-sm text-slate-400">Tổng lương phải trả {monthLabel}</p>
+        <p className="text-sm text-slate-500">Tổng lương phải trả {monthLabel}</p>
         <p className="text-4xl font-bold text-emerald-400 mt-1">{formatVND(totalPayroll)}</p>
         <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} giáo viên · {payrolls.length} buổi dạy</p>
       </Card>
@@ -147,7 +147,7 @@ export function PayrollPage() {
         {teacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid }) => (
           <Card key={teacher.id} padding="none">
             <div
-              className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-700/20 transition-colors"
+              className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-100/20 transition-colors"
               onClick={() => setExpanded(expanded === teacher.id ? null : teacher.id)}
             >
               <input
@@ -173,7 +173,7 @@ export function PayrollPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-200 truncate">{teacher.name}</p>
+                  <p className="font-medium text-slate-700 truncate">{teacher.name}</p>
                   <p className="text-xs text-slate-500">×{teacher.level} · {tp.length} buổi · {minutes} phút</p>
                 </div>
               </div>
@@ -183,18 +183,18 @@ export function PayrollPage() {
                 </Badge>
                 <p className="text-emerald-400 font-semibold text-sm">{formatVND(total)}</p>
                 {expanded === teacher.id ? (
-                  <ChevronUp className="w-4 h-4 text-slate-400" />
+                  <ChevronUp className="w-4 h-4 text-slate-500" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
                 )}
               </div>
             </div>
 
             {expanded === teacher.id && (
-              <div className="border-t border-slate-700 overflow-x-auto">
+              <div className="border-t border-slate-200 overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-slate-700/50">
+                    <tr className="border-b border-slate-200/50">
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Buổi dạy</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Phút</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Giá/phút</th>
@@ -204,11 +204,11 @@ export function PayrollPage() {
                   </thead>
                   <tbody>
                     {tp.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-700/30 hover:bg-slate-700/10">
-                        <td className="px-5 py-2.5 text-slate-400">{p.lessonId.slice(0, 8)}…</td>
-                        <td className="px-5 py-2.5 text-slate-300">{p.minutes}'</td>
-                        <td className="px-5 py-2.5 text-slate-300">{p.pricePerMinute.toLocaleString()}</td>
-                        <td className="px-5 py-2.5 text-slate-300">×{p.level}</td>
+                      <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
+                        <td className="px-5 py-2.5 text-slate-500">{p.lessonId.slice(0, 8)}…</td>
+                        <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
+                        <td className="px-5 py-2.5 text-slate-600">{p.pricePerMinute.toLocaleString()}</td>
+                        <td className="px-5 py-2.5 text-slate-600">×{p.level}</td>
                         <td className="px-5 py-2.5 text-emerald-400 text-right font-medium">{formatVND(p.amount)}</td>
                       </tr>
                     ))}

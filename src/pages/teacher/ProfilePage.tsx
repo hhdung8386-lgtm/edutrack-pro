@@ -37,7 +37,7 @@ export function ProfilePage() {
   }, [teacherId])
 
   if (loading) return <LoadingSpinner />
-  if (!teacher) return <p className="text-slate-400 text-center py-20">Không tìm thấy hồ sơ</p>
+  if (!teacher) return <p className="text-slate-500 text-center py-20">Không tìm thấy hồ sơ</p>
 
   const monthSalary = lessons.reduce((sum, l) => sum + (l.salary || 0), 0)
   const trackingUrl = `${window.location.origin}/tracking?teacher=${teacher.code}`
@@ -49,7 +49,7 @@ export function ProfilePage() {
 
   return (
     <div className="max-w-xl mx-auto space-y-5 pt-2 lg:pt-6">
-      <h1 className="text-2xl font-bold text-slate-100">Hồ sơ giáo viên</h1>
+      <h1 className="text-2xl font-bold text-slate-900">Hồ sơ giáo viên</h1>
 
       {/* Profile card */}
       <Card>
@@ -64,7 +64,7 @@ export function ProfilePage() {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-slate-100">{teacher.name}</h2>
+            <h2 className="text-xl font-bold text-slate-900">{teacher.name}</h2>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="font-mono text-sm text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">{teacher.code}</span>
               <Badge variant="info">Cấp ×{teacher.level}</Badge>
@@ -80,7 +80,7 @@ export function ProfilePage() {
         </div>
 
         {teacher.bio && (
-          <p className="mt-4 text-sm text-slate-400 leading-relaxed">{teacher.bio}</p>
+          <p className="mt-4 text-sm text-slate-500 leading-relaxed">{teacher.bio}</p>
         )}
 
         <Button variant="outline" fullWidth className="mt-4" onClick={copyLink}>
@@ -92,19 +92,19 @@ export function ProfilePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="text-center">
-          <p className="text-3xl font-bold text-slate-100">{lessons.length}</p>
-          <p className="text-xs text-slate-400 mt-1">Buổi dạy tháng này</p>
+          <p className="text-3xl font-bold text-slate-900">{lessons.length}</p>
+          <p className="text-xs text-slate-500 mt-1">Buổi dạy tháng này</p>
         </Card>
         <Card className="text-center">
           <p className="text-xl font-bold text-emerald-400">{formatVND(monthSalary)}</p>
-          <p className="text-xs text-slate-400 mt-1">Lương tháng này</p>
+          <p className="text-xs text-slate-500 mt-1">Lương tháng này</p>
         </Card>
       </div>
 
       {/* Contact admin */}
       <Card className="border-indigo-500/20 bg-indigo-500/5">
-        <p className="text-sm font-medium text-slate-300 mb-2">Cần hỗ trợ?</p>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm font-medium text-slate-600 mb-2">Cần hỗ trợ?</p>
+        <p className="text-sm text-slate-500">
           Liên hệ Admin qua Zalo hoặc điện thoại để được hỗ trợ kịp thời.
         </p>
         <p className="text-xs text-slate-500 mt-2">Lưu ý: Thông tin cá nhân chỉ admin mới có thể chỉnh sửa.</p>

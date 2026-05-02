@@ -10,7 +10,7 @@
   }
 
   body {
-    @apply bg-slate-900 text-slate-100 font-sans;
+    @apply bg-slate-50 text-slate-900 font-sans;
   }
 
   /* Scrollbar Styling */
@@ -19,7 +19,7 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-slate-800;
+    @apply bg-white;
   }
 
   ::-webkit-scrollbar-thumb {
@@ -41,7 +41,7 @@
 
   /* Selection */
   ::selection {
-    @apply bg-indigo-600/50 text-slate-100;
+    @apply bg-indigo-600/50 text-slate-900;
   }
 }
 
@@ -66,11 +66,11 @@
 
   /* Cards */
   .card-base {
-    @apply rounded-lg bg-slate-800 border border-slate-700;
+    @apply rounded-lg bg-white border border-slate-200;
   }
 
   .card-hover {
-    @apply rounded-lg bg-slate-800 border border-slate-700 transition-all duration-200 hover:border-slate-600 hover:shadow-lg;
+    @apply rounded-lg bg-white border border-slate-200 transition-all duration-200 hover:border-slate-300 hover:shadow-lg;
   }
 
   /* Badges */
@@ -95,7 +95,7 @@
   }
 
   .badge-slate {
-    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-slate-700/50 text-slate-300 border border-slate-600/30;
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-slate-100/50 text-slate-600 border border-slate-300/30;
   }
 
   /* Buttons */
@@ -108,7 +108,7 @@
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-slate-700 text-slate-100 hover:bg-slate-600 active:bg-slate-800;
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-slate-100 text-slate-900 hover:bg-slate-600 active:bg-white;
   }
 
   .btn-danger {
@@ -120,12 +120,12 @@
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-transparent text-slate-300 hover:bg-slate-700/50;
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-transparent text-slate-600 hover:bg-slate-100/50;
   }
 
   /* Inputs */
   .input-base {
-    @apply w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 placeholder-slate-500 transition-all duration-200;
+    @apply w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-500 transition-all duration-200;
   }
 
   .input-base:focus {
@@ -138,15 +138,15 @@
   }
 
   .table-base thead {
-    @apply bg-slate-800 border-b border-slate-700;
+    @apply bg-white border-b border-slate-200;
   }
 
   .table-base th {
-    @apply px-4 py-3 text-left font-medium text-slate-400 uppercase tracking-wide;
+    @apply px-4 py-3 text-left font-medium text-slate-500 uppercase tracking-wide;
   }
 
   .table-base tbody tr {
-    @apply border-b border-slate-700 hover:bg-slate-700/30 transition-colors duration-150;
+    @apply border-b border-slate-200 hover:bg-slate-100/30 transition-colors duration-150;
   }
 
   .table-base td {
@@ -159,7 +159,7 @@
   }
 
   .form-label {
-    @apply text-sm font-medium text-slate-300;
+    @apply text-sm font-medium text-slate-600;
   }
 
   .form-error {

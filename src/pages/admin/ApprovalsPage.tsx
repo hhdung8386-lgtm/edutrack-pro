@@ -22,7 +22,7 @@ const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
   { key: 'approved', label: 'Đã duyệt', color: 'text-emerald-400' },
   { key: 'rejected', label: 'Từ chối', color: 'text-rose-400' },
-  { key: 'all', label: 'Tất cả', color: 'text-slate-300' },
+  { key: 'all', label: 'Tất cả', color: 'text-slate-600' },
 ]
 
 export function ApprovalsPage() {
@@ -155,22 +155,22 @@ export function ApprovalsPage() {
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Duyệt buổi dạy</h1>
-        <p className="text-sm text-slate-400 mt-0.5">
+        <h1 className="text-2xl font-bold text-slate-900">Duyệt buổi dạy</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
           {tab === 'pending' && pendingCount > 0 ? `${pendingCount} buổi đang chờ duyệt` : 'Quản lý và duyệt buổi dạy'}
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-800 p-1 rounded-xl w-fit flex-wrap">
+      <div className="flex gap-1 bg-white p-1 rounded-xl w-fit flex-wrap">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === t.key
-                ? 'bg-slate-700 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-slate-100 text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-900'
             }`}
           >
             {t.label}
@@ -198,41 +198,41 @@ export function ApprovalsPage() {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="space-y-2 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-200">{lesson.date}</span>
+                    <span className="text-sm font-semibold text-slate-700">{lesson.date}</span>
                     <StatusBadge status={lesson.status} />
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Học viên</p>
-                      <p className="text-slate-200 font-medium">{lesson.studentName}</p>
+                      <p className="text-slate-700 font-medium">{lesson.studentName}</p>
                       <p className="text-xs text-indigo-400 font-mono">{lesson.studentCode}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Giáo viên</p>
-                      <p className="text-slate-200">{lesson.teacherName}</p>
+                      <p className="text-slate-700">{lesson.teacherName}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Môn học</p>
-                      <p className="text-slate-200">{lesson.subjectName}</p>
+                      <p className="text-slate-700">{lesson.subjectName}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Thời lượng</p>
-                      <p className="text-slate-200 font-semibold">{lesson.minutes} phút</p>
+                      <p className="text-slate-700 font-semibold">{lesson.minutes} phút</p>
                     </div>
                   </div>
 
                   {lesson.comment && (
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Nhận xét</p>
-                      <p className="text-sm text-slate-300 line-clamp-2">{lesson.comment}</p>
+                      <p className="text-sm text-slate-600 line-clamp-2">{lesson.comment}</p>
                     </div>
                   )}
 
                   {lesson.homework && (
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
-                      <p className="text-sm text-slate-300 line-clamp-1">{lesson.homework}</p>
+                      <p className="text-sm text-slate-600 line-clamp-1">{lesson.homework}</p>
                     </div>
                   )}
 
@@ -243,7 +243,7 @@ export function ApprovalsPage() {
                           key={i}
                           src={url}
                           alt={`Ảnh ${i + 1}`}
-                          className="w-14 h-14 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity border border-slate-600"
+                          className="w-14 h-14 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity border border-slate-300"
                           onClick={() => setViewImages(lesson.imageURLs)}
                         />
                       ))}
@@ -251,7 +251,7 @@ export function ApprovalsPage() {
                   )}
 
                   {lesson.status === 'approved' && (
-                    <div className="flex gap-4 text-sm pt-1 border-t border-slate-700">
+                    <div className="flex gap-4 text-sm pt-1 border-t border-slate-200">
                       <span className="text-slate-500">
                         Buổi: {lesson.sessionsBeforeApproval} → {lesson.sessionsAfterApproval}
                       </span>
@@ -302,13 +302,13 @@ export function ApprovalsPage() {
           confirmLabel="Duyệt buổi dạy"
           loading={approving}
         >
-          <div className="bg-slate-800 rounded-xl p-4 text-sm space-y-1.5">
+          <div className="bg-white rounded-xl p-4 text-sm space-y-1.5">
             <div className="flex justify-between">
-              <span className="text-slate-400">Học viên</span>
-              <span className="text-slate-200">{approvingLesson.studentName}</span>
+              <span className="text-slate-500">Học viên</span>
+              <span className="text-slate-700">{approvingLesson.studentName}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Buổi còn lại</span>
+              <span className="text-slate-500">Buổi còn lại</span>
               <span className="text-amber-400 font-medium">
                 {approvingLesson.sessionsBeforeApproval || '?'} → {(approvingLesson.sessionsBeforeApproval || 1) - 1}
               </span>
@@ -331,9 +331,9 @@ export function ApprovalsPage() {
           }
         >
           <div className="space-y-4">
-            <p className="text-sm text-slate-400">
-              Từ chối buổi của <span className="text-slate-200 font-medium">{rejectingLesson.studentName}</span> với{' '}
-              <span className="text-slate-200">{rejectingLesson.teacherName}</span>
+            <p className="text-sm text-slate-500">
+              Từ chối buổi của <span className="text-slate-700 font-medium">{rejectingLesson.studentName}</span> với{' '}
+              <span className="text-slate-700">{rejectingLesson.teacherName}</span>
             </p>
             <Textarea
               label="Lý do từ chối *"
@@ -349,7 +349,7 @@ export function ApprovalsPage() {
       {/* Image viewer */}
       {viewImages && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setViewImages(null)}>
-          <button className="absolute top-4 right-4 p-2 text-white bg-slate-800 rounded-xl" onClick={() => setViewImages(null)} aria-label="Đóng">
+          <button className="absolute top-4 right-4 p-2 text-slate-900 bg-white rounded-xl" onClick={() => setViewImages(null)} aria-label="Đóng">
             <X className="w-6 h-6" />
           </button>
           <div className="flex gap-4 overflow-x-auto max-w-full">

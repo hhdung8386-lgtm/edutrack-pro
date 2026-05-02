@@ -52,14 +52,14 @@ export function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="bg-slate-800 p-8 rounded-2xl max-w-md w-full border border-slate-700">
-        <h1 className="text-2xl font-bold text-white mb-4">Khởi tạo dữ liệu</h1>
-        <p className="text-slate-400 mb-6">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl max-w-md w-full border border-slate-200">
+        <h1 className="text-2xl font-bold text-slate-900 mb-4">Khởi tạo dữ liệu</h1>
+        <p className="text-slate-500 mb-6">
           Nhấn nút bên dưới để tạo tài khoản Admin mặc định cho hệ thống:
           <br /><br />
-          Email: <strong className="text-white">admin@edutrackpro.app</strong><br />
-          Mật khẩu: <strong className="text-white">admin123</strong>
+          Email: <strong className="text-slate-900">admin@edutrackpro.app</strong><br />
+          Mật khẩu: <strong className="text-slate-900">admin123</strong>
         </p>
 
         {error && (

@@ -77,8 +77,8 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
 
         {/* Salary preview */}
         {price > 0 && (
-          <div className="bg-slate-800 rounded-xl p-4 space-y-1.5 text-xs text-slate-400">
-            <p className="font-medium text-slate-300 mb-2">Ví dụ lương:</p>
+          <div className="bg-white rounded-xl p-4 space-y-1.5 text-xs text-slate-500">
+            <p className="font-medium text-slate-600 mb-2">Ví dụ lương:</p>
             {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => (
               <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
                 <span>{ex.min} phút × {price.toLocaleString()}đ × ×{ex.level}</span>
@@ -89,9 +89,9 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         )}
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Trạng thái</label>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Trạng thái</label>
           <select
-            className="w-full rounded-lg bg-slate-800 border border-slate-600 text-slate-100 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
             {...register('status')}
           >
             <option value="active">Đang hoạt động</option>
@@ -120,8 +120,8 @@ export function SubjectsPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Môn học</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{subjects.length} môn học</p>
+          <h1 className="text-2xl font-bold text-slate-900">Môn học</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{subjects.length} môn học</p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="w-4 h-4" />
@@ -138,17 +138,17 @@ export function SubjectsPage() {
       ) : (
         <Card padding="none">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-700">
+            <thead className="border-b border-slate-200">
               <tr>
                 {['Tên môn', 'Giá / phút', 'Trạng thái', 'Hành động'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-medium text-slate-400 uppercase">{h}</th>
+                  <th key={h} className="text-left px-5 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
               {subjects.map((subject) => (
-                <tr key={subject.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-5 py-4 font-medium text-slate-200">{subject.name}</td>
+                <tr key={subject.id} className="hover:bg-slate-100/20 transition-colors">
+                  <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
                   <td className="px-5 py-4">
                     <span className="text-emerald-400 font-semibold">
                       {subject.pricePerMinute.toLocaleString('vi-VN')}đ

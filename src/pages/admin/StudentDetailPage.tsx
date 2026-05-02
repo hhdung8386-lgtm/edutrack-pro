@@ -40,7 +40,7 @@ export function StudentDetailPage() {
   }, [id])
 
   if (loading) return <LoadingSpinner />
-  if (!student) return <p className="text-slate-400 text-center py-20">Không tìm thấy học viên</p>
+  if (!student) return <p className="text-slate-500 text-center py-20">Không tìm thấy học viên</p>
 
   const usedPct = student.totalSessions > 0
     ? Math.round((student.usedSessions / student.totalSessions) * 100)
@@ -51,12 +51,12 @@ export function StudentDetailPage() {
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-4xl">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" aria-label="Quay lại">
+        <button onClick={() => navigate(-1)} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg transition-colors" aria-label="Quay lại">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-100">{student.name}</h1>
-          <p className="text-sm text-slate-400">Chi tiết học viên</p>
+          <h1 className="text-xl font-bold text-slate-900">{student.name}</h1>
+          <p className="text-sm text-slate-500">Chi tiết học viên</p>
         </div>
       </div>
 
@@ -73,15 +73,15 @@ export function StudentDetailPage() {
             <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm mt-2">
               <div>
                 <span className="text-slate-500">Họ tên: </span>
-                <span className="text-slate-200 font-medium">{student.name}</span>
+                <span className="text-slate-700 font-medium">{student.name}</span>
               </div>
               <div>
                 <span className="text-slate-500">SĐT PH: </span>
-                <span className="text-slate-200">{student.parentPhone}</span>
+                <span className="text-slate-700">{student.parentPhone}</span>
               </div>
               <div>
                 <span className="text-slate-500">Môn học: </span>
-                <span className="text-slate-200">{student.subjectName || '—'}</span>
+                <span className="text-slate-700">{student.subjectName || '—'}</span>
               </div>
             </div>
           </div>
@@ -103,13 +103,13 @@ export function StudentDetailPage() {
       {/* Session stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Tổng buổi', value: student.totalSessions, color: 'text-slate-200' },
+          { label: 'Tổng buổi', value: student.totalSessions, color: 'text-slate-700' },
           { label: 'Đã học', value: student.usedSessions, color: 'text-indigo-400' },
           { label: 'Còn lại', value: student.remainingSessions, color: student.remainingSessions === 0 ? 'text-rose-400' : student.remainingSessions <= 3 ? 'text-amber-400' : 'text-emerald-400' },
         ].map((s) => (
           <Card key={s.label} className="text-center">
             <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-400 mt-1">{s.label}</p>
+            <p className="text-xs text-slate-500 mt-1">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -117,10 +117,10 @@ export function StudentDetailPage() {
       {/* Progress bar */}
       <Card>
         <div className="flex justify-between text-sm mb-2">
-          <span className="text-slate-400">Tiến độ học</span>
-          <span className="text-slate-300 font-medium">{usedPct}%</span>
+          <span className="text-slate-500">Tiến độ học</span>
+          <span className="text-slate-600 font-medium">{usedPct}%</span>
         </div>
-        <div className="h-2.5 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-500"
             style={{ width: `${usedPct}%` }}
@@ -131,28 +131,28 @@ export function StudentDetailPage() {
 
       {/* Lesson history */}
       <Card padding="none">
-        <div className="px-5 py-4 border-b border-slate-700">
-          <h3 className="text-base font-semibold text-slate-100">Lịch sử buổi học</h3>
+        <div className="px-5 py-4 border-b border-slate-200">
+          <h3 className="text-base font-semibold text-slate-900">Lịch sử buổi học</h3>
         </div>
         {lessons.length === 0 ? (
           <p className="text-center text-slate-500 text-sm py-8">Chưa có buổi học nào</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-slate-700">
+              <thead className="border-b border-slate-200">
                 <tr>
                   {['Ngày', 'Giáo viên', 'Phút', 'Nhận xét', 'Trạng thái'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase">{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {lessons.map((lesson) => (
-                  <tr key={lesson.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{lesson.date}</td>
-                    <td className="px-4 py-3 text-slate-300">{lesson.teacherName}</td>
-                    <td className="px-4 py-3 text-slate-300">{lesson.minutes}'</td>
-                    <td className="px-4 py-3 text-slate-400 max-w-xs truncate">{lesson.comment || '—'}</td>
+                  <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
+                    <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
+                    <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
+                    <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{lesson.comment || '—'}</td>
                     <td className="px-4 py-3"><StatusBadge status={lesson.status} /></td>
                   </tr>
                 ))}

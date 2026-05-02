@@ -17,7 +17,7 @@ export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: nu
           {Array.from({ length: cols }).map((_, j) => (
             <div
               key={j}
-              className="h-4 bg-slate-700 rounded flex-1"
+              className="h-4 bg-slate-100 rounded flex-1"
               style={{ opacity: 1 - i * 0.12 }}
             />
           ))}
@@ -29,10 +29,10 @@ export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: nu
 
 export function CardSkeleton() {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 animate-pulse">
-      <div className="h-3 bg-slate-700 rounded w-1/3 mb-4" />
-      <div className="h-8 bg-slate-700 rounded w-1/2 mb-2" />
-      <div className="h-3 bg-slate-700 rounded w-2/3" />
+    <div className="bg-white border border-slate-200 rounded-xl p-5 animate-pulse">
+      <div className="h-3 bg-slate-100 rounded w-1/3 mb-4" />
+      <div className="h-8 bg-slate-100 rounded w-1/2 mb-2" />
+      <div className="h-3 bg-slate-100 rounded w-2/3" />
     </div>
   )
 }

@@ -52,9 +52,9 @@ export function ConfirmDialog({
             </div>
           )}
           <div>
-            <h3 className="text-base font-semibold text-slate-100">{title}</h3>
+            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
             {description && (
-              <p className="mt-1 text-sm text-slate-400">{description}</p>
+              <p className="mt-1 text-sm text-slate-500">{description}</p>
             )}
           </div>
         </div>

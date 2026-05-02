@@ -39,23 +39,23 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-slate-50">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <AdminSidebar />
       </div>
 
       {/* Mobile header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 border-b border-slate-800 flex items-center px-4 z-40 gap-3">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-50 border-b border-slate-200 flex items-center px-4 z-40 gap-3">
         <div className="flex items-center gap-2 flex-1">
           <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-4 h-4 text-white" />
+            <GraduationCap className="w-4 h-4 text-slate-900" />
           </div>
-          <span className="font-semibold text-slate-100 text-sm">{pageTitle}</span>
+          <span className="font-semibold text-slate-900 text-sm">{pageTitle}</span>
         </div>
         <button
           onClick={() => setSheetOpen(true)}
-          className="p-2 text-slate-400 hover:text-white"
+          className="p-2 text-slate-500 hover:text-slate-900"
           aria-label="Mở menu"
         >
           <Menu className="w-5 h-5" />
@@ -66,10 +66,10 @@ export function AdminLayout() {
       {sheetOpen && (
         <>
           <div className="lg:hidden fixed inset-0 bg-black/60 z-50" onClick={() => setSheetOpen(false)} />
-          <div className="lg:hidden fixed right-0 top-0 bottom-0 w-72 bg-slate-900 border-l border-slate-800 z-50 flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-              <span className="font-semibold text-slate-100">Menu</span>
-              <button onClick={() => setSheetOpen(false)} className="p-2 text-slate-400 hover:text-white" aria-label="Đóng menu">
+          <div className="lg:hidden fixed right-0 top-0 bottom-0 w-72 bg-slate-50 border-l border-slate-200 z-50 flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <span className="font-semibold text-slate-900">Menu</span>
+              <button onClick={() => setSheetOpen(false)} className="p-2 text-slate-500 hover:text-slate-900" aria-label="Đóng menu">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -86,7 +86,7 @@ export function AdminLayout() {
                   onClick={() => setSheetOpen(false)}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors
-                    ${isActive ? 'bg-indigo-500/15 text-indigo-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`
+                    ${isActive ? 'bg-indigo-500/15 text-indigo-400' : 'text-slate-500 hover:text-white hover:bg-white'}`
                   }
                 >
                   <item.icon className="w-5 h-5" />
@@ -94,10 +94,10 @@ export function AdminLayout() {
                 </NavLink>
               ))}
             </nav>
-            <div className="px-3 py-4 border-t border-slate-800">
+            <div className="px-3 py-4 border-t border-slate-200">
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-slate-800 w-full transition-colors"
+                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-500 hover:text-rose-400 hover:bg-white w-full transition-colors"
               >
                 <LogOut className="w-5 h-5" />
                 Đăng xuất
@@ -115,7 +115,7 @@ export function AdminLayout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 safe-area-inset-bottom">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-50 border-t border-slate-200 z-40 safe-area-inset-bottom">
         <div className="grid grid-cols-4 h-14">
           {mobileNavItems.map((item) => (
             <NavLink
@@ -123,7 +123,7 @@ export function AdminLayout() {
               to={item.to}
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium relative
-                ${isActive ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`
+                ${isActive ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-600'}`
               }
             >
               {({ isActive }) => (

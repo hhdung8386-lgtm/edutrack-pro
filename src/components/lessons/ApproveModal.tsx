@@ -105,32 +105,32 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       confirmLabel="Duyệt buổi dạy"
       loading={loading}
     >
-      <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
+      <div className="bg-white rounded-xl p-4 space-y-2 text-sm">
         <div className="flex justify-between">
-          <span className="text-slate-400">Học viên</span>
-          <span className="text-slate-200 font-medium">{lesson.studentName} ({lesson.studentCode})</span>
+          <span className="text-slate-500">Học viên</span>
+          <span className="text-slate-700 font-medium">{lesson.studentName} ({lesson.studentCode})</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Giáo viên</span>
-          <span className="text-slate-200">{lesson.teacherName}</span>
+          <span className="text-slate-500">Giáo viên</span>
+          <span className="text-slate-700">{lesson.teacherName}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Ngày</span>
-          <span className="text-slate-200">{lesson.date}</span>
+          <span className="text-slate-500">Ngày</span>
+          <span className="text-slate-700">{lesson.date}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-400">Thời lượng</span>
-          <span className="text-slate-200">{lesson.minutes} phút</span>
+          <span className="text-slate-500">Thời lượng</span>
+          <span className="text-slate-700">{lesson.minutes} phút</span>
         </div>
-        <div className="border-t border-slate-700 pt-2 mt-2">
+        <div className="border-t border-slate-200 pt-2 mt-2">
           <div className="flex justify-between">
-            <span className="text-slate-400">Buổi còn lại</span>
+            <span className="text-slate-500">Buổi còn lại</span>
             <span className="text-amber-400 font-medium">
               {lesson.sessionsBeforeApproval || '?'} → {(lesson.sessionsBeforeApproval || 1) - 1} buổi
             </span>
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-slate-400">Lương giáo viên</span>
+            <span className="text-slate-500">Lương giáo viên</span>
             <span className="text-emerald-400 font-semibold">+ {formatVND(lesson.salary || 0)}</span>
           </div>
         </div>

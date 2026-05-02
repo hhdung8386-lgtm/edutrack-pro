@@ -46,8 +46,8 @@ export function StudentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Học viên</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{students.length} học viên tổng cộng</p>
+          <h1 className="text-2xl font-bold text-slate-900">Học viên</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{students.length} học viên tổng cộng</p>
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Plus className="w-4 h-4" />
@@ -72,7 +72,7 @@ export function StudentsPage() {
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 statusFilter === s
                   ? 'bg-indigo-500 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                  : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-200'
               }`}
             >
               {s === 'all' ? 'Tất cả' : s === 'active' ? 'Đang học' : s === 'inactive' ? 'Tạm dừng' : 'Hết buổi'}
@@ -97,10 +97,10 @@ export function StudentsPage() {
           <Card padding="none" className="hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-slate-700">
+                <thead className="border-b border-slate-200">
                   <tr>
                     {['Mã', 'Tên học viên', 'SĐT PH', 'Môn học', 'Buổi còn lại', 'Trạng thái', 'Hành động'].map((h) => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
                     ))}
@@ -108,15 +108,15 @@ export function StudentsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
                   {filtered.map((student) => (
-                    <tr key={student.id} className="hover:bg-slate-700/20 transition-colors">
+                    <tr key={student.id} className="hover:bg-slate-100/20 transition-colors">
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded">
                           {student.code}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-200">{student.name}</td>
-                      <td className="px-4 py-3 text-slate-400">{student.parentPhone}</td>
-                      <td className="px-4 py-3 text-slate-300">{student.subjectName || '—'}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{student.name}</td>
+                      <td className="px-4 py-3 text-slate-500">{student.parentPhone}</td>
+                      <td className="px-4 py-3 text-slate-600">{student.subjectName || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`font-semibold ${
                           student.remainingSessions === 0 ? 'text-rose-400' :
@@ -133,7 +133,7 @@ export function StudentsPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => navigate(`/admin/students/${student.id}`)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
                             title="Xem chi tiết"
                           >
                             <Eye className="w-4 h-4" />
@@ -146,7 +146,7 @@ export function StudentsPage() {
                           </button>
                           <button
                             onClick={() => setEditStudent(student)}
-                            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-700 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                             aria-label="Sửa học viên"
                           >
                             <MoreVertical className="w-4 h-4" />
@@ -172,7 +172,7 @@ export function StudentsPage() {
                       </span>
                       <StatusBadge status={student.status} />
                     </div>
-                    <p className="font-semibold text-slate-100">{student.name}</p>
+                    <p className="font-semibold text-slate-900">{student.name}</p>
                     <p className="text-xs text-slate-500 mt-0.5">{student.subjectName} · {student.parentPhone}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
@@ -183,7 +183,7 @@ export function StudentsPage() {
                     <p className="text-xs text-slate-500">buổi còn</p>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700">
+                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">
                   <Button size="sm" variant="outline" fullWidth onClick={(e) => { e.stopPropagation(); setAddSessions(student) }}>
                     + Thêm buổi
                   </Button>

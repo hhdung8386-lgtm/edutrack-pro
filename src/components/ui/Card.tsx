@@ -19,8 +19,8 @@ export function Card({ children, className = '', hover = false, onClick, padding
   return (
     <div
       className={`
-        bg-slate-800 border border-slate-700 rounded-xl shadow-card
-        ${hover ? 'hover:shadow-card-hover hover:border-slate-600 transition-all duration-200 cursor-pointer' : ''}
+        bg-white border border-slate-200 rounded-xl shadow-card
+        ${hover ? 'hover:shadow-card-hover hover:border-slate-300 transition-all duration-200 cursor-pointer' : ''}
         ${paddings[padding]}
         ${className}
       `}
@@ -42,8 +42,8 @@ export function CardHeader({ title, subtitle, action, className = '' }: CardHead
   return (
     <div className={`flex items-center justify-between mb-5 ${className}`}>
       <div>
-        <h3 className="text-base font-semibold text-slate-100">{title}</h3>
-        {subtitle && <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>}
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
       </div>
       {action && <div>{action}</div>}
     </div>

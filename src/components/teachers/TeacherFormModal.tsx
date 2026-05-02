@@ -157,7 +157,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       <form id="teacher-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
         {/* Photo upload */}
         <div className="flex items-center gap-4">
-          <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-700 flex-shrink-0">
+          <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">
             {photoPreview ? (
               <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
             ) : (
@@ -167,13 +167,13 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             )}
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-300 mb-1">Ảnh giáo viên</p>
+            <p className="text-sm font-medium text-slate-600 mb-1">Ảnh giáo viên</p>
             <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
               Chọn ảnh...
             </label>
             {uploadProgress > 0 && uploadProgress < 100 && (
-              <div className="mt-1.5 h-1 bg-slate-700 rounded-full overflow-hidden w-32">
+              <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden w-32">
                 <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
               </div>
             )}
@@ -189,7 +189,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
         {/* Subject multi-select */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Môn dạy</label>
+          <label className="block text-sm font-medium text-slate-600 mb-2">Môn dạy</label>
           <div className="space-y-2">
             {subjects.map((s) => (
               <label key={s.id} className="flex items-center gap-3 cursor-pointer group">
@@ -202,7 +202,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   }}
                   className="w-4 h-4 rounded accent-indigo-500"
                 />
-                <span className="text-sm text-slate-300 group-hover:text-white transition-colors">{s.name}</span>
+                <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">{s.name}</span>
                 <span className="text-xs text-slate-500">{s.pricePerMinute.toLocaleString('vi-VN')}đ/phút</span>
               </label>
             ))}
