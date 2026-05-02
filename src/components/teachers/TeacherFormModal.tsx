@@ -4,10 +4,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   collection, addDoc, updateDoc, doc, getDocs, query,
-  where, serverTimestamp,
+  where, serverTimestamp, setDoc
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { db, auth, generateTeacherCode } from '@/lib/firebase'
+import { db, auth, secondaryAuth, generateTeacherCode } from '@/lib/firebase'
 import { Teacher, Subject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -29,6 +29,13 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
+  
+  // Auth combined flow states
+  const [candidates, setCandidates] = useState<{uid: string, email: string}[]>([])
+  const [selectedUid, setSelectedUid] = useState<string>('NEW')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+
   const isEdit = !!teacher
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
@@ -45,7 +52,15 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     })
-  }, [])
+    
+    if (!isEdit) {
+      getDocs(collection(db, 'users')).then((snap) => {
+        const docs = snap.docs.map(d => d.data() as {uid: string, email: string, teacherId?: string, role?: string})
+        // Filter users that don't have a teacherId and are not admins (or just no teacherId)
+        setCandidates(docs.filter(u => !u.teacherId && u.email && u.role !== 'admin'))
+      })
+    }
+  }, [isEdit])
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -100,14 +115,34 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         toast.success('Đã cập nhật giáo viên')
       } else {
         const code = generateTeacherCode()
-        const email = `${code.toLowerCase()}@edutrackpro.app`
+        let finalUid = selectedUid
+        let finalEmail = ''
 
-        // Create Firebase Auth account
-        const credential = await createUserWithEmailAndPassword(auth, email, code)
-        const uid = credential.user.uid
+        if (selectedUid === 'NEW') {
+          if (!newEmail || !newPassword) {
+            toast.error('Vui lòng điền Email và Mật khẩu cho giáo viên mới')
+            return
+          }
+          finalEmail = newEmail
+          // Create Firebase Auth account using secondary auth so Admin isn't logged out
+          const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
+          await secondaryAuth.signOut() // Ensure secondary app clears session
+          finalUid = credential.user.uid
+
+          // Create user doc
+          await setDoc(doc(db, 'users', finalUid), {
+            uid: finalUid,
+            email: finalEmail,
+            role: 'teacher',
+            createdAt: serverTimestamp(),
+          })
+        } else {
+          const cand = candidates.find(c => c.uid === selectedUid)
+          finalEmail = cand?.email || ''
+        }
 
         let photoURL = ''
-        if (photoFile) photoURL = await uploadPhoto(uid, photoFile)
+        if (photoFile) photoURL = await uploadPhoto(finalUid, photoFile)
 
         // Create teacher doc
         const teacherRef = await addDoc(collection(db, 'teachers'), {
@@ -122,21 +157,22 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           createdAt: serverTimestamp(),
         })
 
-        // Create user doc
-        await addDoc(collection(db, 'users'), {
-          uid,
-          email,
+        // Link teacherId to user doc
+        await updateDoc(doc(db, 'users', finalUid), {
           role: 'teacher',
-          teacherId: teacherRef.id,
-          createdAt: serverTimestamp(),
+          teacherId: teacherRef.id
         })
 
-        toast.success(`Đã tạo giáo viên — Mã: ${code} | Email: ${email}`)
+        toast.success(`Đã tạo giáo viên thành công!`)
       }
       onClose()
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error(err)
-      toast.error('Có lỗi xảy ra')
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('Email này đã được sử dụng')
+      } else {
+        toast.error('Có lỗi xảy ra: ' + err.message)
+      }
     }
   }
 
@@ -155,6 +191,57 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       }
     >
       <form id="teacher-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+        
+        {/* Auth section */}
+        {!isEdit && (
+          <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
+            <h4 className="font-medium text-indigo-900 flex items-center gap-2">
+              Tài khoản liên kết <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
+            </h4>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
+              <select 
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={selectedUid}
+                onChange={e => setSelectedUid(e.target.value)}
+              >
+                <option value="NEW" className="font-semibold text-indigo-600">+ Tạo tài khoản mới cho giáo viên này</option>
+                {candidates.map(c => (
+                  <option key={c.uid} value={c.uid}>{c.email}</option>
+                ))}
+              </select>
+            </div>
+
+            {selectedUid === 'NEW' && (
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Email đăng nhập</label>
+                  <input
+                    type="email"
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    placeholder="giasu@gmail.com"
+                    value={newEmail}
+                    onChange={e => setNewEmail(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Mật khẩu</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    placeholder="Nhập mật khẩu..."
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Photo upload */}
         <div className="flex items-center gap-4">
           <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">

@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -12,8 +12,10 @@ const firebaseConfig = {
 }
 
 const app = initializeApp(firebaseConfig)
+const secondaryApp = initializeApp(firebaseConfig, "Secondary")
 
 export const auth = getAuth(app)
+export const secondaryAuth = getAuth(secondaryApp)
 export const db = getFirestore(app)
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
