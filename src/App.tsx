@@ -23,6 +23,9 @@ import { ReportsPage } from '@/pages/admin/ReportsPage'
 import { PayrollPage } from '@/pages/admin/PayrollPage'
 import { SettingsPage } from '@/pages/admin/SettingsPage'
 
+import { ContractsPage } from '@/pages/admin/ContractsPage'
+import { TeacherContractPage } from '@/pages/teacher/TeacherContractPage'
+
 // Teacher Pages
 import { AttendancePage } from '@/pages/teacher/AttendancePage'
 import { LessonHistoryPage } from '@/pages/teacher/LessonHistoryPage'
@@ -76,6 +79,7 @@ function App() {
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
+            <Route path="contracts" element={<ContractsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route index element={<Navigate to="dashboard" replace />} />
           </Route>
@@ -92,6 +96,7 @@ function App() {
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="contract" element={<TeacherContractPage />} />
             <Route index element={<Navigate to="attendance" replace />} />
           </Route>
 

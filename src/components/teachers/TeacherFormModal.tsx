@@ -37,10 +37,12 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [subjectSearch, setSubjectSearch] = useState('')
+  const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
 
   const isEdit = !!teacher
 
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     // @ts-ignore
     resolver: zodResolver(schema),
     defaultValues: teacher ? {
@@ -49,6 +51,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       bio: teacher.bio,
     } : { level: 1.0 },
   })
+
+  const watchLevel = watch('level')
 
   useEffect(() => {
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
@@ -393,25 +397,66 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           />
         </div>
 
-        {/* Subject multi-select */}
-        <div>
+        {/* Subject multi-select with Search */}
+        <div className="relative">
           <label className="block text-sm font-medium text-slate-600 mb-2">Môn dạy</label>
-          <div className="space-y-2">
-            {subjects.map((s) => (
-              <label key={s.id} className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={selectedSubjects.includes(s.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) setSelectedSubjects((prev) => [...prev, s.id])
-                    else setSelectedSubjects((prev) => prev.filter((id) => id !== s.id))
-                  }}
-                  className="w-4 h-4 rounded accent-indigo-500"
-                />
-                <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">{s.name}</span>
-                <span className="text-xs text-slate-500">{s.pricePerMinute.toLocaleString('vi-VN')}đ/phút</span>
-              </label>
-            ))}
+          <div className="flex flex-wrap gap-2 mb-2">
+            {selectedSubjects.map((id) => {
+              const s = subjects.find(sub => sub.id === id)
+              if (!s) return null
+              return (
+                <div key={id} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md text-sm">
+                  <span>{s.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== id))}
+                    className="hover:text-indigo-900"
+                    aria-label="Xóa môn"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Tìm và chọn môn học..."
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              value={subjectSearch}
+              onChange={e => {
+                setSubjectSearch(e.target.value)
+                setIsSubjectDropdownOpen(true)
+              }}
+              onFocus={() => setIsSubjectDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setIsSubjectDropdownOpen(false), 200)}
+            />
+            {isSubjectDropdownOpen && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {subjects.filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase())).length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-slate-500 text-center">Không tìm thấy môn học</div>
+                ) : (
+                  subjects.filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase())).map(s => (
+                    <div
+                      key={s.id}
+                      className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer flex justify-between items-center"
+                      onClick={() => {
+                        if (!selectedSubjects.includes(s.id)) {
+                          setSelectedSubjects(prev => [...prev, s.id])
+                        }
+                        setSubjectSearch('')
+                        setIsSubjectDropdownOpen(false)
+                      }}
+                    >
+                      <span className="font-medium text-slate-700">{s.name}</span>
+                      <span className="text-xs text-slate-500">{s.pricePerMinute.toLocaleString('vi-VN')}đ/phút</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -425,9 +470,26 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             error={errors.level?.message}
             {...register('level')}
           />
-          <p className="text-xs text-slate-500 mt-1.5">
-            Ví dụ: 50 phút × 4.000đ × 1.2 = 240.000đ
-          </p>
+          <div className="text-xs text-slate-500 mt-2 space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100">
+            <p className="font-medium text-slate-600 mb-1">Ước tính lương (1 ca 50 phút):</p>
+            {selectedSubjects.length === 0 ? (
+              <p className="italic text-slate-400">Vui lòng chọn môn dạy để xem ước tính</p>
+            ) : (
+              selectedSubjects.map(id => {
+                const s = subjects.find(sub => sub.id === id)
+                if (!s) return null
+                const estSalary = 50 * s.pricePerMinute * (Number(watchLevel) || 0)
+                return (
+                  <div key={id} className="flex justify-between items-center">
+                    <span>{s.name} ({s.pricePerMinute.toLocaleString('vi-VN')}đ/p):</span>
+                    <span className="font-medium text-indigo-600">
+                      {estSalary.toLocaleString('vi-VN')}đ
+                    </span>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
 
         <Textarea

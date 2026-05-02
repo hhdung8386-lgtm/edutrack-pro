@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { toast } from '@/stores/toastStore'
-import { BookOpen, Plus, Pencil } from 'lucide-react'
+import { BookOpen, Plus, Pencil, Search } from 'lucide-react'
 import { formatVND } from '@/lib/constants'
 
 const schema = z.object({
@@ -108,6 +108,7 @@ export function SubjectsPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editSubject, setEditSubject] = useState<Subject | null>(null)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     return onSnapshot(query(collection(db, 'subjects'), orderBy('createdAt', 'desc')), (snap) => {
@@ -115,6 +116,8 @@ export function SubjectsPage() {
       setLoading(false)
     })
   }, [])
+
+  const filtered = subjects.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
@@ -129,7 +132,15 @@ export function SubjectsPage() {
         </Button>
       </div>
 
-      {subjects.length === 0 && !loading ? (
+      <Input
+        placeholder="Tìm môn học..."
+        leftIcon={<Search className="w-4 h-4" />}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="max-w-sm"
+      />
+
+      {filtered.length === 0 && !loading ? (
         <EmptyState
           icon={<BookOpen className="w-8 h-8" />}
           title="Chưa có môn học nào"
@@ -146,7 +157,7 @@ export function SubjectsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {subjects.map((subject) => (
+              {filtered.map((subject) => (
                 <tr key={subject.id} className="hover:bg-slate-100/20 transition-colors">
                   <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
                   <td className="px-5 py-4">

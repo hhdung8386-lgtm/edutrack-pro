@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
-  LogOut, ChevronRight,
+  LogOut, ChevronRight, FileText
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
   { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
   { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
+  { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
   { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
 ]
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson, Student, Teacher } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -106,7 +106,7 @@ export function DashboardPage() {
             where('date', '>=', `${month}-01`),
             where('date', '<=', `${month}-31`)
           )
-          onSnapshot(q, (snap) => {
+          getDocs(q).then((snap) => {
             resolve({ month: month.slice(5) + '/' + month.slice(2, 4), count: snap.size })
           })
         })

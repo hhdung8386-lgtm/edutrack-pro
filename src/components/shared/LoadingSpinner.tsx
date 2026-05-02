@@ -12,17 +12,22 @@ export function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
   return (
     <div className="space-y-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex gap-4 px-4 py-3 animate-pulse">
-          {Array.from({ length: cols }).map((_, j) => (
-            <div
-              key={j}
-              className="h-4 bg-slate-100 rounded flex-1"
-              style={{ opacity: 1 - i * 0.12 }}
-            />
-          ))}
-        </div>
-      ))}
+      {Array.from({ length: rows }).map((_, i) => {
+        const opacityLevels = [
+          'opacity-100', 'opacity-90', 'opacity-80', 'opacity-70', 'opacity-60',
+          'opacity-50', 'opacity-40', 'opacity-30', 'opacity-20', 'opacity-10'
+        ];
+        return (
+          <div key={i} className="flex gap-4 px-4 py-3 animate-pulse">
+            {Array.from({ length: cols }).map((_, j) => (
+              <div
+                key={j}
+                className={`h-4 bg-slate-100 rounded flex-1 ${opacityLevels[Math.min(i, 9)]}`}
+              />
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

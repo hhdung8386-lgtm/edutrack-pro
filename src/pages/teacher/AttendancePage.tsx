@@ -343,7 +343,6 @@ export function AttendancePage() {
                         multiple
                         className="hidden"
                         onChange={handleImageUpload}
-                        capture="environment"
                         aria-label="Tải ảnh lên"
                       />
                       <Upload className="w-5 h-5 text-slate-500" />

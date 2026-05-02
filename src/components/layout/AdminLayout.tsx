@@ -22,6 +22,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/approvals': 'Duyệt buổi dạy',
   '/admin/reports': 'Báo cáo',
   '/admin/payroll': 'Lương giáo viên',
+  '/admin/contracts': 'Hợp đồng',
   '/admin/settings': 'Cài đặt',
 }
 
@@ -78,6 +79,7 @@ export function AdminLayout() {
                 { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
                 { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
                 { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
+                { to: '/admin/contracts', icon: ClipboardCheck, label: 'Hợp đồng' },
                 { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
               ].map((item) => (
                 <NavLink

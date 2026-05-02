@@ -6,9 +6,10 @@ import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
-import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
+import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
 
 export function PayrollPage() {
@@ -19,6 +20,7 @@ export function PayrollPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [paying, setPaying] = useState(false)
+  const [search, setSearch] = useState('')
 
   const prevMonth = () => {
     const d = new Date(month + '-01')
@@ -59,6 +61,10 @@ export function PayrollPage() {
       paid: tPayrolls.every((p) => p.paid),
     }
   }).filter(Boolean) as { teacher: Teacher; payrolls: Payroll[]; total: number; minutes: number; paid: boolean }[]
+
+  const filteredTeacherPayrolls = teacherPayrolls.filter(tp => 
+    tp.teacher.name.toLowerCase().includes(search.toLowerCase())
+  )
 
   const handleMarkPaid = async () => {
     if (selected.size === 0) return
@@ -124,15 +130,26 @@ export function PayrollPage() {
         </div>
       </div>
 
-      {/* Month selector */}
-      <div className="flex items-center gap-3">
-        <button onClick={prevMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng trước">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <span className="text-base font-semibold text-slate-700 min-w-[160px] text-center">{monthLabel}</span>
-        <button onClick={nextMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg" aria-label="Tháng sau">
-          <ChevronRight className="w-5 h-5" />
-        </button>
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-3 rounded-2xl border border-slate-200">
+        <div className="flex items-center gap-3">
+          <button onClick={prevMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg" aria-label="Tháng trước">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <span className="text-base font-semibold text-slate-700 min-w-[160px] text-center">{monthLabel}</span>
+          <button onClick={nextMonth} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg" aria-label="Tháng sau">
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="w-full sm:w-auto">
+          <Input
+            placeholder="Tìm giáo viên..."
+            leftIcon={<Search className="w-4 h-4" />}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-64"
+          />
+        </div>
       </div>
 
       {/* Total */}
@@ -144,7 +161,7 @@ export function PayrollPage() {
 
       {/* Per teacher */}
       <div className="space-y-3">
-        {teacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid }) => (
+        {filteredTeacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid }) => (
           <Card key={teacher.id} padding="none">
             <div
               className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-100/20 transition-colors"
@@ -219,7 +236,7 @@ export function PayrollPage() {
           </Card>
         ))}
 
-        {teacherPayrolls.length === 0 && (
+        {filteredTeacherPayrolls.length === 0 && (
           <p className="text-center text-slate-500 py-12">Không có dữ liệu lương tháng này</p>
         )}
       </div>

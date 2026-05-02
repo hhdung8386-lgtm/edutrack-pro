@@ -32,6 +32,7 @@ export function ApprovalsPage() {
   const [loading, setLoading] = useState(true)
   const [approvingLesson, setApprovingLesson] = useState<Lesson | null>(null)
   const [rejectingLesson, setRejectingLesson] = useState<Lesson | null>(null)
+  const [search, setSearch] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
@@ -52,6 +53,11 @@ export function ApprovalsPage() {
       setLoading(false)
     })
   }, [tab])
+
+  const filteredLessons = lessons.filter(l => 
+    l.studentName.toLowerCase().includes(search.toLowerCase()) || 
+    l.teacherName.toLowerCase().includes(search.toLowerCase())
+  )
 
   const pendingCount = lessons.filter((l) => l.status === 'pending').length
 
@@ -161,26 +167,35 @@ export function ApprovalsPage() {
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-white p-1 rounded-xl w-fit flex-wrap">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              tab === t.key
-                ? 'bg-slate-100 text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            {t.label}
-            {t.key === 'pending' && pendingCount > 0 && (
-              <span className="ml-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Tabs and Search */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+        <div className="flex gap-1 bg-white p-1 rounded-xl w-fit flex-wrap">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                tab === t.key
+                  ? 'bg-slate-100 text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              {t.label}
+              {t.key === 'pending' && pendingCount > 0 && (
+                <span className="ml-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        
+        <Input
+          placeholder="Tìm học viên / giáo viên..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm"
+        />
       </div>
 
       {loading ? (
@@ -193,7 +208,7 @@ export function ApprovalsPage() {
         />
       ) : (
         <div className="space-y-4">
-          {lessons.map((lesson) => (
+          {filteredLessons.map((lesson) => (
             <Card key={lesson.id} className="relative">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="space-y-2 flex-1">

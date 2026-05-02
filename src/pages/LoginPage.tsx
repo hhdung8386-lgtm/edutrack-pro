@@ -127,8 +127,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background Decorators */}
       <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-300/30 rounded-full blur-[120px] animate-pulse-soft" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-300/30 rounded-full blur-[120px] animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
-      <div className="absolute top-[40%] left-[20%] w-[20%] h-[20%] bg-amber-300/20 rounded-full blur-[80px] animate-pulse-soft" style={{ animationDelay: '3s' }} />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-300/30 rounded-full blur-[120px] animate-pulse-soft [animation-delay:1.5s]" />
+      <div className="absolute top-[40%] left-[20%] w-[20%] h-[20%] bg-amber-300/20 rounded-full blur-[80px] animate-pulse-soft [animation-delay:3s]" />
 
       <div className="relative w-full max-w-5xl z-10 flex flex-col md:flex-row gap-8 items-stretch">
         

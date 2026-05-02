@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { PenLine, History, User, GraduationCap, LogOut } from 'lucide-react'
+import { PenLine, History, User, GraduationCap, LogOut, FileText } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
@@ -7,6 +7,7 @@ import { toast } from '@/stores/toastStore'
 const navItems = [
   { to: '/teacher/attendance', icon: PenLine, label: 'Điểm danh' },
   { to: '/teacher/history', icon: History, label: 'Lịch sử' },
+  { to: '/teacher/contract', icon: FileText, label: 'Hợp đồng' },
   { to: '/teacher/profile', icon: User, label: 'Hồ sơ' },
 ]
 
@@ -78,7 +79,7 @@ export function TeacherLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-50 border-t border-slate-200 z-40">
-        <div className="grid grid-cols-3 h-14">
+        <div className="grid grid-cols-4 h-14">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
