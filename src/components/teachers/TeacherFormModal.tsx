@@ -16,7 +16,7 @@ import { toast } from '@/stores/toastStore'
 import { Upload, X } from 'lucide-react'
 
 const schema = z.object({
-  name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
+  name: z.string().optional().default(''),
   level: z.coerce.number().min(0.5).max(3),
   bio: z.string().optional(),
 })
@@ -111,6 +111,20 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   const onSubmit = async (data: FormData) => {
     try {
+      // Derive name: from form (CREATE mode) or from linked candidate (LINK mode)
+      let finalName = data.name || ''
+      if (!isEdit && authMode === 'LINK' && selectedUid) {
+        const cand = candidates.find(c => c.uid === selectedUid)
+        if (cand) {
+          finalName = cand.name || cand.username || cand.email.split('@')[0]
+        }
+      }
+      if (!isEdit && authMode === 'CREATE' && !finalName.trim()) {
+        toast.error('Vui lòng nhập tên giáo viên')
+        return
+      }
+      if (!finalName.trim()) finalName = 'Giáo viên mới'
+
       const subjectNames = selectedSubjects.map((id) => subjects.find((s) => s.id === id)?.name || '')
 
       if (isEdit && teacher) {
@@ -118,7 +132,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         if (photoFile) photoURL = await uploadPhoto(teacher.id, photoFile)
 
         await updateDoc(doc(db, 'teachers', teacher.id), {
-          name: data.name,
+          name: finalName,
           level: data.level,
           bio: data.bio || '',
           subjectIds: selectedSubjects,
@@ -173,7 +187,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         // Create teacher doc
         const teacherRef = await addDoc(collection(db, 'teachers'), {
           code,
-          name: data.name,
+          name: finalName,
           level: data.level,
           bio: data.bio || '',
           subjectIds: selectedSubjects,
