@@ -19,7 +19,9 @@ const loginSchema = z.object({
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Tên quá ngắn'),
-  username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
+  username: z.string()
+    .min(3, 'Tài khoản tối thiểu 3 ký tự')
+    .regex(/^[a-zA-Z0-9_\.]+$/, 'Tài khoản viết liền không dấu, không có khoảng trắng (VD: giasu1)'),
   password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
   confirmPassword: z.string()
 }).refine(data => data.password === data.confirmPassword, {
