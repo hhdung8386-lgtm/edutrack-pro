@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/authStore'
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { collection, addDoc, serverTimestamp, query, where, doc, getDoc, onSnapshot } from 'firebase/firestore'
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { db, storage } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
@@ -36,31 +37,38 @@ export function TeacherContractPage() {
     // Clear input value so same file can be selected again later
     e.target.value = ''
 
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File quá lớn, tối đa 5MB')
+      return
+    }
+
     setUploadProgress(10)
-    // Simulating file upload, convert to base64 for simplicity as in AttendancePage
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = (e) => {
-      if (file.type.startsWith('image/')) {
-        const img = new Image()
-        img.src = e.target?.result as string
-        img.onload = () => {
-          setUploadProgress(50)
-          const canvas = document.createElement('canvas')
-          let { width, height } = img
-          const MAX = 1200
-          if (width > MAX) { height = (height * MAX) / width; width = MAX }
-          if (height > MAX) { width = (width * MAX) / height; height = MAX }
-          canvas.width = width; canvas.height = height
-          canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-          setFileUrl(canvas.toDataURL('image/jpeg', 0.8))
+    
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `contracts/${teacherId}_${Date.now()}.${ext}`
+      const storageRef = ref(storage, fileName)
+      const uploadTask = uploadBytesResumable(storageRef, file)
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          setUploadProgress(Math.max(10, Math.round(progress)))
+        }, 
+        (error) => {
+          console.error(error)
+          toast.error('Lỗi tải file. Hệ thống chưa mở quyền Firebase Storage, vui lòng liên hệ admin.')
+          setUploadProgress(0)
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
+          setFileUrl(downloadURL)
           setUploadProgress(100)
         }
-      } else {
-        // Just store base64 for PDF or other (not recommended for large files but fits the current constraint)
-        setFileUrl(e.target?.result as string)
-        setUploadProgress(100)
-      }
+      )
+    } catch (err: any) {
+      toast.error('Lỗi kết nối Storage: ' + err.message)
+      setUploadProgress(0)
     }
   }
 
