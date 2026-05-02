@@ -82,7 +82,7 @@ export function ContractsPage() {
                       {c.teacherName}
                     </td>
                     <td className="px-5 py-4 text-slate-500">
-                      {c.createdAt?.toDate().toLocaleString('vi-VN')}
+                      {c.createdAt ? c.createdAt.toDate().toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN')}
                     </td>
                     <td className="px-5 py-4">
                       <StatusBadge status={c.status} />

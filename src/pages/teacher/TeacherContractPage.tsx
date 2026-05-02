@@ -189,7 +189,7 @@ export function TeacherContractPage() {
                     <FileText className="w-6 h-6 text-indigo-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-800">Hợp đồng ngày {c.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
+                    <p className="text-sm font-bold text-slate-800">Hợp đồng ngày {c.createdAt ? c.createdAt.toDate().toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN')}</p>
                     <button onClick={() => openBase64InNewTab(c.documentUrl)} className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium mt-0.5 inline-block text-left">Xem văn bản đính kèm</button>
                   </div>
                 </div>
