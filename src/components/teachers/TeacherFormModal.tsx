@@ -227,10 +227,12 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           <Button
             type="button"
             loading={isSubmitting}
-            onClick={handleSubmit(onSubmit as any, (errs) => {
-              const msgs = Object.values(errs).map((e: any) => e?.message).filter(Boolean).join(', ')
-              toast.error(msgs || 'Vui lòng kiểm tra lại thông tin')
-            })}
+            onClick={() => {
+              handleSubmit(onSubmit as any, (errs) => {
+                const msgs = Object.values(errs).map((e: any) => e?.message).filter(Boolean).join(', ')
+                toast.error(msgs || 'Vui lòng kiểm tra lại thông tin')
+              })()
+            }}
           >
             {isEdit ? 'Lưu thay đổi' : 'Tạo giáo viên'}
           </Button>
