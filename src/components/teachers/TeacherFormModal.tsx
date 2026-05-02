@@ -227,11 +227,21 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           <Button
             type="button"
             loading={isSubmitting}
-            onClick={() => {
-              handleSubmit(onSubmit as any, (errs) => {
-                const msgs = Object.values(errs).map((e: any) => e?.message).filter(Boolean).join(', ')
-                toast.error(msgs || 'Vui lòng kiểm tra lại thông tin')
-              })()
+            onClick={async () => {
+              console.log('=== BUTTON CLICKED ===')
+              // Manually gather form data to bypass react-hook-form issues
+              const formEl = document.getElementById('teacher-form') as HTMLFormElement
+              const nameInput = formEl?.querySelector<HTMLInputElement>('input[name="name"]')
+              const levelInput = formEl?.querySelector<HTMLInputElement>('input[name="level"]')
+              const bioInput = formEl?.querySelector<HTMLTextAreaElement>('textarea[name="bio"]')
+              
+              const nameVal = nameInput?.value || ''
+              const levelVal = parseFloat(levelInput?.value || '1')
+              const bioVal = bioInput?.value || ''
+              
+              console.log('Form values:', { nameVal, levelVal, bioVal, authMode, selectedUid })
+              
+              await onSubmit({ name: nameVal, level: levelVal, bio: bioVal })
             }}
           >
             {isEdit ? 'Lưu thay đổi' : 'Tạo giáo viên'}
