@@ -37,8 +37,8 @@ export function TeacherContractPage() {
     // Clear input value so same file can be selected again later
     e.target.value = ''
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File quá lớn, tối đa 5MB')
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error('File quá lớn, tối đa 15MB')
       return
     }
 
@@ -161,7 +161,7 @@ export function TeacherContractPage() {
                 <>
                   <Upload className="w-8 h-8 text-indigo-400 mb-2 group-hover:scale-110 transition-transform duration-300" />
                   <p className="text-sm font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">Nhấn để chọn file</p>
-                  <p className="text-xs text-slate-500 mt-1">Hỗ trợ ảnh hoặc PDF (tối đa 5MB)</p>
+                  <p className="text-xs text-slate-500 mt-1">Hỗ trợ ảnh hoặc PDF (tối đa 15MB)</p>
                 </>
               )}
               {uploadProgress > 0 && uploadProgress < 100 && (
