@@ -88,13 +88,29 @@ export function ContractsPage() {
                       <StatusBadge status={c.status} />
                     </td>
                     <td className="px-5 py-4">
-                      <button 
-                        onClick={() => openBase64InNewTab(c.documentUrl)}
-                        className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Xem văn bản
-                      </button>
+                      {c.imageURLs ? (
+                        <div className="flex flex-wrap gap-2">
+                          {c.imageURLs.map((url: string, i: number) => (
+                            <img 
+                              key={i} 
+                              src={url} 
+                              alt="Hợp đồng" 
+                              className="w-10 h-10 object-cover rounded border border-slate-200 cursor-pointer hover:opacity-80"
+                              onClick={() => openBase64InNewTab(url)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        c.documentUrl && (
+                          <button 
+                            onClick={() => openBase64InNewTab(c.documentUrl)}
+                            className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Xem văn bản
+                          </button>
+                        )
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       {c.status === 'pending' && (

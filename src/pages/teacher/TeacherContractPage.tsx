@@ -12,10 +12,9 @@ import { openBase64InNewTab } from '@/lib/constants'
 
 export function TeacherContractPage() {
   const { teacherId } = useAuthStore()
-  const [fileUrl, setFileUrl] = useState('')
+  const [images, setImages] = useState<string[]>([])
   const [confirmText, setConfirmText] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
   const [contracts, setContracts] = useState<any[]>([])
 
   const requiredText = "Tôi đồng ý với các điều khoản"
@@ -29,45 +28,43 @@ export function TeacherContractPage() {
     return unsub
   }, [teacherId])
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    
-    // Clear input value so same file can be selected again later
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
 
-    // Firestore 1MB limit workaround (Base64 is ~33% larger, so 700KB max)
-    if (file.size > 700 * 1024) {
-      toast.error('Do giới hạn của hệ thống, file PDF hoặc ảnh không được vượt quá 700KB.')
+    if (images.length + files.length > 5) {
+      toast.warning('Tối đa 5 ảnh')
       return
     }
 
-    setUploadProgress(10)
-    // Simulating file upload, convert to base64 for simplicity as in AttendancePage
-    const reader = new FileReader()
-    reader.readAsDataURL(file)
-    reader.onload = (e) => {
-      if (file.type.startsWith('image/')) {
-        const img = new Image()
-        img.src = e.target?.result as string
-        img.onload = () => {
-          setUploadProgress(50)
-          const canvas = document.createElement('canvas')
-          let { width, height } = img
-          const MAX = 1200
-          if (width > MAX) { height = (height * MAX) / width; width = MAX }
-          if (height > MAX) { width = (width * MAX) / height; height = MAX }
-          canvas.width = width; canvas.height = height
-          canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-          setFileUrl(canvas.toDataURL('image/jpeg', 0.8))
-          setUploadProgress(100)
-        }
-      } else {
-        // Just store base64 for PDF or other (not recommended for large files but fits the current constraint)
-        setFileUrl(e.target?.result as string)
-        setUploadProgress(100)
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        toast.warning('Chỉ hỗ trợ file ảnh')
+        continue
       }
+      
+      const canvas = document.createElement('canvas')
+      const img = document.createElement('img')
+      const url = URL.createObjectURL(file)
+      img.src = url
+
+      await new Promise((resolve) => { img.onload = resolve })
+      
+      const MAX = 1200
+      let { width, height } = img
+      if (width > MAX) { height = (height * MAX) / width; width = MAX }
+      if (height > MAX) { width = (width * MAX) / height; height = MAX }
+      canvas.width = width; canvas.height = height
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+
+      const preview = canvas.toDataURL('image/jpeg', 0.7)
+      setImages((prev) => [...prev, preview])
+      URL.revokeObjectURL(url)
     }
+  }
+
+  const removeImage = (idx: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const onSubmit = async () => {
@@ -75,8 +72,8 @@ export function TeacherContractPage() {
       toast.error('Vui lòng gõ lại chính xác câu xác nhận bên trên')
       return
     }
-    if (!fileUrl) {
-      toast.error('Vui lòng tải lên file hợp đồng hoặc biên bản')
+    if (images.length === 0) {
+      toast.error('Vui lòng tải lên ảnh hợp đồng hoặc biên bản')
       return
     }
     setSubmitting(true)
@@ -87,14 +84,13 @@ export function TeacherContractPage() {
       await addDoc(collection(db, 'contracts'), {
         teacherId,
         teacherName,
-        documentUrl: fileUrl,
+        imageURLs: images,
         status: 'pending',
         createdAt: serverTimestamp()
       })
       toast.success('Gửi hồ sơ thành công!')
-      setFileUrl('')
+      setImages([])
       setConfirmText('')
-      setUploadProgress(0)
       // onSnapshot will auto-refresh the list
     } catch (e: any) {
       toast.error('Có lỗi xảy ra: ' + e.message)
@@ -146,26 +142,31 @@ export function TeacherContractPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Tải lên văn bản đã ký *</label>
-            <div className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${fileUrl ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-300 hover:border-indigo-500'}`}>
-              <input type="file" accept="image/*,application/pdf" title="Tải lên văn bản đã ký" aria-label="Tải lên văn bản đã ký" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleFileUpload} />
-              {fileUrl ? (
-                <>
-                  <CheckCircle className="w-8 h-8 text-emerald-500 mb-2" />
-                  <p className="text-sm font-medium text-emerald-700">Đã tải lên văn bản</p>
-                  <p className="text-xs text-slate-500 mt-1">Nhấn để thay đổi</p>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-8 h-8 text-indigo-400 mb-2 group-hover:scale-110 transition-transform duration-300" />
-                  <p className="text-sm font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">Nhấn để chọn file</p>
-                  <p className="text-xs text-slate-500 mt-1">Hỗ trợ ảnh hoặc PDF (tối đa 700KB)</p>
-                </>
-              )}
-              {uploadProgress > 0 && uploadProgress < 100 && (
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100">
-                  <div className={`h-full bg-indigo-500 transition-all ${uploadProgress === 10 ? 'w-[10%]' : uploadProgress === 50 ? 'w-[50%]' : uploadProgress === 100 ? 'w-full' : 'w-0'}`} />
+            <label className="block text-sm font-medium text-slate-700 mb-2">Tải lên ảnh đã ký (tối đa 5 ảnh) *</label>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200">
+                  <img src={img} className="w-full h-full object-cover" alt="" />
+                  <button
+                    onClick={() => removeImage(idx)}
+                    className="absolute top-1 right-1 w-6 h-6 bg-red-500/80 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    ×
+                  </button>
                 </div>
+              ))}
+              {images.length < 5 && (
+                <label className="aspect-square border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-colors hover:bg-slate-50 group">
+                  <Upload className="w-6 h-6 text-slate-400 group-hover:text-indigo-500 mb-2" />
+                  <span className="text-xs text-slate-500 group-hover:text-indigo-600 font-medium">Thêm ảnh</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </label>
               )}
             </div>
           </div>
@@ -175,7 +176,7 @@ export function TeacherContractPage() {
             size="lg" 
             onClick={onSubmit} 
             loading={submitting}
-            disabled={confirmText !== requiredText || !fileUrl}
+            disabled={confirmText !== requiredText || images.length === 0}
             className="mt-4 shadow-lg hover:shadow-indigo-500/25 transition-all duration-300"
           >
             <FileText className="w-5 h-5 mr-2" />
@@ -196,7 +197,25 @@ export function TeacherContractPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">Hợp đồng ngày {c.createdAt ? c.createdAt.toDate().toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN')}</p>
-                    <button onClick={() => openBase64InNewTab(c.documentUrl)} className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium mt-0.5 inline-block text-left">Xem văn bản đính kèm</button>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {c.imageURLs ? (
+                        c.imageURLs.map((url: string, i: number) => (
+                          <img 
+                            key={i} 
+                            src={url} 
+                            alt={`Hợp đồng ${i+1}`} 
+                            className="w-12 h-12 object-cover rounded-lg border border-slate-200 hover:opacity-80 transition-opacity"
+                            onClick={(e) => { e.stopPropagation(); openBase64InNewTab(url); }}
+                          />
+                        ))
+                      ) : (
+                        c.documentUrl && (
+                          <button onClick={(e) => { e.stopPropagation(); openBase64InNewTab(c.documentUrl); }} className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium inline-block text-left">
+                            Xem văn bản đính kèm
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
                 </div>
                 <StatusBadge status={c.status} />
