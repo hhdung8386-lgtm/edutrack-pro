@@ -115,6 +115,7 @@ export function StudentDetailPage() {
       </div>
 
       {/* Progress bar */}
+      <style>{`.progress-bar-used { width: ${usedPct}%; }`}</style>
       <Card>
         <div className="flex justify-between text-sm mb-2">
           <span className="text-slate-500">Tiến độ học</span>
@@ -122,8 +123,7 @@ export function StudentDetailPage() {
         </div>
         <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-500"
-            style={{ width: `${usedPct}%` }}
+            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-500 progress-bar-used"
           />
         </div>
         <p className="text-xs text-slate-500 mt-2">{student.usedSessions} / {student.totalSessions} buổi đã học</p>

@@ -382,7 +382,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             </label>
             {uploadProgress > 0 && uploadProgress < 100 && (
               <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden w-32">
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
+                <div className={`h-full bg-indigo-500 rounded-full transition-all ${uploadProgress === 10 ? 'w-[10%]' : uploadProgress === 50 ? 'w-[50%]' : uploadProgress === 100 ? 'w-full' : 'w-0'}`} />
               </div>
             )}
           </div>

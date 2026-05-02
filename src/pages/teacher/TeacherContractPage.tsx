@@ -142,7 +142,7 @@ export function TeacherContractPage() {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Tải lên văn bản đã ký *</label>
             <div className={`relative border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${fileUrl ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-300 hover:border-indigo-500'}`}>
-              <input type="file" accept="image/*,application/pdf" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleFileUpload} />
+              <input type="file" accept="image/*,application/pdf" title="Tải lên văn bản đã ký" aria-label="Tải lên văn bản đã ký" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleFileUpload} />
               {fileUrl ? (
                 <>
                   <CheckCircle className="w-8 h-8 text-emerald-500 mb-2" />
@@ -158,7 +158,7 @@ export function TeacherContractPage() {
               )}
               {uploadProgress > 0 && uploadProgress < 100 && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100">
-                  <div className="h-full bg-indigo-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                  <div className={`h-full bg-indigo-500 transition-all ${uploadProgress === 10 ? 'w-[10%]' : uploadProgress === 50 ? 'w-[50%]' : uploadProgress === 100 ? 'w-full' : 'w-0'}`} />
                 </div>
               )}
             </div>

@@ -240,13 +240,13 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
             <p className="text-xs text-slate-500 mt-0.5">Còn lại</p>
           </div>
         </div>
+        <style>{`.progress-bar-tracking { width: ${usedPct}%; }`}</style>
         <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-700 ${
+            className={`h-full rounded-full transition-all duration-700 progress-bar-tracking ${
               student.remainingSessions === 0 ? 'bg-rose-500' :
               student.remainingSessions <= 3 ? 'bg-amber-500' : 'bg-emerald-500'
             }`}
-            style={{ width: `${usedPct}%` }}
           />
         </div>
         <p className="text-xs text-slate-500 mt-2 text-right">{usedPct}% hoàn thành</p>
