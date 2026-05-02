@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/authStore'
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -22,17 +22,19 @@ export function TeacherContractPage() {
 
   useEffect(() => {
     if (!teacherId) return
-    const fetchContracts = async () => {
-      const q = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
-      const snap = await getDocs(q)
+    const q = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
+    const unsub = onSnapshot(q, (snap) => {
       setContracts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)))
-    }
-    fetchContracts()
+    })
+    return unsub
   }, [teacherId])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    
+    // Clear input value so same file can be selected again later
+    e.target.value = ''
 
     setUploadProgress(10)
     // Simulating file upload, convert to base64 for simplicity as in AttendancePage
@@ -87,10 +89,7 @@ export function TeacherContractPage() {
       setFileUrl('')
       setConfirmText('')
       setUploadProgress(0)
-      // Refresh list
-      const q = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
-      const snap = await getDocs(q)
-      setContracts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)))
+      // onSnapshot will auto-refresh the list
     } catch (e: any) {
       toast.error('Có lỗi xảy ra: ' + e.message)
     } finally {
