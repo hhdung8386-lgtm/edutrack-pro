@@ -17,7 +17,7 @@ export function TeacherContractPage() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [contracts, setContracts] = useState<any[]>([])
 
-  const requiredText = "Tôi xác nhận đã đọc, hiểu và hoàn toàn đồng ý tuân thủ các điều khoản trong biên bản này. Tôi đã ký và tải lên văn bản theo đúng quy định."
+  const requiredText = "Tôi đồng ý với các điều khoản"
 
   useEffect(() => {
     if (!teacherId) return
@@ -98,13 +98,15 @@ export function TeacherContractPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pt-2 lg:pt-6 pb-20">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Gửi hợp đồng / Hồ sơ</h1>
-        <p className="text-sm text-slate-500 mt-1">Đọc kỹ điều khoản và nộp hợp đồng đã ký của bạn.</p>
+    <div className="max-w-2xl mx-auto space-y-6 pt-2 lg:pt-6 pb-20 animate-fade-in">
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
+        <h1 className="text-2xl font-bold relative z-10">Gửi hợp đồng / Hồ sơ</h1>
+        <p className="text-sm text-indigo-100 mt-1 relative z-10">Đọc kỹ điều khoản và nộp hợp đồng đã ký của bạn.</p>
       </div>
 
-      <Card>
+      <Card className="hover:shadow-xl transition-all duration-300 border-indigo-100/50 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
         <div className="space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <h3 className="font-semibold text-amber-800 mb-2">Yêu cầu bắt buộc:</h3>
@@ -142,8 +144,8 @@ export function TeacherContractPage() {
                 </>
               ) : (
                 <>
-                  <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                  <p className="text-sm font-medium text-slate-700">Nhấn để chọn file</p>
+                  <Upload className="w-8 h-8 text-indigo-400 mb-2 group-hover:scale-110 transition-transform duration-300" />
+                  <p className="text-sm font-medium text-slate-700 group-hover:text-indigo-600 transition-colors">Nhấn để chọn file</p>
                   <p className="text-xs text-slate-500 mt-1">Hỗ trợ ảnh hoặc PDF (tối đa 5MB)</p>
                 </>
               )}
@@ -161,9 +163,9 @@ export function TeacherContractPage() {
             onClick={onSubmit} 
             loading={submitting}
             disabled={confirmText !== requiredText || !fileUrl}
-            className="mt-2"
+            className="mt-4 shadow-lg hover:shadow-indigo-500/25 transition-all duration-300"
           >
-            <FileText className="w-5 h-5" />
+            <FileText className="w-5 h-5 mr-2" />
             Nộp hồ sơ
           </Button>
         </div>
@@ -174,14 +176,14 @@ export function TeacherContractPage() {
           <h2 className="text-lg font-bold text-slate-900 mb-3">Hồ sơ đã nộp</h2>
           <div className="space-y-3">
             {contracts.map(c => (
-              <Card key={c.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-slate-500" />
+              <Card key={c.id} className="flex items-center justify-between hover:-translate-y-1 hover:shadow-md transition-all duration-300 cursor-pointer border-slate-200/60">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center">
+                    <FileText className="w-6 h-6 text-indigo-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-900">Hợp đồng ngày {c.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
-                    <a href={c.documentUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-500 hover:underline">Xem văn bản đính kèm</a>
+                    <p className="text-sm font-bold text-slate-800">Hợp đồng ngày {c.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
+                    <a href={c.documentUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium mt-0.5 inline-block">Xem văn bản đính kèm</a>
                   </div>
                 </div>
                 <StatusBadge status={c.status} />

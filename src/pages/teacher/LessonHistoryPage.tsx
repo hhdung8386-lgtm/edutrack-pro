@@ -64,9 +64,10 @@ export function LessonHistoryPage() {
   const groups = groupByDate(lessons)
 
   return (
-    <div className="space-y-5 pt-2 lg:pt-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Lịch sử buổi dạy</h1>
+    <div className="space-y-5 pt-2 lg:pt-6 max-w-2xl animate-fade-in">
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
+        <h1 className="text-2xl font-bold relative z-10">Lịch sử buổi dạy</h1>
       </div>
 
       {/* Month selector */}
@@ -82,17 +83,17 @@ export function LessonHistoryPage() {
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <Card className="text-center">
+        <Card className="text-center hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
           <p className="text-2xl font-bold text-slate-900">{approved.length}</p>
           <p className="text-xs text-slate-500 mt-0.5">Buổi đã dạy</p>
         </Card>
-        <Card className="text-center">
+        <Card className="text-center hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
           <p className="text-2xl font-bold text-slate-900">{totalMinutes}'</p>
           <p className="text-xs text-slate-500 mt-0.5">Tổng phút</p>
         </Card>
-        <Card className="text-center">
-          <p className="text-xl font-bold text-emerald-400">{formatVND(totalSalary)}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Lương tháng này</p>
+        <Card className="text-center hover:shadow-lg transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br from-white to-emerald-50/50">
+          <p className="text-xl font-bold text-emerald-500">{formatVND(totalSalary)}</p>
+          <p className="text-xs text-emerald-600/70 mt-0.5">Lương tháng này</p>
         </Card>
       </div>
 
@@ -113,7 +114,7 @@ export function LessonHistoryPage() {
               </p>
               <div className="space-y-2">
                 {dateLessons.map((lesson) => (
-                  <Card key={lesson.id} padding="sm" className="cursor-pointer" onClick={() => setExpanded(expanded === lesson.id ? null : lesson.id)}>
+                  <Card key={lesson.id} padding="sm" className="cursor-pointer hover:shadow-md transition-all duration-300 hover:border-indigo-100" onClick={() => setExpanded(expanded === lesson.id ? null : lesson.id)}>
                     <div className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

@@ -184,14 +184,15 @@ export function AttendancePage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto space-y-5 pt-2 lg:pt-6 pb-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Điểm danh</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Nhập mã học viên để bắt đầu</p>
+    <div className="max-w-lg mx-auto space-y-5 pt-2 lg:pt-6 pb-4 animate-fade-in">
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
+        <h1 className="text-2xl font-bold relative z-10">Điểm danh</h1>
+        <p className="text-sm text-indigo-100 mt-1 relative z-10">Nhập mã học viên để bắt đầu</p>
       </div>
 
       {/* Step 1: Student code input */}
-      <Card>
+      <Card className="hover:shadow-lg transition-all duration-300 border-indigo-100/50">
         <label htmlFor="student-code" className="block text-sm font-medium text-slate-600 mb-2">Mã học viên</label>
         <div className="flex gap-2">
           <input
@@ -232,7 +233,7 @@ export function AttendancePage() {
       {student && (
         <>
           {/* Student info card */}
-          <Card className={student.remainingSessions <= 0 ? 'border-rose-500/50' : ''}>
+          <Card className={`transition-all duration-300 transform animate-fade-in-up ${student.remainingSessions <= 0 ? 'border-rose-500/50 bg-rose-50/50' : 'border-indigo-100/50 hover:shadow-lg'}`}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xl font-bold text-slate-900">{student.name}</p>

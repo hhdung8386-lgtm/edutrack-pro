@@ -47,7 +47,7 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 pb-8">
+    <div className="max-w-xl mx-auto space-y-6 pb-8 animate-fade-in">
       {/* Header section with gradient cover */}
       <div className="relative pt-6">
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-indigo-500 via-purple-500 to-indigo-600 rounded-b-3xl shadow-lg" />
