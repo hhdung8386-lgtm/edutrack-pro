@@ -10,6 +10,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { toast } from '@/stores/toastStore'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -93,13 +94,15 @@ export function LoginPage() {
       const uid = credential.user.uid
 
       await setDoc(doc(db, 'users', uid), {
-        role: 'admin',
+        role: 'guest',
         email: emailToUse,
         username: data.username,
         name: data.name,
       })
 
-      navigate('/admin/dashboard')
+      await auth.signOut()
+      toast.success('Đăng ký thành công! Vui lòng đợi Admin cấp quyền.')
+      switchTab('login')
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         setErrorMsg('Tài khoản này đã tồn tại')
