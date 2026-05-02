@@ -34,8 +34,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [authMode, setAuthMode] = useState<'CREATE' | 'LINK'>('CREATE')
   const [candidates, setCandidates] = useState<{uid: string, email: string, name?: string, username?: string}[]>([])
   const [selectedUid, setSelectedUid] = useState<string>('')
-  const [newEmail, setNewEmail] = useState('')
+  const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const isEdit = !!teacher
 
@@ -132,21 +133,31 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         let finalEmail = ''
 
         if (authMode === 'CREATE') {
-          if (!newEmail || !newPassword) {
-            toast.error('Vui lòng điền Email và Mật khẩu cho giáo viên mới')
+          if (!newUsername || !newPassword) {
+            toast.error('Vui lòng điền Tên tài khoản và Mật khẩu cho giáo viên mới')
             return
           }
-          finalEmail = newEmail
-          const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
-          await secondaryAuth.signOut()
-          finalUid = credential.user.uid
+          finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
+          try {
+            const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
+            await secondaryAuth.signOut()
+            finalUid = credential.user.uid
 
-          await setDoc(doc(db, 'users', finalUid), {
-            uid: finalUid,
-            email: finalEmail,
-            role: 'teacher',
-            createdAt: serverTimestamp(),
-          })
+            await setDoc(doc(db, 'users', finalUid), {
+              uid: finalUid,
+              email: finalEmail,
+              username: newUsername,
+              role: 'teacher',
+              createdAt: serverTimestamp(),
+            })
+          } catch (err: any) {
+            if (err.code === 'auth/email-already-in-use') {
+              toast.error('Tài khoản này đã tồn tại!')
+            } else {
+              toast.error('Có lỗi xảy ra khi tạo tài khoản')
+            }
+            return
+          }
         } else {
           if (!selectedUid) {
             toast.error('Vui lòng chọn tài khoản liên kết')
@@ -232,37 +243,54 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             </div>
 
             {authMode === 'LINK' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
-                <select 
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={selectedUid}
-                  onChange={e => setSelectedUid(e.target.value)}
-                >
-                  {candidates.length === 0 && <option value="" disabled>Không có tài khoản nào chờ liên kết</option>}
-                  {candidates.map(c => {
-                    const displayStr = c.username || c.email.split('@')[0]
-                    return (
-                      <option key={c.uid} value={c.uid}>
-                        {displayStr} {c.name ? `- ${c.name}` : ''}
-                      </option>
-                    )
-                  })}
-                </select>
+              <div className="space-y-3">
+                <div>
+                  <input
+                    type="text"
+                    placeholder="🔍 Tìm kiếm tài khoản..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
+                  <select 
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={selectedUid}
+                    onChange={e => setSelectedUid(e.target.value)}
+                  >
+                    {candidates.length === 0 && <option value="" disabled>Không có tài khoản nào chờ liên kết</option>}
+                    {candidates
+                      .filter(c => {
+                        const displayStr = c.username || c.email.split('@')[0]
+                        const searchStr = `${displayStr} ${c.name || ''}`.toLowerCase()
+                        return searchStr.includes(searchQuery.toLowerCase())
+                      })
+                      .map(c => {
+                        const displayStr = c.username || c.email.split('@')[0]
+                        return (
+                          <option key={c.uid} value={c.uid}>
+                            {displayStr} {c.name ? `- ${c.name}` : ''}
+                          </option>
+                        )
+                      })}
+                  </select>
+                </div>
               </div>
             )}
 
             {authMode === 'CREATE' && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Email đăng nhập</label>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản</label>
                   <input
-                    type="email"
+                    type="text"
                     required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                    placeholder="giasu@edutrack.com"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
+                    placeholder="Ví dụ: giasu1"
+                    value={newUsername}
+                    onChange={e => setNewUsername(e.target.value)}
                   />
                 </div>
                 <div>
