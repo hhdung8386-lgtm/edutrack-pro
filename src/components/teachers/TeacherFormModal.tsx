@@ -32,14 +32,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   
   // Auth combined flow states
   const [authMode, setAuthMode] = useState<'CREATE' | 'LINK'>('CREATE')
-  const [candidates, setCandidates] = useState<{uid: string, email: string}[]>([])
+  const [candidates, setCandidates] = useState<{uid: string, email: string, name?: string, username?: string}[]>([])
   const [selectedUid, setSelectedUid] = useState<string>('')
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
 
   const isEdit = !!teacher
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     // @ts-ignore
     resolver: zodResolver(schema),
     defaultValues: teacher ? {
@@ -56,7 +56,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     
     if (!isEdit) {
       getDocs(collection(db, 'users')).then((snap) => {
-        const docs = snap.docs.map(d => d.data() as {uid: string, email: string, teacherId?: string, role?: string})
+        const docs = snap.docs.map(d => d.data() as {uid: string, email: string, teacherId?: string, role?: string, name?: string, username?: string})
         const available = docs.filter(u => !u.teacherId && u.email && u.role !== 'admin')
         setCandidates(available)
         if (available.length > 0) {
@@ -65,6 +65,15 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       })
     }
   }, [isEdit])
+
+  useEffect(() => {
+    if (!isEdit && authMode === 'LINK' && selectedUid) {
+      const cand = candidates.find(c => c.uid === selectedUid)
+      if (cand) {
+        setValue('name', cand.name || cand.username || cand.email.split('@')[0])
+      }
+    }
+  }, [authMode, selectedUid, candidates, isEdit, setValue])
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -231,9 +240,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   onChange={e => setSelectedUid(e.target.value)}
                 >
                   {candidates.length === 0 && <option value="" disabled>Không có tài khoản nào chờ liên kết</option>}
-                  {candidates.map(c => (
-                    <option key={c.uid} value={c.uid}>{c.email}</option>
-                  ))}
+                  {candidates.map(c => {
+                    const displayStr = c.username || c.email.split('@')[0]
+                    return (
+                      <option key={c.uid} value={c.uid}>
+                        {displayStr} {c.name ? `- ${c.name}` : ''}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
             )}
@@ -292,12 +306,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           </div>
         </div>
 
-        <Input
-          label="Tên giáo viên *"
-          placeholder="Nguyễn Thị B"
-          error={errors.name?.message}
-          {...register('name')}
-        />
+        <div className={!isEdit && authMode === 'LINK' ? 'hidden' : ''}>
+          <Input
+            label="Tên giáo viên *"
+            placeholder="Nguyễn Thị B"
+            error={errors.name?.message}
+            {...register('name')}
+          />
+        </div>
 
         {/* Subject multi-select */}
         <div>
