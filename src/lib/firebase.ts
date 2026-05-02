@@ -17,8 +17,6 @@ const secondaryApp = initializeApp(firebaseConfig, "Secondary")
 export const auth = getAuth(app)
 export const secondaryAuth = getAuth(secondaryApp)
 export const db = getFirestore(app)
-import { getStorage } from 'firebase/storage'
-export const storage = getStorage(app)
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 function randomCode(len: number): string {
