@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { GraduationCap, User, Lock, Eye, EyeOff } from 'lucide-react'
+import { GraduationCap, User, Lock, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
 import { signIn } from '@/lib/auth'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
@@ -14,12 +14,17 @@ import { Input } from '@/components/ui/Input'
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
   password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
+  remember: z.boolean().optional()
 })
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Tên quá ngắn'),
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
   password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Mật khẩu xác nhận không khớp",
+  path: ["confirmPassword"]
 })
 
 type LoginData = z.infer<typeof loginSchema>
@@ -42,11 +47,14 @@ export function LoginPage() {
     register: registerSignup,
     handleSubmit: handleRegisterSubmit,
     formState: { errors: registerErrors, isSubmitting: isRegisterSubmitting },
-    reset: resetRegister
+    reset: resetRegister,
+    control: registerControl
   } = useForm<RegisterData>({ resolver: zodResolver(registerSchema) })
 
+  const registerPassword = useWatch({ control: registerControl, name: 'password' })
+  const registerConfirmPassword = useWatch({ control: registerControl, name: 'confirmPassword' })
+
   const formatEmail = (username: string) => {
-    // Nếu người dùng không nhập @ (nghĩa là không nhập định dạng email chuẩn), tự động thêm đuôi @edutrackpro.app
     if (!username.includes('@')) {
       return `${username}@edutrackpro.app`
     }
@@ -82,11 +90,10 @@ export function LoginPage() {
       const credential = await createUserWithEmailAndPassword(auth, emailToUse, data.password)
       const uid = credential.user.uid
 
-      // Tự động cấp quyền admin cho dễ test
       await setDoc(doc(db, 'users', uid), {
         role: 'admin',
         email: emailToUse,
-        username: data.username, // Lưu thêm username gốc
+        username: data.username,
         name: data.name,
       })
 
@@ -108,33 +115,86 @@ export function LoginPage() {
     setShowPassword(false)
   }
 
+  const isPasswordMatch = registerConfirmPassword && registerPassword === registerConfirmPassword;
+  const isPasswordError = registerConfirmPassword && registerPassword !== registerConfirmPassword;
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-200/50 rounded-full blur-[120px] animate-pulse-soft" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-200/50 rounded-full blur-[120px] animate-pulse-soft" style={{ animationDelay: '1s' }} />
+      {/* Background Decorators */}
+      <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-300/30 rounded-full blur-[120px] animate-pulse-soft" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-300/30 rounded-full blur-[120px] animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
+      <div className="absolute top-[40%] left-[20%] w-[20%] h-[20%] bg-amber-300/20 rounded-full blur-[80px] animate-pulse-soft" style={{ animationDelay: '3s' }} />
 
-      <div className="relative w-full max-w-md z-10 flex flex-col items-center">
-        {/* Header */}
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg transform transition-transform hover:scale-105 hover:rotate-3 duration-300">
-            <GraduationCap className="w-8 h-8 text-white" />
+      <div className="relative w-full max-w-5xl z-10 flex flex-col md:flex-row gap-8 items-stretch">
+        
+        {/* Left Marketing Panel - Visible mainly on md+ screens */}
+        <div className="hidden md:flex flex-col justify-between w-1/2 p-10 bg-gradient-to-br from-indigo-600/90 to-indigo-800/90 rounded-[2rem] shadow-2xl backdrop-blur-md relative overflow-hidden border border-indigo-400/30 text-white">
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
+          
+          <div className="relative z-10">
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.3)]">
+              <GraduationCap className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-4xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-md">
+              EduTrack Pro
+            </h1>
+            <p className="text-indigo-100 text-lg font-medium drop-shadow-sm">
+              Hệ thống quản lý trung tâm và gia sư trực tuyến chuyên nghiệp nhất.
+            </p>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-800 text-center">
-            EduTrack Pro
-          </h1>
+
+          <div className="relative z-10 mt-12 space-y-6">
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/vn.png" alt="Vietnam" className="w-full h-full object-cover rounded-full" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg text-white">Chuẩn Tiếng Việt</h3>
+                <p className="text-sm text-indigo-100">Giao diện tối ưu cho người Việt</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/us.png" alt="USA" className="w-full h-full object-cover rounded-full" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg text-white">Chất Lượng Quốc Tế</h3>
+                <p className="text-sm text-indigo-100">Đạt chuẩn các hệ thống Mỹ</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/gb.png" alt="UK" className="w-full h-full object-cover rounded-full" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg text-white">Độ Ổn Định Cao</h3>
+                <p className="text-sm text-indigo-100">Máy chủ tốc độ nhanh nhất</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Form Container */}
-        <div className="w-full bg-white/80 backdrop-blur-xl border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-2xl transition-all duration-300">
+        {/* Right Auth Container */}
+        <div className="w-full md:w-1/2 bg-white/90 backdrop-blur-xl border border-slate-200 rounded-[2rem] p-8 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] transition-all duration-300">
           
+          <div className="md:hidden flex flex-col items-center mb-6">
+             <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center mb-2 shadow-lg">
+                <GraduationCap className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-800 text-center">
+                EduTrack Pro
+              </h1>
+          </div>
+
           {/* Tabs */}
-          <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+          <div className="flex p-1.5 bg-slate-100 rounded-xl mb-8 shadow-inner">
             <button
               onClick={() => switchTab('login')}
-              className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all duration-300 ${
                 activeTab === 'login'
-                  ? 'bg-white text-indigo-600 shadow-sm'
+                  ? 'bg-white text-indigo-600 shadow-[0_2px_10px_rgba(0,0,0,0.05)]'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -142,30 +202,30 @@ export function LoginPage() {
             </button>
             <button
               onClick={() => switchTab('register')}
-              className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all duration-300 ${
                 activeTab === 'register'
-                  ? 'bg-white text-emerald-600 shadow-sm'
+                  ? 'bg-white text-emerald-600 shadow-[0_2px_10px_rgba(0,0,0,0.05)]'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              Đăng Ký
+              Đăng Ký Tài Khoản
             </button>
           </div>
 
           {errorMsg && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 mb-5 animate-fade-in">
-              <p className="text-sm text-rose-600">{errorMsg}</p>
+            <div className="bg-rose-50 border-l-4 border-rose-500 rounded-r-xl px-4 py-3 mb-6 animate-fade-in shadow-sm">
+              <p className="text-sm font-medium text-rose-700">{errorMsg}</p>
             </div>
           )}
 
           {/* Login Section */}
           {activeTab === 'login' && (
             <div className="animate-fade-in">
-              <form onSubmit={handleLoginSubmit(onLogin)} className="space-y-4">
+              <form onSubmit={handleLoginSubmit(onLogin)} className="space-y-5">
                 <Input
                   label="Tài khoản đăng nhập"
                   type="text"
-                  placeholder="Ví dụ: admin hoặc admin@edutrackpro.app"
+                  placeholder="Ví dụ: admingiasu"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={loginErrors.username?.message}
@@ -183,7 +243,7 @@ export function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="text-slate-500 hover:text-indigo-600 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      className="text-slate-400 hover:text-indigo-600 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -191,14 +251,26 @@ export function LoginPage() {
                   {...registerLogin('password')}
                 />
 
+                <div className="flex items-center justify-between mt-2">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-all cursor-pointer"
+                      {...registerLogin('remember')}
+                    />
+                    <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Nhớ mật khẩu để vào nhanh</span>
+                  </label>
+                  <a href="#" className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Quên mật khẩu?</a>
+                </div>
+
                 <Button
                   type="submit"
                   fullWidth
                   size="lg"
                   loading={isLoginSubmitting}
-                  className="mt-6 rounded-xl shadow-lg shadow-indigo-200/50 hover:shadow-indigo-300/50 hover:-translate-y-0.5 transition-all duration-300"
+                  className="mt-6 rounded-xl shadow-lg shadow-indigo-200/50 hover:shadow-indigo-400/50 hover:-translate-y-0.5 transition-all duration-300 py-6 text-base font-bold tracking-wide"
                 >
-                  Đăng nhập
+                  ĐĂNG NHẬP NGAY
                 </Button>
               </form>
             </div>
@@ -207,11 +279,11 @@ export function LoginPage() {
           {/* Register Section */}
           {activeTab === 'register' && (
             <div className="animate-fade-in">
-              <form onSubmit={handleRegisterSubmit(onRegister)} className="space-y-4">
+              <form onSubmit={handleRegisterSubmit(onRegister)} className="space-y-5">
                 <Input
                   label="Họ và Tên"
                   type="text"
-                  placeholder="Nguyễn Văn A"
+                  placeholder="Ví dụ: Giám Đốc"
                   autoComplete="name"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.name?.message}
@@ -221,7 +293,7 @@ export function LoginPage() {
                 <Input
                   label="Tài khoản muốn tạo"
                   type="text"
-                  placeholder="Ví dụ: admin123"
+                  placeholder="Ví dụ: admingiasu"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.username?.message}
@@ -231,7 +303,7 @@ export function LoginPage() {
                 <Input
                   label="Mật khẩu"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Nhập mật khẩu an toàn"
                   autoComplete="new-password"
                   leftIcon={<Lock className="w-4 h-4" />}
                   error={registerErrors.password?.message}
@@ -239,7 +311,7 @@ export function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="text-slate-500 hover:text-emerald-600 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      className="text-slate-400 hover:text-emerald-600 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -247,14 +319,33 @@ export function LoginPage() {
                   {...registerSignup('password')}
                 />
 
+                <div className="relative">
+                  <Input
+                    label="Xác nhận mật khẩu"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Nhập lại mật khẩu"
+                    autoComplete="new-password"
+                    leftIcon={<Lock className={`w-4 h-4 transition-colors ${isPasswordMatch ? 'text-emerald-500' : isPasswordError ? 'text-rose-500' : ''}`} />}
+                    error={registerErrors.confirmPassword?.message}
+                    className={`transition-all duration-300 ${isPasswordMatch ? 'border-emerald-400 ring-1 ring-emerald-400 bg-emerald-50/30' : ''} ${isPasswordError ? 'border-rose-400 ring-1 ring-rose-400 bg-rose-50/30' : ''}`}
+                    rightElement={
+                      <div className="min-h-[44px] min-w-[44px] flex items-center justify-center">
+                        {isPasswordMatch && <CheckCircle2 className="w-5 h-5 text-emerald-500 animate-slide-up" />}
+                        {isPasswordError && <XCircle className="w-5 h-5 text-rose-500 animate-slide-down" />}
+                      </div>
+                    }
+                    {...registerSignup('confirmPassword')}
+                  />
+                </div>
+
                 <Button
                   type="submit"
                   fullWidth
                   size="lg"
                   loading={isRegisterSubmitting}
-                  className="mt-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50 hover:shadow-emerald-300/50 hover:-translate-y-0.5 transition-all duration-300"
+                  className="mt-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50 hover:shadow-emerald-400/50 hover:-translate-y-0.5 transition-all duration-300 py-6 text-base font-bold tracking-wide"
                 >
-                  Tạo tài khoản & Đăng nhập
+                  TẠO TÀI KHOẢN VÀ VÀO HỆ THỐNG
                 </Button>
               </form>
             </div>
