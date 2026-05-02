@@ -43,36 +43,38 @@ export function StudentsPage() {
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Header & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Học viên</h1>
           <p className="text-sm text-slate-500 mt-0.5">{students.length} học viên tổng cộng</p>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
-          <Plus className="w-4 h-4" />
-          Thêm học viên
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => setShowAdd(true)} className="shadow-sm">
+            <Plus className="w-4 h-4 mr-2" />
+            Thêm học viên
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <Input
           placeholder="Tìm theo tên hoặc mã học viên..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="sm:max-w-sm"
+          className="w-full lg:max-w-md"
         />
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar w-full lg:w-auto">
           {['all', 'active', 'inactive', 'expired'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
                 statusFilter === s
-                  ? 'bg-indigo-500 text-white'
-                  : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-200'
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
               {s === 'all' ? 'Tất cả' : s === 'active' ? 'Đang học' : s === 'inactive' ? 'Tạm dừng' : 'Hết buổi'}

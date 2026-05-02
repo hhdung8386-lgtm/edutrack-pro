@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { GraduationCap, User, Lock, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
+import { GraduationCap, User, Lock, Eye, EyeOff, CheckCircle2, XCircle, CalendarDays, Users, TrendingUp, Sparkles } from 'lucide-react'
 import { signIn } from '@/lib/auth'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
@@ -132,45 +132,49 @@ export function LoginPage() {
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
           
           <div className="relative z-10">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.3)]">
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.3)] animate-[bounce_3s_infinite]">
               <GraduationCap className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-4xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-md">
+            <h1 className="text-4xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-md text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-white animate-[pulse_3s_ease-in-out_infinite]">
               EduTrack Pro
             </h1>
-            <p className="text-indigo-100 text-lg font-medium drop-shadow-sm">
-              Hệ thống quản lý trung tâm và gia sư trực tuyến chuyên nghiệp nhất.
-            </p>
+            <div className="text-indigo-100 text-lg font-medium drop-shadow-sm leading-relaxed border-l-4 border-indigo-400 pl-4 py-1 transition-all duration-500 hover:border-white">
+              Giải pháp toàn diện tối ưu hóa quản lý trung tâm và gia sư, 
+              <span className="text-white font-semibold flex items-center gap-2 mt-2">
+                <Sparkles className="w-5 h-5 text-amber-300 animate-pulse"/> 
+                Nâng tầm chất lượng giáo dục.
+              </span>
+            </div>
           </div>
 
           <div className="relative z-10 mt-12 space-y-6">
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
-                <img src="https://flagcdn.com/w80/vn.png" alt="Vietnam" className="w-full h-full object-cover rounded-full" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
+                <Users className="w-6 h-6 text-indigo-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Chuẩn Tiếng Việt</h3>
-                <p className="text-sm text-indigo-100">Giao diện tối ưu cho người Việt</p>
+                <h3 className="font-semibold text-lg text-white">Quản Lý Dễ Dàng</h3>
+                <p className="text-sm text-indigo-100">Tối ưu hóa vận hành trung tâm</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
-                <img src="https://flagcdn.com/w80/us.png" alt="USA" className="w-full h-full object-cover rounded-full" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
+                <CalendarDays className="w-6 h-6 text-emerald-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Chất Lượng Quốc Tế</h3>
-                <p className="text-sm text-indigo-100">Đạt chuẩn các hệ thống Mỹ</p>
+                <h3 className="font-semibold text-lg text-white">Lịch Trình Thông Minh</h3>
+                <p className="text-sm text-indigo-100">Sắp xếp ca dạy khoa học, hiệu quả</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
-                <img src="https://flagcdn.com/w80/gb.png" alt="UK" className="w-full h-full object-cover rounded-full" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
+                <TrendingUp className="w-6 h-6 text-amber-500" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Độ Ổn Định Cao</h3>
-                <p className="text-sm text-indigo-100">Máy chủ tốc độ nhanh nhất</p>
+                <h3 className="font-semibold text-lg text-white">Đồng Bộ Xuyên Suốt</h3>
+                <p className="text-sm text-indigo-100">Kết nối trung tâm, gia sư và học viên</p>
               </div>
             </div>
           </div>
@@ -225,7 +229,7 @@ export function LoginPage() {
                 <Input
                   label="Tài khoản đăng nhập"
                   type="text"
-                  placeholder="Ví dụ: admingiasu"
+                  placeholder="Ví dụ: nguyenvana"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={loginErrors.username?.message}
@@ -283,7 +287,7 @@ export function LoginPage() {
                 <Input
                   label="Họ và Tên"
                   type="text"
-                  placeholder="Ví dụ: Giám Đốc"
+                  placeholder="Ví dụ: Nguyễn Văn A"
                   autoComplete="name"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.name?.message}
@@ -293,7 +297,7 @@ export function LoginPage() {
                 <Input
                   label="Tài khoản muốn tạo"
                   type="text"
-                  placeholder="Ví dụ: admingiasu"
+                  placeholder="Ví dụ: nguyenvana"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.username?.message}
