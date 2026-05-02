@@ -29,10 +29,10 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
-  
+
   // Auth combined flow states
   const [authMode, setAuthMode] = useState<'CREATE' | 'LINK'>('CREATE')
-  const [candidates, setCandidates] = useState<{uid: string, email: string, name?: string, username?: string}[]>([])
+  const [candidates, setCandidates] = useState<{ uid: string, email: string, name?: string, username?: string }[]>([])
   const [selectedUid, setSelectedUid] = useState<string>('')
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -54,10 +54,10 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     })
-    
+
     if (!isEdit) {
       getDocs(collection(db, 'users')).then((snap) => {
-        const docs = snap.docs.map(d => d.data() as {uid: string, email: string, teacherId?: string, role?: string, name?: string, username?: string})
+        const docs = snap.docs.map(d => d.data() as { uid: string, email: string, teacherId?: string, role?: string, name?: string, username?: string })
         const available = docs.filter(u => !u.teacherId && u.email && u.role !== 'admin')
         setCandidates(available)
         if (available.length > 0) {
@@ -224,21 +224,28 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       footer={
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={onClose}>Hủy</Button>
-          <Button form="teacher-form" type="submit" loading={isSubmitting}>
+          <Button
+            type="button"
+            loading={isSubmitting}
+            onClick={handleSubmit(onSubmit as any, (errs) => {
+              const msgs = Object.values(errs).map((e: any) => e?.message).filter(Boolean).join(', ')
+              toast.error(msgs || 'Vui lòng kiểm tra lại thông tin')
+            })}
+          >
             {isEdit ? 'Lưu thay đổi' : 'Tạo giáo viên'}
           </Button>
         </div>
       }
     >
-      <form id="teacher-form" onSubmit={handleSubmit(onSubmit as any, (errs) => toast.error(Object.values(errs).map(e => e?.message).filter(Boolean).join(', ')))} className="space-y-4">
-        
+      <form id="teacher-form" className="space-y-4">
+
         {/* Auth section */}
         {!isEdit && (
           <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
             <h4 className="font-medium text-indigo-900 flex items-center gap-2">
               Tài khoản liên kết <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
             </h4>
-            
+
             <div className="flex bg-white p-1 rounded-lg border border-slate-200">
               <button
                 type="button"
@@ -261,7 +268,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                 <div>
                   <input
                     type="text"
-                    placeholder="🔍 Tìm kiếm tài khoản..."
+                    placeholder="Tìm kiếm tài khoản..."
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     value={searchQuery}
                     onChange={e => {
@@ -280,7 +287,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
-                  <select 
+                  <select
                     title="Chọn tài khoản đã đăng ký"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     value={selectedUid}
