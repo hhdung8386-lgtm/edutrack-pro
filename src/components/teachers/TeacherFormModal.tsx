@@ -216,7 +216,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         </div>
       }
     >
-      <form id="teacher-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+      <form id="teacher-form" onSubmit={handleSubmit(onSubmit as any, (errs) => toast.error(Object.values(errs).map(e => e?.message).filter(Boolean).join(', ')))} className="space-y-4">
         
         {/* Auth section */}
         {!isEdit && (
@@ -250,12 +250,24 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                     placeholder="🔍 Tìm kiếm tài khoản..."
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => {
+                      const newQuery = e.target.value
+                      setSearchQuery(newQuery)
+                      const newFiltered = candidates.filter(c => {
+                        const displayStr = c.username || c.email.split('@')[0]
+                        const searchStr = `${displayStr} ${c.name || ''}`.toLowerCase()
+                        return searchStr.includes(newQuery.toLowerCase())
+                      })
+                      if (newFiltered.length > 0 && !newFiltered.find(c => c.uid === selectedUid)) {
+                        setSelectedUid(newFiltered[0].uid)
+                      }
+                    }}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
                   <select 
+                    title="Chọn tài khoản đã đăng ký"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     value={selectedUid}
                     onChange={e => setSelectedUid(e.target.value)}
