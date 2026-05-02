@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    function getTeacherId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId;
+    }
+
+    // Users collection - auth metadata
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isAdmin();
+      allow delete: if false; // Prevent deletion
+    }
+
+    // Students collection
+    match /students/{studentId} {
+      allow read: if isAdmin() || isTeacher();
+      allow read: if resource.data.code == request.query.code; // Public read by code
+      allow create, update: if isAdmin();
+      allow delete: if false; // Prevent deletion
+    }
+
+    // Teachers collection
+    match /teachers/{teacherId} {
+      allow read: if isAdmin() || isTeacher();
+      allow read: if resource.data.code == request.query.code; // Public read by code
+      allow update: if isAdmin() || (isTeacher() && request.auth.uid == resource.data.uid);
+      allow create: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Subjects collection
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Lessons collection
+    match /lessons/{lessonId} {
+      allow create: if isTeacher() && request.auth.uid == request.resource.data.createdBy;
+      allow read: if isAdmin() 
+                   || (isTeacher() && (request.auth.uid == resource.data.createdBy || request.auth.uid == resource.data.teacherUid))
+                   || (resource.data.status == 'approved' && request.query.studentCode == resource.data.studentCode)
+                   || (resource.data.status == 'approved' && request.query.teacherCode == resource.data.teacherCode);
+      allow update: if isAdmin() && resource.data.status != 'approved';
+      allow update: if resource.data.status == 'approved' && false; // Prevent updates to approved lessons
+      allow delete: if false;
+    }
+
+    // Payroll collection
+    match /payroll/{payrollId} {
+      allow read: if isAdmin() || (isTeacher() && request.auth.uid == resource.data.teacherUid);
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Admin Logs collection
+    match /adminLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

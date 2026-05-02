@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.claims.role == 'admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && request.auth.token.claims.role == 'teacher';
+    }
+
+    // Lesson images - teachers can upload, admin can delete
+    match /lesson-images/{lessonId}/{filename} {
+      allow read: if true; // Publicly readable after approval
+      allow write: if false;
+    }
+
+    // Teacher photos - admin only
+    match /teacher-photos/{teacherId}/{filename} {
+      allow read: if true; // Publicly readable
+      allow create, update: if isAdmin() && request.resource.size < 5 * 1024 * 1024; // Max 5MB
+      allow delete: if isAdmin();
+    }
+
+    // Deny all by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

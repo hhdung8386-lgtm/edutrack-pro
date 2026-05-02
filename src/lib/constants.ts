@@ -1,0 +1,70 @@
+export const MINUTE_PRESETS = [25, 50, 75, 100] as const
+
+export const LESSON_STATUS_LABELS: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  rejected: 'Từ chối',
+}
+
+export const STUDENT_STATUS_LABELS: Record<string, string> = {
+  active: 'Đang học',
+  inactive: 'Tạm dừng',
+  expired: 'Hết buổi',
+}
+
+export const TEACHER_STATUS_LABELS: Record<string, string> = {
+  active: 'Đang dạy',
+  inactive: 'Ngừng dạy',
+}
+
+export function formatVND(amount: number): string {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    minimumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function formatVNDCompact(amount: number): string {
+  if (amount >= 1_000_000) {
+    return (amount / 1_000_000).toFixed(1) + 'M'
+  }
+  if (amount >= 1_000) {
+    return (amount / 1_000).toFixed(0) + 'K'
+  }
+  return amount.toString()
+}
+
+export const VIETNAMESE_MONTHS = [
+  'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4',
+  'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8',
+  'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12',
+]
+
+export const VIETNAMESE_DAYS = [
+  'Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư',
+  'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy',
+]
+
+export function formatVietnameseDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  const day = VIETNAMESE_DAYS[date.getDay()]
+  return `${day}, ${date.getDate()} tháng ${date.getMonth() + 1} năm ${date.getFullYear()}`
+}
+
+export function getCurrentMonth(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+export function getToday(): string {
+  const now = new Date()
+  return now.toISOString().split('T')[0]
+}
+
+export function maskPhone(phone: string): string {
+  if (phone.length <= 4) return phone
+  return phone.slice(0, 2) + 'xx' + phone.slice(-4)
+}
