@@ -31,8 +31,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [uploadProgress, setUploadProgress] = useState(0)
   
   // Auth combined flow states
+  const [authMode, setAuthMode] = useState<'CREATE' | 'LINK'>('CREATE')
   const [candidates, setCandidates] = useState<{uid: string, email: string}[]>([])
-  const [selectedUid, setSelectedUid] = useState<string>('NEW')
+  const [selectedUid, setSelectedUid] = useState<string>('')
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
 
@@ -56,8 +57,11 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     if (!isEdit) {
       getDocs(collection(db, 'users')).then((snap) => {
         const docs = snap.docs.map(d => d.data() as {uid: string, email: string, teacherId?: string, role?: string})
-        // Filter users that don't have a teacherId and are not admins (or just no teacherId)
-        setCandidates(docs.filter(u => !u.teacherId && u.email && u.role !== 'admin'))
+        const available = docs.filter(u => !u.teacherId && u.email && u.role !== 'admin')
+        setCandidates(available)
+        if (available.length > 0) {
+          setSelectedUid(available[0].uid)
+        }
       })
     }
   }, [isEdit])
@@ -80,7 +84,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         img.onload = () => {
           setUploadProgress(50)
           const canvas = document.createElement('canvas')
-          const MAX = 400 // Small size for avatar
+          const MAX = 400
           let { width, height } = img
           if (width > MAX) { height = (height * MAX) / width; width = MAX }
           if (height > MAX) { width = (width * MAX) / height; height = MAX }
@@ -118,18 +122,16 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         let finalUid = selectedUid
         let finalEmail = ''
 
-        if (selectedUid === 'NEW') {
+        if (authMode === 'CREATE') {
           if (!newEmail || !newPassword) {
             toast.error('Vui lòng điền Email và Mật khẩu cho giáo viên mới')
             return
           }
           finalEmail = newEmail
-          // Create Firebase Auth account using secondary auth so Admin isn't logged out
           const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
-          await secondaryAuth.signOut() // Ensure secondary app clears session
+          await secondaryAuth.signOut()
           finalUid = credential.user.uid
 
-          // Create user doc
           await setDoc(doc(db, 'users', finalUid), {
             uid: finalUid,
             email: finalEmail,
@@ -137,6 +139,10 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             createdAt: serverTimestamp(),
           })
         } else {
+          if (!selectedUid) {
+            toast.error('Vui lòng chọn tài khoản liên kết')
+            return
+          }
           const cand = candidates.find(c => c.uid === selectedUid)
           finalEmail = cand?.email || ''
         }
@@ -199,29 +205,48 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               Tài khoản liên kết <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
             </h4>
             
-            <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
-              <select 
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                value={selectedUid}
-                onChange={e => setSelectedUid(e.target.value)}
+            <div className="flex bg-white p-1 rounded-lg border border-slate-200">
+              <button
+                type="button"
+                className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${authMode === 'CREATE' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                onClick={() => setAuthMode('CREATE')}
               >
-                <option value="NEW" className="font-semibold text-indigo-600">+ Tạo tài khoản mới cho giáo viên này</option>
-                {candidates.map(c => (
-                  <option key={c.uid} value={c.uid}>{c.email}</option>
-                ))}
-              </select>
+                Tạo mới
+              </button>
+              <button
+                type="button"
+                className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${authMode === 'LINK' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                onClick={() => setAuthMode('LINK')}
+              >
+                Chọn có sẵn
+              </button>
             </div>
 
-            {selectedUid === 'NEW' && (
-              <div className="grid grid-cols-2 gap-3 pt-2">
+            {authMode === 'LINK' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
+                <select 
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={selectedUid}
+                  onChange={e => setSelectedUid(e.target.value)}
+                >
+                  {candidates.length === 0 && <option value="" disabled>Không có tài khoản nào chờ liên kết</option>}
+                  {candidates.map(c => (
+                    <option key={c.uid} value={c.uid}>{c.email}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {authMode === 'CREATE' && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-600 mb-1">Email đăng nhập</label>
                   <input
                     type="email"
                     required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                    placeholder="giasu@gmail.com"
+                    placeholder="giasu@edutrack.com"
                     value={newEmail}
                     onChange={e => setNewEmail(e.target.value)}
                   />
