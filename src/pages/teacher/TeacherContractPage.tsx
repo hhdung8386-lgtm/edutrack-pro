@@ -113,7 +113,10 @@ export function TeacherContractPage() {
             <p className="text-sm text-amber-700/80 mb-3">
               Bạn cần type chính xác đoạn văn bản sau để xác nhận việc gửi hợp đồng:
             </p>
-            <div className="bg-white p-3 rounded-lg border border-amber-100 font-mono text-sm text-slate-800 select-all">
+            <div 
+              className="bg-white p-3 rounded-lg border border-amber-100 font-mono text-sm text-slate-800 select-none cursor-not-allowed"
+              onCopy={(e) => e.preventDefault()}
+            >
               {requiredText}
             </div>
           </div>
@@ -125,6 +128,10 @@ export function TeacherContractPage() {
               rows={3}
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
+              onPaste={(e) => {
+                e.preventDefault()
+                toast.warning('Vui lòng tự gõ tay, không được dán (paste)')
+              }}
               className={confirmText === requiredText ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50' : ''}
             />
             {confirmText === requiredText && (
