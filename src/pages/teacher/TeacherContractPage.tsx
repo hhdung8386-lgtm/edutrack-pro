@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/Input'
 import { StatusBadge } from '@/components/ui/Badge'
 import { toast } from '@/stores/toastStore'
 import { FileText, Upload, CheckCircle } from 'lucide-react'
+import { openBase64InNewTab } from '@/lib/constants'
 
 export function TeacherContractPage() {
   const { teacherId } = useAuthStore()
@@ -190,7 +191,7 @@ export function TeacherContractPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">Hợp đồng ngày {c.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
-                    <a href={c.documentUrl} target="_blank" rel="noreferrer" className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium mt-0.5 inline-block">Xem văn bản đính kèm</a>
+                    <button onClick={() => openBase64InNewTab(c.documentUrl)} className="text-xs text-indigo-500 hover:text-indigo-600 hover:underline font-medium mt-0.5 inline-block text-left">Xem văn bản đính kèm</button>
                   </div>
                 </div>
                 <StatusBadge status={c.status} />

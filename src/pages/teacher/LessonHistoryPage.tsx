@@ -151,7 +151,9 @@ export function LessonHistoryPage() {
                         {lesson.imageURLs?.length > 0 && (
                           <div className="flex gap-2">
                             {lesson.imageURLs.map((url, i) => (
-                              <img key={i} src={url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                              <img key={i} src={url} alt="" className="w-16 h-16 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => {
+                                import('@/lib/constants').then(m => m.openBase64InNewTab(url))
+                              }} />
                             ))}
                           </div>
                         )}

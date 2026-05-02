@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { FileText, Search, ExternalLink, CheckCircle } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
+import { openBase64InNewTab } from '@/lib/constants'
 
 export function ContractsPage() {
   const [contracts, setContracts] = useState<any[]>([])
@@ -87,15 +88,13 @@ export function ContractsPage() {
                       <StatusBadge status={c.status} />
                     </td>
                     <td className="px-5 py-4">
-                      <a 
-                        href={c.documentUrl} 
-                        target="_blank" 
-                        rel="noreferrer"
+                      <button 
+                        onClick={() => openBase64InNewTab(c.documentUrl)}
                         className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg"
                       >
                         <FileText className="w-4 h-4" />
                         Xem văn bản
-                      </a>
+                      </button>
                     </td>
                     <td className="px-5 py-4">
                       {c.status === 'pending' && (
