@@ -7,7 +7,7 @@ import {
   where, serverTimestamp, setDoc
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { db, auth, secondaryAuth, generateTeacherCode } from '@/lib/firebase'
+import { db, secondaryAuth, generateTeacherCode } from '@/lib/firebase'
 import { Teacher, Subject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -30,19 +30,16 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
 
-  // Auth combined flow states
-  const [authMode, setAuthMode] = useState<'CREATE' | 'LINK'>('CREATE')
-  const [candidates, setCandidates] = useState<{ uid: string, email: string, name?: string, username?: string }[]>([])
-  const [selectedUid, setSelectedUid] = useState<string>('')
+  // Auth fields for creating new teacher account
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [subjectSearch, setSubjectSearch] = useState('')
   const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
+  const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
 
   const isEdit = !!teacher
 
-  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     // @ts-ignore
     resolver: zodResolver(schema),
     defaultValues: teacher ? {
@@ -52,38 +49,65 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     } : { level: 1.0 },
   })
 
-  const watchLevel = watch('level')
-
   useEffect(() => {
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     })
+  }, [])
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+    let firstErrorFieldId = ''
+
+    if (!isEdit && !newUsername.trim()) {
+      newErrors.username = 'Vui lòng nhập tên tài khoản'
+      if (!firstErrorFieldId) firstErrorFieldId = 'field-username'
+    }
 
     if (!isEdit) {
-      getDocs(collection(db, 'users')).then((snap) => {
-        const docs = snap.docs.map(d => {
-          const data = d.data() as { email: string, teacherId?: string, role?: string, name?: string, username?: string }
-          return { ...data, uid: d.id }
-        })
-        const available = docs.filter(u => !u.teacherId && u.email && u.role !== 'admin')
-        console.log('Available candidates:', available)
-        setCandidates(available)
-        if (available.length > 0) {
-          setSelectedUid(available[0].uid)
-          console.log('Set selectedUid to:', available[0].uid)
-        }
-      })
-    }
-  }, [isEdit])
-
-  useEffect(() => {
-    if (!isEdit && authMode === 'LINK' && selectedUid) {
-      const cand = candidates.find(c => c.uid === selectedUid)
-      if (cand) {
-        setValue('name', cand.name || cand.username || cand.email.split('@')[0])
+      if (!newPassword) {
+        newErrors.password = 'Vui lòng nhập mật khẩu'
+        if (!firstErrorFieldId) firstErrorFieldId = 'field-password'
+      } else if (newPassword.length < 6) {
+        newErrors.password = 'Mật khẩu tối thiểu 6 ký tự'
+        if (!firstErrorFieldId) firstErrorFieldId = 'field-password'
       }
     }
-  }, [authMode, selectedUid, candidates, isEdit, setValue])
+
+    const formEl = document.getElementById('teacher-form') as HTMLFormElement
+    const nameInput = formEl?.querySelector<HTMLInputElement>('input[name="name"]')
+    const levelInput = formEl?.querySelector<HTMLInputElement>('input[name="level"]')
+    
+    const nameVal = nameInput?.value || ''
+    if (!nameVal.trim()) {
+      newErrors.name = 'Vui lòng nhập tên giáo viên'
+      if (!firstErrorFieldId) firstErrorFieldId = 'field-name'
+    }
+
+    if (selectedSubjects.length === 0) {
+      newErrors.subjects = 'Vui lòng chọn môn dạy'
+      if (!firstErrorFieldId) firstErrorFieldId = 'field-subjects'
+    }
+
+    const levelVal = parseFloat(levelInput?.value || '0')
+    if (isNaN(levelVal) || levelVal <= 0) {
+      newErrors.level = 'Vui lòng nhập hệ số lương'
+      if (!firstErrorFieldId) firstErrorFieldId = 'field-level'
+    }
+
+    setLocalErrors(newErrors)
+
+    if (firstErrorFieldId) {
+      const el = document.getElementById(firstErrorFieldId)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.focus()
+      }
+      return false
+    }
+
+    return true
+  }
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -120,19 +144,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   const onSubmit = async (data: FormData) => {
     try {
-      // Derive name: from form (CREATE mode) or from linked candidate (LINK mode)
-      let finalName = data.name || ''
-      if (!isEdit && authMode === 'LINK' && selectedUid) {
-        const cand = candidates.find(c => c.uid === selectedUid)
-        if (cand) {
-          finalName = cand.name || cand.username || cand.email.split('@')[0]
-        }
-      }
-      if (!isEdit && authMode === 'CREATE' && !finalName.trim()) {
-        toast.error('Vui lòng nhập tên giáo viên')
-        return
-      }
-      if (!finalName.trim()) finalName = 'Giáo viên mới'
+      const finalName = data.name?.trim() || ''
+
+
 
       const subjectNames = selectedSubjects.map((id) => subjects.find((s) => s.id === id)?.name || '')
 
@@ -141,7 +155,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         if (photoFile) photoURL = await uploadPhoto(teacher.id, photoFile)
 
         await updateDoc(doc(db, 'teachers', teacher.id), {
-          name: finalName,
+          name: finalName || teacher.name,
           level: data.level,
           bio: data.bio || '',
           subjectIds: selectedSubjects,
@@ -151,43 +165,35 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         })
         toast.success('Đã cập nhật giáo viên')
       } else {
+        // CREATE mode - Admin creates account for teacher
+        if (!newUsername || !newPassword) {
+          toast.error('Vui lòng điền Tên tài khoản và Mật khẩu')
+          return
+        }
+
         const code = generateTeacherCode()
-        let finalUid = selectedUid
-        let finalEmail = ''
+        const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
 
-        if (authMode === 'CREATE') {
-          if (!newUsername || !newPassword) {
-            toast.error('Vui lòng điền Tên tài khoản và Mật khẩu cho giáo viên mới')
-            return
-          }
-          finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
-          try {
-            const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
-            await secondaryAuth.signOut()
-            finalUid = credential.user.uid
+        let finalUid: string
+        try {
+          const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
+          await secondaryAuth.signOut()
+          finalUid = credential.user.uid
 
-            await setDoc(doc(db, 'users', finalUid), {
-              uid: finalUid,
-              email: finalEmail,
-              username: newUsername,
-              role: 'teacher',
-              createdAt: serverTimestamp(),
-            })
-          } catch (err: any) {
-            if (err.code === 'auth/email-already-in-use') {
-              toast.error('Tài khoản này đã tồn tại!')
-            } else {
-              toast.error('Có lỗi xảy ra khi tạo tài khoản')
-            }
-            return
+          await setDoc(doc(db, 'users', finalUid), {
+            uid: finalUid,
+            email: finalEmail,
+            username: newUsername,
+            role: 'teacher',
+            createdAt: serverTimestamp(),
+          })
+        } catch (err: any) {
+          if (err.code === 'auth/email-already-in-use') {
+            toast.error('Tài khoản này đã tồn tại!')
+          } else {
+            toast.error('Có lỗi xảy ra khi tạo tài khoản')
           }
-        } else {
-          if (!selectedUid) {
-            toast.error('Vui lòng chọn tài khoản liên kết')
-            return
-          }
-          const cand = candidates.find(c => c.uid === selectedUid)
-          finalEmail = cand?.email || ''
+          return
         }
 
         let photoURL = ''
@@ -196,7 +202,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         // Create teacher doc
         const teacherRef = await addDoc(collection(db, 'teachers'), {
           code,
-          name: finalName,
+          name: finalName || 'Giáo viên mới',
           level: data.level,
           bio: data.bio || '',
           subjectIds: selectedSubjects,
@@ -225,6 +231,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     }
   }
 
+  const watchLevel = register('level')
+
   return (
     <Modal
       open
@@ -237,8 +245,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             type="button"
             loading={isSubmitting}
             onClick={async () => {
-              console.log('=== BUTTON CLICKED ===')
-              // Manually gather form data to bypass react-hook-form issues
+              if (!validateForm()) return
               const formEl = document.getElementById('teacher-form') as HTMLFormElement
               const nameInput = formEl?.querySelector<HTMLInputElement>('input[name="name"]')
               const levelInput = formEl?.querySelector<HTMLInputElement>('input[name="level"]')
@@ -247,8 +254,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               const nameVal = nameInput?.value || ''
               const levelVal = parseFloat(levelInput?.value || '1')
               const bioVal = bioInput?.value || ''
-              
-              console.log('Form values:', { nameVal, levelVal, bioVal, authMode, selectedUid })
               
               await onSubmit({ name: nameVal, level: levelVal, bio: bioVal })
             }}
@@ -260,106 +265,51 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     >
       <form id="teacher-form" className="space-y-4">
 
-        {/* Auth section */}
+        {/* Account creation section - only for new teachers */}
         {!isEdit && (
           <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
             <h4 className="font-medium text-indigo-900 flex items-center gap-2">
-              Tài khoản liên kết <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
+              Tạo tài khoản giáo viên <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
             </h4>
 
-            <div className="flex bg-white p-1 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${authMode === 'CREATE' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
-                onClick={() => setAuthMode('CREATE')}
-              >
-                Tạo mới
-              </button>
-              <button
-                type="button"
-                className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${authMode === 'LINK' ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
-                onClick={() => setAuthMode('LINK')}
-              >
-                Chọn có sẵn
-              </button>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản *</label>
+                <input
+                  id="field-username"
+                  type="text"
+                  required
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.username ? 'border-red-500' : 'border-slate-300'}`}
+                  placeholder="Ví dụ: giasu1"
+                  value={newUsername}
+                  onChange={e => {
+                    setNewUsername(e.target.value)
+                    if (localErrors.username) setLocalErrors(prev => ({ ...prev, username: '' }))
+                  }}
+                />
+                {localErrors.username ? (
+                  <p className="text-[10px] text-red-500 mt-1">{localErrors.username}</p>
+                ) : (
+                  <p className="text-[10px] text-slate-400 mt-1">Giáo viên đăng nhập bằng tên này</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Mật khẩu *</label>
+                <input
+                  id="field-password"
+                  type="text"
+                  required
+                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.password ? 'border-red-500' : 'border-slate-300'}`}
+                  placeholder="Tối thiểu 6 ký tự"
+                  value={newPassword}
+                  onChange={e => {
+                    setNewPassword(e.target.value)
+                    if (localErrors.password) setLocalErrors(prev => ({ ...prev, password: '' }))
+                  }}
+                />
+                {localErrors.password && <p className="mt-1.5 text-xs text-red-500">{localErrors.password}</p>}
+              </div>
             </div>
-
-            {authMode === 'LINK' && (
-              <div className="space-y-3">
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm tài khoản..."
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={searchQuery}
-                    onChange={e => {
-                      const newQuery = e.target.value
-                      setSearchQuery(newQuery)
-                      const newFiltered = candidates.filter(c => {
-                        const displayStr = c.username || c.email.split('@')[0]
-                        const searchStr = `${displayStr} ${c.name || ''}`.toLowerCase()
-                        return searchStr.includes(newQuery.toLowerCase())
-                      })
-                      if (newFiltered.length > 0 && !newFiltered.find(c => c.uid === selectedUid)) {
-                        setSelectedUid(newFiltered[0].uid)
-                      }
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Chọn tài khoản đã đăng ký</label>
-                  <select
-                    title="Chọn tài khoản đã đăng ký"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={selectedUid}
-                    onChange={e => setSelectedUid(e.target.value)}
-                  >
-                    {candidates.length === 0 && <option value="" disabled>Không có tài khoản nào chờ liên kết</option>}
-                    {candidates
-                      .filter(c => {
-                        const displayStr = c.username || c.email.split('@')[0]
-                        const searchStr = `${displayStr} ${c.name || ''}`.toLowerCase()
-                        return searchStr.includes(searchQuery.toLowerCase())
-                      })
-                      .map(c => {
-                        const displayStr = c.username || c.email.split('@')[0]
-                        return (
-                          <option key={c.uid} value={c.uid}>
-                            {displayStr} {c.name ? `- ${c.name}` : ''}
-                          </option>
-                        )
-                      })}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {authMode === 'CREATE' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản</label>
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                    placeholder="Ví dụ: giasu1"
-                    value={newUsername}
-                    onChange={e => setNewUsername(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Mật khẩu</label>
-                  <input
-                    type="text"
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                    placeholder="Nhập mật khẩu..."
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -388,18 +338,26 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           </div>
         </div>
 
-        <div className={!isEdit && authMode === 'LINK' ? 'hidden' : ''}>
-          <Input
-            label="Tên giáo viên *"
-            placeholder="Nguyễn Thị B"
-            error={errors.name?.message}
-            {...register('name')}
-          />
-        </div>
+        <Input
+          id="field-name"
+          label="Tên giáo viên *"
+          placeholder="Nguyễn Thị B"
+          error={localErrors.name}
+          {...(() => {
+            const { onChange, ...rest } = register('name')
+            return {
+              ...rest,
+              onChange: (e: any) => {
+                onChange(e)
+                if (localErrors.name) setLocalErrors(prev => ({ ...prev, name: '' }))
+              }
+            }
+          })()}
+        />
 
         {/* Subject multi-select with Search */}
         <div className="relative">
-          <label className="block text-sm font-medium text-slate-600 mb-2">Môn dạy</label>
+          <label className="block text-sm font-medium text-slate-600 mb-2">Môn dạy *</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {selectedSubjects.map((id) => {
               const s = subjects.find(sub => sub.id === id)
@@ -422,17 +380,20 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           
           <div className="relative">
             <input
+              id="field-subjects"
               type="text"
               placeholder="Tìm và chọn môn học..."
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.subjects ? 'border-red-500' : 'border-slate-300'}`}
               value={subjectSearch}
               onChange={e => {
                 setSubjectSearch(e.target.value)
                 setIsSubjectDropdownOpen(true)
+                if (localErrors.subjects) setLocalErrors(prev => ({ ...prev, subjects: '' }))
               }}
               onFocus={() => setIsSubjectDropdownOpen(true)}
               onBlur={() => setTimeout(() => setIsSubjectDropdownOpen(false), 200)}
             />
+            {localErrors.subjects && <p className="mt-1.5 text-xs text-red-500">{localErrors.subjects}</p>}
             {isSubjectDropdownOpen && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {subjects.filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase())).length === 0 ? (
@@ -448,6 +409,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                         }
                         setSubjectSearch('')
                         setIsSubjectDropdownOpen(false)
+                        if (localErrors.subjects) setLocalErrors(prev => ({ ...prev, subjects: '' }))
                       }}
                     >
                       <span className="font-medium text-slate-700">{s.name}</span>
@@ -462,13 +424,23 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
         <div>
           <Input
+            id="field-level"
             label="Hệ số lương (Level) *"
             type="number"
             step="0.1"
             min="0.5"
             max="3.0"
-            error={errors.level?.message}
-            {...register('level')}
+            error={localErrors.level}
+            {...(() => {
+              const { onChange, ...rest } = register('level')
+              return {
+                ...rest,
+                onChange: (e: any) => {
+                  onChange(e)
+                  if (localErrors.level) setLocalErrors(prev => ({ ...prev, level: '' }))
+                }
+              }
+            })()}
           />
           <div className="text-xs text-slate-500 mt-2 space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100">
             <p className="font-medium text-slate-600 mb-1">Ước tính lương (1 ca 50 phút):</p>
@@ -478,7 +450,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               selectedSubjects.map(id => {
                 const s = subjects.find(sub => sub.id === id)
                 if (!s) return null
-                const estSalary = 50 * s.pricePerMinute * (Number(watchLevel) || 0)
+                const levelInput = document.querySelector<HTMLInputElement>('input[name="level"]')
+                const currentLevel = parseFloat(levelInput?.value || '1')
+                const estSalary = 50 * s.pricePerMinute * (currentLevel || 0)
                 return (
                   <div key={id} className="flex justify-between items-center">
                     <span>{s.name} ({s.pricePerMinute.toLocaleString('vi-VN')}đ/p):</span>
