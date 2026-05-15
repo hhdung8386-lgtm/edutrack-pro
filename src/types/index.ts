@@ -10,6 +10,7 @@ export interface Student {
   totalSessions: number
   usedSessions: number
   remainingSessions: number
+  minutesPerSession?: number
   status: 'active' | 'inactive' | 'expired'
   createdAt: Timestamp
   updatedAt: Timestamp

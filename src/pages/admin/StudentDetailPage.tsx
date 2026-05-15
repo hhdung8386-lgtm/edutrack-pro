@@ -46,6 +46,19 @@ export function StudentDetailPage() {
     ? Math.round((student.usedSessions / student.totalSessions) * 100)
     : 0
 
+  const approvedLessons = lessons.filter((l) => l.status === 'approved')
+  const pendingLessons = lessons.filter((l) => l.status === 'pending')
+  const rejectedLessons = lessons.filter((l) => l.status === 'rejected')
+
+  const sumMinutes = (ls: Lesson[]) => ls.reduce((acc, l) => acc + (l.minutes || 0), 0)
+  const approvedMinutes = sumMinutes(approvedLessons)
+  const pendingMinutes = sumMinutes(pendingLessons)
+  const rejectedMinutes = sumMinutes(rejectedLessons)
+
+  const mps = student.minutesPerSession
+  const totalMinutesFund = mps ? student.totalSessions * mps : null
+  const remainingMinutes = totalMinutesFund !== null ? totalMinutesFund - approvedMinutes : null
+
   const trackingUrl = `${window.location.origin}/tracking?student=${student.code}`
 
   return (
@@ -102,16 +115,31 @@ export function StudentDetailPage() {
 
       {/* Session stats */}
       <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: 'Tổng buổi', value: student.totalSessions, color: 'text-slate-700' },
-          { label: 'Đã học', value: student.usedSessions, color: 'text-indigo-400' },
-          { label: 'Còn lại', value: student.remainingSessions, color: student.remainingSessions === 0 ? 'text-rose-400' : student.remainingSessions <= 3 ? 'text-amber-400' : 'text-emerald-400' },
-        ].map((s) => (
-          <Card key={s.label} className="text-center">
-            <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-1">{s.label}</p>
-          </Card>
-        ))}
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-slate-700">{student.totalSessions}</p>
+          <p className="text-xs text-slate-500 mt-1">Tổng buổi</p>
+          {totalMinutesFund !== null && (
+            <p className="text-xs text-slate-400 mt-0.5">{totalMinutesFund} phút</p>
+          )}
+        </Card>
+        <Card className="text-center">
+          <p className="text-3xl font-bold text-indigo-400">{student.usedSessions}</p>
+          <p className="text-xs text-slate-500 mt-1">Đã học</p>
+          {approvedMinutes > 0 && (
+            <p className="text-xs text-indigo-300 mt-0.5">{approvedMinutes} phút</p>
+          )}
+        </Card>
+        <Card className="text-center">
+          <p className={`text-3xl font-bold ${student.remainingSessions === 0 ? 'text-rose-400' : student.remainingSessions <= 3 ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {student.remainingSessions}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Còn lại</p>
+          {remainingMinutes !== null && (
+            <p className={`text-xs mt-0.5 ${remainingMinutes <= 0 ? 'text-rose-400' : 'text-emerald-300'}`}>
+              {remainingMinutes} phút
+            </p>
+          )}
+        </Card>
       </div>
 
       {/* Progress bar */}
@@ -126,7 +154,55 @@ export function StudentDetailPage() {
             className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-500 progress-bar-used"
           />
         </div>
-        <p className="text-xs text-slate-500 mt-2">{student.usedSessions} / {student.totalSessions} buổi đã học</p>
+        <p className="text-xs text-slate-500 mt-2">
+          {student.usedSessions} / {student.totalSessions} buổi đã học
+          {totalMinutesFund !== null && (
+            <span className="ml-2 text-slate-400">({approvedMinutes} / {totalMinutesFund} phút)</span>
+          )}
+        </p>
+      </Card>
+
+      {/* Session breakdown by status */}
+      <Card>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">Phân loại buổi học</h3>
+        <div className="divide-y divide-slate-100">
+          <div className="flex items-center justify-between py-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+              <span className="text-sm text-slate-600">Đã duyệt</span>
+            </div>
+            <div className="text-sm text-right">
+              <span className="font-medium text-slate-700">{approvedLessons.length} buổi</span>
+              {approvedMinutes > 0 && (
+                <span className="text-slate-400 ml-2">/ {approvedMinutes} phút</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+              <span className="text-sm text-slate-600">Chờ duyệt</span>
+            </div>
+            <div className="text-sm text-right">
+              <span className="font-medium text-slate-700">{pendingLessons.length} buổi</span>
+              {pendingMinutes > 0 && (
+                <span className="text-slate-400 ml-2">/ {pendingMinutes} phút</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
+              <span className="text-sm text-slate-600">Từ chối</span>
+            </div>
+            <div className="text-sm text-right">
+              <span className="font-medium text-slate-700">{rejectedLessons.length} buổi</span>
+              {rejectedMinutes > 0 && (
+                <span className="text-slate-400 ml-2">/ {rejectedMinutes} phút</span>
+              )}
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* Lesson history */}
@@ -141,7 +217,7 @@ export function StudentDetailPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
-                  {['Ngày', 'Giáo viên', 'Phút', 'Nhận xét', 'Trạng thái'].map((h) => (
+                  {['Ngày', 'Giáo viên', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -153,6 +229,11 @@ export function StudentDetailPage() {
                     <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
                     <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
                     <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{lesson.comment || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {lesson.status === 'approved' && lesson.salary
+                        ? lesson.salary.toLocaleString('vi-VN') + 'đ'
+                        : '—'}
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={lesson.status} /></td>
                   </tr>
                 ))}

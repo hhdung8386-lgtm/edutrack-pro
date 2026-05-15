@@ -10,12 +10,14 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
+import { MINUTE_PRESETS } from '@/lib/constants'
 
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)'),
   subjectId: z.string().min(1, 'Chọn môn học'),
   sessions: z.coerce.number().min(1, 'Tối thiểu 1 buổi'),
+  minutesPerSession: z.coerce.number().refine((v) => MINUTE_PRESETS.includes(v as any), 'Chọn thời lượng hợp lệ'),
 })
 
 type FormData = z.infer<typeof schema>
@@ -28,7 +30,7 @@ interface Props {
 export function StudentFormModal({ student, onClose }: Props) {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const isEdit = !!student
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, watch, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: student
       ? {
@@ -36,9 +38,14 @@ export function StudentFormModal({ student, onClose }: Props) {
           parentPhone: student.parentPhone,
           subjectId: student.subjectId,
           sessions: student.totalSessions,
+          minutesPerSession: student.minutesPerSession ?? 50,
         }
-      : { sessions: 10 },
+      : { sessions: 10, minutesPerSession: 50 },
   })
+
+  const sessions = watch('sessions') || 0
+  const minutesPerSession = watch('minutesPerSession') || 50
+  const totalMinutes = Number(sessions) * Number(minutesPerSession)
 
   useEffect(() => {
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
@@ -55,6 +62,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           parentPhone: data.parentPhone,
           subjectId: data.subjectId,
           subjectName: subject?.name || '',
+          minutesPerSession: data.minutesPerSession,
           updatedAt: serverTimestamp(),
         })
         toast.success('Đã cập nhật học viên')
@@ -69,6 +77,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           totalSessions: data.sessions,
           usedSessions: 0,
           remainingSessions: data.sessions,
+          minutesPerSession: data.minutesPerSession,
           status: 'active',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -131,6 +140,28 @@ export function StudentFormModal({ student, onClose }: Props) {
             error={errors.sessions?.message}
             {...register('sessions')}
           />
+        )}
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Số phút / buổi *</label>
+          <select
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            {...register('minutesPerSession')}
+          >
+            {MINUTE_PRESETS.map((m) => (
+              <option key={m} value={m}>{m} phút</option>
+            ))}
+          </select>
+          {errors.minutesPerSession && <p className="mt-1.5 text-xs text-rose-400">{errors.minutesPerSession.message}</p>}
+        </div>
+        {totalMinutes > 0 && (
+          <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-slate-500">
+              {sessions} buổi × {minutesPerSession} phút
+            </span>
+            <span className="text-base font-bold text-indigo-500">
+              = {totalMinutes} phút
+            </span>
+          </div>
         )}
       </form>
     </Modal>

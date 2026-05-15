@@ -111,6 +111,16 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
             <span className="text-slate-600 font-medium">Tổng sau khi thêm</span>
             <span className="text-indigo-400 font-bold">{student.remainingSessions + Number(sessionsToAdd)} buổi</span>
           </div>
+          {student.minutesPerSession && (
+            <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+              <span className="text-slate-500">
+                {student.remainingSessions + Number(sessionsToAdd)} buổi × {student.minutesPerSession} phút
+              </span>
+              <span className="text-indigo-400 font-bold">
+                = {(student.remainingSessions + Number(sessionsToAdd)) * student.minutesPerSession} phút
+              </span>
+            </div>
+          )}
         </div>
       </form>
     </Modal>
