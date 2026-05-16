@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { GraduationCap, User, Lock, Eye, EyeOff, CheckCircle2, XCircle, CalendarDays, Users, TrendingUp, Sparkles } from 'lucide-react'
+import { GraduationCap, User, Lock, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react'
 import { signIn } from '@/lib/auth'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { toast } from '@/stores/toastStore'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -20,9 +19,7 @@ const loginSchema = z.object({
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Tên quá ngắn'),
-  username: z.string()
-    .min(3, 'Tài khoản tối thiểu 3 ký tự')
-    .regex(/^[a-zA-Z0-9_\.]+$/, 'Tài khoản viết liền không dấu, không có khoảng trắng (VD: giasu1)'),
+  username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
   password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
   confirmPassword: z.string()
 }).refine(data => data.password === data.confirmPassword, {
@@ -94,15 +91,13 @@ export function LoginPage() {
       const uid = credential.user.uid
 
       await setDoc(doc(db, 'users', uid), {
-        role: 'guest',
+        role: 'admin',
         email: emailToUse,
         username: data.username,
         name: data.name,
       })
 
-      await auth.signOut()
-      toast.success('Đăng ký thành công! Vui lòng đợi Admin cấp quyền.')
-      switchTab('login')
+      navigate('/admin/dashboard')
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         setErrorMsg('Tài khoản này đã tồn tại')
@@ -127,8 +122,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background Decorators */}
       <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-300/30 rounded-full blur-[120px] animate-pulse-soft" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-300/30 rounded-full blur-[120px] animate-pulse-soft [animation-delay:1.5s]" />
-      <div className="absolute top-[40%] left-[20%] w-[20%] h-[20%] bg-amber-300/20 rounded-full blur-[80px] animate-pulse-soft [animation-delay:3s]" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-300/30 rounded-full blur-[120px] animate-pulse-soft" style={{ animationDelay: '1.5s' }} />
+      <div className="absolute top-[40%] left-[20%] w-[20%] h-[20%] bg-amber-300/20 rounded-full blur-[80px] animate-pulse-soft" style={{ animationDelay: '3s' }} />
 
       <div className="relative w-full max-w-5xl z-10 flex flex-col md:flex-row gap-8 items-stretch">
         
@@ -137,49 +132,45 @@ export function LoginPage() {
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
           
           <div className="relative z-10">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.3)] animate-[bounce_3s_infinite]">
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,255,255,0.3)]">
               <GraduationCap className="w-10 h-10 text-white" />
             </div>
-            <h1 className="text-4xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-md text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-white animate-[pulse_3s_ease-in-out_infinite]">
+            <h1 className="text-4xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-md">
               EduTrack Pro
             </h1>
-            <div className="text-indigo-100 text-lg font-medium drop-shadow-sm leading-relaxed border-l-4 border-indigo-400 pl-4 py-1 transition-all duration-500 hover:border-white">
-              Giải pháp toàn diện tối ưu hóa quản lý trung tâm và gia sư, 
-              <span className="text-white font-semibold flex items-center gap-2 mt-2">
-                <Sparkles className="w-5 h-5 text-amber-300 animate-pulse"/> 
-                Nâng tầm chất lượng giáo dục.
-              </span>
-            </div>
+            <p className="text-indigo-100 text-lg font-medium drop-shadow-sm">
+              Hệ thống quản lý trung tâm và gia sư trực tuyến chuyên nghiệp nhất.
+            </p>
           </div>
 
           <div className="relative z-10 mt-12 space-y-6">
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
-                <Users className="w-6 h-6 text-indigo-600" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/vn.png" alt="Vietnam" className="w-full h-full object-cover rounded-full" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Quản Lý Dễ Dàng</h3>
-                <p className="text-sm text-indigo-100">Tối ưu hóa vận hành trung tâm</p>
+                <h3 className="font-semibold text-lg text-white">Chuẩn Tiếng Việt</h3>
+                <p className="text-sm text-indigo-100">Giao diện tối ưu cho người Việt</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
-                <CalendarDays className="w-6 h-6 text-emerald-600" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/us.png" alt="USA" className="w-full h-full object-cover rounded-full" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Lịch Trình Thông Minh</h3>
-                <p className="text-sm text-indigo-100">Sắp xếp ca dạy khoa học, hiệu quả</p>
+                <h3 className="font-semibold text-lg text-white">Chất Lượng Quốc Tế</h3>
+                <p className="text-sm text-indigo-100">Đạt chuẩn các hệ thống Mỹ</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform group">
-              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden group-hover:scale-110 transition-transform">
-                <TrendingUp className="w-6 h-6 text-amber-500" />
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg transform hover:-translate-y-1 transition-transform">
+              <div className="w-12 h-12 flex-shrink-0 bg-white p-2 rounded-full shadow-md flex items-center justify-center overflow-hidden">
+                <img src="https://flagcdn.com/w80/gb.png" alt="UK" className="w-full h-full object-cover rounded-full" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg text-white">Đồng Bộ Xuyên Suốt</h3>
-                <p className="text-sm text-indigo-100">Kết nối trung tâm, gia sư và học viên</p>
+                <h3 className="font-semibold text-lg text-white">Độ Ổn Định Cao</h3>
+                <p className="text-sm text-indigo-100">Máy chủ tốc độ nhanh nhất</p>
               </div>
             </div>
           </div>
@@ -234,7 +225,7 @@ export function LoginPage() {
                 <Input
                   label="Tài khoản đăng nhập"
                   type="text"
-                  placeholder="Ví dụ: nguyenvana"
+                  placeholder="Ví dụ: admingiasu"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={loginErrors.username?.message}
@@ -292,7 +283,7 @@ export function LoginPage() {
                 <Input
                   label="Họ và Tên"
                   type="text"
-                  placeholder="Ví dụ: Nguyễn Văn A"
+                  placeholder="Ví dụ: Giám Đốc"
                   autoComplete="name"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.name?.message}
@@ -302,7 +293,7 @@ export function LoginPage() {
                 <Input
                   label="Tài khoản muốn tạo"
                   type="text"
-                  placeholder="Ví dụ: nguyenvana"
+                  placeholder="Ví dụ: admingiasu"
                   autoComplete="username"
                   leftIcon={<User className="w-4 h-4" />}
                   error={registerErrors.username?.message}
