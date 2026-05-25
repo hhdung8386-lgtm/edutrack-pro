@@ -7,10 +7,15 @@ export interface Student {
   parentPhone: string
   subjectId: string
   subjectName?: string
+  branchId?: string
+  branchName?: string
   totalSessions: number
   usedSessions: number
   remainingSessions: number
-  minutesPerSession?: number
+  minutesPerSession: number
+  totalMinutes?: number
+  usedMinutes?: number
+  remainingMinutes?: number
   status: 'active' | 'inactive' | 'expired'
   createdAt: Timestamp
   updatedAt: Timestamp
@@ -26,6 +31,7 @@ export interface Teacher {
   bio: string
   photoURL: string
   status: 'active' | 'inactive'
+  contractAccepted?: boolean
   createdAt: Timestamp
 }
 
@@ -53,9 +59,14 @@ export interface Lesson {
   homework: string
   imageURLs: string[]
   status: 'pending' | 'approved' | 'rejected'
+  attendanceStatus?: 'present' | 'with_permission' | 'without_permission'
   rejectedReason?: string
   sessionsBeforeApproval: number
   sessionsAfterApproval: number
+  minutesBeforeApproval?: number
+  minutesAfterApproval?: number
+  teacherLevel?: number
+  pricePerMinute?: number
   salary: number
   createdAt: Timestamp
   approvedAt?: Timestamp
@@ -95,6 +106,26 @@ export interface UserDoc {
   teacherId?: string
   displayName?: string
   createdAt: Timestamp
+}
+
+export interface TimeRange {
+  start: string  // e.g. '08:00'
+  end: string    // e.g. '12:00'
+}
+
+export interface DayAvailability {
+  available: boolean
+  timeRanges: TimeRange[]
+}
+
+export type DayOfWeek = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+export interface TeacherAvailability {
+  id: string              // = teacherId
+  teacherId: string
+  slots: Record<DayOfWeek, DayAvailability>
+  note: string
+  updatedAt: Timestamp
 }
 
 export type LessonStatus = 'pending' | 'approved' | 'rejected'

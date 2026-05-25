@@ -16,7 +16,7 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatVND } from '@/lib/constants'
-import { ClipboardCheck, Image as ImageIcon, X } from 'lucide-react'
+import { ClipboardCheck, Image as ImageIcon, X, Search } from 'lucide-react'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -37,6 +37,8 @@ export function ApprovalsPage() {
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [viewImages, setViewImages] = useState<string[] | null>(null)
+  // Independent counters so badges reflect real DB state, not just current tab's loaded set
+  const [totalCounts, setTotalCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
 
   useEffect(() => {
     setLoading(true)
@@ -54,81 +56,160 @@ export function ApprovalsPage() {
     })
   }, [tab])
 
-  const filteredLessons = lessons.filter(l => 
-    l.studentName.toLowerCase().includes(search.toLowerCase()) || 
+  // Subscribe to each status separately so the header counters show DB-wide counts
+  useEffect(() => {
+    const unsubs = (['pending', 'approved', 'rejected'] as const).map((s) =>
+      onSnapshot(
+        query(collection(db, 'lessons'), where('status', '==', s)),
+        (snap) => setTotalCounts((prev) => ({ ...prev, [s]: snap.size })),
+      ),
+    )
+    return () => unsubs.forEach((u) => u())
+  }, [])
+
+  const filteredLessons = lessons.filter(l =>
+    l.studentName.toLowerCase().includes(search.toLowerCase()) ||
     l.teacherName.toLowerCase().includes(search.toLowerCase())
   )
 
-  const pendingCount = lessons.filter((l) => l.status === 'pending').length
+  const pendingCount = totalCounts.pending
 
   const handleApprove = async () => {
     if (!approvingLesson) return
     setApproving(true)
     try {
-      await runTransaction(db, async (tx) => {
-        const lessonRef = doc(db, 'lessons', approvingLesson.id)
-        const studentRef = doc(db, 'students', approvingLesson.studentId)
-        const teacherRef = doc(db, 'teachers', approvingLesson.teacherId)
-        const subjectRef = doc(db, 'subjects', approvingLesson.subjectId)
+      await runTransaction(
+        db,
+        async (tx) => {
+          const lessonRef = doc(db, 'lessons', approvingLesson.id)
+          const studentRef = doc(db, 'students', approvingLesson.studentId)
 
-        const [studentSnap, teacherSnap, subjectSnap] = await Promise.all([
-          tx.get(studentRef), tx.get(teacherRef), tx.get(subjectRef),
-        ])
+          const [lessonSnap, studentSnap] = await Promise.all([
+            tx.get(lessonRef),
+            tx.get(studentRef),
+          ])
 
-        const student = studentSnap.data()!
-        const teacher = teacherSnap.data()!
-        const subject = subjectSnap.data()!
+          if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
+          if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
-        const salary = calculateSalary(approvingLesson.minutes, subject.pricePerMinute, teacher.level)
-        const remaining = student.remainingSessions - 1
-        const month = approvingLesson.date.slice(0, 7)
+          const lessonNow = lessonSnap.data() as any
+          if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
 
-        tx.update(lessonRef, {
-          status: 'approved',
-          approvedAt: serverTimestamp(),
-          approvedBy: user?.uid,
-          salary,
-          sessionsBeforeApproval: student.remainingSessions,
-          sessionsAfterApproval: remaining,
-        })
+          const student = studentSnap.data() as any
 
-        tx.update(studentRef, {
-          remainingSessions: remaining,
-          usedSessions: (student.usedSessions || 0) + 1,
-          status: remaining <= 0 ? 'expired' : 'active',
-          updatedAt: serverTimestamp(),
-        })
+          let teacherLevel: number
+          let pricePerMinute: number
+          if (approvingLesson.teacherLevel != null && approvingLesson.pricePerMinute != null) {
+            teacherLevel = approvingLesson.teacherLevel
+            pricePerMinute = approvingLesson.pricePerMinute
+          } else {
+            const [teacherSnap, subjectSnap] = await Promise.all([
+              tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
+              tx.get(doc(db, 'subjects', approvingLesson.subjectId)),
+            ])
+            teacherLevel = (approvingLesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+            pricePerMinute = approvingLesson.pricePerMinute ?? subjectSnap.data()?.pricePerMinute ?? 0
+          }
 
-        const payrollRef = doc(col(db, 'payroll'))
-        tx.set(payrollRef, {
-          teacherId: approvingLesson.teacherId,
-          teacherName: approvingLesson.teacherName,
-          lessonId: approvingLesson.id,
-          amount: salary,
-          minutes: approvingLesson.minutes,
-          pricePerMinute: subject.pricePerMinute,
-          level: teacher.level,
-          month,
-          paid: false,
-          createdAt: serverTimestamp(),
-        })
+          const lessonMinutes = Number(approvingLesson.minutes) || 0
+          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel)
+          const month = (approvingLesson.date || '').slice(0, 7)
 
-        const logRef = doc(col(db, 'adminLogs'))
-        tx.set(logRef, {
-          adminId: user?.uid || '',
-          action: 'APPROVE_LESSON',
-          targetType: 'lesson',
-          targetId: approvingLesson.id,
-          changes: { status: { from: 'pending', to: 'approved' }, salary },
-          createdAt: serverTimestamp(),
-        })
-      })
+          const mps = Number(student.minutesPerSession) || 50
+          const totalSessionsNum = Number(student.totalSessions) || 0
+          const usedSessionsNum = Number(student.usedSessions) || 0
+          const remainingSessionsNum = Number(student.remainingSessions ?? (totalSessionsNum - usedSessionsNum)) || 0
+
+          const totalMinutes = Number(student.totalMinutes ?? totalSessionsNum * mps) || 0
+          const prevUsedMinutes = Number(student.usedMinutes ?? usedSessionsNum * mps) || 0
+          const prevRemainingMinutes = Number(student.remainingMinutes ?? (totalMinutes - prevUsedMinutes)) || 0
+
+          const newUsedMinutes = prevUsedMinutes + lessonMinutes
+          const newRemainingMinutes = totalMinutes - newUsedMinutes
+          const newRemainingSessions = Math.floor(newRemainingMinutes / mps)
+          const newUsedSessionsRaw = newUsedMinutes / mps
+          const newUsedSessions =
+            Math.abs(newUsedSessionsRaw - Math.round(newUsedSessionsRaw)) < 0.001
+              ? Math.round(newUsedSessionsRaw)
+              : Math.round(newUsedSessionsRaw * 100) / 100
+
+          tx.update(lessonRef, {
+            status: 'approved',
+            approvedAt: serverTimestamp(),
+            approvedBy: user?.uid ?? '',
+            salary,
+            teacherLevel,
+            pricePerMinute,
+            sessionsBeforeApproval: remainingSessionsNum,
+            sessionsAfterApproval: newRemainingSessions,
+            minutesBeforeApproval: prevRemainingMinutes,
+            minutesAfterApproval: newRemainingMinutes,
+          })
+
+          tx.update(studentRef, {
+            usedMinutes: newUsedMinutes,
+            remainingMinutes: newRemainingMinutes,
+            totalMinutes,
+            minutesPerSession: mps,
+            usedSessions: newUsedSessions,
+            remainingSessions: newRemainingSessions,
+            status: newRemainingMinutes <= 0 ? 'expired' : 'active',
+            updatedAt: serverTimestamp(),
+          })
+
+          const payrollRef = doc(col(db, 'payroll'))
+          tx.set(payrollRef, {
+            teacherId: approvingLesson.teacherId,
+            teacherName: approvingLesson.teacherName ?? '',
+            lessonId: approvingLesson.id,
+            amount: salary,
+            minutes: lessonMinutes,
+            pricePerMinute,
+            level: teacherLevel,
+            month,
+            paid: false,
+            createdAt: serverTimestamp(),
+          })
+
+          const logRef = doc(col(db, 'adminLogs'))
+          tx.set(logRef, {
+            adminId: user?.uid ?? '',
+            action: 'APPROVE_LESSON',
+            targetType: 'lesson',
+            targetId: approvingLesson.id,
+            changes: {
+              status: { from: 'pending', to: 'approved' },
+              salary,
+              minutesDeducted: lessonMinutes,
+              minutesBefore: prevRemainingMinutes,
+              minutesAfter: newRemainingMinutes,
+            },
+            createdAt: serverTimestamp(),
+          })
+        },
+        { maxAttempts: 3 },
+      )
 
       toast.success('Đã duyệt buổi dạy thành công')
       setApprovingLesson(null)
-    } catch (err) {
-      console.error(err)
-      toast.error('Duyệt thất bại, vui lòng thử lại')
+    } catch (err: any) {
+      console.error('[approve-lesson]', err)
+      const code = err?.code || ''
+      const message = err?.message || ''
+      if (message === 'LESSON_NOT_FOUND') {
+        toast.error('Buổi dạy không tồn tại, có thể đã bị xóa')
+      } else if (message === 'STUDENT_NOT_FOUND') {
+        toast.error('Học viên không tồn tại')
+      } else if (message === 'LESSON_ALREADY_PROCESSED') {
+        toast.warning('Buổi dạy đã được xử lý trước đó')
+        setApprovingLesson(null)
+      } else if (code === 'permission-denied') {
+        toast.error('Bạn không có quyền duyệt buổi dạy này')
+      } else if (code === 'resource-exhausted' || code === 'unavailable') {
+        toast.error('Hệ thống đang bận, vui lòng thử lại sau ít giây')
+      } else {
+        toast.error(`Duyệt thất bại: ${code || message || 'lỗi không xác định'}`)
+      }
     } finally {
       setApproving(false)
     }
@@ -160,43 +241,63 @@ export function ApprovalsPage() {
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Duyệt buổi dạy</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
+      {/* Gradient header */}
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
+        <h1 className="text-2xl font-bold relative z-10">Duyệt buổi dạy</h1>
+        <p className="text-sm text-indigo-100 mt-1 relative z-10">
           {tab === 'pending' && pendingCount > 0 ? `${pendingCount} buổi đang chờ duyệt` : 'Quản lý và duyệt buổi dạy'}
         </p>
+        {/* Quick stats */}
+        <div className="flex gap-3 mt-4 relative z-10 flex-wrap">
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs font-semibold">
+            ⏳ Chờ duyệt: <span className="text-amber-200">{totalCounts.pending}</span>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs font-semibold">
+            ✅ Đã duyệt: <span className="text-emerald-200">{totalCounts.approved}</span>
+          </div>
+          <div className="bg-white/15 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs font-semibold">
+            ❌ Từ chối: <span className="text-rose-200">{totalCounts.rejected}</span>
+          </div>
+        </div>
       </div>
 
       {/* Tabs and Search */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
-        <div className="flex gap-1 bg-white p-1 rounded-xl w-fit flex-wrap">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                tab === t.key
-                  ? 'bg-slate-100 text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              {t.label}
-              {t.key === 'pending' && pendingCount > 0 && (
-                <span className="ml-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          ))}
+      <Card className="border-slate-200/80 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 justify-between">
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit flex-wrap">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  tab === t.key
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                {t.label}
+                {t.key === 'pending' && pendingCount > 0 && (
+                  <span className="ml-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm học viên / giáo viên..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors"
+            />
+          </div>
         </div>
-        
-        <Input
-          placeholder="Tìm học viên / giáo viên..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
-      </div>
+      </Card>
 
       {loading ? (
         <LoadingSpinner />
@@ -266,10 +367,16 @@ export function ApprovalsPage() {
                   )}
 
                   {lesson.status === 'approved' && (
-                    <div className="flex gap-4 text-sm pt-1 border-t border-slate-200">
+                    <div className="flex gap-4 text-sm pt-1 border-t border-slate-200 flex-wrap">
                       <span className="text-slate-500">
                         Buổi: {lesson.sessionsBeforeApproval} → {lesson.sessionsAfterApproval}
                       </span>
+                      {lesson.minutesBeforeApproval != null && lesson.minutesAfterApproval != null && (
+                        <span className="text-slate-500">
+                          Phút: {lesson.minutesBeforeApproval} → {lesson.minutesAfterApproval}
+                          <span className="text-rose-400 ml-1">(-{lesson.minutes})</span>
+                        </span>
+                      )}
                       <span className="text-emerald-400 font-semibold">
                         Lương: +{formatVND(lesson.salary || 0)}
                       </span>
@@ -323,11 +430,27 @@ export function ApprovalsPage() {
               <span className="text-slate-700">{approvingLesson.studentName}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Buổi còn lại</span>
-              <span className="text-amber-400 font-medium">
-                {approvingLesson.sessionsBeforeApproval || '?'} → {(approvingLesson.sessionsBeforeApproval || 1) - 1}
-              </span>
+              <span className="text-slate-500">Thời lượng buổi này</span>
+              <span className="text-slate-700 font-medium">{approvingLesson.minutes} phút</span>
             </div>
+            {approvingLesson.minutesBeforeApproval != null && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Phút còn lại</span>
+                <span className="text-amber-400 font-medium">
+                  {approvingLesson.minutesBeforeApproval} → {approvingLesson.minutesBeforeApproval - approvingLesson.minutes} phút
+                </span>
+              </div>
+            )}
+            {approvingLesson.pricePerMinute != null && approvingLesson.teacherLevel != null && (
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1">
+                <span className="text-slate-500">Lương giáo viên</span>
+                <span className="text-emerald-500 font-semibold">
+                  +{formatVND(
+                    Math.round(approvingLesson.minutes * approvingLesson.pricePerMinute * approvingLesson.teacherLevel)
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         </ConfirmDialog>
       )}

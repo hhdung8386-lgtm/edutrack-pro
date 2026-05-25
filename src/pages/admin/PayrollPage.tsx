@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, query, where, onSnapshot, getDocs, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Payroll, Teacher } from '@/types'
+import { Payroll, Teacher, Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -21,6 +21,7 @@ export function PayrollPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [paying, setPaying] = useState(false)
   const [search, setSearch] = useState('')
+  const [lessons, setLessons] = useState<Lesson[]>([])
 
   const prevMonth = () => {
     const d = new Date(month + '-01')
@@ -42,6 +43,9 @@ export function PayrollPage() {
   useEffect(() => {
     getDocs(collection(db, 'teachers')).then((snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
+    })
+    getDocs(collection(db, 'lessons')).then((snap) => {
+      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
     })
   }, [])
 
@@ -212,7 +216,8 @@ export function PayrollPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-200/50">
-                      <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Buổi dạy</th>
+                      <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Học sinh</th>
+                      <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Ngày</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Phút</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Giá/phút</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Level</th>
@@ -220,15 +225,19 @@ export function PayrollPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tp.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
-                        <td className="px-5 py-2.5 text-slate-500">{p.lessonId.slice(0, 8)}…</td>
-                        <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
-                        <td className="px-5 py-2.5 text-slate-600">{p.pricePerMinute.toLocaleString()}</td>
-                        <td className="px-5 py-2.5 text-slate-600">×{p.level}</td>
-                        <td className="px-5 py-2.5 text-emerald-400 text-right font-medium">{formatVND(p.amount)}</td>
-                      </tr>
-                    ))}
+                    {tp.map((p) => {
+                      const lesson = lessons.find(l => l.id === p.lessonId)
+                      return (
+                        <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
+                          <td className="px-5 py-2.5 text-slate-700 font-medium">{lesson?.studentName || '—'}</td>
+                          <td className="px-5 py-2.5 text-slate-600">{lesson?.date || '—'}</td>
+                          <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
+                          <td className="px-5 py-2.5 text-slate-600">{p.pricePerMinute.toLocaleString()}</td>
+                          <td className="px-5 py-2.5 text-slate-600">×{p.level}</td>
+                          <td className="px-5 py-2.5 text-emerald-400 text-right font-medium">{formatVND(p.amount)}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

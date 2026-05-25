@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 // Pages
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { WaitingApprovalPage } from '@/pages/WaitingApprovalPage'
 
 // Layouts & Protected Route
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
@@ -17,6 +18,7 @@ import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { StudentsPage } from '@/pages/admin/StudentsPage'
 import { StudentDetailPage } from '@/pages/admin/StudentDetailPage'
 import { TeachersPage } from '@/pages/admin/TeachersPage'
+import { TeacherDetailPage } from '@/pages/admin/TeacherDetailPage'
 import { SubjectsPage } from '@/pages/admin/SubjectsPage'
 import { ApprovalsPage } from '@/pages/admin/ApprovalsPage'
 import { ReportsPage } from '@/pages/admin/ReportsPage'
@@ -30,10 +32,31 @@ import { TeacherContractPage } from '@/pages/teacher/TeacherContractPage'
 import { AttendancePage } from '@/pages/teacher/AttendancePage'
 import { LessonHistoryPage } from '@/pages/teacher/LessonHistoryPage'
 import { ProfilePage } from '@/pages/teacher/ProfilePage'
+import { AvailabilityPage } from '@/pages/teacher/AvailabilityPage'
+
+// Parent Pages
+import { ParentDashboardPage } from '@/pages/parent/ParentDashboardPage'
 
 // Public Pages
 import { TrackingPage } from '@/pages/tracking/TrackingPage'
 import { SetupPage } from '@/pages/SetupPage'
+import { ChuongTrinhHocPage } from '@/pages/ChuongTrinhHocPage'
+import { LienHePage } from '@/pages/LienHePage'
+
+const RootRedirect = () => {
+  const { user, role, loading, initialized } = useAuthStore()
+  
+  if (!initialized || loading) return <LoadingSpinner />
+  
+  if (!user) return <Navigate to="/login" replace />
+  
+  if (role === 'admin') return <Navigate to="/admin/dashboard" replace />
+  if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
+  if (role === 'guest') return <Navigate to="/waiting" replace />
+  
+  // If user is logged in but has no valid role yet
+  return <Navigate to="/login" replace />
+}
 
 function App() {
   const initAuth = useAuthStore((state) => state.initAuth)
@@ -59,8 +82,14 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/chuong-trinh-hoc" element={<ChuongTrinhHocPage />} />
+          <Route path="/lien-he" element={<LienHePage />} />
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/setup" element={<SetupPage />} />
+          <Route path="/waiting" element={<WaitingApprovalPage />} />
+
+          {/* Parent Routes - public auth via student code + phone */}
+          <Route path="/parent" element={<ParentDashboardPage />} />
 
           {/* Admin Routes */}
           <Route
@@ -75,6 +104,7 @@ function App() {
             <Route path="students" element={<StudentsPage />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<TeachersPage />} />
+            <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="reports" element={<ReportsPage />} />
@@ -86,9 +116,20 @@ function App() {
 
           {/* Teacher Routes */}
           <Route
-            path="/teacher/*"
+            path="/teacher/contract"
             element={
               <ProtectedRoute requiredRole="teacher">
+                <TeacherLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<TeacherContractPage />} />
+          </Route>
+
+          <Route
+            path="/teacher/*"
+            element={
+              <ProtectedRoute requiredRole="teacher" requireContractAccepted={true}>
                 <TeacherLayout />
               </ProtectedRoute>
             }
@@ -96,12 +137,12 @@ function App() {
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="contract" element={<TeacherContractPage />} />
+            <Route path="availability" element={<AvailabilityPage />} />
             <Route index element={<Navigate to="attendance" replace />} />
           </Route>
 
           {/* Catch all */}
-          <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>

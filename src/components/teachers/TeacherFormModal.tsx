@@ -7,7 +7,7 @@ import {
   where, serverTimestamp, setDoc
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { db, secondaryAuth, generateTeacherCode } from '@/lib/firebase'
+import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
 import { Teacher, Subject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -32,7 +32,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   // Auth fields for creating new teacher account
   const [newUsername, setNewUsername] = useState('')
-  const [newPassword, setNewPassword] = useState('')
   const [subjectSearch, setSubjectSearch] = useState('')
   const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
@@ -62,16 +61,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     if (!isEdit && !newUsername.trim()) {
       newErrors.username = 'Vui lòng nhập tên tài khoản'
       if (!firstErrorFieldId) firstErrorFieldId = 'field-username'
-    }
-
-    if (!isEdit) {
-      if (!newPassword) {
-        newErrors.password = 'Vui lòng nhập mật khẩu'
-        if (!firstErrorFieldId) firstErrorFieldId = 'field-password'
-      } else if (newPassword.length < 6) {
-        newErrors.password = 'Mật khẩu tối thiểu 6 ký tự'
-        if (!firstErrorFieldId) firstErrorFieldId = 'field-password'
-      }
     }
 
     const formEl = document.getElementById('teacher-form') as HTMLFormElement
@@ -166,17 +155,25 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         toast.success('Đã cập nhật giáo viên')
       } else {
         // CREATE mode - Admin creates account for teacher
-        if (!newUsername || !newPassword) {
-          toast.error('Vui lòng điền Tên tài khoản và Mật khẩu')
+        if (!newUsername) {
+          toast.error('Vui lòng điền Tên tài khoản')
           return
         }
 
-        const code = generateTeacherCode()
+        let code: string
+        try {
+          code = await generateUniqueCode('teacher')
+        } catch (err: any) {
+          toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
+          return
+        }
+
         const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
+        const FIXED_PASSWORD = '1234560'
 
         let finalUid: string
         try {
-          const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, newPassword)
+          const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
           await secondaryAuth.signOut()
           finalUid = credential.user.uid
 
@@ -272,43 +269,31 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               Tạo tài khoản giáo viên <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
             </h4>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản *</label>
-                <input
-                  id="field-username"
-                  type="text"
-                  required
-                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.username ? 'border-red-500' : 'border-slate-300'}`}
-                  placeholder="Ví dụ: giasu1"
-                  value={newUsername}
-                  onChange={e => {
-                    setNewUsername(e.target.value)
-                    if (localErrors.username) setLocalErrors(prev => ({ ...prev, username: '' }))
-                  }}
-                />
-                {localErrors.username ? (
-                  <p className="text-[10px] text-red-500 mt-1">{localErrors.username}</p>
-                ) : (
-                  <p className="text-[10px] text-slate-400 mt-1">Giáo viên đăng nhập bằng tên này</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Mật khẩu *</label>
-                <input
-                  id="field-password"
-                  type="text"
-                  required
-                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.password ? 'border-red-500' : 'border-slate-300'}`}
-                  placeholder="Tối thiểu 6 ký tự"
-                  value={newPassword}
-                  onChange={e => {
-                    setNewPassword(e.target.value)
-                    if (localErrors.password) setLocalErrors(prev => ({ ...prev, password: '' }))
-                  }}
-                />
-                {localErrors.password && <p className="mt-1.5 text-xs text-red-500">{localErrors.password}</p>}
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản *</label>
+              <input
+                id="field-username"
+                type="text"
+                required
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.username ? 'border-red-500' : 'border-slate-300'}`}
+                placeholder="Ví dụ: giasu1"
+                value={newUsername}
+                onChange={e => {
+                  setNewUsername(e.target.value)
+                  if (localErrors.username) setLocalErrors(prev => ({ ...prev, username: '' }))
+                }}
+              />
+              {localErrors.username ? (
+                <p className="text-[10px] text-red-500 mt-1">{localErrors.username}</p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-1">Giáo viên đăng nhập bằng tên này</p>
+              )}
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-700 font-medium">
+                ℹ️ <strong>Mật khẩu cố định:</strong> Tất cả giáo viên sẽ dùng mật khẩu <strong>1234560</strong>
+              </p>
             </div>
           </div>
         )}

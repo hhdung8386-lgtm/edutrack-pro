@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, onSnapshot, orderBy, where } from 'firebase/firestore'
+import { collection, query, onSnapshot, orderBy, where, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -9,7 +9,9 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
-import { GraduationCap, Plus, Search, Eye } from 'lucide-react'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { toast } from '@/stores/toastStore'
+import { GraduationCap, Plus, Search, Eye, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { formatVND } from '@/lib/constants'
 
@@ -20,6 +22,8 @@ export function TeachersPage() {
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
+  const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const q = query(collection(db, 'teachers'), orderBy('createdAt', 'desc'))
@@ -33,6 +37,20 @@ export function TeachersPage() {
     t.name.toLowerCase().includes(search.toLowerCase()) ||
     t.code.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleDelete = async () => {
+    if (!deleteTeacher) return
+    setDeleting(true)
+    try {
+      await deleteDoc(doc(db, 'teachers', deleteTeacher.id))
+      toast.success('Xóa giáo viên thành công')
+      setDeleteTeacher(null)
+    } catch (err: any) {
+      toast.error('Lỗi khi xóa giáo viên: ' + err.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
@@ -113,6 +131,13 @@ export function TeachersPage() {
                             <Eye className="w-4 h-4" />
                           </button>
                           <Button size="sm" variant="ghost" onClick={() => setEditTeacher(teacher)}>Sửa</Button>
+                          <button
+                            onClick={() => setDeleteTeacher(teacher)}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                            aria-label="Xóa"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -151,6 +176,17 @@ export function TeachersPage() {
 
       {showAdd && <TeacherFormModal onClose={() => setShowAdd(false)} />}
       {editTeacher && <TeacherFormModal teacher={editTeacher} onClose={() => setEditTeacher(null)} />}
+      <ConfirmDialog
+        open={!!deleteTeacher}
+        onClose={() => setDeleteTeacher(null)}
+        onConfirm={handleDelete}
+        title="Xóa giáo viên"
+        description={`Bạn có chắc chắn muốn xóa giáo viên ${deleteTeacher?.name}?`}
+        consequence="Hành động này không thể hoàn tác. Tất cả dữ liệu liên quan sẽ bị xóa."
+        confirmLabel="Xóa"
+        confirmVariant="danger"
+        loading={deleting}
+      />
     </div>
   )
 }

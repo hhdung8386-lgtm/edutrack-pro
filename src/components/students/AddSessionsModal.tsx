@@ -27,16 +27,29 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
   })
 
   const sessionsToAdd = watch('sessions') || 0
+  const minutesPerSession = student.minutesPerSession || 0
+  const currentTotalMinutes = minutesPerSession ? student.remainingSessions * minutesPerSession : null
+  const newTotalMinutes = minutesPerSession ? (student.remainingSessions + sessionsToAdd) * minutesPerSession : null
 
   const onSubmit = async (data: FormData) => {
     try {
+      const mps = student.minutesPerSession || 50
       const newTotal = student.totalSessions + data.sessions
       const newRemaining = student.remainingSessions + data.sessions
+      const addedMinutes = data.sessions * mps
+      const prevTotalMinutes = student.totalMinutes ?? student.totalSessions * mps
+      const prevUsedMinutes = student.usedMinutes ?? (student.usedSessions || 0) * mps
+      const newTotalMinutesDoc = prevTotalMinutes + addedMinutes
+      const newRemainingMinutesDoc = newTotalMinutesDoc - prevUsedMinutes
 
       await updateDoc(doc(db, 'students', student.id), {
         totalSessions: newTotal,
         remainingSessions: newRemaining,
-        status: newRemaining > 0 ? 'active' : student.status,
+        minutesPerSession: mps,
+        totalMinutes: newTotalMinutesDoc,
+        usedMinutes: prevUsedMinutes,
+        remainingMinutes: newRemainingMinutesDoc,
+        status: newRemainingMinutesDoc > 0 ? 'active' : student.status,
         updatedAt: serverTimestamp(),
       })
 
@@ -47,16 +60,19 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         targetId: student.id,
         changes: {
           sessionsAdded: data.sessions,
+          minutesAdded: addedMinutes,
           reason: data.reason || '',
           totalBefore: student.totalSessions,
           totalAfter: newTotal,
           remainingBefore: student.remainingSessions,
           remainingAfter: newRemaining,
+          totalMinutesBefore: prevTotalMinutes,
+          totalMinutesAfter: newTotalMinutesDoc,
         },
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã cấp thêm ${data.sessions} buổi cho ${student.name}`)
+      toast.success(`Đã cấp thêm ${data.sessions} buổi (${addedMinutes} phút) cho ${student.name}`)
       onClose()
     } catch (err) {
       toast.error('Có lỗi xảy ra')
@@ -111,16 +127,18 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
             <span className="text-slate-600 font-medium">Tổng sau khi thêm</span>
             <span className="text-indigo-400 font-bold">{student.remainingSessions + Number(sessionsToAdd)} buổi</span>
           </div>
-          {student.minutesPerSession && (
-            <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-              <span className="text-slate-500">
-                {student.remainingSessions + Number(sessionsToAdd)} buổi × {student.minutesPerSession} phút
-              </span>
-              <span className="text-indigo-400 font-bold">
-                = {(student.remainingSessions + Number(sessionsToAdd)) * student.minutesPerSession} phút
-              </span>
+          {minutesPerSession ? (
+            <div className="mt-3 rounded-lg bg-white/70 border border-indigo-200 p-3 text-sm">
+              <div className="text-slate-500 mb-1">Quỹ phút theo phút/buổi</div>
+              <div className="flex flex-wrap items-center gap-2 text-slate-700">
+                <span className="font-semibold">{student.remainingSessions + Number(sessionsToAdd)} buổi</span>
+                <span>×</span>
+                <span className="font-semibold">{minutesPerSession} phút</span>
+                <span>=</span>
+                <span className="font-semibold text-indigo-700">{newTotalMinutes} phút</span>
+              </div>
             </div>
-          )}
+          ) : null}
         </div>
       </form>
     </Modal>

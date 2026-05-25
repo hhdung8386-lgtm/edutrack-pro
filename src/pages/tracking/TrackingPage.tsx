@@ -185,12 +185,14 @@ export function TrackingPage() {
 }
 
 function StudentResult({ student, lessons, onBack }: { student: Student; lessons: Lesson[]; onBack: () => void }) {
-  const usedPct = student.totalSessions > 0
+  const usedPctRaw = student.totalSessions > 0
     ? Math.round((student.usedSessions / student.totalSessions) * 100)
     : 0
+  const usedPct = Math.min(usedPctRaw, 100)
   const remainingColor =
-    student.remainingSessions === 0 ? 'text-rose-400' :
-    student.remainingSessions <= 3 ? 'text-amber-400' : 'text-emerald-400'
+    student.remainingSessions < 0 ? 'text-rose-600' :
+    student.remainingSessions === 0 ? 'text-rose-500' :
+    student.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
 
   return (
     <div className="space-y-5">
@@ -226,30 +228,47 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
       {/* Progress */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-slate-600 mb-4">Tiến độ học tập</h3>
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-slate-900">{student.totalSessions}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Tổng buổi</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-indigo-400">{student.usedSessions}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Đã học</p>
-          </div>
-          <div className="text-center">
-            <p className={`text-2xl font-bold ${remainingColor}`}>{student.remainingSessions}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Còn lại</p>
-          </div>
-        </div>
+        {(() => {
+          const trackMps = student.minutesPerSession || 50
+          const trackTotalMin = student.totalMinutes ?? student.totalSessions * trackMps
+          const trackUsedMin = student.usedMinutes ?? student.usedSessions * trackMps
+          const trackRemainingMin = student.remainingMinutes ?? (trackTotalMin - trackUsedMin)
+          return (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-slate-900">{student.totalSessions}</p>
+                <p className="text-xs text-slate-500 mt-0.5">Tổng buổi</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{trackTotalMin} phút</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-indigo-400">{student.usedSessions}</p>
+                <p className="text-xs text-slate-500 mt-0.5">Đã học</p>
+                <p className="text-[11px] text-indigo-300 mt-0.5">{trackUsedMin} phút</p>
+              </div>
+              <div className="text-center">
+                <p className={`text-2xl font-bold ${remainingColor}`}>
+                  {student.remainingSessions < 0 ? Math.abs(student.remainingSessions) : student.remainingSessions}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {student.remainingSessions < 0 ? 'Nợ buổi' : 'Còn lại'}
+                </p>
+                <p className={`text-[11px] mt-0.5 ${trackRemainingMin <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {trackRemainingMin < 0 ? `Nợ ${Math.abs(trackRemainingMin)}` : trackRemainingMin} phút
+                </p>
+              </div>
+            </div>
+          )
+        })()}
         <style>{`.progress-bar-tracking { width: ${usedPct}%; }`}</style>
         <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-700 progress-bar-tracking ${
-              student.remainingSessions === 0 ? 'bg-rose-500' :
+              student.remainingSessions <= 0 ? 'bg-rose-500' :
               student.remainingSessions <= 3 ? 'bg-amber-500' : 'bg-emerald-500'
             }`}
           />
         </div>
-        <p className="text-xs text-slate-500 mt-2 text-right">{usedPct}% hoàn thành</p>
+        <p className="text-xs text-slate-500 mt-2 text-right">{usedPctRaw}% hoàn thành</p>
       </div>
 
       {/* Lessons */}

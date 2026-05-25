@@ -1,0 +1,17 @@
+{
+  "name": "123English",
+  "short_name": "123English",
+  "description": "Nền tảng quản lý giáo dục 123English",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#FFC107",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

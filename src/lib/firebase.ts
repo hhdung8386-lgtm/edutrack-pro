@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore'
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -33,6 +33,32 @@ export function generateStudentCode(): string {
 
 export function generateTeacherCode(): string {
   return 'GV' + randomCode(6)
+}
+
+export async function generateUniqueCode(type: 'student' | 'teacher'): Promise<string> {
+  const prefix = type === 'student' ? 'HS' : 'GV'
+  let attempts = 0
+  const maxAttempts = 10
+
+  while (attempts < maxAttempts) {
+    const code = prefix + randomCode(6)
+
+    const studentSnap = await getDocs(query(collection(db, 'students'), where('code', '==', code)))
+    if (!studentSnap.empty) {
+      attempts++
+      continue
+    }
+
+    const teacherSnap = await getDocs(query(collection(db, 'teachers'), where('code', '==', code)))
+    if (!teacherSnap.empty) {
+      attempts++
+      continue
+    }
+
+    return code
+  }
+
+  throw new Error(`Không thể sinh mã ${type === 'student' ? 'học viên' : 'giáo viên'} độc nhất sau ${maxAttempts} lần thử`)
 }
 
 export function calculateSalary(

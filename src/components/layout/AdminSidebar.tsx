@@ -8,6 +8,7 @@ import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
+import { Logo } from '@/components/shared/Logo'
 
 const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -36,14 +37,9 @@ export function AdminSidebar() {
     <aside className="fixed left-0 top-0 h-full w-64 bg-slate-50 border-r border-slate-200 flex flex-col z-30">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-slate-200">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-5 h-5 text-slate-900" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-slate-900 leading-tight">EduTrack Pro</h1>
-            <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Admin</span>
-          </div>
+        <Logo className="scale-[0.7] origin-left" />
+        <div className="mt-2 pl-2">
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hệ thống quản trị</span>
         </div>
       </div>
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { collection, addDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs } from 'firebase/firestore'
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -11,9 +11,10 @@ import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { BookOpen, Plus, Pencil, Search } from 'lucide-react'
-import { formatVND } from '@/lib/constants'
+import { useAuthStore } from '@/stores/authStore'
+import { BookOpen, Plus, Pencil, Search, Trash2 } from 'lucide-react'
 
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
@@ -69,7 +70,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         <Input
           label="Giá mỗi phút (VND) *"
           type="number"
-          step={100}
+          step="any"
           placeholder="2500"
           error={errors.pricePerMinute?.message}
           {...register('pricePerMinute')}
@@ -104,10 +105,14 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
 }
 
 export function SubjectsPage() {
+  const { user } = useAuthStore()
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editSubject, setEditSubject] = useState<Subject | null>(null)
+  const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null)
+  const [deleteInfo, setDeleteInfo] = useState<{ studentCount: number; lessonCount: number } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -116,6 +121,47 @@ export function SubjectsPage() {
       setLoading(false)
     })
   }, [])
+
+  // Pre-fetch references when opening delete confirm
+  useEffect(() => {
+    if (!deletingSubject) { setDeleteInfo(null); return }
+    let cancelled = false
+    Promise.all([
+      getDocs(query(collection(db, 'students'), where('subjectId', '==', deletingSubject.id))),
+      getDocs(query(collection(db, 'lessons'), where('subjectId', '==', deletingSubject.id))),
+    ]).then(([sSnap, lSnap]) => {
+      if (!cancelled) setDeleteInfo({ studentCount: sSnap.size, lessonCount: lSnap.size })
+    })
+    return () => { cancelled = true }
+  }, [deletingSubject])
+
+  const handleDelete = async () => {
+    if (!deletingSubject) return
+    setDeleting(true)
+    try {
+      await deleteDoc(doc(db, 'subjects', deletingSubject.id))
+      await addDoc(collection(db, 'adminLogs'), {
+        adminId: user?.uid || '',
+        action: 'DELETE_SUBJECT',
+        targetType: 'subject',
+        targetId: deletingSubject.id,
+        changes: {
+          name: deletingSubject.name,
+          pricePerMinute: deletingSubject.pricePerMinute,
+          studentsAffected: deleteInfo?.studentCount ?? 0,
+          lessonsAffected: deleteInfo?.lessonCount ?? 0,
+        },
+        createdAt: serverTimestamp(),
+      })
+      toast.success(`Đã xoá môn "${deletingSubject.name}"`)
+      setDeletingSubject(null)
+    } catch (err) {
+      console.error(err)
+      toast.error('Xoá thất bại')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const filtered = subjects.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
 
@@ -168,10 +214,20 @@ export function SubjectsPage() {
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={subject.status} /></td>
                   <td className="px-5 py-4">
-                    <Button size="sm" variant="ghost" onClick={() => setEditSubject(subject)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                      Sửa
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditSubject(subject)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                        Sửa
+                      </Button>
+                      <button
+                        onClick={() => setDeletingSubject(subject)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                        title="Xoá môn học"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Xoá
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -182,6 +238,43 @@ export function SubjectsPage() {
 
       {showAdd && <SubjectModal onClose={() => setShowAdd(false)} />}
       {editSubject && <SubjectModal subject={editSubject} onClose={() => setEditSubject(null)} />}
+
+      {deletingSubject && (
+        <ConfirmDialog
+          open
+          onClose={() => setDeletingSubject(null)}
+          onConfirm={handleDelete}
+          title={`Xoá môn "${deletingSubject.name}"?`}
+          confirmLabel="Xoá vĩnh viễn"
+          confirmVariant="danger"
+          loading={deleting}
+        >
+          {deleteInfo === null ? (
+            <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-500 text-center">
+              Đang kiểm tra dữ liệu liên quan...
+            </div>
+          ) : deleteInfo.studentCount > 0 || deleteInfo.lessonCount > 0 ? (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm space-y-2">
+              <p className="font-semibold text-rose-700">⚠ Môn này đang được sử dụng:</p>
+              <ul className="text-rose-700 space-y-1 pl-4 list-disc">
+                {deleteInfo.studentCount > 0 && (
+                  <li><strong>{deleteInfo.studentCount}</strong> học viên đang học môn này</li>
+                )}
+                {deleteInfo.lessonCount > 0 && (
+                  <li><strong>{deleteInfo.lessonCount}</strong> buổi học đã ghi với môn này</li>
+                )}
+              </ul>
+              <p className="text-rose-600 text-xs pt-1">
+                Xoá sẽ làm các học viên/buổi học mất tham chiếu môn. Khuyên: chỉnh sang "Tạm dừng" thay vì xoá.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700">
+              ✓ Không có học viên hay buổi học nào dùng môn này — an toàn để xoá.
+            </div>
+          )}
+        </ConfirmDialog>
+      )}
     </div>
   )
 }
