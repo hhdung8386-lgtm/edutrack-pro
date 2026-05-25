@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, limit, Timestamp, getDocs } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, limit, getDocs, getCountFromServer } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Lesson, Student, Teacher } from '@/types'
+import { Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -68,7 +68,7 @@ export function DashboardPage() {
 
     unsubs.push(
       onSnapshot(
-        query(collection(db, 'lessons'), where('status', '==', 'pending')),
+        query(collection(db, 'lessons'), where('status', '==', 'pending'), limit(20)),
         (snap) => {
           const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
           docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
@@ -77,19 +77,14 @@ export function DashboardPage() {
       )
     )
 
-    unsubs.push(
-      onSnapshot(
-        query(collection(db, 'students'), where('status', '==', 'active')),
-        (snap) => setStudentCount(snap.size)
-      )
-    )
+    // One-shot count queries instead of full-document subscriptions (1 read each)
+    getCountFromServer(query(collection(db, 'students'), where('status', '==', 'active')))
+      .then((snap) => setStudentCount(snap.data().count))
+      .catch((err) => console.error('[dashboard-student-count]', err))
 
-    unsubs.push(
-      onSnapshot(
-        query(collection(db, 'teachers'), where('status', '==', 'active')),
-        (snap) => setTeacherCount(snap.size)
-      )
-    )
+    getCountFromServer(query(collection(db, 'teachers'), where('status', '==', 'active')))
+      .then((snap) => setTeacherCount(snap.data().count))
+      .catch((err) => console.error('[dashboard-teacher-count]', err))
 
     // Chart data: last 6 months. Use a single equality query (no composite
     // index needed) and bucket by month client-side. Catches errors so a
@@ -99,12 +94,16 @@ export function DashboardPage() {
       return format(d, 'yyyy-MM')
     })
 
-    getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved')))
+    // Only fetch lessons within the 6-month window (single-field where, no composite index).
+    // Filter status client-side to keep this index-free.
+    const sixMonthsAgo = months[0] + '-01'
+    getDocs(query(collection(db, 'lessons'), where('date', '>=', sixMonthsAgo)))
       .then((snap) => {
         const counts = new Map<string, number>(months.map((m) => [m, 0]))
         snap.docs.forEach((d) => {
-          const date = (d.data() as { date?: string }).date || ''
-          const month = date.slice(0, 7) // YYYY-MM
+          const data = d.data() as { date?: string; status?: string }
+          if (data.status !== 'approved') return
+          const month = (data.date || '').slice(0, 7) // YYYY-MM
           if (counts.has(month)) counts.set(month, (counts.get(month) || 0) + 1)
         })
         setChartData(

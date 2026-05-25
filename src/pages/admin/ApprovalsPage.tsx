@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   collection, query, where, onSnapshot, orderBy,
   runTransaction, doc, serverTimestamp, addDoc, collection as col,
+  getCountFromServer,
 } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { Lesson } from '@/types'
@@ -56,16 +57,28 @@ export function ApprovalsPage() {
     })
   }, [tab])
 
-  // Subscribe to each status separately so the header counters show DB-wide counts
-  useEffect(() => {
-    const unsubs = (['pending', 'approved', 'rejected'] as const).map((s) =>
-      onSnapshot(
-        query(collection(db, 'lessons'), where('status', '==', s)),
-        (snap) => setTotalCounts((prev) => ({ ...prev, [s]: snap.size })),
-      ),
-    )
-    return () => unsubs.forEach((u) => u())
+  // Fetch counters on-demand (1 read per query) instead of subscribing to full docs.
+  // Refresh after approve/reject so badges stay accurate without hammering Firestore.
+  const refreshCounts = useCallback(async () => {
+    try {
+      const [pSnap, aSnap, rSnap] = await Promise.all([
+        getCountFromServer(query(collection(db, 'lessons'), where('status', '==', 'pending'))),
+        getCountFromServer(query(collection(db, 'lessons'), where('status', '==', 'approved'))),
+        getCountFromServer(query(collection(db, 'lessons'), where('status', '==', 'rejected'))),
+      ])
+      setTotalCounts({
+        pending: pSnap.data().count,
+        approved: aSnap.data().count,
+        rejected: rSnap.data().count,
+      })
+    } catch (err) {
+      console.error('[approvals-counts]', err)
+    }
   }, [])
+
+  useEffect(() => {
+    refreshCounts()
+  }, [refreshCounts])
 
   const filteredLessons = lessons.filter(l =>
     l.studentName.toLowerCase().includes(search.toLowerCase()) ||
@@ -192,6 +205,7 @@ export function ApprovalsPage() {
 
       toast.success('Đã duyệt buổi dạy thành công')
       setApprovingLesson(null)
+      refreshCounts()
     } catch (err: any) {
       console.error('[approve-lesson]', err)
       const code = err?.code || ''
@@ -232,6 +246,7 @@ export function ApprovalsPage() {
       toast.success('Đã từ chối buổi dạy')
       setRejectingLesson(null)
       setRejectReason('')
+      refreshCounts()
     } catch {
       toast.error('Có lỗi xảy ra')
     } finally {
