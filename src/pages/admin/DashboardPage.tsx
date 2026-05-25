@@ -91,27 +91,36 @@ export function DashboardPage() {
       )
     )
 
-    // Chart data: last 6 months
+    // Chart data: last 6 months. Use a single equality query (no composite
+    // index needed) and bucket by month client-side. Catches errors so a
+    // single failed query doesn't surface as an unhandled promise rejection.
     const months = Array.from({ length: 6 }, (_, i) => {
       const d = subMonths(new Date(), 5 - i)
       return format(d, 'yyyy-MM')
     })
 
-    Promise.all(
-      months.map(async (month) => {
-        return new Promise<{ month: string; count: number }>((resolve) => {
-          const q = query(
-            collection(db, 'lessons'),
-            where('status', '==', 'approved'),
-            where('date', '>=', `${month}-01`),
-            where('date', '<=', `${month}-31`)
-          )
-          getDocs(q).then((snap) => {
-            resolve({ month: month.slice(5) + '/' + month.slice(2, 4), count: snap.size })
-          })
+    getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved')))
+      .then((snap) => {
+        const counts = new Map<string, number>(months.map((m) => [m, 0]))
+        snap.docs.forEach((d) => {
+          const date = (d.data() as { date?: string }).date || ''
+          const month = date.slice(0, 7) // YYYY-MM
+          if (counts.has(month)) counts.set(month, (counts.get(month) || 0) + 1)
         })
+        setChartData(
+          months.map((month) => ({
+            month: month.slice(5) + '/' + month.slice(2, 4),
+            count: counts.get(month) || 0,
+          })),
+        )
       })
-    ).then(setChartData)
+      .catch((err) => {
+        console.error('[dashboard-chart]', err)
+        setChartData(months.map((month) => ({
+          month: month.slice(5) + '/' + month.slice(2, 4),
+          count: 0,
+        })))
+      })
 
     return () => unsubs.forEach((u) => u())
   }, [today])
