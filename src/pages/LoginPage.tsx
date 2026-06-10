@@ -499,10 +499,38 @@ function ClientProgSVG() {
 }
 
 export function LoginPage() {
+  const getLandingType = () => {
+    const envType = import.meta.env.VITE_LANDING_TYPE
+    if (envType === 'kids' || envType === 'teens' || envType === 'adults') {
+      return envType
+    }
+    const hostname = window.location.hostname.toLowerCase()
+    if (hostname.includes('kids')) return 'kids'
+    if (hostname.includes('teens') || hostname.includes('mat-goc')) return 'teens'
+    if (hostname.includes('adult') || hostname.includes('working')) return 'adults'
+    
+    const params = new URLSearchParams(window.location.search)
+    const paramType = params.get('type')
+    if (paramType === 'kids' || paramType === 'teens' || paramType === 'adults') {
+      return paramType
+    }
+    return 'kids'
+  }
+
+  const landingType = getLandingType()
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const { lang, setLang, t } = useLanguageStore()
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('login') === 'true' || params.get('login') === 'teacher') {
+      setLoginRole('teacher')
+    } else if (params.get('login') === 'admin') {
+      setLoginRole('admin')
+    }
+  }, [])
   
   // Modals state
   const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
@@ -682,7 +710,9 @@ export function LoginPage() {
               </span>
             </Link>
             <span className="text-[9px] font-black text-[#10B981] tracking-wider font-quicksand leading-none uppercase mt-0.5">
-              TIẾNG ANH TRẺ EM - HỌC SINH - NGƯỜI ĐI LÀM
+              {landingType === 'kids' && 'TIẾNG ANH TRẺ EM (5-12 TUỔI)'}
+              {landingType === 'teens' && 'TIẾNG ANH MẤT GỐC & THIẾU NIÊN (13-18 TUỔI)'}
+              {landingType === 'adults' && 'TIẾNG ANH CHO NGƯỜI ĐI LÀM'}
             </span>
           </div>
 
@@ -704,14 +734,32 @@ export function LoginPage() {
               href="#chuong-trinh" 
               className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
             >
-              Chương trình học
+              Chương trình
             </a>
-            <a 
-              href="#lo-trinh" 
-              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
-            >
-              Lộ trình
-            </a>
+            {landingType === 'kids' && (
+              <a 
+                href="#lo-trinh" 
+                className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
+              >
+                Lộ trình
+              </a>
+            )}
+            {landingType === 'teens' && (
+              <a 
+                href="#mat-goc-quay" 
+                className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
+              >
+                Quay thưởng
+              </a>
+            )}
+            {landingType === 'adults' && (
+              <a 
+                href="#dao-tao" 
+                className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
+              >
+                Đào tạo
+              </a>
+            )}
             <a 
               href="#danh-gia" 
               className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
@@ -728,25 +776,13 @@ export function LoginPage() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setShowSearchModal(true)}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all duration-200 font-quicksand font-bold text-xs"
-            >
-              <Search className="w-3.5 h-3.5" />
-              Tra cứu tiến độ
-            </button>
-            
-            <button 
-              onClick={() => openLogin('teacher')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-black hover:to-slate-900 text-white shadow-sm rounded-xl transition-all duration-300 font-quicksand font-bold text-xs"
-            >
-              <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />
-              Đăng nhập
-            </button>
-
             <a 
               href="#dang-ky-form"
-              className="hidden sm:inline-flex items-center gap-1 px-4.5 py-2.5 bg-[#10B981] hover:bg-[#0d9468] text-white shadow-md rounded-full transition-all duration-300 font-quicksand font-extrabold text-[11px] uppercase tracking-wider"
+              className={`hidden sm:inline-flex items-center gap-1 px-4.5 py-2.5 text-white shadow-md rounded-full transition-all duration-300 font-quicksand font-extrabold text-[11px] uppercase tracking-wider ${
+                landingType === 'kids' ? 'bg-[#10B981] hover:bg-[#0d9468]' :
+                landingType === 'teens' ? 'bg-[#2563EB] hover:bg-[#1d4ed8]' :
+                'bg-[#F97316] hover:bg-[#ea580c]'
+              }`}
             >
               Đăng ký học thử miễn phí &gt;
             </a>
@@ -776,10 +812,24 @@ export function LoginPage() {
               <span>Chương trình học</span>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </a>
-            <a href="#lo-trinh" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
-              <span>Lộ trình</span>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            </a>
+            {landingType === 'kids' && (
+              <a href="#lo-trinh" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
+                <span>Lộ trình</span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
+            )}
+            {landingType === 'teens' && (
+              <a href="#mat-goc-quay" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
+                <span>Quay thưởng</span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
+            )}
+            {landingType === 'adults' && (
+              <a href="#dao-tao" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
+                <span>Đào tạo</span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </a>
+            )}
             <a href="#danh-gia" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
               <span>Đánh giá</span>
               <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -788,44 +838,20 @@ export function LoginPage() {
               <span>Câu hỏi</span>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </a>
-            <div className="border-t border-slate-100 mt-2 pt-2 flex flex-col gap-2">
-              <button 
-                onClick={() => { setMobileMenuOpen(false); setShowSearchModal(true) }} 
-                className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 text-blue-600 transition-colors"
-              >
-                <Search className="w-4 h-4" />
-                Tra cứu tiến độ học tập
-              </button>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => { setMobileMenuOpen(false); openLogin('teacher') }} 
-                  className="py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 text-slate-800 transition-colors"
-                >
-                  <GraduationCap className="w-4 h-4 text-emerald-500" />
-                  Giáo viên
-                </button>
-                <button 
-                  onClick={() => { setMobileMenuOpen(false); openLogin('admin') }} 
-                  className="py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Settings className="w-4 h-4 text-slate-400" />
-                  Admin
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </nav>
 
-      {/* ========================================================================= */}
-      {/* MEGA-SECTION 1: TIẾNG ANH TRẺ EM (AGES 5-12) - IMAGE 1                    */}
-      {/* ========================================================================= */}
-      <section id="trang-chu" className="pt-8 pb-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#FFFBF0] via-white to-white relative overflow-hidden">
-        
-        {/* Decorative background stars */}
-        <div className="absolute top-10 left-[45%] text-yellow-300 font-bold text-3xl animate-bounce pointer-events-none select-none">★</div>
-        <div className="absolute top-32 left-10 text-yellow-200 font-bold text-xl pointer-events-none select-none">✦</div>
+      {landingType === 'kids' && (
+        <>
+          {/* ========================================================================= */}
+          {/* MEGA-SECTION 1: TIẾNG ANH TRẺ EM (AGES 5-12) - IMAGE 1                    */}
+          {/* ========================================================================= */}
+          <section id="trang-chu" className="pt-8 pb-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#FFFBF0] via-white to-white relative overflow-hidden">
+            
+            {/* Decorative background stars */}
+            <div className="absolute top-10 left-[45%] text-yellow-300 font-bold text-3xl animate-bounce pointer-events-none select-none">★</div>
+            <div className="absolute top-32 left-10 text-yellow-200 font-bold text-xl pointer-events-none select-none">✦</div>
         
         {/* Hero 3-Column Desktop Grid */}
         <div className="max-w-7xl mx-auto grid lg:grid-cols-[37%_33%_30%] gap-6 items-center">
@@ -1000,11 +1026,8 @@ export function LoginPage() {
               <div className="font-bold text-[11px] text-slate-700 mt-1">{stat.title}</div>
               <div className="text-[9px] text-slate-400 font-bold leading-snug">{stat.desc}</div>
             </div>
-          ))}
-        </div>
-
+          ))}        </div>
       </section>
-
       {/* 4. SECTION: BÉ CÓ ĐANG GẶP NHỮNG VẤN ĐỀ NÀY? */}
       <section id="van-de" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-white border-t border-slate-50 scroll-mt-20">
         <div className="max-w-7xl mx-auto">
@@ -1367,11 +1390,15 @@ export function LoginPage() {
 
         </div>
       </section>
+        </>
+      )}
 
-      {/* ========================================================================= */}
-      {/* MEGA-SECTION 2: TIẾNG ANH MẤT GỐC (AGES 13-18 OR GENERAL) - IMAGE 2        */}
-      {/* ========================================================================= */}
-      <section id="mat-goc" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F0FDFA] via-white to-[#F5F8FF] border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
+      {landingType === 'teens' && (
+        <>
+          {/* ========================================================================= */}
+          {/* MEGA-SECTION 2: TIẾNG ANH MẤT GỐC (AGES 13-18 OR GENERAL) - IMAGE 2        */}
+          {/* ========================================================================= */}
+          <section id="mat-goc" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F0FDFA] via-white to-[#F5F8FF] border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
         
         <div className="absolute top-40 right-10 w-44 h-44 bg-blue-200/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-40 left-10 w-64 h-64 bg-emerald-200/20 rounded-full blur-3xl pointer-events-none" />
@@ -1853,11 +1880,15 @@ export function LoginPage() {
 
         </div>
       </section>
+        </>
+      )}
 
-      {/* ========================================================================= */}
-      {/* MEGA-SECTION 3: TIẾNG ANH NGƯỜI ĐI LÀM (ADULTS) - IMAGE 3                 */}
-      {/* ========================================================================= */}
-      <section id="nguoi-di-lam" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F5F8FF] via-white to-slate-50 border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
+      {landingType === 'adults' && (
+        <>
+          {/* ========================================================================= */}
+          {/* MEGA-SECTION 3: TIẾNG ANH NGƯỜI ĐI LÀM (ADULTS) - IMAGE 3                 */}
+          {/* ========================================================================= */}
+          <section id="nguoi-di-lam" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F5F8FF] via-white to-slate-50 border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
         
         <div className="absolute top-40 left-10 w-44 h-44 bg-yellow-200/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-40 right-10 w-64 h-64 bg-slate-200/30 rounded-full blur-3xl pointer-events-none" />
@@ -2442,6 +2473,8 @@ export function LoginPage() {
 
         </div>
       </section>
+        </>
+      )}
 
       {/* COMPACT FOOTER */}
       <footer className="border-t border-slate-200 bg-white py-6 shrink-0 z-10 relative">
@@ -2451,10 +2484,32 @@ export function LoginPage() {
             © 2026 Hộ kinh doanh Gia Sư Toàn Năng
           </div>
           
-          <div className="flex items-center gap-6 text-[11px] text-[#2563EB] font-bold font-quicksand">
-            <a href="#trang-chu" className="hover:underline">Tiếng Anh Trẻ Em</a>
-            <a href="#mat-goc" className="hover:underline">Tiếng Anh Mất Gốc</a>
-            <a href="#nguoi-di-lam" className="hover:underline">Tiếng Anh Người Đi Làm</a>
+          <div className={`flex items-center gap-6 text-[11px] font-bold font-quicksand ${
+            landingType === 'kids' ? 'text-[#10B981]' :
+            landingType === 'teens' ? 'text-[#2563EB]' :
+            'text-[#D97706]'
+          }`}>
+            {landingType === 'kids' && (
+              <>
+                <a href="#trang-chu" className="hover:underline">Trang chủ</a>
+                <a href="#chuong-trinh" className="hover:underline">Chương trình</a>
+                <a href="#lo-trinh" className="hover:underline">Lộ trình</a>
+              </>
+            )}
+            {landingType === 'teens' && (
+              <>
+                <a href="#trang-chu" className="hover:underline">Trang chủ</a>
+                <a href="#chuong-trinh" className="hover:underline">Chương trình</a>
+                <a href="#mat-goc-quay" className="hover:underline">Quay thưởng</a>
+              </>
+            )}
+            {landingType === 'adults' && (
+              <>
+                <a href="#trang-chu" className="hover:underline">Trang chủ</a>
+                <a href="#chuong-trinh" className="hover:underline">Chương trình</a>
+                <a href="#dao-tao" className="hover:underline">Đào tạo</a>
+              </>
+            )}
           </div>
 
           <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500 font-medium">
