@@ -11,3 +11,5 @@ dist
 tsconfig.tsbuildinfo
 *.bak
 *.edutrackpro-backup
+
+.vercel

@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { db, calculateSalary } from '@/lib/firebase'
 import { Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -16,9 +16,58 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { BookOpen, Plus, Pencil, Search, Trash2 } from 'lucide-react'
 
+export function parseVietnameseNumber(str: string): number {
+  if (!str) return 0;
+  // Remove all whitespace
+  let clean = str.trim().replace(/\s+/g, '');
+  
+  if (clean.includes('.') && clean.includes(',')) {
+    const lastDot = clean.lastIndexOf('.');
+    const lastComma = clean.lastIndexOf(',');
+    if (lastComma > lastDot) {
+      clean = clean.replace(/\./g, '').replace(/,/g, '.');
+    } else {
+      clean = clean.replace(/,/g, '');
+    }
+  } else if (clean.includes(',')) {
+    const lastComma = clean.lastIndexOf(',');
+    const charsAfter = clean.length - 1 - lastComma;
+    if (charsAfter === 3) {
+      clean = clean.replace(/,/g, '');
+    } else {
+      clean = clean.replace(/,/g, '.');
+    }
+  } else if (clean.includes('.')) {
+    const lastDot = clean.lastIndexOf('.');
+    const charsAfter = clean.length - 1 - lastDot;
+    if (charsAfter === 3) {
+      clean = clean.replace(/\./g, '');
+    }
+  }
+  
+  const parsed = parseFloat(clean);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+export function formatVietnameseNumberInput(val: number): string {
+  if (val === undefined || val === null || isNaN(val)) return '';
+  const parts = val.toString().split('.');
+  const integerPart = Number(parts[0]).toLocaleString('vi-VN');
+  if (parts.length > 1) {
+    return `${integerPart},${parts[1]}`;
+  }
+  return integerPart;
+}
+
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
-  pricePerMinute: z.coerce.number().min(100, 'Giá tối thiểu 100đ/phút'),
+  pricePerMinute: z.any().transform((val) => {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseVietnameseNumber(val);
+    return Number(val);
+  }).refine((val) => !isNaN(val) && val >= 100, {
+    message: 'Giá tối thiểu 100đ/phút',
+  }),
   status: z.enum(['active', 'inactive']),
 })
 type FormData = z.infer<typeof schema>
@@ -27,27 +76,106 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
   const isEdit = !!subject
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: subject ? {
+    defaultValues: (subject ? {
       name: subject.name,
-      pricePerMinute: subject.pricePerMinute,
+      pricePerMinute: formatVietnameseNumberInput(subject.pricePerMinute),
       status: subject.status,
-    } : { status: 'active', pricePerMinute: 2500 },
+    } : { status: 'active', pricePerMinute: '2.500' }) as any,
   })
 
-  const price = watch('pricePerMinute') || 0
+  const rawPrice = watch('pricePerMinute')
+  const price = typeof rawPrice === 'number' ? rawPrice : parseVietnameseNumber(rawPrice || '')
 
   const onSubmit = async (data: FormData) => {
     try {
       if (isEdit && subject) {
+        // 1. Update the subject itself
         await updateDoc(doc(db, 'subjects', subject.id), { ...data, updatedAt: serverTimestamp() })
-        toast.success('Đã cập nhật môn học')
+        
+        // 2. Sync to related students, lessons, and payrolls in parallel
+        const newRate = data.pricePerMinute;
+        
+        // Query students and lessons in parallel
+        const [studentsSnap, lessonsSnap] = await Promise.all([
+          getDocs(query(collection(db, 'students'), where('subjectId', '==', subject.id))),
+          getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subject.id)))
+        ]);
+        
+        // Update students in parallel
+        const studentUpdates = studentsSnap.docs.map(studentDoc => 
+          updateDoc(doc(db, 'students', studentDoc.id), {
+            pricePerMinute: newRate,
+            updatedAt: serverTimestamp(),
+          })
+        );
+        
+        // Update lessons in parallel, and fetch their payrolls in parallel
+        const lessonUpdates: Promise<any>[] = [];
+        const payrollQueries: Promise<any>[] = [];
+        const lessonNewSalaries: Record<string, number> = {};
+        
+        lessonsSnap.docs.forEach(lessonDoc => {
+          const lessonId = lessonDoc.id;
+          const lesson = lessonDoc.data();
+          const minutes = Number(lesson.minutes) || 0;
+          const teacherLevel = Number(lesson.teacherLevel) || 1;
+          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0;
+          
+          lessonNewSalaries[lessonId] = newSalary;
+          
+          lessonUpdates.push(
+            updateDoc(doc(db, 'lessons', lessonId), {
+              pricePerMinute: newRate,
+              salary: newSalary,
+              updatedAt: serverTimestamp(),
+            })
+          );
+          
+          payrollQueries.push(
+            getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
+          );
+        });
+        
+        // Await all student updates, lesson updates, and payroll queries in parallel
+        const [, , ...payrollSnaps] = await Promise.all([
+          Promise.all(studentUpdates),
+          Promise.all(lessonUpdates),
+          ...payrollQueries
+        ]);
+        
+        // Update corresponding unpaid payrolls in parallel
+        const payrollUpdates: Promise<any>[] = [];
+        payrollSnaps.forEach((payrollSnap, index) => {
+          const lessonId = lessonsSnap.docs[index].id;
+          const newSalary = lessonNewSalaries[lessonId];
+          
+          payrollSnap.docs.forEach((pDoc: any) => {
+            const payroll = pDoc.data();
+            if (!payroll.paid && !payroll.voided) {
+              payrollUpdates.push(
+                updateDoc(doc(db, 'payroll', pDoc.id), {
+                  amount: newSalary,
+                  pricePerMinute: newRate,
+                  recalculatedAt: serverTimestamp(),
+                })
+              );
+            }
+          });
+        });
+        
+        if (payrollUpdates.length > 0) {
+          await Promise.all(payrollUpdates);
+        }
+        
+        toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
       } else {
         await addDoc(collection(db, 'subjects'), { ...data, createdAt: serverTimestamp() })
         toast.success('Đã thêm môn học')
       }
       onClose()
-    } catch {
-      toast.error('Có lỗi xảy ra')
+    } catch (err) {
+      console.error(err)
+      toast.error('Có lỗi xảy ra khi cập nhật và đồng bộ dữ liệu')
     }
   }
 
@@ -69,8 +197,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         <Input label="Tên môn học *" placeholder="Tiếng Anh" error={errors.name?.message} {...register('name')} />
         <Input
           label="Giá mỗi phút (VND) *"
-          type="number"
-          step="any"
+          type="text"
           placeholder="2500"
           error={errors.pricePerMinute?.message}
           {...register('pricePerMinute')}
@@ -82,8 +209,8 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             <p className="font-medium text-slate-600 mb-2">Ví dụ lương:</p>
             {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => (
               <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
-                <span>{ex.min} phút × {price.toLocaleString()}đ × ×{ex.level}</span>
-                <span className="text-emerald-400 font-medium">= {(ex.min * price * ex.level).toLocaleString()}đ</span>
+                <span>{ex.min} phút × {price.toLocaleString('vi-VN')}đ × ×{ex.level}</span>
+                <span className="text-emerald-400 font-medium">= {(ex.min * price * ex.level).toLocaleString('vi-VN')}đ</span>
               </div>
             ))}
           </div>

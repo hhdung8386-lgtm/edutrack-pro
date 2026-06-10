@@ -28,19 +28,15 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           if (!studentSnap.exists()) throw new Error('Học viên không tồn tại')
           const student = studentSnap.data()
 
-          let teacherLevel: number
-          let pricePerMinute: number
-          if (lesson.teacherLevel != null && lesson.pricePerMinute != null) {
-            teacherLevel = lesson.teacherLevel
-            pricePerMinute = lesson.pricePerMinute
-          } else {
-            const [teacherSnap, subjectSnap] = await Promise.all([
-              tx.get(doc(db, 'teachers', lesson.teacherId)),
-              tx.get(doc(db, 'subjects', lesson.subjectId)),
-            ])
-            teacherLevel = lesson.teacherLevel ?? teacherSnap.data()?.level ?? 1
-            pricePerMinute = lesson.pricePerMinute ?? subjectSnap.data()?.pricePerMinute ?? 0
-          }
+          const [teacherSnap, subjectSnap] = await Promise.all([
+            tx.get(doc(db, 'teachers', lesson.teacherId)),
+            tx.get(doc(db, 'subjects', student.subjectId)),
+          ])
+
+          const teacherLevel = (lesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+          const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
+          const subjectId = student.subjectId
+          const subjectName = student.subjectName || subjectSnap.data()?.name || ''
 
           const salary = calculateSalary(lesson.minutes, pricePerMinute, teacherLevel)
           const month = lesson.date.slice(0, 7)
@@ -66,6 +62,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             salary,
             teacherLevel,
             pricePerMinute,
+            subjectId,
+            subjectName,
             sessionsBeforeApproval: student.remainingSessions,
             sessionsAfterApproval: newRemainingSessions,
             minutesBeforeApproval: prevRemainingMinutes,
@@ -81,6 +79,28 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             remainingSessions: newRemainingSessions,
             status: newRemainingMinutes <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
+          })
+
+          const publicLessonRef = doc(db, 'publicLessons', lesson.id)
+          tx.set(publicLessonRef, {
+            id: lesson.id,
+            studentId: lesson.studentId,
+            studentCode: lesson.studentCode,
+            studentName: lesson.studentName,
+            teacherId: lesson.teacherId,
+            teacherCode: lesson.teacherCode,
+            teacherName: lesson.teacherName,
+            subjectId,
+            subjectName,
+            date: lesson.date,
+            minutes: lesson.minutes,
+            comment: lesson.comment || '',
+            homework: lesson.homework || '',
+            book: lesson.book || '',
+            imageURLs: lesson.imageURLs || [],
+            status: 'approved',
+            createdAt: lesson.createdAt || serverTimestamp(),
+            approvedAt: serverTimestamp(),
           })
 
           const payrollRef = doc(collection(db, 'payroll'))
@@ -157,6 +177,12 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <span className="text-slate-500">Thời lượng</span>
           <span className="text-slate-700">{lesson.minutes} phút</span>
         </div>
+        {lesson.book && (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 flex-shrink-0">Sách học</span>
+            <span className="text-[#3BB8EB] font-bold truncate max-w-[150px]" title={lesson.book}>{lesson.book}</span>
+          </div>
+        )}
         <div className="border-t border-slate-200 pt-2 mt-2 space-y-1">
           {lesson.minutesBeforeApproval != null && (
             <div className="flex justify-between">
@@ -166,11 +192,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               </span>
             </div>
           )}
-          {lesson.pricePerMinute != null && lesson.teacherLevel != null && (
+          {lesson.pricePerMinute != null && (
             <div className="flex justify-between">
               <span className="text-slate-500">Lương giáo viên</span>
-              <span className="text-emerald-500 font-semibold">
-                + {formatVND(Math.round(lesson.minutes * lesson.pricePerMinute * lesson.teacherLevel))}
+               <span className="text-emerald-500 font-semibold">
+                + {formatVND(calculateSalary(lesson.minutes, lesson.pricePerMinute, lesson.teacherLevel ?? 1))}
               </span>
             </div>
           )}

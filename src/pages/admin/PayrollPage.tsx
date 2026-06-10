@@ -161,6 +161,9 @@ export function PayrollPage() {
         <p className="text-sm text-slate-500">Tổng lương phải trả {monthLabel}</p>
         <p className="text-4xl font-bold text-emerald-400 mt-1">{formatVND(totalPayroll)}</p>
         <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} giáo viên · {payrolls.length} buổi dạy</p>
+        <p className="text-[11px] text-slate-400 italic mt-2">
+          * Lưu ý: Lương hiển thị của từng giáo viên có thu nhập trên 2.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
+        </p>
       </Card>
 
       {/* Per teacher */}
@@ -202,7 +205,15 @@ export function PayrollPage() {
                 <Badge variant={paid ? 'success' : 'warning'}>
                   {paid ? 'Đã trả' : 'Chưa trả'}
                 </Badge>
-                <p className="text-emerald-400 font-semibold text-sm">{formatVND(total)}</p>
+                {total > 2000000 ? (
+                  <div className="text-right flex flex-col justify-end items-end">
+                    <p className="text-[10px] text-slate-400 line-through leading-none">{formatVND(total)}</p>
+                    <p className="text-emerald-400 font-bold text-sm leading-tight mt-0.5">{formatVND(total * 0.9)}</p>
+                    <p className="text-[9px] text-rose-500 italic font-medium leading-none mt-0.5">-10% thuế</p>
+                  </div>
+                ) : (
+                  <p className="text-emerald-400 font-semibold text-sm">{formatVND(total)}</p>
+                )}
                 {expanded === teacher.id ? (
                   <ChevronUp className="w-4 h-4 text-slate-500" />
                 ) : (
@@ -232,12 +243,33 @@ export function PayrollPage() {
                           <td className="px-5 py-2.5 text-slate-700 font-medium">{lesson?.studentName || '—'}</td>
                           <td className="px-5 py-2.5 text-slate-600">{lesson?.date || '—'}</td>
                           <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
-                          <td className="px-5 py-2.5 text-slate-600">{p.pricePerMinute.toLocaleString()}</td>
+                          <td className="px-5 py-2.5 text-slate-600">{p.pricePerMinute.toLocaleString('vi-VN')}</td>
                           <td className="px-5 py-2.5 text-slate-600">×{p.level}</td>
                           <td className="px-5 py-2.5 text-emerald-400 text-right font-medium">{formatVND(p.amount)}</td>
                         </tr>
                       )
                     })}
+                    {total > 2000000 && (
+                      <>
+                        <tr className="bg-slate-50/50">
+                          <td colSpan={5} className="px-5 py-2 text-right text-slate-500 font-medium">Tổng cộng trước thuế (Gross):</td>
+                          <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatVND(total)}</td>
+                        </tr>
+                        <tr className="bg-rose-50/20 text-rose-500">
+                          <td colSpan={5} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân (10%):</td>
+                          <td className="px-5 py-2 text-right font-bold">-{formatVND(total * 0.1)}</td>
+                        </tr>
+                        <tr className="bg-emerald-50/20 text-emerald-600 border-t border-slate-200">
+                          <td colSpan={5} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
+                          <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatVND(total * 0.9)}</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={6} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
+                            * Thu nhập tháng vượt quá 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN theo quy định.
+                          </td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>

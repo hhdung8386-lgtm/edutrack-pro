@@ -21,26 +21,24 @@ service cloud.firestore {
 
     // Users collection - auth metadata
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow read: if resource.data.role == 'teacher' || (isAuthenticated() && (request.auth.uid == uid || isAdmin()));
       allow create, update: if isAdmin();
       allow delete: if false; // Prevent deletion
     }
 
     // Students collection
     match /students/{studentId} {
-      allow read: if isAdmin() || isTeacher();
-      allow read: if resource.data.code == request.query.code; // Public read by code
+      allow read: if true; // Public read for lookup by student code on tracking page
       allow create, update: if isAdmin();
-      allow delete: if false; // Prevent deletion
+      allow delete: if isAdmin();
     }
 
     // Teachers collection
     match /teachers/{teacherId} {
-      allow read: if isAdmin() || isTeacher();
-      allow read: if resource.data.code == request.query.code; // Public read by code
+      allow read: if true; // Public read for teacher code verification during login
       allow update: if isAdmin() || (isTeacher() && request.auth.uid == resource.data.uid);
       allow create: if isAdmin();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // Subjects collection
@@ -49,21 +47,30 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Branches collection
+    match /branches/{branchId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Lessons collection
     match /lessons/{lessonId} {
-      allow create: if isTeacher() && request.auth.uid == request.resource.data.createdBy;
+      allow create: if isTeacher() && getTeacherId() == request.resource.data.teacherId;
       allow read: if isAdmin() 
-                   || (isTeacher() && (request.auth.uid == resource.data.createdBy || request.auth.uid == resource.data.teacherUid))
-                   || (resource.data.status == 'approved' && request.query.studentCode == resource.data.studentCode)
-                   || (resource.data.status == 'approved' && request.query.teacherCode == resource.data.teacherCode);
-      allow update: if isAdmin() && resource.data.status != 'approved';
-      allow update: if resource.data.status == 'approved' && false; // Prevent updates to approved lessons
+                   || (isTeacher() && getTeacherId() == resource.data.teacherId);
+      allow update: if isAdmin();
       allow delete: if false;
+    }
+
+    // Public lessons collection for parents
+    match /publicLessons/{lessonId} {
+      allow read: if resource.data.status == 'approved';
+      allow write: if isAdmin();
     }
 
     // Payroll collection
     match /payroll/{payrollId} {
-      allow read: if isAdmin() || (isTeacher() && request.auth.uid == resource.data.teacherUid);
+      allow read: if isAdmin() || (isTeacher() && getTeacherId() == resource.data.teacherId);
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if false;
@@ -73,6 +80,19 @@ service cloud.firestore {
     match /adminLogs/{logId} {
       allow read: if isAdmin();
       allow create: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Teacher Availability collection
+    match /teacherAvailability/{teacherId} {
+      allow read, write: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
+    }
+
+    // Contracts collection
+    match /contracts/{contractId} {
+      allow read: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
+      allow create: if isAdmin() || (isTeacher() && request.resource.data.teacherId == getTeacherId());
+      allow update: if isAdmin();
       allow delete: if false;
     }
 

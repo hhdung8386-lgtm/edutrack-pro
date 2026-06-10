@@ -45,7 +45,7 @@ export function TrackingPage() {
         const student = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
 
         const lq = query(
-          collection(db, 'lessons'),
+          collection(db, 'publicLessons'),
           where('studentId', '==', student.id),
           where('status', '==', 'approved')
         )
@@ -62,7 +62,7 @@ export function TrackingPage() {
         const teacher = { id: snap.docs[0].id, ...snap.docs[0].data() } as Teacher
 
         const lq = query(
-          collection(db, 'lessons'),
+          collection(db, 'publicLessons'),
           where('teacherId', '==', teacher.id),
           where('status', '==', 'approved')
         )

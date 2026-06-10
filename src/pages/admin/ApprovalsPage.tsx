@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   collection, query, where, onSnapshot, orderBy,
   runTransaction, doc, serverTimestamp, addDoc, collection as col,
-  getCountFromServer,
+  getCountFromServer, limit,
 } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { Lesson } from '@/types'
@@ -40,13 +40,36 @@ export function ApprovalsPage() {
   const [viewImages, setViewImages] = useState<string[] | null>(null)
   // Independent counters so badges reflect real DB state, not just current tab's loaded set
   const [totalCounts, setTotalCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
+  const [limitVal, setLimitVal] = useState(30)
+
+  useEffect(() => {
+    setLimitVal(30)
+  }, [tab])
+
+  const fetchCounts = async () => {
+    try {
+      const [approvedSnap, rejectedSnap] = await Promise.all([
+        getCountFromServer(query(collection(db, 'lessons'), where('status', '==', 'approved'))),
+        getCountFromServer(query(collection(db, 'lessons'), where('status', '==', 'rejected'))),
+      ])
+      setTotalCounts((prev) => ({
+        ...prev,
+        approved: approvedSnap.data().count,
+        rejected: rejectedSnap.data().count,
+      }))
+    } catch (err) {
+      console.error('[fetch-historical-counts]', err)
+    }
+  }
 
   useEffect(() => {
     setLoading(true)
     const constraints =
       tab === 'all'
-        ? []
-        : [where('status', '==', tab)]
+        ? [orderBy('date', 'desc'), limit(limitVal)]
+        : tab === 'pending'
+        ? [where('status', '==', 'pending')]
+        : [where('status', '==', tab), orderBy('date', 'desc'), limit(limitVal)]
 
     const q = query(collection(db, 'lessons'), ...constraints)
     return onSnapshot(q, (snap) => {
@@ -55,8 +78,7 @@ export function ApprovalsPage() {
       setLessons(docs)
       setLoading(false)
     })
-  }, [tab])
-
+  }, [tab, limitVal])
   // Fetch counters on-demand (1 read per query) instead of subscribing to full docs.
   // Refresh after approve/reject so badges stay accurate without hammering Firestore.
   const refreshCounts = useCallback(async () => {
@@ -110,19 +132,15 @@ export function ApprovalsPage() {
 
           const student = studentSnap.data() as any
 
-          let teacherLevel: number
-          let pricePerMinute: number
-          if (approvingLesson.teacherLevel != null && approvingLesson.pricePerMinute != null) {
-            teacherLevel = approvingLesson.teacherLevel
-            pricePerMinute = approvingLesson.pricePerMinute
-          } else {
-            const [teacherSnap, subjectSnap] = await Promise.all([
-              tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
-              tx.get(doc(db, 'subjects', approvingLesson.subjectId)),
-            ])
-            teacherLevel = (approvingLesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
-            pricePerMinute = approvingLesson.pricePerMinute ?? subjectSnap.data()?.pricePerMinute ?? 0
-          }
+          const [teacherSnap, subjectSnap] = await Promise.all([
+            tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
+            tx.get(doc(db, 'subjects', student.subjectId)),
+          ])
+
+          const teacherLevel = (approvingLesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+          const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
+          const subjectId = student.subjectId
+          const subjectName = student.subjectName || subjectSnap.data()?.name || ''
 
           const lessonMinutes = Number(approvingLesson.minutes) || 0
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel)
@@ -153,6 +171,8 @@ export function ApprovalsPage() {
             salary,
             teacherLevel,
             pricePerMinute,
+            subjectId,
+            subjectName,
             sessionsBeforeApproval: remainingSessionsNum,
             sessionsAfterApproval: newRemainingSessions,
             minutesBeforeApproval: prevRemainingMinutes,
@@ -168,6 +188,28 @@ export function ApprovalsPage() {
             remainingSessions: newRemainingSessions,
             status: newRemainingMinutes <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
+          })
+
+          const publicLessonRef = doc(db, 'publicLessons', approvingLesson.id)
+          tx.set(publicLessonRef, {
+            id: approvingLesson.id,
+            studentId: approvingLesson.studentId,
+            studentCode: approvingLesson.studentCode,
+            studentName: approvingLesson.studentName,
+            teacherId: approvingLesson.teacherId,
+            teacherCode: approvingLesson.teacherCode ?? '',
+            teacherName: approvingLesson.teacherName ?? '',
+            subjectId,
+            subjectName,
+            date: approvingLesson.date,
+            minutes: lessonMinutes,
+            comment: approvingLesson.comment || '',
+            homework: approvingLesson.homework || '',
+            book: approvingLesson.book || '',
+            imageURLs: approvingLesson.imageURLs || [],
+            status: 'approved',
+            createdAt: approvingLesson.createdAt || serverTimestamp(),
+            approvedAt: serverTimestamp(),
           })
 
           const payrollRef = doc(col(db, 'payroll'))
@@ -226,6 +268,7 @@ export function ApprovalsPage() {
       }
     } finally {
       setApproving(false)
+      fetchCounts()
     }
   }
 
@@ -251,6 +294,7 @@ export function ApprovalsPage() {
       toast.error('Có lỗi xảy ra')
     } finally {
       setRejecting(false)
+      fetchCounts()
     }
   }
 
@@ -333,7 +377,7 @@ export function ApprovalsPage() {
                     <StatusBadge status={lesson.status} />
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Học viên</p>
                       <p className="text-slate-700 font-medium">{lesson.studentName}</p>
@@ -346,6 +390,10 @@ export function ApprovalsPage() {
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Môn học</p>
                       <p className="text-slate-700">{lesson.subjectName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 mb-0.5">Sách học</p>
+                      <p className="text-[#3BB8EB] font-bold truncate max-w-[150px]" title={lesson.book || ''}>{lesson.book || '—'}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Thời lượng</p>
@@ -426,6 +474,17 @@ export function ApprovalsPage() {
               </div>
             </Card>
           ))}
+          {tab !== 'pending' && lessons.length >= limitVal && (
+            <div className="flex justify-center pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setLimitVal((prev) => prev + 30)}
+                className="w-full bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 py-2.5 rounded-xl font-semibold shadow-sm"
+              >
+                Xem thêm (+30 buổi)
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -456,12 +515,12 @@ export function ApprovalsPage() {
                 </span>
               </div>
             )}
-            {approvingLesson.pricePerMinute != null && approvingLesson.teacherLevel != null && (
+            {approvingLesson.pricePerMinute != null && (
               <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1">
                 <span className="text-slate-500">Lương giáo viên</span>
                 <span className="text-emerald-500 font-semibold">
                   +{formatVND(
-                    Math.round(approvingLesson.minutes * approvingLesson.pricePerMinute * approvingLesson.teacherLevel)
+                    calculateSalary(approvingLesson.minutes, approvingLesson.pricePerMinute, approvingLesson.teacherLevel ?? 1)
                   )}
                 </span>
               </div>

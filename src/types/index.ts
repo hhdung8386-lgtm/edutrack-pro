@@ -31,6 +31,7 @@ export interface Teacher {
   bio: string
   photoURL: string
   status: 'active' | 'inactive'
+  teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
   createdAt: Timestamp
 }
@@ -57,6 +58,7 @@ export interface Lesson {
   minutes: 25 | 50 | 75 | 100
   comment: string
   homework: string
+  book?: string
   imageURLs: string[]
   status: 'pending' | 'approved' | 'rejected'
   attendanceStatus?: 'present' | 'with_permission' | 'without_permission'
@@ -85,6 +87,9 @@ export interface Payroll {
   month: string
   paid?: boolean
   paidAt?: Timestamp
+  voided?: boolean
+  voidedAt?: Timestamp
+  voidedBy?: string
   createdAt: Timestamp
 }
 

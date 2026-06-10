@@ -23,15 +23,25 @@ export function ReportsPage() {
   const [chartData, setChartData] = useState<{ month: string; count: number; salary: number }[]>([])
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'lessons'),
-      where('status', '==', 'approved'),
-      where('date', '>=', `${month}-01`),
-      where('date', '<=', `${month}-31`)
-    )
-    return onSnapshot(q, (snap) => {
-      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
-    })
+    let active = true
+    const fetchLessons = async () => {
+      try {
+        const q = query(
+          collection(db, 'lessons'),
+          where('status', '==', 'approved'),
+          where('date', '>=', `${month}-01`),
+          where('date', '<=', `${month}-31`)
+        )
+        const snap = await getDocs(q)
+        if (active) {
+          setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    fetchLessons()
+    return () => { active = false }
   }, [month])
 
   useEffect(() => {
@@ -46,25 +56,25 @@ export function ReportsPage() {
     })
 
     Promise.all(
-      months.map((m) =>
-        new Promise<{ month: string; count: number; salary: number }>((resolve) => {
-          const q = query(
-            collection(db, 'lessons'),
-            where('status', '==', 'approved'),
-            where('date', '>=', `${m}-01`),
-            where('date', '<=', `${m}-31`)
-          )
-          onSnapshot(q, (snap) => {
-            const docs = snap.docs.map((d) => d.data() as Lesson)
-            resolve({
-              month: m.slice(5) + '/' + m.slice(2, 4),
-              count: docs.length,
-              salary: docs.reduce((s, l) => s + (l.salary || 0), 0),
-            })
-          })
+      months.map((m) => {
+        const q = query(
+          collection(db, 'lessons'),
+          where('status', '==', 'approved'),
+          where('date', '>=', `${m}-01`),
+          where('date', '<=', `${m}-31`)
+        )
+        return getDocs(q).then((snap) => {
+          const docs = snap.docs.map((d) => d.data() as Lesson)
+          return {
+            month: m.slice(5) + '/' + m.slice(2, 4),
+            count: docs.length,
+            salary: docs.reduce((s, l) => s + (l.salary || 0), 0),
+          }
         })
-      )
-    ).then(setChartData)
+      })
+    ).then(setChartData).catch((err) => {
+      console.error('[reports-chart]', err)
+    })
   }, [])
 
   const prevMonth = () => {
@@ -92,8 +102,8 @@ export function ReportsPage() {
 
   const exportCSV = () => {
     const rows = [
-      ['Ngày', 'Học viên', 'Giáo viên', 'Môn học', 'Phút', 'Lương', 'Trạng thái'],
-      ...lessons.map((l) => [l.date, l.studentName, l.teacherName, l.subjectName, l.minutes, l.salary, l.status]),
+      ['Ngày', 'Học viên', 'Giáo viên', 'Môn học', 'Sách học', 'Phút', 'Lương', 'Trạng thái'],
+      ...lessons.map((l) => [l.date, l.studentName, l.teacherName, l.subjectName, l.book || '—', l.minutes, l.salary, l.status]),
     ]
     const csv = rows.map((r) => r.join(',')).join('\n')
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
@@ -195,7 +205,7 @@ export function ReportsPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
-                  {['Ngày', 'Học viên', 'Giáo viên', 'Môn', 'Phút', 'Lương', 'Trạng thái'].map((h) => (
+                  {['Ngày', 'Học viên', 'Giáo viên', 'Môn', 'Sách học', 'Phút', 'Lương', 'Trạng thái'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -207,6 +217,7 @@ export function ReportsPage() {
                     <td className="px-4 py-3 text-slate-700">{l.studentName}</td>
                     <td className="px-4 py-3 text-slate-600">{l.teacherName}</td>
                     <td className="px-4 py-3 text-slate-500">{l.subjectName}</td>
+                    <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={l.book || ''}>{l.book || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{l.minutes}'</td>
                     <td className="px-4 py-3 text-emerald-400 font-medium">{formatVND(l.salary || 0)}</td>
                     <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
@@ -215,7 +226,7 @@ export function ReportsPage() {
               </tbody>
               <tfoot className="border-t border-slate-300">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-slate-600">Tổng cộng</td>
+                  <td colSpan={5} className="px-4 py-3 text-sm font-semibold text-slate-600">Tổng cộng</td>
                   <td className="px-4 py-3 font-semibold text-slate-700">{totalMinutes}'</td>
                   <td className="px-4 py-3 font-semibold text-emerald-400">{formatVND(totalSalary)}</td>
                   <td />

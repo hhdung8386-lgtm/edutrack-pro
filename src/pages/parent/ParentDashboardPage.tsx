@@ -66,7 +66,7 @@ export function ParentDashboardPage() {
 
       const student = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
 
-      const lq = query(collection(db, 'lessons'), where('studentId', '==', student.id), where('status', '==', 'approved'))
+      const lq = query(collection(db, 'publicLessons'), where('studentId', '==', student.id), where('status', '==', 'approved'))
       const lSnap = await getDocs(lq)
       const lessons = lSnap.docs.map(d => ({ id: d.id, ...d.data() } as Lesson))
       lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))

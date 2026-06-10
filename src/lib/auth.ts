@@ -34,7 +34,11 @@ export async function signInTeacher(teacherCode: string, password: string) {
   const teacherId = teacherDoc.id
   const fallbackEmail = `${normalizedCode}@edutrackpro.app`
 
-  const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacherId))
+  const userQuery = query(
+    collection(db, 'users'),
+    where('teacherId', '==', teacherId),
+    where('role', '==', 'teacher')
+  )
   const userSnapshot = await getDocs(userQuery)
 
   const existingUserDoc = userSnapshot.docs[0]

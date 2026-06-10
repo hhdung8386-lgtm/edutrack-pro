@@ -20,9 +20,24 @@ import { doc, getDoc } from 'firebase/firestore'
 
 const schema = z.object({
   date: z.string().min(1),
-  minutes: z.number(),
   comment: z.string().optional(),
   homework: z.string().optional(),
+  book: z.string()
+    .min(1, 'Vui lòng nhập sách học')
+    .refine(
+      (val) => val.trim().split(/\s+/).filter(Boolean).length <= 20,
+      { message: 'Tên sách không được quá 20 từ' }
+    )
+    .refine(
+      (val) => {
+        const lower = val.toLowerCase();
+        return !lower.includes('http://') && 
+               !lower.includes('https://') && 
+               !lower.includes('drive.google.com') && 
+               !lower.includes('docs.google.com');
+      },
+      { message: 'Chỉ nhập tên sách, không gửi link/liên kết' }
+    ),
 })
 type FormData = z.infer<typeof schema>
 
@@ -42,8 +57,9 @@ export function AttendancePage() {
 
   const today = getToday()
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormData>({
-    defaultValues: { date: today, minutes: 50 },
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { date: today },
   })
 
   const searchStudent = async () => {
@@ -114,10 +130,13 @@ export function AttendancePage() {
     setAttendanceStatus(status)
     if (status === 'present') {
       setSelectedMinutes(50)
+      setValue('book', '')
     } else if (status === 'with_permission') {
       setSelectedMinutes(0)
+      setValue('book', 'Học viên vắng')
     } else if (status === 'without_permission') {
       setSelectedMinutes(25)
+      setValue('book', 'Học viên vắng')
     }
   }
 
@@ -154,6 +173,7 @@ export function AttendancePage() {
         minutes: selectedMinutes,
         comment: data.comment || '',
         homework: data.homework || '',
+        book: data.book || '',
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,
         status: 'pending',
@@ -174,7 +194,7 @@ export function AttendancePage() {
         setStudent(null)
         setCode('')
         setImages([])
-        reset({ date: today, minutes: 50 })
+        reset({ date: today, comment: '', homework: '', book: '' })
         setSelectedMinutes(50)
         setAttendanceStatus('present')
       }, 2000)
@@ -348,6 +368,14 @@ export function AttendancePage() {
                   </p>
                 )}
               </div>
+
+              <Input
+                label="Tên sách (Bắt buộc)"
+                placeholder="VD: Family and Friends 2"
+                hint="Chỉ viết tên sách, tối đa 20 từ (Không gửi link Drive/tài liệu)"
+                error={errors.book?.message}
+                {...register('book')}
+              />
 
               <Textarea label={t('attendance.comment')} placeholder={t('attendance.comment_placeholder')} rows={3} {...register('comment')} />
               <Textarea label={t('attendance.homework')} placeholder={t('attendance.homework_placeholder')} rows={2} {...register('homework')} />

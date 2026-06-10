@@ -1,0 +1,2873 @@
+﻿diff --git a/src/pages/LoginPage.tsx b/src/pages/LoginPage.tsx
+index 1ba04d6..9bc185f 100644
+--- a/src/pages/LoginPage.tsx
++++ b/src/pages/LoginPage.tsx
+@@ -1,13 +1,19 @@
+-import { useState } from 'react'
++import { useState, useEffect } from 'react'
+ import { useNavigate, Link } from 'react-router-dom'
+ import { useForm } from 'react-hook-form'
+ import { zodResolver } from '@hookform/resolvers/zod'
+ import { z } from 'zod'
+-import { User, Lock, Eye, EyeOff, Search, BarChart2, MessageSquare, Users, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen, X } from 'lucide-react'
++import { 
++  User, Lock, Eye, EyeOff, Search, BarChart2, MessageSquare, Users, 
++  ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, 
++  Award, BookOpen, X, Volume2, Heart, Sparkles, UserCheck, Gamepad2, 
++  FileText, Check, CheckCircle2, ChevronDown, Play, Mail, MapPin, 
++  RotateCw, Menu, HelpCircle, VolumeX, MessageCircleOff, Brain, 
++  Gift, DollarSign, Flame, ArrowRight, Star, GraduationCap as CapIcon
++} from 'lucide-react'
+ import { signIn, signInTeacher } from '@/lib/auth'
+ import { useLanguageStore } from '@/stores/languageStore'
+ import { Modal } from '@/components/ui/Modal'
+-import { Logo } from '@/components/shared/Logo'
+ 
+ const loginSchema = z.object({
+   username: z.string().min(3, 'T├ái khoß║ún tß╗æi thiß╗âu 3 k├╜ tß╗▒'),
+@@ -17,7 +23,426 @@ const loginSchema = z.object({
+ 
+ type LoginData = z.infer<typeof loginSchema>
+ 
+-type SectionKey = 'gioi-thieu' | 'chuong-trinh' | 'tin-tuc' | 'lien-he' | null
++// =========================================================================
++// CUSTOM VECTOR CARTOON ILLUSTRATIONS (MATCHING MOCKUP GRAPHICS)
++// =========================================================================
++
++// Section 1 Problems SVGs
++function GirlThinkingSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FFF1F2" />
++      <circle cx="50" cy="22" r="10" fill="#E11D48" />
++      <circle cx="50" cy="48" r="22" fill="#FECDD3" />
++      <path d="M 28,40 Q 50,30 72,40 Q 50,22 28,40 Z" fill="#E11D48" />
++      <ellipse cx="43" cy="46" rx="2.5" ry="3.5" fill="#334155" />
++      <ellipse cx="57" cy="46" rx="2.5" ry="3.5" fill="#334155" />
++      <circle cx="42" cy="44" r="0.8" fill="#FFFFFF" />
++      <circle cx="56" cy="44" r="0.8" fill="#FFFFFF" />
++      <path d="M 38,40 Q 43,38 47,41" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" fill="none" />
++      <path d="M 53,41 Q 57,38 62,40" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" fill="none" />
++      <circle cx="34" cy="52" r="3" fill="#FDA4AF" opacity="0.6" />
++      <circle cx="66" cy="52" r="3" fill="#FDA4AF" opacity="0.6" />
++      <path d="M 46,55 Q 50,57 54,55" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" fill="none" />
++      <path d="M 45,64 C 45,64 43,58 48,58 C 50,58 51,64 51,64" stroke="#E11D48" strokeWidth="2.5" strokeLinecap="round" fill="none" />
++      <text x="18" y="30" fill="#EF4444" fontSize="16" fontWeight="bold" transform="rotate(-15 18 30)">?</text>
++      <text x="82" y="32" fill="#3B82F6" fontSize="14" fontWeight="bold" transform="rotate(20 82 32)">?</text>
++    </svg>
++  )
++}
++
++function BoySpeakingSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FEF3C7" />
++      <path d="M 28,45 C 20,30 35,15 50,18 C 65,15 80,30 72,45 Z" fill="#D97706" />
++      <circle cx="50" cy="50" r="22" fill="#FDE68A" />
++      <path d="M 28,40 L 38,36 L 44,40 L 50,34 L 56,40 L 62,36 L 72,40 Q 50,22 28,40 Z" fill="#D97706" />
++      <circle cx="43" cy="48" r="3" fill="#334155" />
++      <circle cx="57" cy="48" r="3" fill="#334155" />
++      <circle cx="42" cy="47" r="0.8" fill="#FFFFFF" />
++      <circle cx="56" cy="47" r="0.8" fill="#FFFFFF" />
++      <ellipse cx="50" cy="58" rx="5" ry="4" fill="#78350F" />
++      <path d="M 46,58 Q 50,60 54,58" stroke="#F87171" strokeWidth="1.5" fill="none" />
++      <path d="M 68,34 C 68,26 80,26 80,34 C 80,38 76,40 74,42 L 74,45 L 71,42 C 68,41 68,38 68,34 Z" fill="#FFFFFF" stroke="#D97706" strokeWidth="1" />
++      <text x="74" y="36" fill="#D97706" fontSize="6" fontWeight="bold" textAnchor="middle">...</text>
++    </svg>
++  )
++}
++
++function GirlScribbleSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#E0E7FF" />
++      <path d="M 24,52 C 24,30 34,22 50,22 C 66,22 76,30 76,52 C 76,64 70,55 70,52" fill="#4338CA" />
++      <circle cx="50" cy="50" r="21" fill="#C7D2FE" />
++      <path d="M 29,38 C 40,32 45,38 50,32 C 55,38 60,32 71,38 Q 50,24 29,38 Z" fill="#4338CA" />
++      <path d="M 40,46 Q 43,44 46,47 Q 44,49 41,47" stroke="#334155" strokeWidth="1.5" fill="none" />
++      <path d="M 54,47 Q 57,44 60,46 Q 59,49 56,47" stroke="#334155" strokeWidth="1.5" fill="none" />
++      <circle cx="34" cy="52" r="2.5" fill="#A5B4FC" opacity="0.6" />
++      <circle cx="66" cy="52" r="2.5" fill="#A5B4FC" opacity="0.6" />
++      <path d="M 46,58 Q 48,56 50,58 Q 52,60 54,58" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" fill="none" />
++      <path d="M 40,20 Q 36,16 42,12 Q 46,8 52,11 Q 58,8 62,13 Q 66,16 61,20 Q 56,22 40,20 Z" fill="#312E81" opacity="0.8" />
++    </svg>
++  )
++}
++
++function BoyLaptopSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#E0F2FE" />
++      <path d="M 28,45 C 26,26 40,16 50,16 C 60,16 74,26 72,45 Z" fill="#0369A1" />
++      <circle cx="50" cy="48" r="21" fill="#BAE6FD" />
++      <ellipse cx="43" cy="46" rx="2.5" ry="2" fill="#334155" />
++      <ellipse cx="57" cy="46" rx="2.5" ry="2" fill="#334155" />
++      <path d="M 46,54 Q 50,57 54,54" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" fill="none" />
++      <rect x="30" y="62" width="40" height="24" rx="2" fill="#64748B" />
++      <rect x="33" y="65" width="34" height="18" fill="#F8FAFC" />
++      <circle cx="38" cy="64" r="3" fill="#BAE6FD" />
++      <circle cx="62" cy="64" r="3" fill="#BAE6FD" />
++      <path d="M 25,86 L 75,86 L 70,92 L 30,92 Z" fill="#475569" />
++    </svg>
++  )
++}
++
++function BoyBoredSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#D1FAE5" />
++      <path d="M 26,45 C 22,25 38,15 50,18 C 62,15 78,25 74,45 Z" fill="#047857" />
++      <circle cx="50" cy="50" r="21" fill="#A7F3D0" />
++      <path d="M 37,47 L 47,47" stroke="#334155" strokeWidth="2" strokeLinecap="round" />
++      <path d="M 53,47 L 63,47" stroke="#334155" strokeWidth="2" strokeLinecap="round" />
++      <ellipse cx="42" cy="50" rx="2" ry="1" fill="#334155" />
++      <ellipse cx="58" cy="50" rx="2" ry="1" fill="#334155" />
++      <path d="M 35,42 L 45,44" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" />
++      <path d="M 55,44 L 65,42" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" />
++      <path d="M 46,58 L 54,58" stroke="#334155" strokeWidth="1.5" strokeLinecap="round" />
++      <path d="M 32,60 C 32,60 30,55 35,53 C 40,51 38,60 38,60" stroke="#047857" strokeWidth="2.5" strokeLinecap="round" fill="none" />
++    </svg>
++  )
++}
++
++// Section 2 Problems SVGs
++function TeenLostRootSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#EFF6FF" />
++      <circle cx="50" cy="46" r="20" fill="#BFDBFE" />
++      {/* Hair */}
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#1D4ED8" />
++      {/* Confused face details */}
++      <circle cx="43" cy="44" r="2" fill="#1E293B" />
++      <circle cx="57" cy="44" r="2" fill="#1E293B" />
++      <path d="M 45,52 Q 50,56 55,52" stroke="#1E293B" strokeWidth="2" fill="none" strokeLinecap="round" />
++      <text x="50" y="82" fill="#1D4ED8" fontSize="11" fontWeight="bold" textAnchor="middle">Mß║ñT Gß╗ÉC</text>
++    </svg>
++  )
++}
++
++function TeenGrammarSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FEE2E2" />
++      <circle cx="50" cy="46" r="20" fill="#FCA5A5" />
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#B91C1C" />
++      {/* Crossed eyes */}
++      <text x="43" y="46" fill="#1E293B" fontSize="8" fontWeight="bold" textAnchor="middle">X</text>
++      <text x="57" y="46" fill="#1E293B" fontSize="8" fontWeight="bold" textAnchor="middle">X</text>
++      <path d="M 45,54 L 55,54" stroke="#1E293B" strokeWidth="2" strokeLinecap="round" />
++      <text x="50" y="82" fill="#B91C1C" fontSize="10" fontWeight="bold" textAnchor="middle">NGß╗« PH├üP Rß╗ÉI</text>
++    </svg>
++  )
++}
++
++function TeenListeningSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FEF3C7" />
++      <circle cx="50" cy="46" r="20" fill="#FDE68A" />
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#D97706" />
++      {/* Ears covered/Blocked */}
++      <circle cx="28" cy="46" r="5" fill="#B45309" />
++      <circle cx="72" cy="46" r="5" fill="#B45309" />
++      <path d="M 28,46 L 72,46" stroke="#B45309" strokeWidth="2" strokeDasharray="3,3" fill="none" />
++      <circle cx="43" cy="44" r="2.5" fill="#1E293B" />
++      <circle cx="57" cy="44" r="2.5" fill="#1E293B" />
++      <path d="M 47,54 Q 50,51 53,54" stroke="#1E293B" strokeWidth="2" fill="none" strokeLinecap="round" />
++      <text x="50" y="82" fill="#B45309" fontSize="10" fontWeight="bold" textAnchor="middle">KH├öNG NGHE</text>
++    </svg>
++  )
++}
++
++function TeenShySVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#F5F3FF" />
++      <circle cx="50" cy="46" r="20" fill="#DDD6FE" />
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#6D28D9" />
++      <circle cx="43" cy="44" r="2" fill="#1E293B" />
++      <circle cx="57" cy="44" r="2" fill="#1E293B" />
++      {/* Blushing cheeks */}
++      <circle cx="36" cy="48" r="4" fill="#F87171" opacity="0.6" />
++      <circle cx="64" cy="48" r="4" fill="#F87171" opacity="0.6" />
++      <path d="M 46,54 Q 50,56 54,54" stroke="#1E293B" strokeWidth="2" fill="none" strokeLinecap="round" />
++      <text x="50" y="82" fill="#6D28D9" fontSize="10" fontWeight="bold" textAnchor="middle">NGß║áI N├ôI</text>
++    </svg>
++  )
++}
++
++function TeenRepeatedSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#ECFDF5" />
++      <circle cx="50" cy="46" r="20" fill="#A7F3D0" />
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#047857" />
++      {/* Tired look */}
++      <path d="M 40,44 L 46,44" stroke="#1E293B" strokeWidth="2" strokeLinecap="round" />
++      <path d="M 54,44 L 60,44" stroke="#1E293B" strokeWidth="2" strokeLinecap="round" />
++      <path d="M 45,54 L 55,54" stroke="#1E293B" strokeWidth="1.5" strokeLinecap="round" />
++      {/* Circular repeat arrow */}
++      <path d="M 22,25 A 35,35 0 0,1 78,25" fill="none" stroke="#047857" strokeWidth="2" strokeDasharray="3,3" />
++      <text x="50" y="82" fill="#047857" fontSize="10" fontWeight="bold" textAnchor="middle">CH├üN Nß║óN</text>
++    </svg>
++  )
++}
++
++function TeenNoEnvironmentSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#F0FDFA" />
++      <circle cx="50" cy="46" r="20" fill="#99F6E4" />
++      <path d="M 30,38 Q 50,22 70,38 Q 50,15 30,38 Z" fill="#0F766E" />
++      <circle cx="43" cy="44" r="2" fill="#1E293B" />
++      <circle cx="57" cy="44" r="2" fill="#1E293B" />
++      <path d="M 46,54 Q 50,52 54,54" stroke="#1E293B" strokeWidth="2" fill="none" strokeLinecap="round" />
++      {/* Caged environment outline */}
++      <rect x="25" y="20" width="50" height="52" rx="4" fill="none" stroke="#0F766E" strokeWidth="1.5" strokeDasharray="4,4" />
++      <text x="50" y="82" fill="#0F766E" fontSize="9" fontWeight="bold" textAnchor="middle">THIß║╛U M├öI TR╞»ß╗£NG</text>
++    </svg>
++  )
++}
++
++// Why choose mockups SVGs (Colorful, High-Fidelity Cartoon Illustrations)
++function TeacherFlagSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#E0F2FE" />
++      {/* Teacher avatar */}
++      <circle cx="48" cy="46" r="16" fill="#FDBA74" />
++      <path d="M 48,30 C 42,30 38,34 38,40 L 58,40 C 58,34 54,30 48,30 Z" fill="#1E293B" /> {/* Hair */}
++      <ellipse cx="43" cy="44" rx="2" ry="1.5" fill="#1E293B" />
++      <ellipse cx="53" cy="44" rx="2" ry="1.5" fill="#1E293B" />
++      <path d="M 45,50 Q 48,53 51,50" stroke="#1E293B" strokeWidth="1.5" fill="none" strokeLinecap="round" /> {/* Smile */}
++      <path d="M 30,70 C 30,60 38,56 48,56 C 58,56 66,60 66,70 Z" fill="#2563EB" /> {/* Blue Shirt */}
++      {/* Philippines Flag Badge */}
++      <circle cx="68" cy="44" r="12" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
++      <path d="M 56,44 L 80,44 A 12,12 0 0,0 68,32 Z" fill="#0038A8" />
++      <path d="M 56,44 L 80,44 A 12,12 0 0,1 68,56 Z" fill="#CE1126" />
++      <polygon points="56,44 64,36 64,52" fill="#FFFFFF" />
++      <circle cx="61" cy="44" r="1.5" fill="#F59E0B" />
++    </svg>
++  )
++}
++
++function KidsStudyingSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#FEF3C7" />
++      {/* Kid 1 (Boy, Blue shirt, Yellow hair) */}
++      <circle cx="38" cy="46" r="13" fill="#FDBA74" />
++      <path d="M 28,42 Q 38,24 48,42 Z" fill="#F59E0B" />
++      <circle cx="34" cy="46" r="1.5" fill="#1E293B" />
++      <circle cx="42" cy="46" r="1.5" fill="#1E293B" />
++      <path d="M 36,51 Q 38,53 40,51" stroke="#1E293B" strokeWidth="1" fill="none" />
++      <path d="M 26,66 C 26,58 32,54 38,54 C 44,54 50,58 50,66 Z" fill="#3B82F6" />
++      {/* Kid 2 (Girl, Yellow shirt, Brown hair) */}
++      <circle cx="62" cy="46" r="13" fill="#FFD2A5" />
++      <path d="M 52,42 Q 62,24 72,42 Z" fill="#78350F" />
++      <circle cx="58" cy="46" r="1.5" fill="#1E293B" />
++      <circle cx="66" cy="46" r="1.5" fill="#1E293B" />
++      <path d="M 60,51 Q 62,53 64,51" stroke="#1E293B" strokeWidth="1" fill="none" />
++      <path d="M 50,66 C 50,58 56,54 62,54 C 68,54 74,58 74,66 Z" fill="#FBBF24" />
++    </svg>
++  )
++}
++
++function OpenBookSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#E0F2FE" />
++      {/* Book outline and pages */}
++      <path d="M 20,64 C 34,64 48,58 48,32 C 48,58 62,64 76,64 L 76,36 C 62,36 48,30 48,30 C 48,30 34,36 20,36 Z" fill="#FFFFFF" stroke="#2563EB" strokeWidth="3" strokeLinejoin="round" />
++      <path d="M 18,66 C 34,66 48,60 48,34 C 48,60 62,66 78,66" stroke="#1D4ED8" strokeWidth="2.5" fill="none" />
++      {/* Text lines */}
++      <path d="M 24,42 L 42,42 M 24,48 L 42,48 M 24,54 L 42,54 M 54,42 L 72,42 M 54,48 L 72,48 M 54,54 L 72,54" stroke="#93C5FD" strokeWidth="2" strokeLinecap="round" />
++      {/* Red Ribbon Bookmark */}
++      <path d="M 48,30 L 48,46 L 51,43 L 54,46 L 54,30" fill="#EF4444" />
++    </svg>
++  )
++}
++
++function GamepadSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#EFF6FF" />
++      {/* Blue Controller body */}
++      <rect x="24" y="34" width="52" height="32" rx="10" fill="#3B82F6" stroke="#1D4ED8" strokeWidth="2.5" />
++      <circle cx="32" cy="50" r="8" fill="#2563EB" />
++      <circle cx="68" cy="50" r="8" fill="#2563EB" />
++      {/* D-Pad */}
++      <path d="M 32,42 L 36,42 L 36,46 L 40,46 L 40,50 L 36,50 L 36,54 L 32,54 L 32,50 L 28,50 L 28,46 L 32,46 Z" fill="#FFFFFF" />
++      {/* Buttons */}
++      <circle cx="62" cy="46" r="3.5" fill="#EF4444" /> {/* Red */}
++      <circle cx="68" cy="52" r="3.5" fill="#FBBF24" /> {/* Yellow */}
++      <circle cx="62" cy="52" r="3.5" fill="#10B981" /> {/* Green */}
++      <circle cx="68" cy="46" r="3.5" fill="#A7F3D0" opacity="0" />
++      {/* Select/Start */}
++      <rect x="44" y="52" width="5" height="2" rx="0.5" fill="#FFFFFF" />
++      <rect x="51" y="52" width="5" height="2" rx="0.5" fill="#FFFFFF" />
++    </svg>
++  )
++}
++
++function ClipboardSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#ECFDF5" />
++      {/* Clipboard base */}
++      <rect x="30" y="26" width="40" height="50" rx="4" fill="#3B82F6" stroke="#1D4ED8" strokeWidth="2.5" />
++      {/* Paper sheet */}
++      <rect x="34" y="32" width="32" height="40" rx="2" fill="#FFFFFF" />
++      {/* Clip */}
++      <rect x="42" y="22" width="16" height="7" rx="2" fill="#94A3B8" stroke="#64748B" strokeWidth="1" />
++      <circle cx="50" cy="25" r="1.5" fill="#475569" />
++      {/* Chart bars */}
++      <rect x="38" y="58" width="6" height="10" fill="#EF4444" rx="1" />
++      <rect x="47" y="50" width="6" height="18" fill="#10B981" rx="1" />
++      <rect x="56" y="44" width="6" height="24" fill="#3B82F6" rx="1" />
++      <path d="M 38,40 L 62,40 M 38,46 L 52,46" stroke="#E2E8F0" strokeWidth="2.5" strokeLinecap="round" />
++    </svg>
++  )
++}
++
++function ShieldSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-20 h-20 select-none drop-shadow-sm">
++      <circle cx="50" cy="50" r="44" fill="#EFF6FF" />
++      {/* Shield Graphic */}
++      <path d="M 30,30 L 50,22 L 70,30 C 70,52 50,68 50,68 C 50,68 30,52 30,30 Z" fill="#2563EB" stroke="#1D4ED8" strokeWidth="3" strokeLinejoin="round" />
++      <circle cx="50" cy="46" r="14" fill="#FFFFFF" />
++      <path d="M 44,46 L 48,50 L 56,40" fill="none" stroke="#2563EB" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
++    </svg>
++  )
++}
++
++
++// Section 3 Adult Problems SVGs
++function AdultNoReflexSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FFFBEB" />
++      <path d="M 35,35 Q 50,25 65,35 Q 50,55 35,35 Z" fill="#D97706" />
++      {/* Speech lines blocked */}
++      <path d="M 35,50 L 65,50" stroke="#EF4444" strokeWidth="3.5" strokeLinecap="round" />
++      <text x="50" y="80" fill="#D97706" fontSize="9" fontWeight="bold" textAnchor="middle">KH├öNG PHß║óN Xß║á</text>
++    </svg>
++  )
++}
++
++function AdultMeetingShySVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#EFF6FF" />
++      {/* Table outline */}
++      <ellipse cx="50" cy="56" rx="22" ry="12" fill="#3B82F6" />
++      {/* Shy speaker hiding */}
++      <circle cx="50" cy="42" r="8" fill="#DBEAFE" />
++      <path d="M 46,42 Q 50,45 54,42" stroke="#1E293B" strokeWidth="1.5" fill="none" />
++      <text x="50" y="80" fill="#1D4ED8" fontSize="9" fontWeight="bold" textAnchor="middle">NGß║áI Hß╗îP</text>
++    </svg>
++  )
++}
++
++function AdultNoIdeaSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#FFF1F2" />
++      {/* Unlit/Cracked bulb */}
++      <path d="M 40,42 C 40,30 60,30 60,42 C 60,48 54,50 54,54 L 46,54 C 46,50 40,48 40,42 Z" fill="#F1F5F9" stroke="#E11D48" strokeWidth="2" />
++      <rect x="46" y="55" width="8" height="4" fill="#94A3B8" />
++      <path d="M 35,42 L 65,42" stroke="#E11D48" strokeWidth="1.5" strokeDasharray="3,3" />
++      <text x="50" y="80" fill="#E11D48" fontSize="9" fontWeight="bold" textAnchor="middle">B├ì ├¥ T╞»ß╗₧NG</text>
++    </svg>
++  )
++}
++
++function AdultNoPromotionSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#F5F3FF" />
++      {/* Stairs */}
++      <path d="M 30,62 L 42,62 L 42,50 L 54,50 L 54,38 L 66,38" stroke="#7C3AED" strokeWidth="2.5" fill="none" strokeLinecap="round" />
++      {/* Red block sign */}
++      <circle cx="54" cy="38" r="5" fill="#EF4444" />
++      <line x1="51" y1="38" x2="57" y2="38" stroke="#FFFFFF" strokeWidth="1.5" />
++      <text x="50" y="80" fill="#7C3AED" fontSize="9" fontWeight="bold" textAnchor="middle">Mß║ñT C╞á Hß╗ÿI</text>
++    </svg>
++  )
++}
++
++function AdultNoEnvSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-24 h-24 drop-shadow-sm select-none">
++      <circle cx="50" cy="50" r="44" fill="#ECFDF5" />
++      {/* Speaking head with lock */}
++      <circle cx="45" cy="46" r="14" fill="#A7F3D0" />
++      <rect x="52" y="42" width="14" height="14" rx="2" fill="#10B981" />
++      <circle cx="59" cy="46" r="2" fill="#FFFFFF" />
++      <path d="M 55,42 L 55,38 A 4,4 0 0,1 63,38 L 63,42" fill="none" stroke="#10B981" strokeWidth="2" />
++      <text x="50" y="80" fill="#047857" fontSize="9" fontWeight="bold" textAnchor="middle">THIß║╛U LUYß╗åN N├ôI</text>
++    </svg>
++  )
++}
++
++// Section 3 Program SVGs
++function OfficeProgSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-16 h-16 select-none">
++      <circle cx="50" cy="50" r="44" fill="#EFF6FF" />
++      <rect x="34" y="24" width="32" height="52" rx="3" fill="#3B82F6" />
++      <rect x="40" y="30" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++      <rect x="54" y="30" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++      <rect x="40" y="42" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++      <rect x="54" y="42" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++      <rect x="40" y="54" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++      <rect x="54" y="54" width="6" height="6" fill="#FFFFFF" opacity="0.8" />
++    </svg>
++  )
++}
++
++function MeetingProgSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-16 h-16 select-none">
++      <circle cx="50" cy="50" r="44" fill="#FFF8E7" />
++      <path d="M 28,66 C 28,52 38,46 50,46 C 62,46 72,52 72,66 Z" fill="#D97706" />
++      <circle cx="50" cy="34" r="10" fill="#F59E0B" />
++      <path d="M 34,42 Q 50,22 66,42" stroke="#D97706" strokeWidth="2" fill="none" />
++    </svg>
++  )
++}
++
++function ClientProgSVG() {
++  return (
++    <svg viewBox="0 0 100 100" className="w-16 h-16 select-none">
++      <circle cx="50" cy="50" r="44" fill="#E6FBF2" />
++      <circle cx="50" cy="46" r="18" fill="#10B981" />
++      <path d="M 30,62 C 30,50 40,46 50,46 C 60,46 70,50 70,62 Z" fill="#047857" />
++      <circle cx="50" cy="34" r="8" fill="#FFFFFF" />
++      <path d="M 36,44 Q 50,24 64,44" stroke="#FFFFFF" strokeWidth="2" fill="none" />
++    </svg>
++  )
++}
+ 
+ export function LoginPage() {
+   const navigate = useNavigate()
+@@ -25,14 +450,45 @@ export function LoginPage() {
+   const [errorMsg, setErrorMsg] = useState('')
+   const { lang, setLang, t } = useLanguageStore()
+   
+-  // Login modal state
++  // Modals state
+   const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
++  const [showSearchModal, setShowSearchModal] = useState(false)
++  const [studentCode, setStudentCode] = useState('')
++  const [successMsg, setSuccessMsg] = useState<string | null>(null)
++  const [activeSection, setActiveSection] = useState<'tre-em' | 'mat-goc' | 'nguoi-di-lam'>('tre-em')
+ 
+-  // Section modal state
+-  const [activeSection, setActiveSection] = useState<SectionKey>(null)
++  // Mobile menu state
++  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+ 
+-  // Parent search state
+-  const [studentCode, setStudentCode] = useState('')
++  // FAQ state
++  const [faqOpenIndex, setFaqOpenIndex] = useState<number | null>(null)
++  const [faqMatGocIndex, setFaqMatGocIndex] = useState<number | null>(null)
++  const [faqNguoiDiLamIndex, setFaqNguoiDiLamIndex] = useState<number | null>(null)
++
++  // Form states
++  const [formTreEm, setFormTreEm] = useState({ parentName: '', phone: '', kidName: '', kidAge: '5-6' })
++  const [formBottomTreEm, setFormBottomTreEm] = useState({ parentName: '', phone: '', kidAge: '5-6' })
++  const [formNguoiDiLam, setFormNguoiDiLam] = useState({ name: '', phone: '', objectives: [] as string[] })
++  const [formBottomNguoiDiLam, setFormBottomNguoiDiLam] = useState({ phone: '' })
++
++  // Wheel of Fortune State
++  const [spinning, setSpinning] = useState(false)
++  const [wheelRotation, setWheelRotation] = useState(0)
++  const [spinCount, setSpinCount] = useState(0)
++  const [showPrizeModal, setShowPrizeModal] = useState(false)
++  const [prizeIndex, setPrizeIndex] = useState<number | null>(null)
++  const [claimPhone, setClaimPhone] = useState('')
++  const [claimSuccess, setClaimSuccess] = useState(false)
++  const [hasSpun, setHasSpun] = useState(false)
++
++  const sectors = [
++    { labelLines: ['Voucher', '500.000─æ'], color: '#FFF1F2', textColor: '#E11D48', border: '#FDA4AF' }, // Red-rose
++    { labelLines: ['Voucher', '300.000─æ'], color: '#FEF3C7', textColor: '#D97706', border: '#FDE68A' }, // Amber
++    { labelLines: ['Voucher', '200.000─æ'], color: '#ECFDF5', textColor: '#059669', border: '#A7F3D0' }, // Emerald
++    { labelLines: ['01 Buß╗òi Hß╗ìc', 'Miß╗àn Ph├¡'], color: '#EFF6FF', textColor: '#2563EB', border: '#BFDBFE' }, // Blue
++    { labelLines: ['02 Buß╗òi Hß╗ìc', 'Miß╗àn Ph├¡'], color: '#F5F3FF', textColor: '#7C3AED', border: '#DDD6FE' }, // Purple
++    { labelLines: ['Qu├á Tß║╖ng', '─Éß║╖c Biß╗çt'], color: '#FDF2F8', textColor: '#DB2777', border: '#FBCFE8' }  // Pink
++  ]
+ 
+   const {
+     register: registerLogin,
+@@ -41,6 +497,28 @@ export function LoginPage() {
+     reset: resetLoginForm
+   } = useForm<LoginData>({ resolver: zodResolver(loginSchema) })
+ 
++  // Active section highlights on scroll
++  useEffect(() => {
++    const handleScroll = () => {
++      const treEmEl = document.getElementById('trang-chu')
++      const matGocEl = document.getElementById('mat-goc')
++      const nguoiDiLamEl = document.getElementById('nguoi-di-lam')
++      
++      const scrollPos = window.scrollY + 280
++
++      if (nguoiDiLamEl && scrollPos >= nguoiDiLamEl.offsetTop) {
++        setActiveSection('nguoi-di-lam')
++      } else if (matGocEl && scrollPos >= matGocEl.offsetTop) {
++        setActiveSection('mat-goc')
++      } else if (treEmEl) {
++        setActiveSection('tre-em')
++      }
++    }
++
++    window.addEventListener('scroll', handleScroll)
++    return () => window.removeEventListener('scroll', handleScroll)
++  }, [])
++
+   const formatEmail = (username: string) => {
+     if (!username.includes('@')) return `${username}@edutrackpro.app`
+     return username
+@@ -52,10 +530,8 @@ export function LoginPage() {
+       let result
+       
+       if (loginRole === 'teacher') {
+-        // For teacher login, use teacher code and fixed password
+         result = await signInTeacher(data.username, data.password)
+       } else {
+-        // For admin login, format as email
+         const emailToUse = formatEmail(data.username)
+         result = await signIn(emailToUse, data.password)
+       }
+@@ -84,6 +560,7 @@ export function LoginPage() {
+ 
+   const handleSearchProgress = () => {
+     if (!studentCode.trim()) return
++    setShowSearchModal(false)
+     navigate(`/parent?code=${encodeURIComponent(studentCode.trim())}`)
+   }
+ 
+@@ -95,319 +572,1885 @@ export function LoginPage() {
+     resetLoginForm()
+   }
+ 
+-  // Section modal content
+-  const sectionContent: Record<Exclude<SectionKey, null>, { title: string; content: React.ReactNode }> = {
+-    'gioi-thieu': {
+-      title: 'Giß╗¢i thiß╗çu chung',
+-      content: (
+-        <div className="space-y-4 text-slate-600 leading-relaxed">
+-          <p><strong className="text-slate-900">123English</strong> l├á mß╗Öt nß╗ün tß║úng gi├ío dß╗Ñc trß╗▒c tuyß║┐n chuy├¬n vß╗ü ─æ├áo tß║ío tiß║┐ng Anh tß║íi Viß╗çt Nam. ─É╞ín vß╗ï n├áy ─æ├ú khß║│ng ─æß╗ïnh ─æ╞░ß╗úc uy t├¡n khi ─æ╞░ß╗úc vinh danh l├á <strong className="text-slate-900">"Th╞░╞íng hiß╗çu gi├ío dß╗Ñc trß╗▒c tuyß║┐n Viß╗çt Nam ╞░u ti├¬n tin d├╣ng"</strong>.</p>
+-          <p>H├¼nh ß║únh tß╗½ t╞░ liß╗çu cho thß║Ñy th╞░╞íng hiß╗çu n├áy tß╗½ng xuß║Ñt hiß╗çn tr├¬n c├íc k├¬nh truyß╗ün h├¼nh lß╗¢n nh╞░ HTV9 ─æß╗â khß║│ng ─æß╗ïnh chß║Ñt l╞░ß╗úng v├á sß╗▒ tin cß║¡y ─æß╗æi vß╗¢i ng╞░ß╗¥i hß╗ìc.</p>
++  const handleSignupSubmit = (e: React.FormEvent, programName: string) => {
++    e.preventDefault()
++    setSuccessMsg(`─É─âng k├╜ hß╗ìc thß╗¡ th├ánh c├┤ng ch╞░╞íng tr├¼nh "${programName}"! Trung t├óm 123English sß║╜ li├¬n hß╗ç vß╗¢i phß╗Ñ huynh / hß╗ìc sinh qua sß╗æ ─æiß╗çn thoß║íi cung cß║Ñp trong v├▓ng 15-30 ph├║t ─æß╗â kiß╗âm tra tr├¼nh ─æß╗Ö v├á l├¬n lß╗ïch hß╗ìc thß╗¡ miß╗àn ph├¡.`)
++  }
++
++  const handleSpin = () => {
++    if (spinning || hasSpun) return
++    setSpinning(true)
++    setClaimSuccess(false)
++    setClaimPhone('')
++    
++    const randomIndex = Math.floor(Math.random() * sectors.length)
++    setPrizeIndex(randomIndex)
++
++    const nextSpinCount = spinCount + 6
++    setSpinCount(nextSpinCount)
++    
++    // Rotate to position sector center at 12 o'clock pointer (270 degrees in SVG coordinate)
++    const targetRotation = nextSpinCount * 360 + 270 - (randomIndex * 60 + 30)
++    setWheelRotation(targetRotation)
++
++    setTimeout(() => {
++      setSpinning(false)
++      setHasSpun(true)
++      setShowPrizeModal(true)
++    }, 4000)
++  }
++
++  const handleClaimPrizeSubmit = (e: React.FormEvent) => {
++    e.preventDefault()
++    if (!claimPhone.trim()) return
++    setClaimSuccess(true)
++    setTimeout(() => {
++      setShowPrizeModal(false)
++      setSuccessMsg(`Ch├║c mß╗½ng bß║ín ─æ├ú nhß║¡n phß║ºn qu├á "${sectors[prizeIndex!].labelLines.join(' ')}"! M├ú ╞░u ─æ├úi sß║╜ ─æ╞░ß╗úc gß╗¡i ─æß║┐n sß╗æ ─æiß╗çn thoß║íi ${claimPhone} sau ├¡t ph├║t. Nh├ón vi├¬n hß╗ù trß╗ú sß║╜ li├¬n hß╗ç ─æß╗â k├¡ch hoß║ít ─æß║╖c quyß╗ün hß╗ìc thß╗¡ cß╗ºa bß║ín.`)
++    }, 1500)
++  }
++
++  return (
++    <div className="min-h-screen bg-[#FFFDF7] overflow-x-hidden font-jakarta relative selection:bg-[#10B981]/30 selection:text-slate-900">
++      
++      {/* 1. NAV BAR (MATCHES MOCKUP HEADER) */}
++      <nav className="bg-white border-b border-slate-100 py-3 px-4 sm:px-6 md:px-12 lg:px-20 sticky top-0 z-50 shadow-sm backdrop-blur-md bg-white/95">
++        <div className="max-w-7xl mx-auto flex items-center justify-between">
++          
++          {/* Logo with clean typography */}
++          <div className="flex flex-col">
++            <Link to="/login" className="flex items-center gap-1">
++              <span className="font-quicksand font-extrabold text-2xl tracking-tight flex">
++                <span className="text-[#FBBF24]">1</span>
++                <span className="text-[#F97316]">2</span>
++                <span className="text-[#2563EB]">3</span>
++                <span className="text-[#2563EB] ml-1">ENGLISH</span>
++              </span>
++            </Link>
++            <span className="text-[9px] font-black text-[#10B981] tracking-wider font-quicksand leading-none uppercase mt-0.5">
++              TIß║╛NG ANH TRß║║ EM - Hß╗îC SINH - NG╞»ß╗£I ─ÉI L├ÇM
++            </span>
++          </div>
++
++          {/* Navigation Menu (Mockup Menu Links) */}
++          <div className="hidden lg:flex items-center gap-7 xl:gap-8 font-quicksand font-bold text-[14px] text-slate-800">
++            <a 
++              href="#trang-chu" 
++              className={`pb-1 border-b-2 transition-all duration-200 ${activeSection === 'tre-em' ? 'border-[#10B981] text-[#10B981]' : 'border-transparent hover:text-[#10B981]'}`}
++            >
++              Trang chß╗º
++            </a>
++            <a 
++              href="#van-de" 
++              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
++            >
++              Vß║Ñn ─æß╗ü
++            </a>
++            <a 
++              href="#chuong-trinh" 
++              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
++            >
++              Ch╞░╞íng tr├¼nh hß╗ìc
++            </a>
++            <a 
++              href="#lo-trinh" 
++              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
++            >
++              Lß╗Ö tr├¼nh
++            </a>
++            <a 
++              href="#danh-gia" 
++              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
++            >
++              ─É├ính gi├í
++            </a>
++            <a 
++              href="#cau-hoi" 
++              className="pb-1 border-b-2 border-transparent hover:text-[#10B981] transition-all duration-200"
++            >
++              C├óu hß╗Åi
++            </a>
++          </div>
++
++          {/* Action buttons */}
++          <div className="flex items-center gap-4">
++            <button 
++              onClick={() => setShowSearchModal(true)}
++              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all duration-200 font-quicksand font-bold text-xs"
++            >
++              <Search className="w-3.5 h-3.5" />
++              Tra cß╗⌐u tiß║┐n ─æß╗Ö
++            </button>
++            
++            <button 
++              onClick={() => openLogin('teacher')}
++              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-black hover:to-slate-900 text-white shadow-sm rounded-xl transition-all duration-300 font-quicksand font-bold text-xs"
++            >
++              <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />
++              ─É─âng nhß║¡p
++            </button>
++
++            <a 
++              href="#dang-ky-form"
++              className="hidden sm:inline-flex items-center gap-1 px-4.5 py-2.5 bg-[#10B981] hover:bg-[#0d9468] text-white shadow-md rounded-full transition-all duration-300 font-quicksand font-extrabold text-[11px] uppercase tracking-wider"
++            >
++              ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡ &gt;
++            </a>
++            
++            <button 
++              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
++              className="lg:hidden p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-700"
++            >
++              <Menu className="w-4 h-4" />
++            </button>
++          </div>
++
+         </div>
+-      )
+-    },
+-    'chuong-trinh': {
+-      title: 'Ch╞░╞íng tr├¼nh hß╗ìc',
+-      content: (
+-        <div className="space-y-6">
+-          <p className="text-slate-600">Dß╗▒a tr├¬n cß║Ñu tr├║c trang web v├á c├íc hoß║ít ─æß╗Öng tr├¬n mß║íng x├ú hß╗Öi, ch╞░╞íng tr├¼nh hß╗ìc tß║íi ─æ├óy kh├í ─æa dß║íng:</p>
+-          <div className="grid sm:grid-cols-3 gap-4">
+-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+-              <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-3">
+-                <Users className="w-5 h-5" />
++
++        {/* Mobile menu dropdown */}
++        {mobileMenuOpen && (
++          <div className="lg:hidden mt-3 pt-3 border-t border-slate-100 flex flex-col gap-2.5 font-quicksand font-bold text-sm text-slate-700 animate-slide-up">
++            <a href="#trang-chu" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>Trang chß╗º</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            <a href="#van-de" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>Vß║Ñn ─æß╗ü</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            <a href="#chuong-trinh" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>Ch╞░╞íng tr├¼nh hß╗ìc</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            <a href="#lo-trinh" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>Lß╗Ö tr├¼nh</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            <a href="#danh-gia" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>─É├ính gi├í</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            <a href="#cau-hoi" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 hover:bg-slate-50 rounded-xl flex items-center justify-between">
++              <span>C├óu hß╗Åi</span>
++              <ChevronRight className="w-4 h-4 text-slate-400" />
++            </a>
++            
++            <div className="border-t border-slate-100 mt-2 pt-2 grid grid-cols-2 gap-2">
++              <button onClick={() => { setMobileMenuOpen(false); openLogin('teacher') }} className="py-2.5 bg-slate-100 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5">
++                <GraduationCap className="w-4 h-4 text-emerald-500" />
++                Gi├ío vi├¬n
++              </button>
++              <button onClick={() => { setMobileMenuOpen(false); openLogin('admin') }} className="py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5">
++                <Settings className="w-4 h-4 text-slate-400" />
++                Admin
++              </button>
++            </div>
++          </div>
++        )}
++      </nav>
++
++      {/* ========================================================================= */}
++      {/* MEGA-SECTION 1: TIß║╛NG ANH TRß║║ EM (AGES 5-12) - IMAGE 1                    */}
++      {/* ========================================================================= */}
++      <section id="trang-chu" className="pt-8 pb-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#FFFBF0] via-white to-white relative overflow-hidden">
++        
++        {/* Decorative background stars */}
++        <div className="absolute top-10 left-[45%] text-yellow-300 font-bold text-3xl animate-bounce pointer-events-none select-none">Γÿà</div>
++        <div className="absolute top-32 left-10 text-yellow-200 font-bold text-xl pointer-events-none select-none">Γ£ª</div>
++        
++        {/* Hero 3-Column Desktop Grid */}
++        <div className="max-w-7xl mx-auto grid lg:grid-cols-[37%_33%_30%] gap-6 items-center">
++          
++          {/* Column 1: Left Text & Bullets & Mascot */}
++          <div className="relative z-10 flex flex-col justify-center h-full">
++            <div className="self-start px-4 py-1.5 bg-[#FEF3C7] border border-[#FDE68A] text-[#D97706] font-quicksand font-bold text-xs rounded-full uppercase tracking-wider shadow-sm mb-6">
++              Tiß║┐ng Anh Trß║╗ Em 5-12 Tuß╗òi
++            </div>
++            
++            <h1 className="font-quicksand font-extrabold text-3xl sm:text-4xl lg:text-[40px] leading-[1.15] text-slate-800 tracking-tight">
++              Tß╗░ TIN GIAO TIß║╛P TIß║╛NG ANH<br />
++              <span className="inline-flex items-center gap-2 text-[#10B981] font-extrabold py-1 my-1">
++                <span className="w-1.5 h-8 bg-[#10B981] rounded-full inline-block" /> 1 K├êM 1 C├ÖNG
++              </span><br />
++              <span className="text-[#10B981] font-black drop-shadow-sm font-quicksand uppercase">GI├üO VI├èN PHILIPPINES</span>
++            </h1>
++
++            {/* Bullet points with circular green checkmark */}
++            <ul className="mt-6 space-y-3.5 font-jakarta font-semibold text-slate-600 text-sm">
++              {[
++                'Hß╗ìc 1 k├¿m 1 c├í nh├ón h├│a theo tr├¼nh ─æß╗Ö cß╗ºa b├⌐',
++                'Gi├ío vi├¬n Philippines ph├ít ├óm chuß║⌐n, nhiß╗çt t├¼nh',
++                'Hß╗ìc online tß║íi nh├á, linh hoß║ít thß╗¥i gian',
++                'Tiß║┐n bß╗Ö r├╡ rß╗çt sau tß╗½ng buß╗òi hß╗ìc'
++              ].map((bullet, idx) => (
++                <li key={idx} className="flex items-center gap-3">
++                  <span className="flex-shrink-0 w-5 h-5 bg-[#10B981] text-white rounded-full flex items-center justify-center shadow-sm">
++                    <Check className="w-3 h-3 stroke-[3]" />
++                  </span>
++                  <span>{bullet}</span>
++                </li>
++              ))}
++            </ul>
++
++            {/* Mascot dog waving at bottom-left */}
++            <div className="mt-8 flex items-center gap-4 relative">
++              <div className="w-20 h-20 select-none">
++                <img src="/logo.png" alt="Mascot Husky" className="w-full h-full object-contain" />
+               </div>
+-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">─Éß╗Öi ng┼⌐ gi├ío vi├¬n</h3>
+-              <p className="text-slate-600 text-xs leading-relaxed">Gß╗ôm c├íc thß║ºy c├┤ Viß╗çt Nam v├á gi├ío vi├¬n n╞░ß╗¢c ngo├ái ─æß║┐n tß╗½ Anh, Mß╗╣, sß╗ƒ hß╗»u tr├¼nh ─æß╗Ö chuy├¬n m├┤n cao.</p>
++              <div className="relative">
++                <div className="absolute top-0 left-0 w-16 h-12 border-t-2 border-dashed border-yellow-300 rounded-tl-full opacity-60"></div>
++                <div className="text-[10px] font-black text-slate-400 font-quicksand uppercase tracking-wider pl-4 pt-4">Lß╗ÜP Hß╗îC H├ÇNG ─Éß║ªU VIß╗åT NAM</div>
++              </div>
++            </div>
++          </div>
++
++          {/* Column 2: Center Image with Overlapping details */}
++          <div className="relative flex justify-center items-center py-6 lg:py-0">
++            {/* Background book details */}
++            <div className="absolute -bottom-4 left-6 bg-gradient-to-br from-amber-400 to-orange-500 w-10 h-10 rounded-2xl flex items-center justify-center text-white font-outfit font-black text-lg shadow-lg rotate-12 select-none z-10">A</div>
++            <div className="absolute -bottom-5 right-20 bg-gradient-to-br from-emerald-400 to-teal-500 w-8 h-8 rounded-2xl flex items-center justify-center text-white font-outfit font-black text-base shadow-lg -rotate-12 select-none z-10">B</div>
++            <div className="absolute top-16 left-0 bg-gradient-to-br from-blue-400 to-indigo-500 w-9 h-9 rounded-2xl flex items-center justify-center text-white font-outfit font-black text-base shadow-lg rotate-45 select-none z-10">C</div>
++            
++            {/* Comic Speech Bubble */}
++            <div className="absolute top-2 right-4 bg-white px-4 py-2 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-1.5 animate-bounce z-10">
++              <span className="text-[10px] font-black text-[#2563EB] tracking-wide uppercase font-quicksand">Let's learn English!</span>
++            </div>
++
++            {/* Main Kid Image */}
++            <div className="rounded-[2.5rem] overflow-hidden border-[6px] border-white shadow-2xl bg-[#FEFBF2] max-w-[340px] w-full relative">
++              <img 
++                src="/hero1.png" 
++                alt="B├⌐ hß╗ìc tiß║┐ng anh online" 
++                className="w-full h-auto object-cover object-center max-h-[310px]"
++              />
++            </div>
++          </div>
++
++          {/* Column 3: Right SignUp Card */}
++          <div id="dang-ky-form" className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-2xl relative">
++            <h3 className="font-quicksand font-extrabold text-lg text-center text-slate-800 uppercase tracking-tight">
++              ─É─éNG K├¥ Hß╗îC THß╗¼<br />
++              <span className="text-[#10B981] font-black">MIß╗äN PH├ì</span>
++            </h3>
++            
++            <div className="mt-4 space-y-2 font-jakarta font-bold text-[10px] text-slate-500 bg-slate-50 p-3.5 rounded-2xl border border-slate-100/50">
++              {[
++                'Kiß╗âm tra tr├¼nh ─æß╗Ö miß╗àn ph├¡',
++                'Hß╗ìc thß╗¡ 1 k├¿m 1 c├╣ng gi├ío vi├¬n',
++                'Nhß║¡n lß╗Ö tr├¼nh c├í nh├ón h├│a'
++              ].map((feat, idx) => (
++                <div key={idx} className="flex items-center gap-2.5">
++                  <span className="w-4 h-4 bg-[#FBBF24] text-white rounded-full flex items-center justify-center text-[9px] font-black shrink-0">
++                    Γ£ô
++                  </span>
++                  <span>{feat}</span>
++                </div>
++              ))}
+             </div>
+-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+-              <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-3">
+-                <Globe className="w-5 h-5" />
++
++            <form onSubmit={(e) => handleSignupSubmit(e, 'Tiß║┐ng Anh Trß║╗ Em (Hero)')} className="space-y-3 mt-4">
++              <div className="relative">
++                <User className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                <input 
++                  type="text" 
++                  required
++                  value={formTreEm.parentName}
++                  onChange={(e) => setFormTreEm({...formTreEm, parentName: e.target.value})}
++                  placeholder="Hß╗ì v├á t├¬n phß╗Ñ huynh *"
++                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:bg-white transition-all font-medium"
++                />
++              </div>
++              
++              <div className="relative">
++                <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                <input 
++                  type="tel" 
++                  required
++                  value={formTreEm.phone}
++                  onChange={(e) => setFormTreEm({...formTreEm, phone: e.target.value})}
++                  placeholder="Sß╗æ ─æiß╗çn thoß║íi li├¬n hß╗ç *"
++                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:bg-white transition-all font-medium"
++                />
++              </div>
++
++              <div className="relative">
++                <Heart className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                <input 
++                  type="text" 
++                  required
++                  value={formTreEm.kidName}
++                  onChange={(e) => setFormTreEm({...formTreEm, kidName: e.target.value})}
++                  placeholder="T├¬n cß╗ºa b├⌐ *"
++                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:bg-white transition-all font-medium"
++                />
++              </div>
++
++              <div className="relative">
++                <GraduationCap className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                <select 
++                  value={formTreEm.kidAge}
++                  onChange={(e) => setFormTreEm({...formTreEm, kidAge: e.target.value})}
++                  className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-[#10B981] focus:bg-white transition-all font-medium appearance-none"
++                >
++                  <option value="5-6">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 5 - 6 tuß╗òi</option>
++                  <option value="7-9">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 7 - 9 tuß╗òi</option>
++                  <option value="10-12">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 10 - 12 tuß╗òi</option>
++                </select>
++                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+               </div>
+-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">H├¼nh thß╗⌐c hß╗ìc</h3>
+-              <p className="text-slate-600 text-xs leading-relaxed">Tß║¡p trung mß║ính v├áo mß║úng trß╗▒c tuyß║┐n (Online), cho ph├⌐p ng╞░ß╗¥i hß╗ìc tiß║┐p cß║¡n linh hoß║ít.</p>
++
++              <button 
++                type="submit"
++                className="w-full py-3.5 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-extrabold rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center gap-1 text-xs uppercase tracking-wider"
++              >
++                ─É─éNG K├¥ Hß╗îC THß╗¼ NGAY &gt;
++              </button>
++            </form>
++
++            <div className="mt-3.5 flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-bold bg-slate-50 py-2 rounded-lg border border-slate-100/50">
++              <ShieldCheck className="w-3 h-3 text-[#10B981]" />
++              TH├öNG TIN ─É╞»ß╗óC Bß║óO Mß║¼T TUYß╗åT ─Éß╗ÉI
+             </div>
+-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+-              <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mb-3">
+-                <BookOpen className="w-5 h-5" />
++          </div>
++
++        </div>
++
++        {/* 3. KEY STATS ROW (Mockup Clean Row) */}
++        <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mt-12 bg-white/60 p-5 rounded-[2rem] border border-slate-100 shadow-sm relative z-10">
++          {[
++            { val: '5+', title: 'N─âm kinh nghiß╗çm', desc: '─æ├áo tß║ío Tiß║┐ng Anh trß║╗ em', icon: ShieldCheck, color: 'text-rose-500 bg-rose-50' },
++            { val: '100+', title: 'Gi├ío vi├¬n Philippines', desc: '─æ╞░ß╗úc tuyß╗ân chß╗ìn kß╗╣ l╞░ß╗íng', icon: Users, color: 'text-amber-500 bg-amber-50' },
++            { val: '10.000+', title: 'Giß╗¥ hß╗ìc', desc: '─æ├ú ho├án th├ánh xuß║Ñt sß║»c', icon: Award, color: 'text-blue-500 bg-blue-50' },
++            { val: 'Hß╗ìc vi├¬n', title: 'tß║íi mß╗ìi tß╗ënh th├ánh', desc: 'hß╗ìc trß╗▒c tuyß║┐n to├án quß╗æc', icon: Globe, color: 'text-emerald-500 bg-emerald-50' }
++          ].map((stat, idx) => (
++            <div key={idx} className="text-center p-2 border-r last:border-0 border-slate-100 flex flex-col items-center">
++              <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-1.5 shadow-sm ${stat.color}`}>
++                <stat.icon className="w-4.5 h-4.5" />
+               </div>
+-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Nß╗Öi dung</h3>
+-              <p className="text-slate-600 text-xs leading-relaxed">Bao gß╗ôm c├íc kh├│a hß╗ìc tß╗½ c╞í bß║ún ─æß║┐n n├óng cao, tiß║┐ng Anh giao tiß║┐p v├á bß╗ò trß╗ú kiß║┐n thß╗⌐c.</p>
++              <div className="font-quicksand font-extrabold text-xl lg:text-2xl text-slate-800 leading-none">{stat.val}</div>
++              <div className="font-bold text-[11px] text-slate-700 mt-1">{stat.title}</div>
++              <div className="text-[9px] text-slate-400 font-bold leading-snug">{stat.desc}</div>
+             </div>
++          ))}
++        </div>
++
++      </section>
++
++      {/* 4. SECTION: B├ë C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? */}
++      <section id="van-de" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-white border-t border-slate-50 scroll-mt-20">
++        <div className="max-w-7xl mx-auto">
++          
++          <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-1.5 uppercase">
++            <span className="text-[#FBBF24]">Γ£ª</span> B├ë C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? <span className="text-[#FBBF24]">Γ£ª</span>
++          </h2>
++
++          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-10">
++            {[
++              { title: 'Ngß║íi n├│i tiß║┐ng Anh, thiß║┐u tß╗▒ tin', svg: GirlThinkingSVG },
++              { title: 'Ph├ít ├óm ch╞░a chuß║⌐n, kh├│ nghe hiß╗âu', svg: BoySpeakingSVG },
++              { title: 'Hß╗ìc tr╞░ß╗¢c qu├¬n sau, kh├│ ghi nhß╗¢', svg: GirlScribbleSVG },
++              { title: 'Thiß║┐u m├┤i tr╞░ß╗¥ng giao tiß║┐p thß╗▒c tß║┐', svg: BoyLaptopSVG },
++              { title: 'Kh├┤ng hß╗⌐ng th├║, dß╗à ch├ín khi hß╗ìc', svg: BoyBoredSVG }
++            ].map((prob, idx) => (
++              <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-100 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col items-center text-center group">
++                <div className="mb-4 transform transition-transform duration-300 group-hover:scale-105">
++                  <prob.svg />
++                </div>
++                <h4 className="font-jakarta font-bold text-xs sm:text-sm text-slate-700 leading-snug">{prob.title}</h4>
++              </div>
++            ))}
++          </div>
++
++        </div>
++      </section>
++
++      {/* 5. SECTION: V├î SAO PHß╗ñ HUYNH CHß╗îN 123ENGLISH? */}
++      <section id="chuong-trinh" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#FFFDF7] border-t border-slate-50 scroll-mt-20">
++        <div className="max-w-7xl mx-auto">
++          
++          <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-1">
++            V├î SAO PHß╗ñ HUYNH CHß╗îN 
++            <span className="font-quicksand font-extrabold flex ml-1.5">
++              <span className="text-[#FBBF24]">1</span>
++              <span className="text-[#F97316]">2</span>
++              <span className="text-[#2563EB]">3</span>
++              <span className="text-[#2563EB] ml-0.5">ENGLISH</span>
++            </span>?
++          </h2>
++
++          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-10">
++            {[
++              { title: 'Gi├ío vi├¬n Philippines', desc: 'ph├ít ├óm chuß║⌐n, nhiß╗çt t├¼nh', svg: TeacherFlagSVG },
++              { title: '1 K├êM 1', desc: 'c├í nh├ón h├│a tß╗½ng buß╗òi hß╗ìc', svg: KidsStudyingSVG },
++              { title: 'Gi├ío tr├¼nh quß╗æc tß║┐', desc: 'Cambridge, Oxford chuß║⌐n ─æß║ºu ra', svg: OpenBookSVG },
++              { title: 'Hß╗ìc m├á ch╞íi', desc: 't╞░╞íng t├íc th├║ vß╗ï, t─âng hß╗⌐ng th├║', svg: GamepadSVG },
++              { title: 'B├ío c├ío tiß║┐n ─æß╗Ö', desc: '─æß╗ïnh kß╗│ cho phß╗Ñ huynh', svg: ClipboardSVG },
++              { title: 'M├┤i tr╞░ß╗¥ng hß╗ìc', desc: 'an to├án, th├ón thiß╗çn, 100% online', svg: ShieldSVG }
++            ].map((reason, idx) => (
++              <div key={idx} className="bg-white p-5 rounded-3xl border border-slate-100 hover:border-slate-200 hover:shadow-xl shadow-sm transition-all duration-300 flex flex-col items-center text-center group">
++                <div className="mb-4 transform transition-transform duration-300 group-hover:scale-105">
++                  <reason.svg />
++                </div>
++                <h4 className="font-quicksand font-extrabold text-xs sm:text-[13px] text-slate-800 leading-tight">{reason.title}</h4>
++                <p className="text-[10px] text-slate-400 font-bold mt-1.5 leading-snug">{reason.desc}</p>
++              </div>
++            ))}
++          </div>
++
++        </div>
++      </section>
++
++      {/* 6. SECTION: Lß╗ÿ TR├îNH Hß╗îC CHO B├ë 5-12 TUß╗öI */}
++      <section id="lo-trinh" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-white border-t border-slate-50 scroll-mt-20">
++        <div className="max-w-7xl mx-auto">
++          
++          <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-1.5 uppercase">
++            Lß╗ÿ TR├îNH Hß╗îC CHO B├ë <span className="text-[#10B981] font-extrabold">5-12 TUß╗öI</span>
++          </h2>
++
++          <div className="flex flex-col lg:flex-row items-stretch justify-between gap-4 mt-10">
++            {[
++              { 
++                age: '5 - 6 TUß╗öI', 
++                level: 'STARTER', 
++                points: ['Tß╗½ vß╗▒ng c╞í bß║ún', 'L├ám quen ph├ít ├óm', 'Phß║ún xß║í nghe n├│i ─æ╞ín giß║ún', 'M├áu sß║»c, sß╗æ ─æß║┐m, gia ─æ├¼nh'],
++                theme: 'border-[#10B981]/30 hover:border-[#10B981] text-[#10B981]', 
++                badge: 'bg-[#ECFDF5] text-[#10B981] border-[#A7F3D0]', 
++                img: '/starter_lion.png',
++                arrow: true,
++                arrowColor: 'text-[#10B981]'
++              },
++              { 
++                age: '7 - 9 TUß╗öI', 
++                level: 'MOVERS', 
++                points: ['Mß╗ƒ rß╗Öng vß╗æn tß╗½ vß╗▒ng', 'Giao tiß║┐p hß║▒ng ng├áy', 'Nghe hiß╗âu c╞í bß║ún', '─Éß║╖t c├óu hß╗Åi, trß║ú lß╗¥i'],
++                theme: 'border-[#F97316]/30 hover:border-[#F97316] text-[#D97706]', 
++                badge: 'bg-[#FFF7ED] text-[#F97316] border-[#FDE68A]', 
++                img: '/movers_elephant.png',
++                arrow: true,
++                arrowColor: 'text-slate-300'
++              },
++              { 
++                age: '10 - 12 TUß╗öI', 
++                level: 'FLYERS', 
++                points: ['Giao tiß║┐p tß╗▒ tin h╞ín', 'Thuyß║┐t tr├¼nh ─æ╞ín giß║ún', '─Éß╗ìc hiß╗âu - viß║┐t c╞í bß║ún', 'Kß╗â chuyß╗çn, mi├¬u tß║ú sß╗▒ vß║¡t'],
++                theme: 'border-[#2563EB]/30 hover:border-[#2563EB] text-[#2563EB]', 
++                badge: 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]', 
++                img: '/flyers_giraffe.png',
++                arrow: false,
++                arrowColor: ''
++              }
++            ].map((path, idx) => (
++              <div key={idx} className="flex-1 flex items-center gap-4">
++                
++                {/* Horizontal Card */}
++                <div className={`flex-1 p-6 rounded-[2rem] border bg-white hover:shadow-xl transition-all duration-300 flex flex-row items-center gap-5 group ${path.theme}`}>
++                  {/* Left Column: Mascot PNG */}
++                  <div className="w-24 h-24 sm:w-28 sm:h-28 shrink-0 flex items-center justify-center p-1 bg-slate-50/50 rounded-2xl border border-slate-100/50">
++                    <img src={path.img} alt={path.level} className="w-full h-full object-contain transform transition-transform duration-300 group-hover:scale-105" />
++                  </div>
++                  
++                  {/* Right Column: Syllabus points */}
++                  <div className="flex-1 flex flex-col justify-between">
++                    <div>
++                      <div className="flex items-center gap-2 mb-2">
++                        <span className={`px-2.5 py-0.5 rounded-full font-quicksand font-bold text-[10px] border ${path.badge}`}>{path.age}</span>
++                        <span className="font-quicksand font-extrabold text-sm tracking-wide">{path.level}</span>
++                      </div>
++                      
++                      <ul className="space-y-1.5 font-jakarta font-semibold text-xs text-slate-500">
++                        {path.points.map((pt, pIdx) => (
++                          <li key={pIdx} className="flex items-center gap-1.5">
++                            <Check className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
++                            <span>{pt}</span>
++                          </li>
++                        ))}
++                      </ul>
++                    </div>
++                  </div>
++                </div>
++
++                {/* Transition Arrow on Desktop */}
++                {path.arrow && (
++                  <div className={`hidden lg:flex w-6 shrink-0 items-center justify-center ${path.arrowColor}`}>
++                    <svg className="w-6 h-6 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
++                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
++                    </svg>
++                  </div>
++                )}
++
++              </div>
++            ))}
+           </div>
++
+         </div>
+-      )
+-    },
+-    'tin-tuc': {
+-      title: 'Tin tß╗⌐c & Sß╗▒ kiß╗çn',
+-      content: (
+-        <div className="grid sm:grid-cols-2 gap-6">
+-          <div className="flex gap-4">
+-            <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+-              <Award className="w-5 h-5" />
++      </section>
++
++      {/* 7. SECTION: OUTCOME & REVIEWS */}
++      <section id="danh-gia" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#FFFDF7] border-t border-slate-50 scroll-mt-20">
++        <div className="max-w-7xl mx-auto grid lg:grid-cols-[45%_55%] gap-8">
++          
++          {/* Left: CON NHß║¼N ─É╞»ß╗óC G├î SAU KHI Hß╗îC? */}
++          <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col justify-between">
++            <div>
++              <h3 className="font-quicksand font-extrabold text-lg sm:text-xl text-slate-800 tracking-tight mb-6 uppercase">
++                CON NHß║¼N ─É╞»ß╗óC G├î SAU KHI Hß╗îC?
++              </h3>
++              
++              <div className="grid grid-cols-2 gap-4 mt-6">
++                {[
++                  { title: 'Tß╗▒ tin giao tiß║┐p', icon: MessageSquare, color: 'bg-emerald-100 text-emerald-600 border-emerald-200' },
++                  { title: 'Ph├ít ├óm chuß║⌐n h╞ín', icon: Volume2, color: 'bg-amber-100 text-amber-600 border-amber-200' },
++                  { title: 'Y├¬u th├¡ch Tiß║┐ng Anh', icon: Heart, color: 'bg-rose-100 text-rose-600 border-rose-200' },
++                  { title: 'Sß║╡n s├áng thi Cambridge', icon: Award, color: 'bg-blue-100 text-blue-600 border-blue-200' }
++                ].map((item, idx) => (
++                  <div key={idx} className="flex flex-col items-center text-center p-3 rounded-2xl border border-slate-50 bg-slate-50/20">
++                    <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 mb-3 shadow-inner ${item.color}`}>
++                      <item.icon className="w-5 h-5" />
++                    </div>
++                    <span className="font-quicksand font-extrabold text-xs text-slate-800 leading-tight">{item.title}</span>
++                  </div>
++                ))}
++              </div>
+             </div>
++          </div>
++
++          {/* Right: PHß╗ñ HUYNH N├ôI G├î Vß╗Ç 123ENGLISH? */}
++          <div className="bg-[#10B981]/5 p-6 sm:p-8 rounded-[2rem] border border-[#10B981]/10 flex flex-col justify-between">
+             <div>
+-              <h3 className="font-bold text-slate-900 mb-1.5">Giß║úi th╞░ß╗ƒng</h3>
+-              <p className="text-slate-600 text-sm leading-relaxed">─Éß║ít c├íc danh hiß╗çu vß╗ü th╞░╞íng hiß╗çu gi├ío dß╗Ñc uy t├¡n trong n─âm 2024.</p>
++              <h3 className="font-quicksand font-extrabold text-lg sm:text-xl text-slate-800 tracking-tight mb-6 uppercase">
++                PHß╗ñ HUYNH N├ôI G├î Vß╗Ç{' '}
++                <span className="font-quicksand font-extrabold inline-flex ml-1">
++                  <span className="text-[#FBBF24]">1</span>
++                  <span className="text-[#F97316]">2</span>
++                  <span className="text-[#2563EB]">3</span>
++                  <span className="text-[#2563EB] ml-0.5">ENGLISH</span>
++                </span>?
++              </h3>
++
++              <div className="grid md:grid-cols-3 gap-4">
++                {[
++                  { name: 'Chß╗ï Hß╗ông Nhung', sub: 'Mß║╣ b├⌐ Minh Ch├óu', review: 'B├⌐ rß║Ñt th├¡ch hß╗ìc vß╗¢i gi├ío vi├¬n vui t├¡nh. Con tß╗▒ tin n├│i tiß║┐ng Anh h╞ín hß║│n.', stars: 5, img: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop&crop=faces' },
++                  { name: 'Anh Quß╗æc Bß║úo', sub: 'Ba b├⌐ Gia Huy', review: 'Hß╗ìc 1 k├¿m 1 con ─æ╞░ß╗úc sß╗¡a lß╗ùi, tiß║┐n bß╗Ö nhanh. B├ío c├ío ─æß╗ïnh kß╗│ r├╡ r├áng.', stars: 5, img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces' },
++                  { name: 'Chß╗ï Thu Trang', sub: 'Mß║╣ b├⌐ Bß║úo Ngß╗ìc', review: 'Ch╞░╞íng tr├¼nh hß╗ìc sinh ─æß╗Öng. Con hß╗ìc m├á nh╞░ ch╞íi, kh├┤ng hß╗ü ch├ín.', stars: 5, img: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=faces' }
++                ].map((testi, idx) => (
++                  <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
++                    <div>
++                      <div className="flex items-center gap-2 mb-2">
++                        <img src={testi.img} alt={testi.name} className="w-8 h-8 rounded-full object-cover border border-slate-100" />
++                        <div>
++                          <h4 className="font-jakarta font-bold text-[10px] text-slate-800 leading-none">{testi.name}</h4>
++                          <span className="text-[8px] text-slate-400 font-bold leading-none">{testi.sub}</span>
++                        </div>
++                      </div>
++                      <div className="flex gap-0.5 text-[#F59E0B] mb-2">
++                        {Array.from({ length: testi.stars }).map((_, i) => (
++                          <Star key={i} className="w-3 h-3 fill-current" />
++                        ))}
++                      </div>
++                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">"{testi.review}"</p>
++                    </div>
++                  </div>
++                ))}
++              </div>
+             </div>
+           </div>
+-          <div className="flex gap-4">
+-            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+-              <MessageSquare className="w-5 h-5" />
++
++        </div>
++      </section>
++
++      {/* 8. SECTION: C├éU Hß╗ÄI TH╞»ß╗£NG Gß║╢P */}
++      <section id="cau-hoi" className="py-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-white border-t border-slate-50 scroll-mt-20">
++        <div className="max-w-7xl mx-auto grid lg:grid-cols-[25%_75%] gap-8 items-center">
++          
++          {/* Left: Husky Mascot graphic */}
++          <div className="flex flex-col items-center justify-center">
++            <div className="w-28 h-28 relative">
++              <img src="/logo.png" alt="Husky Mascot" className="w-full h-full object-contain animate-bounce" />
+             </div>
+-            <div>
+-              <h3 className="font-bold text-slate-900 mb-1.5">Truyß╗ün th├┤ng</h3>
+-              <p className="text-slate-600 text-sm leading-relaxed">Th╞░ß╗¥ng xuy├¬n cß║¡p nhß║¡t c├íc video b├ái giß║úng, giß╗¢i thiß╗çu gi├ío vi├¬n mß╗¢i v├á c├íc ch╞░╞íng tr├¼nh ╞░u ─æ├úi hß╗ìc ph├¡.</p>
++            <h3 className="font-quicksand font-extrabold text-base text-slate-800 uppercase tracking-tight text-center mt-3 leading-tight">
++              C├éU Hß╗ÄI<br />TH╞»ß╗£NG Gß║╢P
++            </h3>
++          </div>
++
++          {/* Right: Accordions list in 2 columns */}
++          <div className="grid md:grid-cols-2 gap-4 font-jakarta font-bold text-xs sm:text-sm">
++            {/* Column 1 */}
++            <div className="space-y-3">
++              {[
++                { q: 'Hß╗ìc online c├│ hiß╗çu quß║ú kh├┤ng?', a: 'Ch╞░╞íng tr├¼nh hß╗ìc 1 k├¿m 1 t╞░╞íng t├íc trß╗▒c tiß║┐p gi├║p b├⌐ tß║¡p trung tß╗æi ─æa, gi├ío vi├¬n sß╗¡a lß╗ùi ph├ít ├óm ngay lß║¡p tß╗⌐c, mang lß║íi hiß╗çu quß║ú v╞░ß╗út trß╗Öi h╞ín so vß╗¢i c├íc lß╗¢p hß╗ìc offline ─æ├┤ng ng╞░ß╗¥i.' },
++                { q: 'B├⌐ mß║Ñt gß╗æc c├│ hß╗ìc ─æ╞░ß╗úc kh├┤ng?', a: 'C├│, gi├ío tr├¼nh ─æ╞░ß╗úc thiß║┐t kß║┐ c├í nh├ón h├│a bß║»t ─æß║ºu tß╗½ nhß╗»ng tß╗½ vß╗▒ng, ├óm c╞í bß║ún nhß║Ñt ─æß╗â b├⌐ l├ám quen v├á dß║ºn x├óy dß╗▒ng sß╗▒ tß╗▒ tin.' },
++                { q: 'Mß╗Öt buß╗òi hß╗ìc k├⌐o d├ái bao l├óu?', a: 'Mß╗ùi buß╗òi hß╗ìc k├⌐o d├ái 25 ph├║t ─æß╗â ─æß║ít hiß╗çu quß║ú tß╗æi ╞░u nhß║Ñt vß╗¢i khß║ú n─âng tß║¡p trung cß╗ºa b├⌐.' },
++                { q: 'Hß╗ìc ph├¡ nh╞░ thß║┐ n├áo?', a: 'Hß╗ìc ph├¡ linh hoß║ít theo g├│i hß╗ìc v├á lß╗Ö tr├¼nh cß╗ºa b├⌐. Vui l├▓ng ─æ─âng k├╜ t╞░ vß║Ñn ─æß╗â nhß║¡n b├ío gi├í chi tiß║┐t v├á c├íc ch╞░╞íng tr├¼nh ╞░u ─æ├úi mß╗¢i nhß║Ñt.' }
++              ].map((faq, idx) => (
++                <div key={idx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm transition-all duration-200">
++                  <button
++                    onClick={() => setFaqOpenIndex(faqOpenIndex === idx ? null : idx)}
++                    className="w-full px-4 py-3.5 text-left flex items-center justify-between hover:bg-slate-50 transition-colors text-slate-800 font-semibold"
++                  >
++                    <span className="text-xs sm:text-sm">{faq.q}</span>
++                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${faqOpenIndex === idx ? 'rotate-180 text-[#10B981]' : ''}`} />
++                  </button>
++                  {faqOpenIndex === idx && (
++                    <div className="px-4 pb-4 pt-1 text-slate-500 font-medium text-xs leading-relaxed border-t border-slate-50 bg-[#F3FDF9]/20">
++                      {faq.a}
++                    </div>
++                  )}
++                </div>
++              ))}
++            </div>
++
++            {/* Column 2 */}
++            <div className="space-y-3">
++              {[
++                { q: 'Gi├ío vi├¬n c├│ ph├╣ hß╗úp cho trß║╗ em kh├┤ng?', a: '─Éß╗Öi ng┼⌐ gi├ío vi├¬n Philippines tß║íi 123English ─æ╞░ß╗úc tuyß╗ân chß╗ìn khß║»t khe, c├│ chß╗⌐ng chß╗ë giß║úng dß║íy quß╗æc tß║┐ v├á gi├áu kinh nghiß╗çm, thß║Ñu hiß╗âu t├óm l├╜ trß║╗ em.' },
++                { q: 'Lß╗¢p hß╗ìc 1 k├¿m 1 c├│ lß╗úi ├¡ch g├¼?', a: 'B├⌐ ─æ╞░ß╗úc t╞░╞íng t├íc 100% thß╗¥i gian vß╗¢i gi├ío vi├¬n, ─æ╞░ß╗úc thiß║┐t kß║┐ lß╗Ö tr├¼nh ri├¬ng v├á hß╗ìc theo tß╗æc ─æß╗Ö tiß║┐p thu cß╗ºa ch├¡nh m├¼nh.' },
++                { q: 'Phß╗Ñ huynh c├│ thß╗â theo d├╡i tiß║┐n ─æß╗Ö cß╗ºa b├⌐ kh├┤ng?', a: 'C├│, sau mß╗ùi buß╗òi hß╗ìc gi├ío vi├¬n ─æß╗üu c├│ nhß║¡n x├⌐t chi tiß║┐t v├á hß╗ç thß╗æng sß║╜ tß╗▒ ─æß╗Öng cß║¡p nhß║¡t b├ío c├ío tiß║┐n ─æß╗Ö hß╗ìc tß║¡p ─æß╗ïnh kß╗│.' },
++                { q: 'C├│ ch╞░╞íng tr├¼nh hß╗ìc thß╗¡ kh├┤ng?', a: 'C├│, 123English hß╗ù trß╗ú 1 buß╗òi hß╗ìc thß╗¡ v├á ─æ├ính gi├í tr├¼nh ─æß╗Ö ho├án to├án miß╗àn ph├¡ cho b├⌐.' }
++              ].map((faq, idx) => {
++                const actualIdx = idx + 4
++                return (
++                  <div key={actualIdx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm transition-all duration-200">
++                    <button
++                      onClick={() => setFaqOpenIndex(faqOpenIndex === actualIdx ? null : actualIdx)}
++                      className="w-full px-4 py-3.5 text-left flex items-center justify-between hover:bg-slate-50 transition-colors text-slate-800 font-semibold"
++                    >
++                      <span className="text-xs sm:text-sm">{faq.q}</span>
++                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${faqOpenIndex === actualIdx ? 'rotate-180 text-[#10B981]' : ''}`} />
++                    </button>
++                    {faqOpenIndex === actualIdx && (
++                      <div className="px-4 pb-4 pt-1 text-slate-500 font-medium text-xs leading-relaxed border-t border-slate-50 bg-[#F3FDF9]/20">
++                        {faq.a}
++                      </div>
++                    )}
++                  </div>
++                )
++              })}
+             </div>
+           </div>
++
+         </div>
+-      )
+-    },
+-    'lien-he': {
+-      title: 'Li├¬n hß╗ç',
+-      content: (
+-        <div className="space-y-4">
+-          <p className="text-slate-600">─Éß╗â t├¼m hiß╗âu chi tiß║┐t h╞ín hoß║╖c ─æ─âng k├╜ t╞░ vß║Ñn, bß║ín c├│ thß╗â li├¬n hß╗ç qua c├íc k├¬nh sau:</p>
+-          <div className="space-y-3">
+-            <a href="https://facebook.com/123englishinvietnam" target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 bg-slate-50 hover:bg-slate-100 transition-colors p-4 rounded-xl">
+-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center font-bold text-lg text-white">f</div>
+-              <div>
+-                <div className="text-xs text-slate-500 font-medium">Facebook</div>
+-                <div className="font-bold text-slate-900 text-sm">facebook.com/123englishinvietnam</div>
+-              </div>
+-            </a>
+-            <a href="tel:0906966691" className="flex items-center gap-4 bg-slate-50 hover:bg-slate-100 transition-colors p-4 rounded-xl">
+-              <div className="w-10 h-10 bg-[#FFC107] rounded-full flex items-center justify-center text-slate-900">
+-                <Phone className="w-5 h-5" />
+-              </div>
+-              <div>
+-                <div className="text-xs text-slate-500 font-medium">Hotline</div>
+-                <div className="font-bold text-slate-900 text-sm">090.696.6691</div>
++      </section>
++
++      {/* 9. FOOTER CTA SECTION */}
++      <section className="py-12 px-4 sm:px-6 md:px-12 lg:px-20 bg-[#FFF9E5] border-t border-slate-100/50 relative overflow-hidden">
++        <div className="max-w-7xl mx-auto grid lg:grid-cols-[55%_45%] gap-8 items-center relative z-10">
++          
++          {/* Left Side: Photo & Bullets */}
++          <div className="flex flex-col sm:flex-row items-center gap-6">
++            <div className="w-44 h-44 rounded-[2.5rem] overflow-hidden border-4 border-white shadow-lg shrink-0 bg-[#FFFDF7]">
++              <img src="/footer_kid.png" alt="B├⌐ hß╗ìc tß║¡p vui vß║╗" className="w-full h-full object-cover" />
++            </div>
++            <div>
++              <h3 className="font-quicksand font-extrabold text-xl sm:text-2xl text-slate-800 leading-tight">
++                ─Éß║ªU T╞» CHO T╞»╞áNG LAI Cß╗ªA CON<br />
++                <span className="text-[#10B981] font-black font-quicksand uppercase">Bß║«T ─Éß║ªU Tß╗¬ H├öM NAY!</span>
++              </h3>
++              
++              <div className="mt-4 space-y-2 font-jakarta font-bold text-xs text-slate-500">
++                {['Kiß╗âm tra tr├¼nh ─æß╗Ö miß╗àn ph├¡', 'Hß╗ìc thß╗¡ 1 k├¿m 1 c├╣ng gi├ío vi├¬n', 'Nhß║¡n lß╗Ö tr├¼nh c├í nh├ón h├│a'].map((pt, idx) => (
++                  <div key={idx} className="flex items-center gap-2">
++                    <span className="w-4 h-4 rounded-full bg-emerald-100 text-[#10B981] flex items-center justify-center text-[10px] font-black shrink-0">Γ£ô</span>
++                    <span>{pt}</span>
++                  </div>
++                ))}
+               </div>
+-            </a>
++            </div>
+           </div>
+-          <p className="text-xs text-slate-400 mt-4">
+-            Th├┤ng tin n├áy ─æ╞░ß╗úc tß╗òng hß╗úp trß╗▒c tiß║┐p tß╗½ c├íc nguß╗ôn tin c├┤ng khai li├¬n quan. Nß║┐u bß║ín cß║ºn ─æi s├óu v├áo mß╗Öt kh├│a hß╗ìc cß╗Ñ thß╗â, bß║ín n├¬n nhß║»n tin trß╗▒c tiß║┐p cho fanpage ─æß╗â ─æ╞░ß╗úc hß╗ù trß╗ú tß╗æt nhß║Ñt.
+-          </p>
++
++          {/* Right Side: Form */}
++          <div className="bg-white p-6 rounded-[2rem] shadow-xl border border-slate-100">
++            <form onSubmit={(e) => handleSignupSubmit(e, 'Tiß║┐ng Anh Trß║╗ Em (Footer)')} className="space-y-3">
++              <input 
++                type="text" 
++                required
++                value={formBottomTreEm.parentName}
++                onChange={(e) => setFormBottomTreEm({...formBottomTreEm, parentName: e.target.value})}
++                placeholder="Hß╗ì v├á t├¬n phß╗Ñ huynh *"
++                className="w-full px-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] font-medium"
++              />
++              <input 
++                type="tel" 
++                required
++                value={formBottomTreEm.phone}
++                onChange={(e) => setFormBottomTreEm({...formBottomTreEm, phone: e.target.value})}
++                placeholder="Sß╗æ ─æiß╗çn thoß║íi li├¬n hß╗ç *"
++                className="w-full px-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] font-medium"
++              />
++              <select 
++                value={formBottomTreEm.kidAge}
++                onChange={(e) => setFormBottomTreEm({...formBottomTreEm, kidAge: e.target.value})}
++                className="w-full px-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-[#10B981] font-medium appearance-none"
++              >
++                <option value="5-6">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 5 - 6 tuß╗òi</option>
++                <option value="7-9">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 7 - 9 tuß╗òi</option>
++                <option value="10-12">─Éß╗Ö tuß╗òi cß╗ºa b├⌐: 10 - 12 tuß╗òi</option>
++              </select>
++
++              <button 
++                type="submit"
++                className="w-full py-4 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-extrabold rounded-xl transition-all duration-300 text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 shadow-sm"
++              >
++                ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì &gt;
++              </button>
++            </form>
++          </div>
++
+         </div>
+-      )
+-    }
+-  }
++      </section>
+ 
+-  return (
+-    <div className="h-screen flex flex-col font-sans overflow-hidden">
+-      {/* Navigation */}
+-      <nav className="bg-white border-b border-slate-100 py-3 px-6 md:px-12 lg:px-20 shrink-0 relative z-20">
+-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+-          <div className="flex items-center gap-12">
++      {/* ========================================================================= */}
++      {/* MEGA-SECTION 2: TIß║╛NG ANH Mß║ñT Gß╗ÉC (AGES 13-18 OR GENERAL) - IMAGE 2        */}
++      {/* ========================================================================= */}
++      <section id="mat-goc" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F0FDFA] via-white to-[#F5F8FF] border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
++        
++        <div className="absolute top-40 right-10 w-44 h-44 bg-blue-200/20 rounded-full blur-3xl pointer-events-none" />
++        <div className="absolute bottom-40 left-10 w-64 h-64 bg-emerald-200/20 rounded-full blur-3xl pointer-events-none" />
++
++        <div className="max-w-7xl mx-auto">
++          
++          {/* Section Header (Layout 2 top style) */}
++          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 pb-6 border-b border-slate-200/50 font-quicksand font-bold text-slate-600">
+             <div className="flex items-center gap-2">
+-              <Logo />
++              <span className="px-3 py-1 bg-[#2563EB]/15 text-[#2563EB] font-extrabold text-xs rounded-full uppercase tracking-wider">
++                Teenagers Program
++              </span>
++              <span className="text-slate-400 font-medium">|</span>
++              <span className="text-slate-600 font-bold text-sm">X├óy lß║íi nß╗ün tß║úng vß╗»ng chß║»c - Tß╗▒ tin giao tiß║┐p</span>
+             </div>
+-            <div className="hidden lg:flex items-center gap-8 text-sm font-semibold text-slate-600">
+-              <button className="text-slate-900 border-b-2 border-[#FFC107] pb-1 hover:text-slate-900 transition-colors">{t('landing.nav_home')}</button>
+-              <Link to="/chuong-trinh-hoc" className="hover:text-[#FFC107] transition-colors pb-1">{t('landing.nav_programs')}</Link>
+-              <Link to="/lien-he" className="hover:text-[#FFC107] transition-colors pb-1">{t('landing.nav_contact')}</Link>
++            <div className="flex items-center gap-3">
++              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Dß║íy thß║¡t - Hß╗ìc thß║¡t - Tick xanh thß║¡t</span>
+             </div>
+           </div>
+-          <div className="flex items-center gap-6">
+-            <a href="tel:0906966691" className="hidden sm:flex items-center gap-2 font-bold text-slate-800 hover:text-[#FFC107] transition-colors text-sm">
+-              <Phone className="w-4 h-4 text-[#FFC107]" />
+-              090.696.6691
+-            </a>
+-            <button onClick={toggleLang} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
+-              <Globe className="w-4 h-4" />
+-              {lang === 'vi' ? 'EN' : 'VI'}
+-            </button>
++
++          {/* Hero Grid */}
++          <div className="grid lg:grid-cols-[55%_45%] gap-12 items-center">
++            
++            {/* Left side text */}
++            <div>
++              <span className="inline-block px-4 py-1.5 bg-[#2563EB] text-white font-quicksand font-extrabold text-xs rounded-full uppercase tracking-wider shadow-sm mb-6">
++                Lß║Ñy Lß║íi Gß╗æc Tiß║┐ng Anh
++              </span>
++
++              <h1 className="font-quicksand font-extrabold text-3xl sm:text-4xl lg:text-5xl leading-tight text-slate-800 tracking-tight">
++                Hß╗îC Lß║áI Tß╗¬ ─Éß║ªU<br />
++                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2563EB] to-emerald-500 font-quicksand font-black">
++                  KH├öNG C├ÆN NGß║áI Nß╗«A!
++                </span>
++              </h1>
++              
++              <p className="mt-4 text-sm sm:text-base text-slate-600 font-medium leading-relaxed max-w-lg">
++                Lß╗Ö tr├¼nh c├í nh├ón h├│a - Hß╗ìc 1 k├¿m 1 c├╣ng gi├ío vi├¬n Philippines chß╗ë vß╗¢i <span className="text-[#D97706] font-bold">25 ph├║t mß╗ùi buß╗òi hß╗ìc</span> gi├║p hß╗ìc sinh v├á ng╞░ß╗¥i mß║Ñt gß╗æc nhanh ch├│ng lß║Ñy lß║íi c─ân bß║ún.
++              </p>
++
++              {/* 4 badges in a row (Mockup White boxes with clean outline) */}
++              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mt-8 font-quicksand font-bold text-[11px] text-slate-700">
++                {[
++                  { title: '1 K├êM 1 C├ü NH├éN H├ôA', icon: UserCheck, color: 'text-emerald-500 bg-emerald-50/50' },
++                  { title: 'GI├üO VI├èN PHILIPPINES', icon: Sparkles, color: 'text-amber-500 bg-amber-50/50' },
++                  { title: 'Hß╗îC ONLINE LINH HOß║áT', icon: Globe, color: 'text-blue-500 bg-blue-50/50' },
++                  { title: 'TIß║╛N Bß╗ÿ SAU Tß╗¬NG BUß╗öI', icon: Award, color: 'text-indigo-500 bg-indigo-50/50' }
++                ].map((bg, idx) => (
++                  <div key={idx} className="p-3.5 rounded-2xl border border-slate-100 bg-white flex flex-col items-center justify-center text-center gap-2 hover:shadow-md transition-shadow duration-200">
++                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bg.color}`}>
++                      <bg.icon className="w-4.5 h-4.5" />
++                    </div>
++                    <span>{bg.title}</span>
++                  </div>
++                ))}
++              </div>
++
++              <div className="mt-8 flex flex-col sm:flex-row items-center gap-4">
++                <a 
++                  href="#mat-goc-quay"
++                  className="w-full sm:w-auto px-8 py-4 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-bold rounded-full text-center shadow-lg shadow-emerald-200/50 transition-all duration-300 font-quicksand uppercase tracking-wider text-xs"
++                >
++                  ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡ &gt;
++                </a>
++                <span className="text-xs text-slate-500 font-medium text-center">
++                  Trß║úi nghiß╗çm ngay 1 buß╗òi hß╗ìc thß╗¡ vß╗¢i gi├ío vi├¬n Philippines
++                </span>
++              </div>
++            </div>
++
++            {/* Right side image overlap with tick xanh badge */}
++            <div className="relative flex justify-center">
++              <div className="rounded-[2.5rem] overflow-hidden border-[6px] border-white shadow-2xl shadow-blue-900/10 bg-blue-50 max-w-[440px]">
++                <img 
++                  src="/hero2.png" 
++                  alt="Hß╗ìc sinh mß║Ñt gß╗æc ├┤n luyß╗çn tiß║┐ng Anh" 
++                  className="w-full h-auto object-cover object-center max-h-[350px]"
++                />
++              </div>
++
++              {/* Tick Xanh Certificate Badge */}
++              <div className="absolute -bottom-6 right-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white px-5 py-3.5 rounded-2xl shadow-xl border border-slate-700/50 flex items-center gap-3">
++                <div className="w-10 h-10 bg-[#2563EB] rounded-full flex items-center justify-center text-white shadow-lg">
++                  <ShieldCheck className="w-6 h-6 stroke-[2.5]" />
++                </div>
++                <div>
++                  <div className="text-[10px] text-slate-400 font-bold tracking-widest uppercase font-quicksand">─Éß║╢C QUYß╗ÇN Hß╗îC VI├èN</div>
++                  <div className="text-xs font-black tracking-wide text-emerald-400 font-quicksand">─Éß║ñU TICK XANH 123ENGLISH</div>
++                </div>
++              </div>
++            </div>
++
+           </div>
+-        </div>
+-      </nav>
+ 
+-      {/* Main Content - two column layout */}
+-      <main className="flex-1 grid lg:grid-cols-2 min-h-0">
+-        {/* Left Side: Layered hero - text on top, image below */}
+-        <div className="relative hidden lg:flex flex-col justify-between overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f9fb 0%, #eef1f5 100%)' }}>
+-          {/* Image at bottom-right, z-index: 1 */}
+-          <img
+-            src="/hero0.jpg"
+-            alt="Learning"
+-            className="absolute bottom-0 right-0 w-[95%] h-[75%] object-cover object-top"
+-            style={{ zIndex: 1 }}
+-          />
+-          {/* Gradient overlay: fades background color into transparent so text is readable */}
+-          <div
+-            className="absolute inset-0"
+-            style={{
+-              zIndex: 2,
+-              background: 'linear-gradient(to bottom, #f8f9fb 15%, rgba(248,249,251,0.85) 35%, rgba(248,249,251,0.2) 60%, transparent 80%)'
+-            }}
+-          />
+-
+-          {/* Text content - z-index: 3, always above image */}
+-          <div className="relative p-10 lg:p-12" style={{ zIndex: 3 }}>
+-            <h1 className="text-4xl lg:text-5xl xl:text-6xl font-extrabold text-[#1E293B] leading-[1.1] tracking-tight">
+-              {t('landing.hero_title1')}<br />
+-              <span className="text-[#FFC107]">{t('landing.hero_title2')}</span>
+-            </h1>
+-            <p className="mt-4 text-base lg:text-lg text-slate-600 max-w-md font-medium leading-relaxed">
+-              {t('landing.hero_desc')}
+-            </p>
++          {/* Section: Bß║áN C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-1.5 uppercase">
++              <span className="text-[#2563EB]">Γ£ª</span> Bß║áN C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? <span className="text-[#2563EB]">Γ£ª</span>
++            </h2>
++
++            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-10">
++              {[
++                { title: 'Mß║Ñt gß╗æc tiß║┐ng Anh l├óu n─âm', svg: TeenLostRootSVG },
++                { title: 'Ngß╗» ph├íp rß╗æi, kh├┤ng nhß╗¢ g├¼', svg: TeenGrammarSVG },
++                { title: 'Nghe kh├┤ng hiß╗âu, n├│i kh├┤ng ra', svg: TeenListeningSVG },
++                { title: 'Ngß║íi giao tiß║┐p vß╗¢i ng╞░ß╗¥i n╞░ß╗¢c ngo├ái', svg: TeenShySVG },
++                { title: 'Hß╗ìc nhiß╗üu lß║ºn nh╞░ng kh├┤ng hiß╗çu quß║ú', svg: TeenRepeatedSVG },
++                { title: 'Thiß║┐u m├┤i tr╞░ß╗¥ng luyß╗çn tß║¡p thß╗▒c tß║┐', svg: TeenNoEnvironmentSVG }
++              ].map((prob, idx) => (
++                <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-100 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col items-center text-center group">
++                  <div className="mb-4 transform transition-transform duration-300 group-hover:scale-105">
++                    <prob.svg />
++                  </div>
++                  <h4 className="font-jakarta font-bold text-xs text-slate-700 leading-snug">{prob.title}</h4>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          {/* Blue Ribbon Divider */}
++          <div className="mt-16 bg-gradient-to-r from-[#2563EB] to-blue-700 text-white py-4.5 px-6 rounded-2xl shadow-md text-center font-quicksand font-bold text-xs sm:text-sm tracking-wide border border-blue-500">
++            123ENGLISH gi├║p bß║ín x├óy lß║íi nß╗ün tß║úng vß╗»ng chß║»c v├á tß╗▒ tin giao tiß║┐p chß╗ë vß╗¢i 25 ph├║t mß╗ùi buß╗òi hß╗ìc.
+           </div>
+ 
+-          {/* 3 glass cards at bottom - z-index: 3, floating over image */}
+-          <div className="relative px-10 lg:px-12 pb-8" style={{ zIndex: 3 }}>
+-            <div className="grid grid-cols-3 gap-3">
+-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
+-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
+-                  <BarChart2 className="w-5 h-5 text-[#FFC107]" />
++          {/* Section: V├î SAO Hß╗îC VI├èN CHß╗îN 123ENGLISH? */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight">
++              V├î SAO Hß╗îC VI├èN CHß╗îN <span className="text-[#2563EB]">123ENGLISH</span>?
++            </h2>
++
++            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-10">
++              {[
++                { title: 'Gi├ío vi├¬n Philippines', desc: 'gi├áu kinh nghiß╗çm, dß╗à hiß╗âu, tß║¡n t├óm', svg: TeacherFlagSVG },
++                { title: 'Hß╗ìc 1 k├¿m 1', desc: 'c├í nh├ón h├│a 100% tß╗½ng buß╗òi hß╗ìc', svg: KidsStudyingSVG },
++                { title: 'Lß╗Ö tr├¼nh tß╗½ c╞í bß║ún', desc: '─æß║┐n n├óng cao, ─æ╞░ß╗úc thiß║┐t kß║┐ ri├¬ng', svg: OpenBookSVG },
++                { title: 'Tß║¡p trung giao tiß║┐p', desc: 'thß╗▒c tß║┐, phß║ún xß║í tß╗▒ nhi├¬n nhanh', svg: MessageSquare },
++                { title: 'Hß╗ìc linh hoß║ít', desc: 'mß╗ìi l├║c, mß╗ìi n╞íi theo lß╗ïch rß║únh', svg: Globe },
++                { title: 'Theo d├╡i tiß║┐n ─æß╗Ö', desc: 'b├ío c├ío ─æß╗ïnh kß╗│ r├╡ r├áng, chuß║⌐n', svg: FileText }
++              ].map((reason, idx) => {
++                const isSvgComponent = typeof reason.svg !== 'function'
++                return (
++                  <div key={idx} className="bg-white p-5 rounded-3xl border border-slate-100 hover:border-slate-200 hover:shadow-xl shadow-sm transition-all duration-300 flex flex-col items-center text-center group">
++                    <div className="mb-4 transform transition-transform duration-300 group-hover:scale-105">
++                      {isSvgComponent ? (
++                        <div className="w-16 h-16 bg-blue-50 text-[#2563EB] rounded-full flex items-center justify-center shadow-inner">
++                          {reason.svg === MessageSquare && <MessageSquare className="w-7 h-7" />}
++                          {reason.svg === Globe && <Globe className="w-7 h-7" />}
++                          {reason.svg === FileText && <FileText className="w-7 h-7" />}
++                        </div>
++                      ) : (
++                        <reason.svg />
++                      )}
++                    </div>
++                    <h4 className="font-quicksand font-extrabold text-xs text-slate-800 leading-tight">{reason.title}</h4>
++                    <p className="text-[9px] text-slate-400 font-bold mt-1.5 leading-snug">{reason.desc}</p>
++                  </div>
++                )
++              })}
++            </div>
++          </div>
++
++          {/* Section: ─Éß║╢C QUYß╗ÇN Hß╗îC VI├èN TICK XANH (WHEEL OF FORTUNE) */}
++          <div id="mat-goc-quay" className="mt-24 bg-white p-6 sm:p-10 rounded-3xl border border-slate-100 shadow-sm scroll-mt-20">
++            <span className="inline-block px-3.5 py-1 bg-[#2563EB]/15 text-[#2563EB] font-extrabold text-[10px] rounded-full uppercase tracking-wider mb-2 font-quicksand">
++              ─Éß║╖c Quyß╗ün Hß╗ìc Vi├¬n Tick Xanh
++            </span>
++            <h3 className="font-quicksand font-extrabold text-xl sm:text-2xl text-slate-800 tracking-tight mb-8">
++              Sau khi hß╗ìc thß╗¡ v├á ─æ─âng k├╜ kh├│a hß╗ìc, hß╗ìc vi├¬n ─æ╞░ß╗úc nhß║¡n l╞░ß╗út quay may mß║»n 100% tr├║ng qu├á:
++            </h3>
++
++            {/* 4 Steps Timeline Ribbon */}
++            <div className="flex flex-wrap items-center justify-center gap-4 py-4 px-6 bg-slate-50 rounded-2xl border border-slate-100 mb-8 font-quicksand font-bold text-[10px] sm:text-xs text-slate-600">
++              <span className="text-[#2563EB] font-black uppercase text-xs">Quy tr├¼nh nhß║¡n qu├á:</span>
++              <span className="flex items-center gap-1.5"><HelpCircle className="w-4 h-4 text-[#2563EB]" /> 1. Pose ─æß║Ñu Tick Xanh</span>
++              <span className="text-slate-300 font-normal">ΓåÆ</span>
++              <span className="flex items-center gap-1.5"><FileText className="w-4 h-4 text-[#2563EB]" /> 2. ─É─âng k├╜ kh├│a hß╗ìc</span>
++              <span className="text-slate-300 font-normal">ΓåÆ</span>
++              <span className="flex items-center gap-1.5"><RotateCw className="w-4 h-4 text-[#2563EB] animate-spin" /> 3. Nhß║¡n 1 l╞░ß╗út quay</span>
++              <span className="text-slate-300 font-normal">ΓåÆ</span>
++              <span className="flex items-center gap-1.5"><Gift className="w-4 h-4 text-[#2563EB]" /> 4. 100% c├│ qu├á</span>
++            </div>
++
++            {/* Spinner Widget Layout */}
++            <div className="grid lg:grid-cols-[30%_40%_30%] gap-8 items-center justify-center">
++              
++              {/* Left Column: Checklist */}
++              <div className="bg-[#EFF6FF]/30 p-5 rounded-2xl border border-[#EFF6FF]/60 font-jakarta">
++                <div className="flex items-center gap-2 mb-4">
++                  <ShieldCheck className="w-5 h-5 text-[#2563EB]" />
++                  <span className="font-bold text-[#2563EB] text-sm uppercase tracking-wide font-quicksand">CAM Kß║╛T CHß║ñT L╞»ß╗óNG</span>
+                 </div>
+-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat1_title')}</h3>
+-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat1_desc')}</p>
++                
++                <ul className="space-y-3 font-semibold text-xs text-slate-600">
++                  {[
++                    { label: 'Gi├ío vi├¬n thß║¡t', desc: 'C├│ bß║▒ng cß║Ñp & chß╗⌐ng chß╗ë quß╗æc tß║┐' },
++                    { label: 'Hß╗ìc vi├¬n thß║¡t', desc: 'Cam kß║┐t ─æß║ºu ra bß║▒ng v─ân bß║ún' },
++                    { label: 'Lß╗¢p hß╗ìc thß║¡t', desc: '1 k├¿m 1 t╞░╞íng t├íc trß╗▒c tiß║┐p 100%' },
++                    { label: 'Kß║┐t quß║ú thß║¡t', desc: 'Theo d├╡i tiß║┐n ─æß╗Ö buß╗òi hß╗ìc r├╡ r├áng' }
++                  ].map((chk, idx) => (
++                    <li key={idx} className="flex gap-2">
++                      <Check className="w-4 h-4 text-[#10B981] stroke-[3.5] shrink-0 mt-0.5" />
++                      <div>
++                        <span className="font-bold text-slate-700 block">{chk.label}</span>
++                        <span className="text-[10px] text-slate-400 font-bold">{chk.desc}</span>
++                      </div>
++                    </li>
++                  ))}
++                </ul>
+               </div>
+-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
+-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
+-                  <MessageSquare className="w-5 h-5 text-[#FFC107]" />
++
++              {/* Middle Column: Visual SVG Wheel of Fortune */}
++              <div className="flex flex-col items-center justify-center">
++                <div className="relative w-[300px] h-[300px] flex items-center justify-center select-none">
++                  
++                  {/* Outer glowing border */}
++                  <div className={`absolute inset-0 rounded-full border-8 border-slate-800 bg-slate-900 shadow-2xl transition-all duration-300 ${spinning ? 'ring-4 ring-yellow-400' : ''}`} />
++                  <div className="absolute inset-2 rounded-full border border-white/10 pointer-events-none" />
++
++                  {/* SVG Wheel */}
++                  <svg width="300" height="300" viewBox="0 0 300 300" className="relative z-10">
++                    <g 
++                      style={{
++                        transform: `rotate(${wheelRotation}deg)`,
++                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
++                        transformOrigin: '150px 150px'
++                      }}
++                    >
++                      {sectors.map((sector, i) => {
++                        const startAngle = i * 60;
++                        const endAngle = (i + 1) * 60;
++                        const radStart = (startAngle * Math.PI) / 180;
++                        const radEnd = (endAngle * Math.PI) / 180;
++                        const r = 136;
++                        const x1 = 150 + r * Math.cos(radStart);
++                        const y1 = 150 + r * Math.sin(radStart);
++                        const x2 = 150 + r * Math.cos(radEnd);
++                        const y2 = 150 + r * Math.sin(radEnd);
++                        
++                        const pathData = `M 150 150 L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`;
++                        
++                        const textAngle = startAngle + 30;
++                        const radText = (textAngle * Math.PI) / 180;
++                        const textDist = 80;
++                        const tx = 150 + textDist * Math.cos(radText);
++                        const ty = 150 + textDist * Math.sin(radText);
++
++                        return (
++                          <g key={i}>
++                            <path
++                              d={pathData}
++                              fill={sector.color}
++                              stroke={sector.border}
++                              strokeWidth="1.5"
++                            />
++                            <text
++                              x={tx}
++                              y={ty}
++                              transform={`rotate(${textAngle + 90}, ${tx}, ${ty})`}
++                              textAnchor="middle"
++                              dominantBaseline="middle"
++                              fill={sector.textColor}
++                              className="text-[9.5px] font-bold tracking-tight"
++                            >
++                              {sector.labelLines.map((line, wIdx) => (
++                                <tspan key={wIdx} x={tx} dy={wIdx === 0 ? -4 : 10}>
++                                  {line}
++                                </tspan>
++                              ))}
++                            </text>
++                          </g>
++                        )
++                      })}
++                    </g>
++                    
++                    {/* Top Pointer */}
++                    <g className="relative z-20">
++                      <polygon points="150,25 140,5 160,5" fill="#EF4444" />
++                      <circle cx="150" cy="5" r="3" fill="#FFFFFF" />
++                    </g>
++
++                    {/* Center Click Cap */}
++                    <g 
++                      onClick={handleSpin}
++                      className="cursor-pointer relative z-30 group"
++                    >
++                      <circle cx="150" cy="150" r="24" fill="#FFD700" stroke="#F59E0B" strokeWidth="3" className="filter drop-shadow-md transition-transform duration-200 group-hover:scale-105" />
++                      <circle cx="150" cy="150" r="18" fill="#FFFFFF" />
++                      <text
++                        x="150"
++                        y="150"
++                        textAnchor="middle"
++                        dominantBaseline="middle"
++                        fill="#D97706"
++                        className="text-[10px] font-black tracking-tighter select-none font-quicksand"
++                      >
++                        SPIN
++                      </text>
++                    </g>
++                  </svg>
++
+                 </div>
+-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat2_title')}</h3>
+-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat2_desc')}</p>
++
++                {/* Spin Button */}
++                <button
++                  onClick={handleSpin}
++                  disabled={spinning || hasSpun}
++                  className="mt-6 px-8 py-3 bg-[#2563EB] hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-quicksand font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md"
++                >
++                  {spinning ? '─Éang quay...' : hasSpun ? '─É├ú quay xong' : 'QUAY NGAY Hß╗îC Bß╗öNG'}
++                </button>
+               </div>
+-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
+-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
+-                  <Users className="w-5 h-5 text-[#FFC107]" />
++
++              {/* Right Column: Vouchers List */}
++              <div className="space-y-2.5 font-jakarta font-bold text-xs">
++                <div className="text-slate-700 border-b pb-2 flex items-center gap-1.5 font-quicksand font-extrabold">
++                  <Gift className="w-4 h-4 text-rose-500" />
++                  <span>DANH S├üCH PHß║ªN QU├Ç</span>
+                 </div>
+-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat3_title')}</h3>
+-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat3_desc')}</p>
++                {[
++                  { text: 'Voucher hß╗ìc ph├¡ 500.000─æ', prize: 'Voucher 500.000─æ' },
++                  { text: 'Voucher hß╗ìc ph├¡ 300.000─æ', prize: 'Voucher 300.000─æ' },
++                  { text: 'Voucher hß╗ìc ph├¡ 200.000─æ', prize: 'Voucher 200.000─æ' },
++                  { text: 'Tß║╖ng 01 buß╗òi hß╗ìc 1-1 miß╗àn ph├¡', prize: '01 Buß╗òi Hß╗ìc Miß╗àn Ph├¡' },
++                  { text: 'Tß║╖ng 02 buß╗òi hß╗ìc 1-1 miß╗àn ph├¡', prize: '02 Buß╗òi Hß╗ìc Miß╗àn Ph├¡' },
++                  { text: 'Qu├á l╞░u niß╗çm ─æß║╖c biß╗çt tß╗½ trung t├óm', prize: 'Qu├á Tß║╖ng ─Éß║╖c Biß╗çt' }
++                ].map((item, idx) => (
++                  <div 
++                    key={idx} 
++                    className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors duration-300 ${prizeIndex === idx && hasSpun ? 'border-[#10B981] bg-[#ECFDF5]/60 text-[#059669]' : 'border-slate-100 bg-slate-50 text-slate-600'}`}
++                  >
++                    <span>{item.text}</span>
++                    {prizeIndex === idx && hasSpun && <span className="text-[10px] bg-[#10B981] text-white px-2 py-0.5 rounded-full font-black uppercase">Tr├║ng</span>}
++                  </div>
++                ))}
+               </div>
++
++            </div>
++          </div>
++
++          {/* Pricing Banner Row */}
++          <div className="mt-16 bg-[#FFFBEB] p-6 rounded-3xl border border-[#FDE68A] flex flex-col sm:flex-row items-center justify-between gap-6 shadow-sm text-slate-800">
++            <div className="flex items-center gap-4">
++              <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
++                <DollarSign className="w-6 h-6" />
++              </div>
++              <div>
++                <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider font-quicksand">Hß╗ìc ph├¡ ni├¬m yß║┐t</span>
++                <div className="font-quicksand font-extrabold text-2xl text-[#E11D48]">4.500.000─æ <span className="text-xs text-slate-400 font-semibold line-through">6.000.000─æ</span></div>
++              </div>
++            </div>
++
++            <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-100">
++              <Sparkles className="w-4 h-4 text-yellow-500 animate-spin" />
++              <span className="font-jakarta font-bold text-xs text-slate-600">Tß║╖ng ngay 1 l╞░ß╗út quay voucher hß╗ìc bß╗òng 100% tr├║ng qu├á</span>
++            </div>
++
++            <a 
++              href="#mat-goc-quay"
++              className="w-full sm:w-auto px-6 py-3.5 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-bold rounded-xl text-center shadow-md text-xs uppercase tracking-wider"
++            >
++              ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì NGAY
++            </a>
++          </div>
++
++          {/* Testimonials */}
++          <div className="mt-24">
++            <h3 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight">
++              Hß╗îC VI├èN N├ôI G├î Vß╗Ç <span className="text-[#2563EB]">123ENGLISH</span>?
++            </h3>
++            
++            <div className="grid lg:grid-cols-3 gap-6 mt-10">
++              {[
++                { name: 'Minh Tuß║Ñn', role: 'Nh├ón vi├¬n v─ân ph├▓ng', text: 'M├¼nh ─æ├ú mß║Ñt gß╗æc tiß║┐ng Anh nhiß╗üu n─âm, kh├┤ng tß╗▒ tin n├│i tß╗½ n├áo. Nh╞░ng chß╗ë sau 2 th├íng hß╗ìc 1 k├¿m 1 ß╗ƒ 123English, m├¼nh ─æ├ú hiß╗âu lß║íi cß║Ñu tr├║c ngß╗» ph├íp c╞í bß║ún v├á tß╗▒ tin trß║ú lß╗¥i giao tiß║┐p th├┤ng th╞░ß╗¥ng vß╗¢i ng╞░ß╗¥i n╞░ß╗¢c ngo├ái.', stars: 5, img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=faces' },
++                { name: 'Thu Trang', role: 'Kinh doanh tß╗▒ do', text: 'Gi├ío vi├¬n rß║Ñt ki├¬n nhß║½n, nhiß╗çt t├¼nh h╞░ß╗¢ng dß║½n v├á sß╗¡a lß╗ùi chi tiß║┐t. Lß╗Ö tr├¼nh hß╗ìc 25 ph├║t mß╗ùi ng├áy v├┤ c├╣ng ph├╣ hß╗úp vß╗¢i thß╗¥i gian bß║¡n rß╗Ön cß╗ºa m├¼nh.', stars: 5, img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces' },
++                { name: 'Ho├áng Nam', role: 'Kß╗╣ s╞░ c╞í kh├¡', text: 'Lß╗¢p hß╗ìc 1-1 trß╗▒c tuyß║┐n gi├║p m├¼nh t─âng phß║ún xß║í n├│i tß╗æi ─æa. Gi├ío vi├¬n th├ón thiß╗çn, vui t├¡nh gi├║p m├¼nh kh├┤ng c├▓n ngß║íi hay lo sß╗ú khi mß╗ƒ lß╗¥i ph├ít ├óm tiß║┐ng Anh.', stars: 5, img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=faces' }
++              ].map((testi, idx) => (
++                <div key={idx} className="bg-white p-6 rounded-3xl border border-slate-100 hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
++                  <div>
++                    <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
++                      <div className="flex items-center gap-3">
++                        <img src={testi.img} alt={testi.name} className="w-10 h-10 rounded-full object-cover border-2 border-[#2563EB]/10" />
++                        <div>
++                          <h4 className="font-jakarta font-bold text-sm text-slate-800 leading-none">{testi.name}</h4>
++                          <span className="text-[10px] text-slate-400 font-bold mt-1.5 block leading-none">{testi.role}</span>
++                        </div>
++                      </div>
++                      <div className="flex gap-0.5 text-amber-400 font-bold">
++                        {Array.from({ length: testi.stars }).map((_, i) => (
++                          <Star key={i} className="w-3.5 h-3.5 fill-current" />
++                        ))}
++                      </div>
++                    </div>
++                    <p className="text-xs text-slate-500 font-medium leading-relaxed italic">"{testi.text}"</p>
++                  </div>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          {/* Footer CTA Banner (Blue colors matching Mockup 2) */}
++          <div className="mt-24 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 rounded-[2.5rem] p-8 sm:p-12 relative overflow-hidden shadow-xl text-white grid lg:grid-cols-[60%_40%] gap-8 items-center border border-blue-500/30">
++            
++            <div className="relative z-10">
++              <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 font-quicksand">─Éß╗¬NG CHß╗£ ─Éß╗óI Nß╗«A!</span>
++              <h3 className="font-quicksand font-extrabold text-2xl sm:text-3xl lg:text-4xl leading-tight mt-4">
++                ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡ ngay h├┤m nay!
++              </h3>
++              <p className="mt-3 text-xs sm:text-sm font-semibold opacity-70 leading-relaxed max-w-md">
++                Lß║Ñy lß║íi gß╗æc nhanh ch├│ng, tß╗▒ tin l├ám chß╗º ng├┤n ngß╗» v├á th─âng tiß║┐n trong cuß╗Öc sß╗æng c├╣ng 123English.
++              </p>
++
++              <div className="mt-6 flex flex-col gap-3 font-jakarta font-bold text-xs sm:text-sm text-slate-300">
++                <div className="flex items-center gap-2">
++                  <Phone className="w-4 h-4 text-emerald-400 animate-pulse" />
++                  <span>Hotline hß╗ù trß╗ú 24/7: 1900 633 876</span>
++                </div>
++                <div className="flex items-center gap-2">
++                  <Globe className="w-4 h-4 text-emerald-400" />
++                  <span>Website ch├¡nh thß╗⌐c: 123english.vn</span>
++                </div>
++                <div className="flex items-center gap-2">
++                  <MessageSquare className="w-4 h-4 text-emerald-400" />
++                  <span>Facebook hß╗ù trß╗ú: facebook.com/123english.vn</span>
++                </div>
++              </div>
++            </div>
++
++            {/* School Building Vector Graphics */}
++            <div className="relative z-10 flex flex-col items-center justify-center">
++              <svg viewBox="0 0 100 80" className="w-40 h-32 select-none filter drop-shadow-md">
++                {/* Yellow school building illustration */}
++                <rect x="10" y="30" width="80" height="40" fill="#FBBF24" rx="2" />
++                <rect x="25" y="10" width="50" height="20" fill="#F59E0B" rx="2" />
++                <polygon points="20,10 80,10 50,0" fill="#EF4444" />
++                {/* Windows */}
++                <rect x="32" y="16" width="8" height="8" fill="#FFFFFF" rx="1" />
++                <rect x="60" y="16" width="8" height="8" fill="#FFFFFF" rx="1" />
++                <rect x="18" y="38" width="10" height="10" fill="#FFFFFF" rx="1" />
++                <rect x="36" y="38" width="10" height="10" fill="#FFFFFF" rx="1" />
++                <rect x="54" y="38" width="10" height="10" fill="#FFFFFF" rx="1" />
++                <rect x="72" y="38" width="10" height="10" fill="#FFFFFF" rx="1" />
++                {/* Door */}
++                <path d="M 44,70 L 44,56 C 44,53 56,53 56,56 L 56,70 Z" fill="#FFFFFF" stroke="#D97706" strokeWidth="1" />
++                <circle cx="53" cy="63" r="1" fill="#D97706" />
++                {/* Title 123 English */}
++                <rect x="30" y="2" width="40" height="8" fill="#FFFFFF" rx="1" />
++                <text x="50" y="8" fill="#EF4444" fontSize="5" fontWeight="bold" textAnchor="middle">123 ENGLISH</text>
++              </svg>
++              <a 
++                href="#mat-goc-quay"
++                className="w-full mt-4 py-3.5 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-bold rounded-xl text-center shadow-lg transition-all duration-300 text-xs tracking-wider uppercase"
++              >
++                QUAY Sß╗É NHß║¼N Hß╗îC Bß╗öNG NGAY
++              </a>
+             </div>
+           </div>
+-        </div>
+ 
+-        {/* Mobile hero - shown only on small screens */}
+-        <div className="lg:hidden px-4 pt-4">
+-          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1E293B] leading-[1.1] tracking-tight">
+-            {t('landing.hero_title1')} <span className="text-[#FFC107]">{t('landing.hero_title2')}</span>
+-          </h1>
+-          <p className="mt-2 text-sm text-slate-600 font-medium">{t('landing.hero_desc')}</p>
+         </div>
++      </section>
++
++      {/* ========================================================================= */}
++      {/* MEGA-SECTION 3: TIß║╛NG ANH NG╞»ß╗£I ─ÉI L├ÇM (ADULTS) - IMAGE 3                 */}
++      {/* ========================================================================= */}
++      <section id="nguoi-di-lam" className="py-20 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-[#F5F8FF] via-white to-slate-50 border-t border-slate-100 scroll-mt-20 relative overflow-hidden">
++        
++        <div className="absolute top-40 left-10 w-44 h-44 bg-yellow-200/10 rounded-full blur-3xl pointer-events-none" />
++        <div className="absolute bottom-40 right-10 w-64 h-64 bg-slate-200/30 rounded-full blur-3xl pointer-events-none" />
+ 
+-        {/* Right Side: Cards */}
+-        <div className="bg-[#F8FAFC] flex flex-col justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 space-y-4 overflow-y-auto">
+-          {/* Card: Tra cß╗⌐u */}
+-          <div className="bg-white rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/60 relative overflow-hidden">
+-            <div className="absolute top-5 right-5 flex gap-1">
+-              <div className="w-1 h-1 rounded-full bg-amber-200" />
+-              <div className="w-1 h-1 rounded-full bg-amber-200" />
+-              <div className="w-1 h-1 rounded-full bg-amber-200" />
+-              <div className="w-1 h-1 rounded-full bg-amber-200" />
++        <div className="max-w-7xl mx-auto">
++          
++          {/* Section Header (Layout 3 header content) */}
++          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 pb-6 border-b border-slate-200/50 font-quicksand font-bold text-slate-600">
++            <div className="flex items-center gap-2">
++              <span className="px-3 py-1 bg-[#D97706]/15 text-[#D97706] font-extrabold text-xs rounded-full uppercase tracking-wider">
++                Corporate Program
++              </span>
++              <span className="text-slate-400 font-medium">|</span>
++              <span className="text-slate-600 font-bold text-sm">Tiß║┐ng Anh giao tiß║┐p c├┤ng viß╗çc chuy├¬n nghiß╗çp</span>
++            </div>
++            <div className="flex items-center gap-3">
++              <a href="tel:0388827295" className="flex items-center gap-1.5 text-sm font-bold text-slate-800 hover:text-[#D97706] transition-colors">
++                <Phone className="w-4 h-4 text-[#D97706]" />
++                0388.827.295
++              </a>
+             </div>
+-            <div className="flex items-center gap-3 mb-4">
+-              <div className="w-11 h-11 bg-amber-50 rounded-full flex items-center justify-center shrink-0">
+-                <Search className="w-5 h-5 text-slate-800" />
++          </div>
++
++          {/* Hero Grid */}
++          <div className="grid lg:grid-cols-[55%_45%] gap-12 items-center">
++            
++            {/* Left Column Text */}
++            <div>
++              <span className="inline-block px-4 py-1.5 bg-gradient-to-r from-[#D97706] to-orange-500 text-white font-quicksand font-bold text-xs rounded-full uppercase tracking-wider shadow-sm mb-6">
++                Tiß║┐ng Anh Giao Tiß║┐p Ng╞░ß╗¥i ─Éi L├ám
++              </span>
++
++              <h1 className="font-quicksand font-extrabold text-3xl sm:text-4xl lg:text-[42px] leading-tight text-slate-800 tracking-tight">
++                Tß╗░ TIN GIAO TIß║╛P TIß║╛NG ANH<br />
++                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D97706] to-orange-500 inline-block px-2 rounded-lg mt-1.5 font-quicksand font-black">
++                  TRONG C├öNG VIß╗åC
++                </span>
++              </h1>
++
++              <ul className="mt-8 space-y-4 font-jakarta text-slate-600 font-semibold text-sm">
++                {[
++                  'Hß╗ìc 1 k├¿m 1 c├╣ng gi├ío vi├¬n quß╗æc tß║┐ sß╗ƒ hß╗»u chuy├¬n m├┤n cao.',
++                  'Lß╗Ö tr├¼nh c├í nh├ón h├│a thiß║┐t kß║┐ ri├¬ng theo ─æß║╖c th├╣ tß╗½ng ng├ánh nghß╗ü.',
++                  'Hß╗ìc online linh hoß║ít tß╗½ 8:00 - 23:00 h├áng ng├áy cho ng╞░ß╗¥i bß║¡n rß╗Ön.',
++                  'Tß║¡p trung ph├ít triß╗ân kß╗╣ n─âng phß║ún xß║í hß╗ìp, thuyß║┐t tr├¼nh & ─æß╗æi t├íc ngoß║íi.'
++                ].map((bullet, idx) => (
++                  <li key={idx} className="flex items-start gap-3">
++                    <span className="flex-shrink-0 w-5 h-5 bg-[#D97706] text-white rounded-full flex items-center justify-center mt-0.5 shadow-sm">
++                      <Check className="w-3 h-3 stroke-[3]" />
++                    </span>
++                    <span>{bullet}</span>
++                  </li>
++                ))}
++              </ul>
++
++              {/* Two CTA Buttons */}
++              <div className="flex flex-wrap gap-3 mt-8 z-10 relative">
++                <a 
++                  href="#dang-ky-form"
++                  className="px-6 py-3.5 bg-[#D97706] hover:bg-[#b45309] text-white font-quicksand font-bold rounded-xl text-xs uppercase tracking-wider transition-all duration-300 shadow-md flex items-center gap-2"
++                >
++                  ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡
++                  <ArrowRight className="w-4 h-4" />
++                </a>
++                <a 
++                  href="tel:0388827295"
++                  className="px-6 py-3.5 border border-slate-300 hover:border-slate-800 text-slate-700 hover:text-slate-900 font-quicksand font-bold rounded-xl text-xs uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5"
++                >
++                  <Phone className="w-4 h-4" />
++                  Li├¬n hß╗ç: 0388.827.295
++                </a>
+               </div>
+-              <div>
+-                <h2 className="text-lg font-bold text-slate-900">{t('landing.search_title')}</h2>
+-                <p className="text-xs text-slate-500 mt-0.5">{t('landing.search_subtitle')}</p>
++
++              {/* Businessman image placed directly below */}
++              <div className="mt-10 relative inline-block w-full max-w-[480px]">
++                <div className="rounded-[2rem] overflow-hidden border-[6px] border-white shadow-xl bg-slate-100">
++                  <img 
++                    src="/hero3.png" 
++                    alt="Ng╞░ß╗¥i ─æi l├ám hß╗ìc tiß║┐ng Anh online" 
++                    className="w-full h-auto object-cover object-center max-h-[300px]"
++                  />
++                </div>
+               </div>
+             </div>
+ 
+-            <div className="space-y-3">
+-              <div>
++            {/* Right Column Signup Form (White Card) */}
++            <div className="bg-white text-slate-800 p-6 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-2xl relative">
++              <div className="absolute top-4 right-4 flex gap-1">
++                <span className="w-2 h-2 rounded-full bg-amber-500" />
++                <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
++              </div>
++              
++              <h3 className="font-quicksand font-extrabold text-lg sm:text-xl text-center text-slate-800 uppercase tracking-tight">
++                Nhß║¡n buß╗òi hß╗ìc thß╗¡ <span className="text-[#D97706]">miß╗àn ph├¡</span>
++              </h3>
++              <p className="text-center text-[10px] text-slate-400 font-bold mt-1 mb-6">
++                Khß║úo s├ít tr├¼nh ─æß╗Ö & thiß║┐t kß║┐ lß╗Ö tr├¼nh theo ng├ánh nghß╗ü
++              </p>
++
++              <form onSubmit={(e) => handleSignupSubmit(e, 'Tiß║┐ng Anh Ng╞░ß╗¥i ─Éi L├ám')} className="space-y-4">
+                 <div className="relative">
+                   <User className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+-                  <input
+-                    type="text"
+-                    value={studentCode}
+-                    onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
+-                    onKeyDown={(e) => e.key === 'Enter' && handleSearchProgress()}
+-                    placeholder={t('landing.search_placeholder')}
+-                    className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-amber-50 focus:border-[#FFC107] transition-all text-sm font-medium"
++                  <input 
++                    type="text" 
++                    required
++                    value={formNguoiDiLam.name}
++                    onChange={(e) => setFormNguoiDiLam({...formNguoiDiLam, name: e.target.value})}
++                    placeholder="Hß╗ì v├á t├¬n cß╗ºa bß║ín *"
++                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#D97706] text-slate-800 font-medium"
+                   />
+                 </div>
+-                <p className="text-[11px] text-slate-400 mt-1.5 px-1">{t('landing.search_hint')}</p>
++                
++                <div className="relative">
++                  <Phone className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                  <input 
++                    type="tel" 
++                    required
++                    value={formNguoiDiLam.phone}
++                    onChange={(e) => setFormNguoiDiLam({...formNguoiDiLam, phone: e.target.value})}
++                    placeholder="Sß╗æ ─æiß╗çn thoß║íi cß╗ºa bß║ín *"
++                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#D97706] text-slate-800 font-medium"
++                  />
++                </div>
++
++                <div>
++                  <label className="block text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wide">Mß╗Ñc ti├¬u hß╗ìc cß╗ºa bß║ín</label>
++                  <div className="grid grid-cols-2 gap-2 font-jakarta font-bold text-[10px] text-slate-700">
++                    {[
++                      'Giao tiß║┐p c├┤ng viß╗çc',
++                      'Hß╗ìp & Thuyß║┐t tr├¼nh',
++                      'Phß╗Ång vß║Ñn',
++                      'Kh├ích h├áng quß╗æc tß║┐'
++                    ].map((opt) => {
++                      const isChecked = formNguoiDiLam.objectives.includes(opt)
++                      return (
++                        <label 
++                          key={opt}
++                          className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-colors ${isChecked ? 'border-amber-500 bg-amber-500/10 text-[#D97706]' : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100/50'}`}
++                        >
++                          <input 
++                            type="checkbox"
++                            checked={isChecked}
++                            className="hidden"
++                            onChange={() => {
++                              const newOpts = isChecked 
++                                ? formNguoiDiLam.objectives.filter(o => o !== opt)
++                                : [...formNguoiDiLam.objectives, opt]
++                              setFormNguoiDiLam({...formNguoiDiLam, objectives: newOpts})
++                            }}
++                          />
++                          <span className={`w-3.5 h-3.5 border rounded flex items-center justify-center shrink-0 ${isChecked ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-300 bg-white'}`}>
++                            {isChecked && <Check className="w-2.5 h-2.5 stroke-[3.5]" />}
++                          </span>
++                          <span>{opt}</span>
++                        </label>
++                      )
++                    })}
++                  </div>
++                </div>
++
++                <button 
++                  type="submit"
++                  className="w-full py-4.5 bg-[#D97706] hover:bg-[#b45309] text-white font-quicksand font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-xs uppercase tracking-wider shadow-md shadow-amber-500/10"
++                >
++                  ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì
++                  <ArrowRight className="w-4 h-4" />
++                </button>
++              </form>
++
++              <div className="mt-4 flex items-center justify-center gap-2 text-[9px] text-slate-400 font-bold bg-slate-50 py-2.5 rounded-lg border border-slate-100">
++                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
++                TH├öNG TIN ─É╞»ß╗óC Bß║óO Mß║¼T TUYß╗åT ─Éß╗ÉI
+               </div>
++            </div>
+ 
+-              <button
+-                onClick={handleSearchProgress}
+-                className="w-full py-3 bg-[#FFC107] hover:bg-[#FFB300] text-slate-900 font-bold rounded-xl shadow-lg shadow-amber-200/50 transition-all duration-300 flex items-center justify-center gap-2 text-sm"
+-              >
+-                <Search className="w-4 h-4" /> {t('landing.search_btn')}
+-              </button>
++          </div>
++
++          {/* Key Stats Row */}
++          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 bg-white/70 p-6 rounded-2xl border border-slate-100 shadow-sm">
++            {[
++              { val: '100+', title: 'Gi├ío vi├¬n quß╗æc tß║┐', desc: 'Philippines & Bß║ún xß╗⌐ Mß╗╣, Anh' },
++              { val: '10.000+', title: 'Giß╗¥ hß╗ìc ho├án th├ánh', desc: 'Khß║»p cß║ú n╞░ß╗¢c ghi nhß║¡n' },
++              { val: '1 K├êM 1', title: 'C├í nh├ón h├│a', desc: 'Theo s├ít tiß║┐n ─æß╗Ö tß╗½ng hß╗ìc vi├¬n' },
++              { val: 'Hß╗ìc online', title: 'To├án quß╗æc', desc: 'Chß╗ë cß║ºn laptop/─æiß╗çn thoß║íi' }
++            ].map((stat, idx) => (
++              <div key={idx} className="text-center p-3 border-r last:border-0 border-slate-100/80">
++                <div className="font-quicksand font-extrabold text-2xl lg:text-3xl text-slate-800">{stat.val}</div>
++                <div className="font-bold text-[12px] text-slate-700 mt-1">{stat.title}</div>
++                <div className="text-[10px] text-slate-400 font-semibold mt-0.5">{stat.desc}</div>
++              </div>
++            ))}
++          </div>
++
++          {/* Section: Bß║áN C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-2">
++              <span className="text-[#D97706]">Γ£ª</span> Bß║áN C├ô ─ÉANG Gß║╢P NHß╗«NG Vß║ñN ─Éß╗Ç N├ÇY? <span className="text-[#D97706]">Γ£ª</span>
++            </h2>
++
++            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-10">
++              {[
++                { title: 'Nghe hiß╗âu nh╞░ng kh├┤ng phß║ún xß║í ─æ╞░ß╗úc', svg: AdultNoReflexSVG },
++                { title: 'Ngß║íi n├│i tiß║┐ng Anh trong cuß╗Öc hß╗ìp', svg: AdultMeetingShySVG },
++                { title: 'Kh├┤ng biß║┐t c├ích diß╗àn ─æß║ít ├╜ t╞░ß╗ƒng', svg: AdultNoIdeaSVG },
++                { title: 'Mß║Ñt c╞í hß╗Öi th─âng tiß║┐n nghß╗ü nghiß╗çp', svg: AdultNoPromotionSVG },
++                { title: 'Thiß║┐u m├┤i tr╞░ß╗¥ng luyß╗çn n├│i thß╗▒c tß║┐', svg: AdultNoEnvSVG }
++              ].map((prob, idx) => (
++                <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-100 hover:border-slate-300 hover:shadow-md transition-all duration-200 flex flex-col items-center text-center group">
++                  <div className="mb-4 transform transition-transform duration-300 group-hover:scale-105">
++                    <prob.svg />
++                  </div>
++                  <h4 className="font-jakarta font-bold text-xs sm:text-sm text-slate-700 leading-snug">{prob.title}</h4>
++                </div>
++              ))}
+             </div>
++          </div>
++
++          {/* Section: CH╞»╞áNG TR├îNH ─É╞»ß╗óC THIß║╛T Kß║╛ RI├èNG CHO NG╞»ß╗£I ─ÉI L├ÇM */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight">
++              CH╞»╞áNG TR├îNH ─É╞»ß╗óC THIß║╛T Kß║╛ RI├èNG CHO NG╞»ß╗£I ─ÉI L├ÇM
++            </h2>
+ 
+-            <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium bg-slate-50 py-2.5 rounded-lg">
+-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+-              {t('landing.search_safe')}
++            <div className="grid lg:grid-cols-3 gap-6 mt-10">
++              {[
++                { 
++                  title: 'TIß║╛NG ANH GIAO TIß║╛P C├öNG Sß╗₧', 
++                  imgSrc: '/adult_office.png',
++                  tag: 'Office English',
++                  tagClass: 'bg-blue-500 text-white',
++                  pts: ['Giao tiß║┐p hß║▒ng ng├áy tß║íi v─ân ph├▓ng', 'Trao ─æß╗òi c├┤ng viß╗çc qua ─æiß╗çn thoß║íi', 'B├ío c├ío & cß║¡p nhß║¡t tiß║┐n ─æß╗Ö dß╗▒ ├ín', 'Giao tiß║┐p vß╗¢i ─æß╗ông nghiß╗çp n╞░ß╗¢c ngo├ái', 'Viß║┐t email chuy├¬n nghiß╗çp']
++                },
++                { 
++                  title: 'TIß║╛NG ANH Hß╗îP & THUYß║╛T TR├îNH', 
++                  imgSrc: '/adult_meeting.png',
++                  tag: 'Meetings',
++                  tagClass: 'bg-amber-500 text-white',
++                  pts: ['Tham gia cuß╗Öc hß╗ìp tiß║┐ng Anh chß╗º ─æß╗Öng', 'Tr├¼nh b├áy ├╜ t╞░ß╗ƒng mß║ích lß║íc, r├╡ ├╜', 'Phß║ún biß╗çn & ─æ├│ng g├│p ├╜ kiß║┐n dß╗▒ ├ín', 'B├ío c├ío & thuyß║┐t tr├¼nh tr╞░ß╗¢c ─æß╗æi t├íc', 'Xß╗¡ l├╜ c├íc c├óu hß╗Åi ph├ít sinh']
++                },
++                { 
++                  title: 'L├ÇM VIß╗åC Vß╗ÜI KH├üCH QUß╗ÉC Tß║╛', 
++                  imgSrc: '/adult_client.png',
++                  tag: 'Global Clients',
++                  tagClass: 'bg-emerald-500 text-white',
++                  pts: ['T╞░ vß║Ñn & giß╗¢i thiß╗çu sß║ún phß║⌐m', 'Trao ─æß╗òi y├¬u cß║ºu chi tiß║┐t dß╗▒ ├ín', 'Xß╗¡ l├╜ c├íc t├¼nh huß╗æng kh├│ kh─ân', '─É├ám ph├ín c╞í bß║ún vß╗ü ─æiß╗üu khoß║ún', 'Follow-up email chuy├¬n nghiß╗çp']
++                }
++              ].map((prog, idx) => (
++                <div key={idx} className="bg-white rounded-3xl border border-slate-100 hover:border-amber-200 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden group">
++                  <div className="h-48 overflow-hidden relative">
++                    <img src={prog.imgSrc} alt={prog.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
++                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent" />
++                    <div className="absolute bottom-4 left-4 right-4">
++                      <span className={`inline-block px-3 py-1 rounded-full font-quicksand font-bold text-[10px] uppercase tracking-wider ${prog.tagClass}`}>
++                        {prog.tag}
++                      </span>
++                    </div>
++                  </div>
++                  <div className="p-6 flex-1 flex flex-col justify-between">
++                    <div>
++                      <h4 className="font-quicksand font-extrabold text-base text-slate-800 tracking-tight mb-4">{prog.title}</h4>
++                      <ul className="space-y-3 font-jakarta font-semibold text-xs sm:text-sm text-slate-500">
++                        {prog.pts.map((pt, pIdx) => (
++                          <li key={pIdx} className="flex items-start gap-2.5">
++                            <CheckCircle2 className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
++                            <span>{pt}</span>
++                          </li>
++                        ))}
++                      </ul>
++                    </div>
++                    
++                    <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between text-[#D97706] font-quicksand font-bold text-xs uppercase tracking-wider group-hover:text-[#b45309]">
++                      <span>T├¼m hiß╗âu ch╞░╞íng tr├¼nh</span>
++                      <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
++                    </div>
++                  </div>
++                </div>
++              ))}
+             </div>
+           </div>
+ 
+-          {/* Card: ─É─âng nhß║¡p */}
+-          <div className="bg-white rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/60 relative">
+-            <div className="flex items-center gap-3 mb-4">
+-              <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0">
+-                <Lock className="w-4 h-4 text-[#2196F3]" />
+-              </div>
++          {/* Section: V├î SAO Hß╗îC VI├èN CHß╗îN 123ENGLISH? */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight">
++              V├î SAO Hß╗îC VI├èN CHß╗îN <span className="text-[#D97706]">123ENGLISH</span>?
++            </h2>
++
++            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-10">
++              {[
++                { title: '1 K├êM 1 C├ü NH├éN H├ôA', desc: 'Hß╗ìc theo mß╗Ñc ti├¬u ri├¬ng cß╗ºa bß║ín', icon: UserCheck },
++                { title: 'Lß╗ÿ TR├îNH NG├ÇNH NGHß╗Ç', desc: 'Nß╗Öi dung b├ím s├ít c├┤ng viß╗çc thß╗▒c tß║┐', icon: BookOpen },
++                { title: 'GI├üO VI├èN QUß╗ÉC Tß║╛', desc: 'Philippines & bß║ún xß╗⌐ native Mß╗╣, Anh', icon: Sparkles },
++                { title: 'LINH HOß║áT THß╗£I GIAN', desc: 'Hß╗ìc s├íng, tr╞░a, tß╗æi theo lß╗ïch rß║únh', icon: Globe },
++                { title: 'Tß║¼P TRUNG PHß║óN Xß║á', desc: 'N├│i nhiß╗üu h╞ín, thß╗▒c h├ánh thß╗▒c tß║┐', icon: MessageSquare },
++                { title: 'THEO D├òI TIß║╛N ─Éß╗ÿ', desc: 'Nhß║¡n feedback th╞░ß╗¥ng xuy├¬n, b├ío c├ío', icon: FileText }
++              ].map((reason, idx) => (
++                <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 hover:border-amber-300 hover:shadow-lg transition-all duration-300 flex flex-col items-center text-center group">
++                  <div className="w-14 h-14 rounded-full bg-[#D97706]/10 text-[#D97706] flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110">
++                    <reason.icon className="w-6 h-6 stroke-[2]" />
++                  </div>
++                  <h4 className="font-quicksand font-extrabold text-xs text-slate-800 leading-tight uppercase">{reason.title}</h4>
++                  <p className="text-[10px] text-slate-400 font-semibold mt-2 leading-relaxed">{reason.desc}</p>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          {/* Motivation Banner Section */}
++          <div className="mt-24 bg-gradient-to-br from-[#D97706] to-orange-500 rounded-[2rem] p-8 lg:p-10 relative overflow-hidden shadow-xl text-white border border-orange-400/20">
++            <div className="relative z-10 grid lg:grid-cols-[60%_40%] gap-8 items-center">
+               <div>
+-                <h2 className="text-base font-bold text-slate-900">{t('landing.login_title')}</h2>
+-                <p className="text-xs text-slate-500 mt-0.5">{t('landing.login_subtitle')}</p>
++                <span className="inline-block px-3 py-1 bg-white/20 text-white font-quicksand font-bold text-[10px] rounded-full uppercase tracking-wider mb-4 border border-white/20">
++                  Career Breakthrough
++                </span>
++                <h3 className="font-quicksand font-extrabold text-2xl sm:text-3xl leading-tight">
++                  TIß║╛NG ANH Tß╗ÉT H╞áN ΓÇô C╞á Hß╗ÿI Lß╗ÜN H╞áN
++                </h3>
++                <p className="mt-3 text-xs opacity-90 leading-relaxed max-w-xl font-medium font-jakarta">
++                  Sß╗¡ dß╗Ñng tiß║┐ng Anh chuy├¬n nghiß╗çp gi├║p bß║ín tß╗▒ tin mß╗ƒ kh├│a c├íc c╞í hß╗Öi th─âng tiß║┐n, t─âng thu nhß║¡p v├á l├ám viß╗çc tß╗▒ tin trong c├íc doanh nghiß╗çp quß╗æc tß║┐.
++                </p>
++
++                <div className="mt-8 grid grid-cols-2 gap-3 font-jakarta font-bold text-[11px] text-white">
++                  {[
++                    'T─âng khß║ú n─âng th─âng chß╗⌐c',
++                    'L├ám viß╗çc tß║¡p ─æo├án ─æa quß╗æc gia',
++                    'Mß╗ƒ rß╗Öng c╞í hß╗Öi nghß╗ü nghiß╗çp',
++                    'Gia t─âng thu nhß║¡p 30-50%'
++                  ].map((pt, idx) => (
++                    <div key={idx} className="flex items-center gap-2 bg-white/10 p-2.5 rounded-xl border border-white/5">
++                      <CheckCircle2 className="w-4 h-4 text-amber-300 flex-shrink-0" />
++                      <span>{pt}</span>
++                    </div>
++                  ))}
++                </div>
++                
++                <div className="mt-8 font-quicksand">
++                  <a 
++                    href="#dang-ky-form"
++                    className="inline-flex items-center gap-2 px-6 py-3 bg-white hover:bg-slate-50 text-slate-900 font-quicksand font-bold rounded-xl text-xs tracking-wider uppercase transition-all duration-300 shadow-md animate-pulse"
++                  >
++                    NHß║¼N Lß╗ÿ TR├îNH C├ü NH├éN H├ôA
++                    <ArrowRight className="w-4 h-4 text-[#D97706]" />
++                  </a>
++                </div>
++              </div>
++
++              <div className="relative h-64 lg:h-72 w-full rounded-2xl overflow-hidden border-4 border-white/20 shadow-lg">
++                <img 
++                  src="/adult_banner.png" 
++                  alt="C╞í hß╗Öi th─âng tiß║┐n c├╣ng tiß║┐ng Anh" 
++                  className="w-full h-full object-cover" 
++                />
+               </div>
+             </div>
++          </div>
+ 
+-            <div className="grid grid-cols-2 gap-3">
+-              <button
+-                onClick={() => openLogin('teacher')}
+-                className="flex items-center justify-between px-3 py-3 border-2 border-slate-100 rounded-xl hover:border-slate-300 hover:bg-slate-50 transition-all text-sm font-bold text-slate-700 group"
+-              >
+-                <div className="flex items-center gap-2">
+-                  <GraduationCap className="w-4 h-4 text-slate-400 group-hover:text-slate-700" />
+-                  <span className="text-xs">{t('landing.login_teacher')}</span>
++          {/* Section: Lß╗ÿ TR├îNH Hß╗îC TIß║╛NG ANH GIAO TIß║╛P CHO NG╞»ß╗£I ─ÉI L├ÇM */}
++          <div className="mt-24">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight">
++              Lß╗ÿ TR├îNH Hß╗îC CHO NG╞»ß╗£I ─ÉI L├ÇM
++            </h2>
++
++            <div className="grid lg:grid-cols-4 md:grid-cols-2 gap-8 mt-12 relative">
++              {[
++                { 
++                  step: '01', 
++                  title: 'BEGINNER', 
++                  sub: 'Mß║ñT Gß╗ÉC / C╞á Bß║óN',
++                  pts: ['Ph├ít ├óm c╞í bß║ún tiß║┐ng Anh', 'Tß╗½ vß╗▒ng th├┤ng dß╗Ñng c├┤ng viß╗çc', 'Giao tiß║┐p v─ân ph├▓ng c╞í bß║ún'],
++                  aim: 'Mß╗Ñc ti├¬u: Giao tiß║┐p ─æ╞ín giß║ún, hiß╗âu v├á n├│i c├íc c├óu c╞í bß║ún v─ân ph├▓ng.'
++                },
++                { 
++                  step: '02', 
++                  title: 'ELEMENTARY', 
++                  sub: 'GIAO TIß║╛P Nß╗ÇN Tß║óNG',
++                  pts: ['M├┤ tß║ú c├┤ng viß╗çc chi tiß║┐t', 'Viß║┐t email c├┤ng viß╗çc ─æ╞ín giß║ún', 'Trao ─æß╗òi hß║▒ng ng├áy vß╗¢i ─æß╗ông nghiß╗çp'],
++                  aim: 'Mß╗Ñc ti├¬u: Giao tiß║┐p tß╗æt h╞ín trong c├íc t├¼nh huß╗æng c├┤ng sß╗ƒ.'
++                },
++                { 
++                  step: '03', 
++                  title: 'INTERMEDIATE', 
++                  sub: 'GIAO TIß║╛P C├öNG Vß╗░C',
++                  pts: ['Tham gia cuß╗Öc hß╗ìp tiß║┐ng Anh', 'Tr├¼nh b├áy ├╜ t╞░ß╗ƒng mß║ích lß║íc', 'B├ío c├ío & phß║ún hß╗ôi th├┤ng tin'],
++                  aim: 'Mß╗Ñc ti├¬u: Tß╗▒ tin giao tiß║┐p v├á tham gia meeting bß║▒ng tiß║┐ng Anh.'
++                },
++                { 
++                  step: '04', 
++                  title: 'ADVANCED', 
++                  sub: 'TIß║╛NG ANH CHUY├èN NGHIß╗åP',
++                  pts: ['Thuyß║┐t tr├¼nh dß╗▒ ├ín chuy├¬n nghiß╗çp', '─É├ám ph├ín & th╞░╞íng l╞░ß╗úng gi├í', 'L├ám viß╗çc trß╗▒c tiß║┐p ─æß╗æi t├íc quß╗æc tß║┐'],
++                  aim: 'Mß╗Ñc ti├¬u: Sß╗¡ dß╗Ñng tiß║┐ng Anh tß╗▒ tin trong m├┤i tr╞░ß╗¥ng quß╗æc tß║┐.'
++                }
++              ].map((path, idx) => (
++                <div key={idx} className="relative group">
++                  {/* Arrow indicator for step flow */}
++                  {idx < 3 && (
++                    <>
++                      {/* Desktop Right Arrow */}
++                      <div className="hidden lg:block absolute -right-6 top-1/2 -translate-y-1/2 z-10 text-slate-900 bg-white border border-slate-200 rounded-full p-1.5 shadow-sm transform group-hover:translate-x-1 transition-transform duration-300">
++                        <ArrowRight className="w-4 h-4 stroke-[3]" />
++                      </div>
++                      {/* Mobile/Tablet Down Arrow */}
++                      <div className="lg:hidden md:hidden flex justify-center my-3 text-slate-950">
++                        <ChevronDown className="w-5 h-5 stroke-[3]" />
++                      </div>
++                    </>
++                  )}
++                  
++                  <div className="bg-white p-6 rounded-3xl border border-slate-100 hover:border-amber-300 hover:shadow-lg transition-all duration-300 flex flex-col justify-between h-full relative">
++                    <div>
++                      <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4 fon          {/* Section: C├éU Hß╗ÄI TH╞»ß╗£NG Gß║╢P */}
++          <div className="mt-28 max-w-5xl mx-auto">
++            <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex items-center justify-center gap-2 mb-10">
++              <HelpCircle className="w-8 h-8 text-[#D97706]" />
++              C├éU Hß╗ÄI TH╞»ß╗£NG Gß║╢P
++            </h2>
++
++            <div className="grid md:grid-cols-2 gap-4 items-start mt-10">
++              {/* Column 1 */}
++              <div className="space-y-3 font-jakarta font-bold text-sm">
++                {[
++                  { q: 'Hß╗ìc online c├│ hiß╗çu quß║ú kh├┤ng?', a: 'Kh├│a hß╗ìc 1 k├¿m 1 t╞░╞íng t├íc trß╗▒c tiß║┐p gi├║p hß╗ìc vi├¬n thß╗▒c h├ánh n├│i li├¬n tß╗Ñc 100% thß╗¥i gian hß╗ìc, gi├ío vi├¬n chß╗ënh sß╗¡a lß╗ùi ph├ít ├óm v├á phß║ún xß║í lß║¡p tß╗⌐c, hiß╗çu quß║ú cao gß║Ñp 4 lß║ºn lß╗¢p hß╗ìc th├┤ng th╞░ß╗¥ng.', idx: 0 },
++                  { q: 'T├┤i ─æi l├ám bß║¡n rß╗Ön c├│ hß╗ìc ─æ╞░ß╗úc kh├┤ng?', a: 'C├│, khung giß╗¥ hß╗ìc v├┤ c├╣ng linh hoß║ít tß╗½ 8:00 ─æß║┐n 23:00 mß╗ùi ng├áy. Hß╗ìc vi├¬n tß╗▒ chß╗ìn lß╗ïch rß║únh h├áng tuß║ºn v├á c├│ thß╗â xin nghß╗ë/─æß╗òi lß╗ïch hß╗ìc tr╞░ß╗¢c buß╗òi hß╗ìc tß╗æi thiß╗âu 2-4 tiß║┐ng.', idx: 1 },
++                  { q: 'Hß╗ìc ph├¡ c├│ xuß║Ñt h├│a ─æ╞ín ─æß╗Å kh├┤ng?', a: 'C├│, 123English hß╗ù trß╗ú cung cß║Ñp h├│a ─æ╞ín gi├í trß╗ï gia t─âng (VAT) cho doanh nghiß╗çp thanh to├ín tiß╗ün hß╗ìc ph├¡ cho c├ín bß╗Ö nh├ón vi├¬n hß╗ìc tß║¡p.', idx: 2 }
++                ].map((faq) => (
++                  <div key={faq.idx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden transition-all duration-200 shadow-sm">
++                    <button
++                      type="button"
++                      onClick={() => setFaqNguoiDiLamIndex(faqNguoiDiLamIndex === faq.idx ? null : faq.idx)}
++                      className="w-full px-5 py-4 text-left flex items-center justify-between hover:bg-slate-50 transition-colors text-slate-800 font-semibold"
++                    >
++                      <span className="text-xs sm:text-sm">{faq.q}</span>
++                      <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-300 ${faqNguoiDiLamIndex === faq.idx ? 'rotate-180 text-[#D97706]' : ''}`} />
++                    </button>
++                    {faqNguoiDiLamIndex === faq.idx && (
++                      <div className="px-5 pb-5 pt-1 text-slate-500 font-medium text-xs leading-relaxed border-t border-slate-50 bg-[#FFFBEB]/20">
++                        {faq.a}
++                      </div>
++                    )}
++                  </div>
++                ))}
++              </div>
++
++              {/* Column 2 */}
++              <div className="space-y-3 font-jakarta font-bold text-sm">
++                {[
++                  { q: 'T├┤i mß║Ñt gß╗æc th├¼ bß║»t ─æß║ºu hß╗ìc nh╞░ thß║┐ n├áo?', a: 'Bß║ín sß║╜ ─æ╞░ß╗úc kiß╗âm tra tr├¼nh ─æß╗Ö ─æß║ºu v├áo miß╗àn ph├¡. Gi├ío vi├¬n sß║╜ thiß║┐t kß║┐ lß╗Ö tr├¼nh bß║»t ─æß║ºu tß╗½ phß║ºn ph├ít ├óm, tß╗½ vß╗▒ng c├┤ng sß╗ƒ c╞í bß║ún nhß║Ñt ─æß╗â bß║ín dß╗à d├áng bß║»t nhß╗ïp.', idx: 3 },
++                  { q: 'Gi├ío vi├¬n gß╗ôm nhß╗»ng n╞░ß╗¢c n├áo?', a: '─Éß╗Öi ng┼⌐ gi├ío vi├¬n gß╗ôm c├íc thß║ºy c├┤ Philippines gi├áu kinh nghiß╗çm, gi├ío vi├¬n Bß║ún xß╗⌐ (Mß╗╣, Anh, ├Üc) v├á gi├ío vi├¬n Viß╗çt Nam c├│ chß╗⌐ng chß╗ë IELTS/TOEIC giß║úng dß║íy chuy├¬n s├óu.', idx: 4 }
++                ].map((faq) => (
++                  <div key={faq.idx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden transition-all duration-200 shadow-sm">
++                    <button
++                      type="button"
++                      onClick={() => setFaqNguoiDiLamIndex(faqNguoiDiLamIndex === faq.idx ? null : faq.idx)}
++                      className="w-full px-5 py-4 text-left flex items-center justify-between hover:bg-slate-50 transition-colors text-slate-800 font-semibold"
++                    >
++                      <span className="text-xs sm:text-sm">{faq.q}</span>
++                      <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-300 ${faqNguoiDiLamIndex === faq.idx ? 'rotate-180 text-[#D97706]' : ''}`} />
++                    </button>
++                    {faqNguoiDiLamIndex === faq.idx && (
++                      <div className="px-5 pb-5 pt-1 text-slate-500 font-medium text-xs leading-relaxed border-t border-slate-50 bg-[#FFFBEB]/20">
++                        {faq.a}
++                      </div>
++                    )}
++                  </div>
++                ))}
++              </div>
++            </div>
++          </div>
++
++          {/* Footer CTA Banner */}
++          <div className="mt-24 bg-gradient-to-br from-amber-500 to-orange-600 rounded-[2.5rem] p-8 lg:p-12 relative overflow-hidden shadow-2xl text-white border border-orange-400/20">
++            {/* Decorative circles */}
++            <div className="absolute -top-20 -right-20 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
++            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-slate-950/10 rounded-full blur-2xl pointer-events-none" />
++            
++            <div className="relative z-10 grid lg:grid-cols-[50%_50%] gap-8 items-center">
++              {/* Left side: Business woman image + text */}
++              <div className="flex flex-col md:flex-row items-center gap-6">
++                <div className="w-32 h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-4 border-white/30 shadow-lg shrink-0 bg-slate-100">
++                  <img 
++                    src="/adult_footer.png" 
++                    alt="T╞░ vß║Ñn lß╗Ö tr├¼nh hß╗ìc" 
++                    className="w-full h-full object-cover" 
++                  />
+                 </div>
+-                <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500" />
+-              </button>
+-              
+-              <button
+-                onClick={() => openLogin('admin')}
+-                className="flex items-center justify-between px-3 py-3 border-2 border-slate-100 rounded-xl hover:border-slate-300 hover:bg-slate-50 transition-all text-sm font-bold text-slate-700 group"
+-              >
++                <div>
++                  <span className="inline-block px-3 py-1 bg-white/20 text-white font-quicksand font-bold text-[10px] rounded-full uppercase tracking-wider mb-3 border border-white/20">
++                    TIß║╛NG ANH NG╞»ß╗£I ─ÉI L├ÇM
++                  </span>
++                  <h3 className="font-quicksand font-extrabold text-2xl leading-tight">
++                    ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡ ngay!
++                  </h3>
++                  <p className="mt-2 text-xs opacity-90 leading-relaxed font-medium font-jakarta">
++                    ─Éß║ºu t╞░ cho n─âng lß╗▒c tiß║┐ng Anh h├┤m nay, mß╗ƒ rß╗Öng c╞í hß╗Öi th─âng tiß║┐n sß╗▒ nghiß╗çp v╞░ß╗út bß║¡c cho t╞░╞íng lai mai sau.
++                  </p>
++                  <div className="mt-4 flex items-center gap-2 text-[11px] font-bold bg-white/10 p-2.5 rounded-xl border border-white/10 max-w-xs font-jakarta">
++                    <Phone className="w-3.5 h-3.5 text-yellow-300" />
++                    <span>Hotline: 0388.827.295</span>
++                  </div>
++                </div>
++              </div>
++
++              {/* Right side: White registration card */}
++              <div className="bg-white text-slate-800 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-slate-100">
++                <h4 className="font-quicksand font-extrabold text-base text-slate-800 tracking-tight mb-2">─É─âng K├╜ T╞░ Vß║Ñn & Nhß║¡n Buß╗òi Hß╗ìc Thß╗¡ Miß╗àn Ph├¡</h4>
++                <p className="text-[10px] text-slate-400 font-bold mb-5 font-jakarta">Vui l├▓ng cung cß║Ñp sß╗æ ─æiß╗çn thoß║íi cß╗ºa bß║ín ─æß╗â li├¬n hß╗ç</p>
++                
++                <form onSubmit={(e) => handleSignupSubmit(e, 'Tiß║┐ng Anh Ng╞░ß╗¥i ─Éi L├ám (Footer)')} className="space-y-4">
++                  <div className="grid sm:grid-cols-2 gap-4">
++                    <div className="relative">
++                      <User className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                      <input 
++                        type="text" 
++                        required
++                        placeholder="T├¬n cß╗ºa bß║ín *"
++                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#D97706] text-slate-800 font-medium"
++                      />
++                    </div>
++                    <div className="relative">
++                      <Phone className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                      <input 
++                        type="tel" 
++                        required
++                        value={formBottomNguoiDiLam.phone}
++                        onChange={(e) => setFormBottomNguoiDiLam({...formBottomNguoiDiLam, phone: e.target.value})}
++                        placeholder="Sß╗æ ─æiß╗çn thoß║íi *"
++                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#D97706] text-slate-800 font-medium"
++                      />
++                    </div>
++                  </div>
++                  
++                  <button 
++                    type="submit"
++                    className="w-full py-3.5 bg-[#D97706] hover:bg-[#b45309] text-white font-quicksand font-bold rounded-xl text-center text-xs tracking-wider uppercase transition-all duration-200 shadow-md shadow-amber-500/10"
++                  >
++                    ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì NGAY &gt;
++                  </button>
++                </form>
++              </div>
++            </div>* Left side: Business woman image + text */}
++                  <button 
++                    type="submit"
++                    className="w-full py-3.5 bg-[#D97706] hover:bg-[#b45309] text-white font-quicksand font-bold rounded-xl text-center text-xs tracking-wider uppercase transition-all duration-200 shadow-md shadow-amber-500/10"
++                  >
++                    ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì NGAY &gt;
++                  </button>
++                </form>
++              </div>
++            </div>
++                    {faqNguoiDiLamIndex === faq.idx && (
++                      <div className="px-5 pb-5 pt-1 text-slate-500 font-medium text-xs leading-relaxed border-t border-slate-50 bg-[#FFFBEB]/20">
++                        {faq.a}
++                      </div>
++                    )}
++                  </div>
++                ))}
++              </div>
++            </div>
++          </div>
++
++          {/* Footer CTA Banner */}
++          <div className="mt-24 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 rounded-3xl p-8 sm:p-12 relative overflow-hidden shadow-xl text-white border border-slate-800">
++            <div className="absolute -top-10 -left-10 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
++            <div className="absolute -bottom-10 right-20 w-52 h-52 bg-slate-700/10 rounded-full blur-2xl pointer-events-none" />
++            
++            <div className="max-w-xl">
++              <span className="inline-block px-3 py-1 bg-[#D97706]/15 text-[#D97706] font-extrabold text-[10px] rounded-full uppercase tracking-wider mb-4 border border-[#D97706]/35 font-quicksand">
++                TIß║╛NG ANH NG╞»ß╗£I ─ÉI L├ÇM
++              </span>
++              <h3 className="font-quicksand font-extrabold text-2xl sm:text-3xl leading-tight">
++                ─É─âng k├╜ hß╗ìc thß╗¡ miß╗àn ph├¡ ngay!
++              </h3>
++              <p className="mt-3 text-xs sm:text-sm font-semibold opacity-70 leading-relaxed">
++                ─Éß║ºu t╞░ cho n─âng lß╗▒c tiß║┐ng Anh h├┤m nay, mß╗ƒ rß╗Öng c╞í hß╗Öi ph├ít triß╗ân sß╗▒ nghiß╗çp v╞░ß╗út bß║¡c cho t╞░╞íng lai ng├áy mai.
++              </p>
++
++              <div className="mt-6 flex flex-col gap-2 font-jakarta font-bold text-xs text-slate-400">
+                 <div className="flex items-center gap-2">
+-                  <Settings className="w-4 h-4 text-slate-400 group-hover:text-slate-700" />
+-                  <span className="text-xs">{t('landing.login_admin')}</span>
++                  <Phone className="w-4 h-4 text-[#D97706]" />
++                  <span>Hotline li├¬n hß╗ç trß╗▒c tiß║┐p: 0388.827.295</span>
+                 </div>
+-                <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500" />
+-              </button>
++                <div className="text-[10px] text-slate-500 mt-2">
++                  * Hoß║╖c ─æiß╗ün th├┤ng tin b├¬n d╞░ß╗¢i ─æß╗â ─æ╞░ß╗úc gß╗ìi lß║íi t╞░ vß║Ñn chi tiß║┐t lß╗Ö tr├¼nh hß╗ìc.
++                </div>
++              </div>
+             </div>
+ 
+-            <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium bg-slate-50 py-2.5 rounded-lg">
+-              <Info className="w-3.5 h-3.5 text-slate-400" />
+-              {t('landing.login_note')}
++            <div className="mt-8 pt-6 border-t border-slate-800 max-w-lg">
++              <form onSubmit={(e) => handleSignupSubmit(e, 'Tiß║┐ng Anh Ng╞░ß╗¥i ─Éi L├ám (Footer)')} className="flex flex-col sm:flex-row gap-3">
++                <input 
++                  type="tel" 
++                  required
++                  value={formBottomNguoiDiLam.phone}
++                  onChange={(e) => setFormBottomNguoiDiLam({...formBottomNguoiDiLam, phone: e.target.value})}
++                  placeholder="Nhß║¡p sß╗æ ─æiß╗çn thoß║íi cß╗ºa bß║ín *"
++                  className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-xs placeholder-slate-500 focus:outline-none focus:border-[#D97706] text-white font-medium"
++                />
++                <button 
++                  type="submit"
++                  className="px-6 py-3 bg-[#D97706] hover:bg-[#b45309] text-slate-900 hover:text-white font-quicksand font-bold rounded-xl text-center text-xs tracking-wider uppercase transition-all duration-200 whitespace-nowrap"
++                >
++                  ─É─éNG K├¥ Hß╗îC THß╗¼ MIß╗äN PH├ì NGAY
++                </button>
++              </form>
+             </div>
+           </div>
++
+         </div>
+-      </main>
++      </section>
+ 
+-      {/* Compact Footer */}
+-      <footer className="border-t border-slate-200 bg-white py-3 shrink-0">
+-        <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20 flex items-center justify-between">
++      {/* COMPACT FOOTER */}
++      <footer className="border-t border-slate-200 bg-white py-6 shrink-0 z-10 relative">
++        <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20 flex flex-col sm:flex-row items-center justify-between gap-4">
+           <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+             <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+             ┬⌐ 2026 Hß╗Ö kinh doanh Gia S╞░ To├án N─âng
+           </div>
++          
++          <div className="flex items-center gap-6 text-[11px] text-[#2563EB] font-bold font-quicksand">
++            <a href="#trang-chu" className="hover:underline">Tiß║┐ng Anh Trß║╗ Em</a>
++            <a href="#mat-goc" className="hover:underline">Tiß║┐ng Anh Mß║Ñt Gß╗æc</a>
++            <a href="#nguoi-di-lam" className="hover:underline">Tiß║┐ng Anh Ng╞░ß╗¥i ─Éi L├ám</a>
++          </div>
++
+           <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500 font-medium">
+             <span className="hover:text-slate-800 cursor-pointer transition-colors">Ch├¡nh s├ích bß║úo mß║¡t</span>
+             <span className="hover:text-slate-800 cursor-pointer transition-colors">─Éiß╗üu khoß║ún sß╗¡ dß╗Ñng</span>
+-            <div className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-white cursor-pointer hover:bg-black transition-colors font-bold text-[9px]">f</div>
++            <a href="https://facebook.com/123englishinvietnam" target="_blank" rel="noopener noreferrer" className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-white cursor-pointer hover:bg-black transition-colors font-bold text-[9px]">f</a>
+           </div>
+         </div>
+       </footer>
+ 
+-      {/* Section Modal */}
+-      {activeSection && (
+-        <Modal
+-          open={activeSection !== null}
+-          onClose={() => setActiveSection(null)}
+-          title={sectionContent[activeSection].title}
+-          size="md"
+-        >
+-          {sectionContent[activeSection].content}
+-        </Modal>
+-      )}
++      {/* ========================================================================= */}
++      {/* DIALOG MODALS                                                             */}
++      {/* ========================================================================= */}
++
++      {/* Progress Search Modal */}
++      <Modal
++        open={showSearchModal}
++        onClose={() => setShowSearchModal(false)}
++        title="Tra cß╗⌐u tiß║┐n ─æß╗Ö hß╗ìc tß║¡p"
++        size="sm"
++      >
++        <div className="space-y-4">
++          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200/50 p-4 rounded-2xl">
++            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0 text-blue-600">
++              <Search className="w-5 h-5" />
++            </div>
++            <div>
++              <h4 className="font-jakarta font-bold text-xs sm:text-sm text-slate-800">D├ánh cho phß╗Ñ huynh & hß╗ìc sinh</h4>
++              <p className="text-[10px] text-slate-400 font-bold mt-0.5">Kiß╗âm tra kß║┐t quß║ú buß╗òi hß╗ìc, b├ái tß║¡p & nhß║¡n x├⌐t</p>
++            </div>
++          </div>
++
++          <div className="space-y-3">
++            <div>
++              <label className="block text-[10px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider">M├ú hß╗ìc sinh</label>
++              <div className="relative font-jakarta font-bold">
++                <User className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
++                <input
++                  type="text"
++                  value={studentCode}
++                  onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
++                  onKeyDown={(e) => e.key === 'Enter' && handleSearchProgress()}
++                  placeholder="V├¡ dß╗Ñ: HS123456"
++                  className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:bg-white transition-all text-xs"
++                />
++              </div>
++              <p className="text-[9px] text-slate-400 mt-1.5 leading-normal">* M├ú hß╗ìc sinh do gi├ío vi├¬n hoß║╖c quß║ún trß╗ï vi├¬n cung cß║Ñp cho gia ─æ├¼nh.</p>
++            </div>
++
++            <button
++              onClick={handleSearchProgress}
++              className="w-full py-4.5 bg-[#2563EB] hover:bg-blue-700 text-white font-quicksand font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
++            >
++              <Search className="w-4 h-4" /> Xem tiß║┐n ─æß╗Ö hß╗ìc tß║¡p
++            </button>
++          </div>
++
++          <div className="mt-4 flex items-center justify-center gap-2 text-[10px] text-slate-400 font-bold bg-slate-50 py-2.5 rounded-lg border border-slate-100/50">
++            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
++            Tra cß╗⌐u an to├án, kh├┤ng cß║ºn ─æ─âng nhß║¡p
++          </div>
++        </div>
++      </Modal>
+ 
+       {/* Login Modal */}
+       <Modal
+@@ -417,70 +2460,181 @@ export function LoginPage() {
+         size="sm"
+       >
+         <form onSubmit={handleLoginSubmit(onLogin)} className="space-y-4">
++          
++          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/50 p-4 rounded-2xl mb-2">
++            <div className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center shrink-0 text-slate-700">
++              {loginRole === 'teacher' ? <GraduationCap className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
++            </div>
++            <div>
++              <h4 className="font-jakarta font-bold text-xs sm:text-sm text-slate-800">Cß╗òng ─æ─âng nhß║¡p nß╗Öi bß╗Ö</h4>
++              <p className="text-[10px] text-slate-400 font-bold mt-0.5">Vui l├▓ng sß╗¡ dß╗Ñng t├ái khoß║ún ─æ╞░ß╗úc cß║Ñp</p>
++            </div>
++          </div>
++
+           {errorMsg && (
+-            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-600 font-medium">
++            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-xs text-rose-600 font-bold">
+               {errorMsg}
+             </div>
+           )}
+ 
+           <div>
+-            <label className="block text-sm font-bold text-slate-700 mb-1.5">
+-              {loginRole === 'teacher' ? 'M├ú gi├ío vi├¬n' : 'T├ái khoß║ún'}
++            <label className="block text-[10px] font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
++              {loginRole === 'teacher' ? 'M├ú gi├ío vi├¬n' : 'T├¬n ─æ─âng nhß║¡p'}
+             </label>
+-            <div className="relative">
++            <div className="relative font-jakarta font-bold">
+               <User className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+               <input
+                 type="text"
+                 placeholder={loginRole === 'teacher' ? 'V├¡ dß╗Ñ: GVMLLNBR' : 'Nhß║¡p t├¬n ─æ─âng nhß║¡p'}
+                 autoComplete="username"
+-                className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2196F3] focus:bg-white transition-all text-sm font-medium"
++                className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:bg-white transition-all text-xs"
+                 {...registerLogin('username')}
+               />
+             </div>
+-            {loginErrors.username && <p className="mt-1.5 text-xs text-rose-500 font-medium">{loginErrors.username.message}</p>}
++            {loginErrors.username && <p className="mt-1.5 text-[10px] text-rose-500 font-bold">{loginErrors.username.message}</p>}
+           </div>
+ 
+           <div>
+-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Mß║¡t khß║⌐u</label>
+-            <div className="relative">
++            <label className="block text-[10px] font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Mß║¡t khß║⌐u</label>
++            <div className="relative font-jakarta font-bold">
+               <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+               <input
+                 type={showPassword ? 'text' : 'password'}
+-                placeholder={loginRole === 'teacher' ? 'Mß║¡t khß║⌐u cß╗æ ─æß╗ïnh' : 'Nhß║¡p mß║¡t khß║⌐u'}
++                placeholder="Nhß║¡p mß║¡t khß║⌐u truy cß║¡p"
+                 autoComplete="current-password"
+-                className="w-full pl-11 pr-12 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2196F3] focus:bg-white transition-all text-sm font-medium"
++                className="w-full pl-11 pr-12 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:bg-white transition-all text-xs"
+                 {...registerLogin('password')}
+               />
+               <button
+                 type="button"
+                 onClick={() => setShowPassword(!showPassword)}
+-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
++                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
+               >
+-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
++                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+               </button>
+             </div>
+-            {loginErrors.password && <p className="mt-1.5 text-xs text-rose-500 font-medium">{loginErrors.password.message}</p>}
++            {loginErrors.password && <p className="mt-1.5 text-[10px] text-rose-500 font-bold">{loginErrors.password.message}</p>}
+           </div>
+ 
+-          {loginRole === 'teacher' && (
+-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-600 font-medium">
+-               ─É─âng nhß║¡p vß╗¢i m├ú gi├ío vi├¬n (vd: GVMLLNBR)
++          {loginRole === 'teacher' ? (
++            <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
++              <div className="text-[10px] text-[#2563EB] font-bold bg-[#EFF6FF] border border-[#BFDBFE]/60 px-3 py-1.5 rounded-lg">
++                ─É─âng nhß║¡p bß║▒ng m├ú gi├ío vi├¬n
++              </div>
++              <button 
++                type="button"
++                onClick={() => openLogin('admin')}
++                className="text-[10px] text-slate-500 hover:text-slate-800 font-bold flex items-center gap-0.5"
++              >
++                ─É─âng nhß║¡p Admin
++                <ChevronRight className="w-3.5 h-3.5" />
++              </button>
++            </div>
++          ) : (
++            <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100">
++              <div className="text-[10px] text-slate-400 font-bold">
++                Cß╗òng d├ánh cho Quß║ún trß╗ï vi├¬n hß╗ç thß╗æng.
++              </div>
++              <button 
++                type="button"
++                onClick={() => openLogin('teacher')}
++                className="text-[10px] text-slate-500 hover:text-slate-800 font-bold flex items-center gap-0.5"
++              >
++                ─É─âng nhß║¡p Gi├ío vi├¬n
++                <ChevronRight className="w-3.5 h-3.5" />
++              </button>
+             </div>
+           )}
+ 
+           <button
+             type="submit"
+             disabled={isLoginSubmitting}
+-            className="w-full mt-2 py-3.5 bg-slate-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:shadow-none text-sm"
++            className="w-full mt-4 py-4 bg-slate-900 hover:bg-black text-white font-quicksand font-bold rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center disabled:opacity-50 text-xs uppercase tracking-wider"
+           >
+             {isLoginSubmitting ? (
+               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+             ) : (
+-              '─É─âng nhß║¡p ngay'
++              '─É─âng nhß║¡p hß╗ç thß╗æng'
+             )}
+           </button>
+         </form>
+       </Modal>
++
++      {/* Prize Claim Modal (Wheel of Fortune success) */}
++      <Modal
++        open={showPrizeModal}
++        onClose={() => setShowPrizeModal(false)}
++        title="Ch├║c mß╗½ng tr├║ng th╞░ß╗ƒng! ≡ƒÄë"
++        size="sm"
++      >
++        <div className="space-y-4 text-center font-jakarta">
++          <div className="w-20 h-20 bg-gradient-to-br from-amber-400 to-yellow-500 rounded-full flex items-center justify-center text-white mx-auto shadow-lg animate-bounce">
++            <Gift className="w-10 h-10 stroke-[2]" />
++          </div>
++
++          <div>
++            <h4 className="font-outfit font-black text-lg text-slate-800">Bß║áN ─É├â TR├ÜNG TH╞»ß╗₧NG Hß╗îC Bß╗öNG</h4>
++            <div className="inline-block px-6 py-3.5 bg-[#ECFDF5] border-2 border-[#A7F3D0] rounded-2xl text-[#059669] font-outfit font-black text-xl tracking-wide mt-3 shadow-sm">
++              {prizeIndex !== null && sectors[prizeIndex].labelLines.join(' ')}
++            </div>
++          </div>
++
++          <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-sm mx-auto">
++            Vui l├▓ng cung cß║Ñp sß╗æ ─æiß╗çn thoß║íi Zalo ─æß╗â nhß║¡n m├ú qu├á tß║╖ng ╞░u ─æ├úi hß╗ìc tß║¡p 1 k├¿m 1 ─æß║╖c quyß╗ün cß╗ºa bß║ín.
++          </p>
++
++          <form onSubmit={handleClaimPrizeSubmit} className="space-y-3 pt-2 text-left">
++            <div>
++              <label className="block text-[10px] font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Sß╗æ ─æiß╗çn thoß║íi nhß║¡n qu├á</label>
++              <input 
++                type="tel" 
++                required
++                value={claimPhone}
++                onChange={(e) => setClaimPhone(e.target.value)}
++                placeholder="Nhß║¡p sß╗æ ─æiß╗çn thoß║íi li├¬n hß╗ç *"
++                className="w-full px-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-[#10B981] font-bold"
++              />
++            </div>
++
++            <button
++              type="submit"
++              disabled={claimSuccess}
++              className="w-full py-4.5 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider font-outfit shadow-md disabled:opacity-50"
++            >
++              {claimSuccess ? '─Éang gß╗¡i...' : 'NHß║¼N M├â ╞»U ─É├âI NGAY'}
++              <ChevronRight className="w-4 h-4" />
++            </button>
++          </form>
++        </div>
++      </Modal>
++
++      {/* Global Success Notification Modal */}
++      {successMsg && (
++        <Modal
++          open={successMsg !== null}
++          onClose={() => setSuccessMsg(null)}
++          title="─É─âng k├╜ th├ánh c├┤ng! ≡ƒÄë"
++          size="md"
++        >
++          <div className="space-y-4 text-center font-jakarta">
++            <div className="w-16 h-16 bg-[#ECFDF5] text-[#059669] rounded-full flex items-center justify-center mx-auto border border-[#A7F3D0]">
++              <Check className="w-8 h-8 stroke-[3.5]" />
++            </div>
++            
++            <p className="text-sm text-slate-700 font-bold leading-relaxed max-w-md mx-auto">
++              {successMsg}
++            </p>
++
++            <button
++              onClick={() => setSuccessMsg(null)}
++              className="mt-6 px-6 py-3 bg-[#10B981] hover:bg-[#0d9468] text-white font-quicksand font-extrabold rounded-xl text-xs uppercase tracking-wider transition-colors"
++            >
++              ─Éß╗ông ├╜
++            </button>
++          </div>
++        </Modal>
++      )}
++
+     </div>
+   )
+ }

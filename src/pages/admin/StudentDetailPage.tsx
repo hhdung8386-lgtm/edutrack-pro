@@ -91,7 +91,7 @@ export function StudentDetailPage() {
   const expectedSalary = (lesson: Lesson) => {
     const price = liveRates.subjectPrice[lesson.subjectId] ?? lesson.pricePerMinute ?? 0
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
-    return { price, level, salary: Math.round(lesson.minutes * price * level) }
+    return { price, level, salary: calculateSalary(lesson.minutes, price, level) }
   }
 
   // Open recalc dialog after checking payroll paid status
@@ -288,6 +288,9 @@ export function StudentDetailPage() {
           updatedAt: serverTimestamp(),
         })
 
+        const publicLessonRef = doc(db, 'publicLessons', reversingLesson.id)
+        tx.delete(publicLessonRef)
+
         // Void all payroll entries for this lesson (set amount=0, voided=true)
         for (const pid of payrollIds) {
           tx.update(doc(db, 'payroll', pid), {
@@ -388,6 +391,28 @@ export function StudentDetailPage() {
             remainingSessions: newRemainingSessions,
             status: newRemaining <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
+          })
+
+          const publicLessonRef = doc(db, 'publicLessons', reApprovingLesson.id)
+          tx.set(publicLessonRef, {
+            id: reApprovingLesson.id,
+            studentId: reApprovingLesson.studentId,
+            studentCode: reApprovingLesson.studentCode,
+            studentName: reApprovingLesson.studentName,
+            teacherId: reApprovingLesson.teacherId,
+            teacherCode: reApprovingLesson.teacherCode ?? '',
+            teacherName: reApprovingLesson.teacherName ?? '',
+            subjectId: reApprovingLesson.subjectId,
+            subjectName: reApprovingLesson.subjectName ?? '',
+            date: reApprovingLesson.date,
+            minutes: reApprovingLesson.minutes,
+            comment: reApprovingLesson.comment || '',
+            homework: reApprovingLesson.homework || '',
+            book: reApprovingLesson.book || '',
+            imageURLs: reApprovingLesson.imageURLs || [],
+            status: 'approved',
+            createdAt: reApprovingLesson.createdAt || serverTimestamp(),
+            approvedAt: serverTimestamp(),
           })
 
           const payrollRef = doc(collection(db, 'payroll'))
@@ -604,7 +629,7 @@ export function StudentDetailPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
-                  {['Ngày', 'Giáo viên', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
+                  {['Ngày', 'Giáo viên', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -614,6 +639,7 @@ export function StudentDetailPage() {
                   <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
                     <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
+                    <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={lesson.book || ''}>{lesson.book || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
                     <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{lesson.comment || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
@@ -795,8 +821,8 @@ export function StudentDetailPage() {
             <div className="flex justify-between">
               <span className="text-slate-600">Tạo bản ghi lương mới</span>
               <span className="text-emerald-600 font-semibold">
-                {reApprovingLesson.pricePerMinute != null && reApprovingLesson.teacherLevel != null
-                  ? '+ ' + Math.round(reApprovingLesson.minutes * reApprovingLesson.pricePerMinute * reApprovingLesson.teacherLevel).toLocaleString('vi-VN') + 'đ'
+                {reApprovingLesson.pricePerMinute != null
+                  ? '+ ' + calculateSalary(reApprovingLesson.minutes, reApprovingLesson.pricePerMinute, reApprovingLesson.teacherLevel ?? 1).toLocaleString('vi-VN') + 'đ'
                   : 'Tính khi duyệt'}
               </span>
             </div>

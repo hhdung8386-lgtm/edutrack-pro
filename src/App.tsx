@@ -1,47 +1,46 @@
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
-// Pages
-import { LoginPage } from '@/pages/LoginPage'
-import { NotFoundPage } from '@/pages/NotFoundPage'
-import { WaitingApprovalPage } from '@/pages/WaitingApprovalPage'
-
-// Layouts & Protected Route
+// Layouts & Protected Route (statically imported for stability and quick initial render)
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { TeacherLayout } from '@/components/layout/TeacherLayout'
 
-// Admin Pages
-import { DashboardPage } from '@/pages/admin/DashboardPage'
-import { StudentsPage } from '@/pages/admin/StudentsPage'
-import { StudentDetailPage } from '@/pages/admin/StudentDetailPage'
-import { TeachersPage } from '@/pages/admin/TeachersPage'
-import { TeacherDetailPage } from '@/pages/admin/TeacherDetailPage'
-import { SubjectsPage } from '@/pages/admin/SubjectsPage'
-import { ApprovalsPage } from '@/pages/admin/ApprovalsPage'
-import { ReportsPage } from '@/pages/admin/ReportsPage'
-import { PayrollPage } from '@/pages/admin/PayrollPage'
-import { SettingsPage } from '@/pages/admin/SettingsPage'
+// Lazy loaded Pages
+const LoginPage = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })))
+const WaitingApprovalPage = lazy(() => import('@/pages/WaitingApprovalPage').then(m => ({ default: m.WaitingApprovalPage })))
 
-import { ContractsPage } from '@/pages/admin/ContractsPage'
-import { TeacherContractPage } from '@/pages/teacher/TeacherContractPage'
+// Lazy loaded Admin Pages
+const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage').then(m => ({ default: m.DashboardPage })))
+const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage').then(m => ({ default: m.StudentsPage })))
+const StudentDetailPage = lazy(() => import('@/pages/admin/StudentDetailPage').then(m => ({ default: m.StudentDetailPage })))
+const TeachersPage = lazy(() => import('@/pages/admin/TeachersPage').then(m => ({ default: m.TeachersPage })))
+const TeacherDetailPage = lazy(() => import('@/pages/admin/TeacherDetailPage').then(m => ({ default: m.TeacherDetailPage })))
+const SubjectsPage = lazy(() => import('@/pages/admin/SubjectsPage').then(m => ({ default: m.SubjectsPage })))
+const ApprovalsPage = lazy(() => import('@/pages/admin/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })))
+const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then(m => ({ default: m.ReportsPage })))
+const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ default: m.PayrollPage })))
+const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const ContractsPage = lazy(() => import('@/pages/admin/ContractsPage').then(m => ({ default: m.ContractsPage })))
 
-// Teacher Pages
-import { AttendancePage } from '@/pages/teacher/AttendancePage'
-import { LessonHistoryPage } from '@/pages/teacher/LessonHistoryPage'
-import { ProfilePage } from '@/pages/teacher/ProfilePage'
-import { AvailabilityPage } from '@/pages/teacher/AvailabilityPage'
+// Lazy loaded Teacher Pages
+const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPage').then(m => ({ default: m.TeacherContractPage })))
+const AttendancePage = lazy(() => import('@/pages/teacher/AttendancePage').then(m => ({ default: m.AttendancePage })))
+const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage').then(m => ({ default: m.LessonHistoryPage })))
+const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
+const AvailabilityPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
 
-// Parent Pages
-import { ParentDashboardPage } from '@/pages/parent/ParentDashboardPage'
+// Lazy loaded Parent Pages
+const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPage').then(m => ({ default: m.ParentDashboardPage })))
 
-// Public Pages
-import { TrackingPage } from '@/pages/tracking/TrackingPage'
-import { SetupPage } from '@/pages/SetupPage'
-import { ChuongTrinhHocPage } from '@/pages/ChuongTrinhHocPage'
-import { LienHePage } from '@/pages/LienHePage'
+// Lazy loaded Public Pages
+const TrackingPage = lazy(() => import('@/pages/tracking/TrackingPage').then(m => ({ default: m.TrackingPage })))
+const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })))
+const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
+const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default: m.LienHePage })))
 
 const RootRedirect = () => {
   const { user, role, loading, initialized } = useAuthStore()

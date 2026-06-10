@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore'
+import { collection, query, orderBy, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -17,37 +17,45 @@ export function ContractsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
-    const q = query(collection(db, 'contracts'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(q, async (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      setContracts(docs)
-      setLoading(false)
+    let active = true
+    const fetchContracts = async () => {
+      try {
+        const q = query(collection(db, 'contracts'), orderBy('createdAt', 'desc'))
+        const snap = await getDocs(q)
+        if (!active) return
+        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        setContracts(docs)
+        setLoading(false)
 
-      // Fetch teacher names for contracts that don't have teacherName
-      const missingIds = docs
-        .filter((c: any) => c.teacherId && !c.teacherName)
-        .map((c: any) => c.teacherId)
-      const uniqueIds = [...new Set(missingIds)]
+        // Fetch teacher names for contracts that don't have teacherName
+        const missingIds = docs
+          .filter((c: any) => c.teacherId && !c.teacherName)
+          .map((c: any) => c.teacherId)
+        const uniqueIds = [...new Set(missingIds)]
 
-      const nameMap: Record<string, string> = {}
-      for (const tid of uniqueIds) {
-        if (teacherNames[tid]) continue
-        try {
-          const tDoc = await getDoc(doc(db, 'teachers', tid))
-          if (tDoc.exists()) {
-            nameMap[tid] = tDoc.data().name || 'Không rõ'
-          } else {
+        const nameMap: Record<string, string> = {}
+        for (const tid of uniqueIds) {
+          try {
+            const tDoc = await getDoc(doc(db, 'teachers', tid))
+            if (tDoc.exists()) {
+              nameMap[tid] = tDoc.data().name || 'Không rõ'
+            } else {
+              nameMap[tid] = 'Không rõ'
+            }
+          } catch {
             nameMap[tid] = 'Không rõ'
           }
-        } catch {
-          nameMap[tid] = 'Không rõ'
         }
+        if (Object.keys(nameMap).length > 0 && active) {
+          setTeacherNames(prev => ({ ...prev, ...nameMap }))
+        }
+      } catch (err) {
+        console.error(err)
+        if (active) setLoading(false)
       }
-      if (Object.keys(nameMap).length > 0) {
-        setTeacherNames(prev => ({ ...prev, ...nameMap }))
-      }
-    })
-    return unsub
+    }
+    fetchContracts()
+    return () => { active = false }
   }, [])
 
   const getTeacherName = (c: any) => {
@@ -57,6 +65,7 @@ export function ContractsPage() {
   const handleApprove = async (id: string) => {
     try {
       await updateDoc(doc(db, 'contracts', id), { status: 'approved' })
+      setContracts(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c))
       toast.success('Đã duyệt hợp đồng')
     } catch (e: any) {
       toast.error('Lỗi: ' + e.message)

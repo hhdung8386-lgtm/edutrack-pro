@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { collection, addDoc, updateDoc, doc, getDocs, query, where, serverTimestamp, Timestamp, orderBy } from 'firebase/firestore'
-import { db, generateUniqueCode } from '@/lib/firebase'
+import { db, generateUniqueCode, calculateSalary } from '@/lib/firebase'
 import { Student, Subject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -93,6 +93,8 @@ export function StudentFormModal({ student, onClose }: Props) {
         const usedMinutes = student.usedMinutes ?? (student.usedSessions || 0) * prevMps
         const totalMinutes = data.sessions * data.minutesPerSession
         const remainingMinutes = Math.max(0, totalMinutes - usedMinutes)
+        const isSubjectChanged = data.subjectId !== student.subjectId
+        const newRate = subject?.pricePerMinute || 0
 
         await updateDoc(doc(db, 'students', student.id), {
           name: data.name,
@@ -109,6 +111,79 @@ export function StudentFormModal({ student, onClose }: Props) {
           remainingMinutes,
           updatedAt: serverTimestamp(),
         })
+
+        // If the subject has changed, automatically sync all lessons and unpaid payrolls in parallel!
+        if (isSubjectChanged && subject) {
+          const lessonsQ = query(collection(db, 'lessons'), where('studentId', '==', student.id))
+          const lessonsSnap = await getDocs(lessonsQ)
+          
+          const lessonUpdates: Promise<any>[] = [];
+          const payrollQueries: Promise<any>[] = [];
+          const lessonNewSalaries: Record<string, number> = {};
+
+          lessonsSnap.docs.forEach(lessonDoc => {
+            const lessonId = lessonDoc.id
+            const lesson = lessonDoc.data()
+            const minutes = Number(lesson.minutes) || 0
+            const teacherLevel = Number(lesson.teacherLevel) || 1
+            const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0
+
+            lessonNewSalaries[lessonId] = newSalary
+
+            lessonUpdates.push(
+              updateDoc(doc(db, 'lessons', lessonId), {
+                subjectId: data.subjectId,
+                subjectName: subject.name,
+                pricePerMinute: newRate,
+                salary: newSalary,
+                updatedAt: serverTimestamp(),
+              })
+            )
+
+            if (lesson.status === 'approved') {
+              lessonUpdates.push(
+                updateDoc(doc(db, 'publicLessons', lessonId), {
+                  subjectId: data.subjectId,
+                  subjectName: subject.name,
+                  updatedAt: serverTimestamp(),
+                }).catch(() => {})
+              )
+            }
+
+            payrollQueries.push(
+              getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
+            )
+          })
+
+          const [, ...payrollSnaps] = await Promise.all([
+            Promise.all(lessonUpdates),
+            ...payrollQueries
+          ])
+
+          const payrollUpdates: Promise<any>[] = []
+          payrollSnaps.forEach((payrollSnap, index) => {
+            const lessonId = lessonsSnap.docs[index].id
+            const newSalary = lessonNewSalaries[lessonId]
+
+            payrollSnap.docs.forEach((pDoc: any) => {
+              const payroll = pDoc.data()
+              if (!payroll.paid && !payroll.voided) {
+                payrollUpdates.push(
+                  updateDoc(doc(db, 'payroll', pDoc.id), {
+                    amount: newSalary,
+                    pricePerMinute: newRate,
+                    recalculatedAt: serverTimestamp(),
+                  })
+                )
+              }
+            })
+          })
+
+          if (payrollUpdates.length > 0) {
+            await Promise.all(payrollUpdates)
+          }
+        }
+
         toast.success('Đã cập nhật học viên')
       } else {
         const studentCode = generatedCode || await generateUniqueCode('student')
