@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore'
 import {
   AlertCircle,
+  ArrowLeft,
   Award,
   BookOpen,
   CalendarDays,
@@ -69,6 +70,7 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 }
 
 const DAY_ORDER = Object.keys(DAY_LABELS) as DayOfWeek[]
+const WEEK_DAYS = DAY_ORDER
 
 const GRADE_WEIGHT: Record<string, number> = {
   A: 30,
@@ -267,8 +269,87 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-[#fff8df] text-2xl font-black text-[#d69a00]">
+    <div className="flex h-full w-full items-center justify-center bg-sky-50 text-2xl font-black text-[#0f766e]">
       {getInitials(teacher.name)}
+    </div>
+  )
+}
+
+function ScheduleWeekPicker({
+  options,
+  selectedSlot,
+  onSelect,
+}: {
+  options: ScheduleOption[]
+  selectedSlot: string
+  onSelect: (value: string) => void
+}) {
+  const weekOptions = options.filter((option) => WEEK_DAYS.includes(option.day))
+  const rowStarts = Array.from(new Set(weekOptions.map((option) => option.start))).sort(
+    (a, b) => timeToMinutes(a) - timeToMinutes(b)
+  )
+  const optionByCell = new Map(weekOptions.map((option) => [`${option.day}|${option.start}`, option]))
+
+  if (weekOptions.length === 0) {
+    return (
+      <div className="mt-2 rounded-2xl border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm font-semibold text-slate-600">
+        Chưa có khung phù hợp từ thứ 2 đến Chủ nhật với thời lượng đã chọn. Hãy đổi thời lượng hoặc ghi chú để học vụ hỗ trợ.
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <div className="min-w-[860px]">
+          <div className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-100 bg-sky-50/80">
+            <div className="px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-slate-500">Giờ</div>
+            {WEEK_DAYS.map((day) => (
+              <div key={day} className="border-l border-sky-100 px-3 py-3 text-center text-sm font-black text-slate-800">
+                {DAY_LABELS[day]}
+              </div>
+            ))}
+          </div>
+
+          <div className="max-h-[360px] overflow-y-auto">
+            {rowStarts.map((start) => (
+              <div key={start} className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-50 last:border-b-0">
+                <div className="bg-slate-50/80 px-3 py-2 text-xs font-black tabular-nums text-slate-500">{start}</div>
+                {WEEK_DAYS.map((day) => {
+                  const option = optionByCell.get(`${day}|${start}`)
+                  const value = option ? `${option.day}|${option.start}|${option.end}` : ''
+                  const selected = value && selectedSlot === value
+
+                  return (
+                    <div key={`${day}-${start}`} className="border-l border-sky-50 p-1.5">
+                      {option ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelect(value)}
+                          className={`min-h-11 w-full rounded-xl px-2 py-2 text-center text-xs font-black transition active:scale-[0.98] ${
+                            selected
+                              ? 'bg-[#0f766e] text-white shadow-md shadow-teal-100'
+                              : 'bg-sky-50 text-slate-700 ring-1 ring-sky-100 hover:bg-white hover:text-slate-950 hover:ring-[#0f766e]/30'
+                          }`}
+                        >
+                          {option.start}-{option.end}
+                        </button>
+                      ) : (
+                        <div className="flex min-h-11 items-center justify-center rounded-xl bg-slate-50 text-sm font-black text-slate-200">
+                          -
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="border-t border-sky-100 bg-sky-50/60 px-3 py-2 text-xs font-semibold text-slate-500">
+        Kéo ngang trên điện thoại để xem đủ thứ 2 đến Chủ nhật.
+      </p>
     </div>
   )
 }
@@ -287,12 +368,12 @@ function TeacherCard({
   const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-[#eadfbd] bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#e3c55d] hover:shadow-xl hover:shadow-amber-100/70">
+    <article className="group overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:shadow-sky-100/70">
       <div className={compact ? 'flex gap-4 p-4' : 'grid gap-0 md:grid-cols-[210px_1fr]'}>
-        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-[#fff8df] md:h-full'}>
+        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-sky-50 md:h-full'}>
           <TeacherPhoto teacher={teacher} />
           {!compact && teacher.priorityReasons[0] && (
-            <div className="absolute left-3 top-3 rounded-full bg-[#020617]/90 px-3 py-1 text-xs font-bold text-white shadow-sm">
+            <div className="absolute left-3 top-3 rounded-full bg-[#0f766e] px-3 py-1 text-xs font-bold text-white shadow-sm">
               {teacher.priorityReasons[0]}
             </div>
           )}
@@ -301,12 +382,12 @@ function TeacherCard({
         <div className={compact ? 'min-w-0 flex-1' : 'flex min-w-0 flex-col p-5'}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0f766e]">
                 {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
               <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{teacher.name}</h3>
             </div>
-            <div className="flex shrink-0 items-center gap-1 rounded-full bg-[#fff3c4] px-2.5 py-1 text-xs font-black text-[#9a5d00]">
+            <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">
               <Star className="h-3.5 w-3.5 fill-current" />
               {teacher.priorityScore}
             </div>
@@ -356,7 +437,7 @@ function TeacherCard({
             <button
               type="button"
               onClick={() => onSelect(teacher)}
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-slate-800 active:scale-[0.98] sm:w-auto"
+              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#115e59] active:scale-[0.98] sm:w-auto"
             >
               <CalendarDays className="h-4 w-4" />
               Xem lịch và yêu cầu
@@ -488,13 +569,22 @@ function TeacherBookingModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[94dvh] w-full max-w-6xl overflow-hidden rounded-t-[1.75rem] bg-[#fffaf0] shadow-2xl sm:rounded-[2rem]">
-        <div className="flex items-center justify-between border-b border-[#eadfbd] bg-white px-4 py-3 sm:px-6">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Chi tiết giáo viên</p>
-            <h2 className="truncate text-xl font-black text-slate-950">{teacher.name}</h2>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[94dvh] w-full max-w-7xl overflow-hidden rounded-t-[1.75rem] bg-slate-50 shadow-2xl sm:rounded-[2rem]">
+        <div className="flex items-center justify-between border-b border-sky-100 bg-white px-4 py-3 sm:px-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex min-w-0 items-center gap-3 rounded-2xl px-1 py-1 text-left transition hover:bg-slate-50 sm:px-2"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-slate-700">
+              <ArrowLeft className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Trở về danh sách</span>
+              <span className="block truncate text-xl font-black text-slate-950">{teacher.name}</span>
+            </span>
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -506,26 +596,26 @@ function TeacherBookingModal({
         </div>
 
         <div className="grid max-h-[calc(94dvh-68px)] overflow-y-auto lg:grid-cols-[0.9fr_1.1fr]">
-          <aside className="border-b border-[#eadfbd] bg-white p-4 sm:p-6 lg:border-b-0 lg:border-r">
+          <aside className="border-b border-sky-100 bg-white p-4 sm:p-6 lg:border-b-0 lg:border-r">
             <div className="grid gap-4 sm:grid-cols-[160px_1fr] lg:grid-cols-1">
-              <div className="overflow-hidden rounded-2xl bg-[#fff8df] aspect-[4/5]">
+              <div className="overflow-hidden rounded-2xl bg-sky-50 aspect-[16/10] lg:aspect-[4/3]">
                 <TeacherPhoto teacher={teacher} />
               </div>
               <div>
                 <div className="flex flex-wrap gap-2">
                   {teacher.priorityReasons.map((reason) => (
-                    <span key={reason} className="rounded-full bg-[#fff3c4] px-3 py-1 text-xs font-bold text-[#8a6200]">
+                    <span key={reason} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-slate-700">
                       {reason}
                     </span>
                   ))}
                 </div>
                 <p className="mt-4 text-sm leading-6 text-slate-600">{summarizeBio(teacher)}</p>
                 <div className="mt-5 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-[#fff6d8] p-4">
+                  <div className="rounded-2xl bg-sky-50 p-4">
                     <p className="text-2xl font-black tabular-nums">{teacher.studentsTaughtCount || 0}+</p>
                     <p className="text-xs font-semibold text-slate-600">học viên đã dạy</p>
                   </div>
-                  <div className="rounded-2xl bg-[#fff6d8] p-4">
+                  <div className="rounded-2xl bg-sky-50 p-4">
                     <p className="text-2xl font-black tabular-nums">{teacher.teachingYears || 0}</p>
                     <p className="text-xs font-semibold text-slate-600">năm kinh nghiệm</p>
                   </div>
@@ -553,7 +643,7 @@ function TeacherBookingModal({
                   const slot = teacher.availability?.slots?.[day]
                   if (!slot?.available || !slot.timeRanges?.length) return null
                   return (
-                    <div key={day} className="flex items-center justify-between gap-3 rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-3 py-2">
+                    <div key={day} className="flex items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2">
                       <span className="text-sm font-bold text-slate-800">{DAY_LABELS[day]}</span>
                       <span className="text-right text-xs font-semibold text-slate-600">
                         {slot.timeRanges.map((range) => `${range.start}-${range.end}`).join(', ')}
@@ -562,7 +652,7 @@ function TeacherBookingModal({
                   )
                 })}
                 {!teacher.hasAvailableSchedule && (
-                  <div className="rounded-xl border border-dashed border-[#d9c36c] bg-[#fffaf0] p-4 text-sm font-semibold text-slate-600">
+                  <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm font-semibold text-slate-600">
                     Giáo viên chưa cập nhật lịch rảnh. Phụ huynh vẫn có thể gửi ghi chú để học vụ tư vấn.
                   </div>
                 )}
@@ -571,9 +661,9 @@ function TeacherBookingModal({
           </aside>
 
           <section className="p-4 sm:p-6">
-            <div className="rounded-3xl border border-[#eadfbd] bg-white p-4 sm:p-5">
+            <div className="rounded-3xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFC107]/20 text-[#9a6a00]">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-[#0f766e]">
                   <ClipboardCheck className="h-5 w-5" />
                 </div>
                 <div>
@@ -593,13 +683,13 @@ function TeacherBookingModal({
                       onChange={(event) => setStudentCode(event.target.value.toUpperCase())}
                       onKeyDown={(event) => event.key === 'Enter' && lookupStudent()}
                       placeholder="VD: HS8X2K91"
-                      className="h-12 min-w-0 flex-1 rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-4 font-mono text-sm font-black uppercase tracking-widest text-slate-950 outline-none transition focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
+                      className="h-12 min-w-0 flex-1 rounded-xl border border-sky-100 bg-white px-4 font-mono text-sm font-black uppercase tracking-widest text-slate-950 outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
                     />
                     <button
                       type="button"
                       onClick={lookupStudent}
                       disabled={studentLoading}
-                      className="h-12 rounded-xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+                      className="h-12 rounded-xl bg-[#0f766e] px-4 text-sm font-black text-white transition hover:bg-[#115e59] disabled:opacity-60"
                     >
                       {studentLoading ? 'Đang kiểm tra' : 'Kiểm tra'}
                     </button>
@@ -613,7 +703,7 @@ function TeacherBookingModal({
                 </label>
 
                 {student && fund && (
-                  <div className="rounded-2xl border border-[#eadfbd] bg-[#fffaf0] p-4">
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
                     <div className="flex items-center gap-2">
                       <UserRound className="h-4 w-4 text-[#b18400]" />
                       <p className="text-sm font-black text-slate-950">{student.name}</p>
@@ -650,8 +740,8 @@ function TeacherBookingModal({
                         onClick={() => setDuration(minutes)}
                         className={`h-11 rounded-xl text-sm font-black transition active:scale-[0.98] ${
                           duration === minutes
-                            ? 'bg-[#FFC107] text-slate-950 shadow-lg shadow-amber-100'
-                            : 'bg-[#fffaf0] text-slate-700 ring-1 ring-[#eadfbd] hover:text-slate-950'
+                            ? 'bg-[#0f766e] text-white shadow-lg shadow-teal-100'
+                            : 'bg-white text-slate-700 ring-1 ring-sky-100 hover:text-slate-950'
                         }`}
                       >
                         {minutes} phút
@@ -665,30 +755,11 @@ function TeacherBookingModal({
 
                 <div>
                   <p className="text-sm font-bold text-slate-700">Khung giờ mong muốn</p>
-                  {scheduleOptions.length > 0 ? (
-                    <div className="mt-2 grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                      {scheduleOptions.map((option) => {
-                        const value = `${option.day}|${option.start}|${option.end}`
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setSelectedSlot(value)}
-                            className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition active:scale-[0.98] ${
-                              selectedSlot === value
-                                ? 'border-slate-950 bg-slate-950 text-white'
-                                : 'border-[#eadfbd] bg-[#fffaf0] text-slate-700 hover:border-[#d6a600] hover:text-slate-950'
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="mt-2 rounded-2xl border border-dashed border-[#d9c36c] bg-[#fffaf0] p-4 text-sm font-semibold text-slate-600">
-                      Chưa có khung phù hợp với thời lượng đã chọn. Hãy đổi thời lượng hoặc ghi chú để học vụ hỗ trợ.
-                    </div>
+                  <ScheduleWeekPicker options={scheduleOptions} selectedSlot={selectedSlot} onSelect={setSelectedSlot} />
+                  {selectedSchedule && (
+                    <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800">
+                      Đã chọn: {selectedSchedule.label}
+                    </p>
                   )}
                 </div>
 
@@ -699,18 +770,18 @@ function TeacherBookingModal({
                     onChange={(event) => setNote(event.target.value)}
                     rows={3}
                     placeholder="Ví dụ: bé muốn học thử với giáo viên này vào buổi tối, ưu tiên thứ 3 hoặc thứ 5."
-                    className="mt-2 w-full resize-none rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
+                    className="mt-2 w-full resize-none rounded-xl border border-sky-100 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
                   />
                 </label>
               </div>
             </div>
 
-            <div className="sticky bottom-0 -mx-4 mt-4 border-t border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+            <div className="sticky bottom-0 -mx-4 mt-4 border-t border-sky-100 bg-slate-50/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
               <button
                 type="button"
                 onClick={submitRequest}
                 disabled={submitting || !student || !selectedSchedule || !canAfford}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-100 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-5 py-3 text-sm font-black text-white shadow-lg shadow-teal-100 transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 {submitting ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu cho học vụ'}
@@ -872,20 +943,20 @@ export function PublicTeachersPage() {
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
 
   return (
-    <div className="min-h-screen bg-[#fffaf0] text-slate-950">
+    <div className="min-h-screen bg-[#f8fbff] text-slate-950">
       <PublicNav />
 
       <main>
         <section
-          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center bg-no-repeat"
+          className="relative overflow-hidden border-b border-sky-100 bg-[#f6fbff] bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/teacher-hero-bg.png')" }}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#fff7dc]/82 via-[#fff0bc]/58 to-[#fffaf0]/30" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.52),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(255,193,7,0.16),transparent_32%)]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-white/90 via-sky-50/72 to-white/35" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.58),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(14,165,233,0.14),transparent_32%)]" />
           <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
-                <ShieldCheck className="h-4 w-4 text-[#d69700]" />
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                <ShieldCheck className="h-4 w-4 text-[#0f766e]" />
                 Dành cho học viên và phụ huynh đã có tài khoản 123English
               </div>
               <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
@@ -896,28 +967,28 @@ export function PublicTeachersPage() {
               </p>
 
               <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
+                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
                   <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">giáo viên toàn hệ thống</p>
                 </div>
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
+                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
                   <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.students)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">học viên đang học</p>
                 </div>
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
+                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
                   <p className="text-2xl font-black tabular-nums">{availableCount}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">có lịch rảnh</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[2rem] border-[10px] border-slate-950 bg-white p-5 shadow-2xl shadow-amber-200/60">
+            <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-2xl shadow-sky-100/80 ring-8 ring-white/70">
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#b18400]">Gợi ý hôm nay</p>
                   <h2 className="text-2xl font-black text-slate-950">Ưu tiên hiển thị</h2>
                 </div>
-                <Award className="h-7 w-7 text-[#ffb900]" />
+                <Award className="h-7 w-7 text-[#0f766e]" />
               </div>
               <div className="space-y-3">
                 {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
@@ -925,7 +996,7 @@ export function PublicTeachersPage() {
                     key={teacher.id}
                     type="button"
                     onClick={() => setSelectedTeacher(teacher)}
-                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#ffde63]/40"
+                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-teal-100"
                   >
                     <TeacherCard teacher={teacher} compact />
                   </button>
@@ -941,7 +1012,7 @@ export function PublicTeachersPage() {
         </section>
 
         <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="sticky top-0 z-10 -mx-4 border-y border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
+          <div className="sticky top-0 z-10 -mx-4 border-y border-sky-100 bg-[#f8fbff]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -949,7 +1020,7 @@ export function PublicTeachersPage() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Tìm tên giáo viên, môn dạy, chứng chỉ, trường học..."
-                  className="h-12 w-full rounded-xl border border-[#eadfbd] bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
+                  className="h-12 w-full rounded-xl border border-sky-100 bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
                 />
               </label>
 
@@ -962,8 +1033,8 @@ export function PublicTeachersPage() {
                     title={item.helper}
                     className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold transition active:scale-[0.98] ${
                       filter === item.key
-                        ? 'bg-slate-950 text-white shadow-lg shadow-amber-200'
-                        : 'bg-white text-slate-700 ring-1 ring-[#eadfbd] hover:text-slate-950'
+                        ? 'bg-[#0f766e] text-white shadow-lg shadow-teal-100'
+                        : 'bg-white text-slate-700 ring-1 ring-sky-100 hover:text-slate-950'
                     }`}
                   >
                     {item.key === 'recommended' && <CheckCircle2 className="h-4 w-4" />}
@@ -982,7 +1053,7 @@ export function PublicTeachersPage() {
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             {loading
               ? Array.from({ length: 6 }).map((_, index) => (
-                  <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-[#eadfbd]" />
+                  <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-sky-100" />
                 ))
               : filteredTeachers.map((teacher) => (
                   <TeacherCard key={teacher.id} teacher={teacher} onSelect={setSelectedTeacher} />
@@ -990,7 +1061,7 @@ export function PublicTeachersPage() {
           </div>
 
           {!loading && filteredTeachers.length === 0 && (
-            <div className="mt-8 rounded-3xl border border-dashed border-[#d9c36c] bg-white p-10 text-center">
+            <div className="mt-8 rounded-3xl border border-dashed border-sky-200 bg-white p-10 text-center">
               <BookOpen className="mx-auto h-10 w-10 text-[#c89000]" />
               <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy giáo viên phù hợp trong danh sách đã tải</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
@@ -1005,7 +1076,7 @@ export function PublicTeachersPage() {
                 type="button"
                 onClick={() => loadTeachers(false)}
                 disabled={loadingMore}
-                className="rounded-full bg-[#FFC107] px-7 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-[#0f766e] px-7 py-3 text-sm font-black text-white shadow-lg shadow-teal-100 transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loadingMore ? 'Đang tải thêm...' : 'Xem thêm giáo viên'}
               </button>
