@@ -4,6 +4,7 @@ import {
   doc,
   DocumentData,
   getDoc,
+  getCountFromServer,
   getDocs,
   limit as firestoreLimit,
   query,
@@ -71,7 +72,7 @@ const STRENGTH_LABELS: Record<string, string> = {
 const FILTERS: Array<{ key: FilterKey; label: string; helper: string }> = [
   { key: 'recommended', label: 'Đề xuất phù hợp', helper: 'Có lịch, hồ sơ tốt, ưu tiên cao' },
   { key: 'available', label: 'Có lịch gần', helper: 'Dễ xếp buổi học tiếp theo' },
-  { key: 'featured', label: 'Admin ưu tiên', helper: 'Được học vụ đưa lên trước' },
+  { key: 'featured', label: 'Học vụ đề xuất', helper: 'Được học vụ đưa lên trước' },
   { key: 'experienced', label: 'Dạy nhiều', helper: 'Kinh nghiệm và số học viên cao' },
   { key: 'foreign', label: 'Nước ngoài', helper: 'PH, SA hoặc hồ sơ quốc tế' },
   { key: 'all', label: 'Tất cả', helper: 'Danh sách đang tải' },
@@ -153,11 +154,16 @@ function summarizeBio(teacher: Teacher) {
   return source.length > 145 ? `${source.slice(0, 145).trim()}...` : source
 }
 
+function formatRoundedHundredPlus(count: number) {
+  if (count <= 0) return '0'
+  return `${Math.max(100, Math.ceil(count / 100) * 100)}+`
+}
+
 function getPriorityReasons(teacher: Teacher, availability?: TeacherAvailability) {
   const reasons: string[] = []
 
   if (hasSchedule(availability)) reasons.push('Có lịch rảnh')
-  if (teacher.teacherGrade) reasons.push(`Admin ưu tiên ${teacher.teacherGrade}`)
+  if (teacher.teacherGrade) reasons.push(`Học vụ đề xuất ${teacher.teacherGrade}`)
   if (teacher.photoURL) reasons.push('Có ảnh hồ sơ')
   if ((teacher.teachingYears || 0) >= 2) reasons.push('Kinh nghiệm tốt')
   if ((teacher.studentsTaughtCount || 0) >= 20) reasons.push('Đã dạy nhiều học viên')
@@ -281,6 +287,7 @@ export function PublicTeachersPage() {
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterKey>('recommended')
+  const [summaryCounts, setSummaryCounts] = useState({ teachers: 0, students: 0 })
 
   const loadTeachers = useCallback(async (reset = false) => {
     if (reset) {
@@ -358,6 +365,34 @@ export function PublicTeachersPage() {
     loadTeachers(true)
   }, [])
 
+  useEffect(() => {
+    let mounted = true
+
+    async function loadSummaryCounts() {
+      try {
+        const [teacherCountSnap, studentCountSnap] = await Promise.all([
+          getCountFromServer(query(collection(db, 'teachers'), where('status', '==', 'active'))),
+          getCountFromServer(query(collection(db, 'students'), where('status', '==', 'active'))),
+        ])
+
+        if (mounted) {
+          setSummaryCounts({
+            teachers: teacherCountSnap.data().count,
+            students: studentCountSnap.data().count,
+          })
+        }
+      } catch (error) {
+        console.error('Error loading public summary counts:', error)
+      }
+    }
+
+    loadSummaryCounts()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const filteredTeachers = useMemo(() => {
     const keyword = search.trim().toLowerCase()
 
@@ -390,7 +425,6 @@ export function PublicTeachersPage() {
 
   const topTeachers = filteredTeachers.slice(0, 3)
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
-  const featuredCount = teachers.filter((teacher) => teacher.teacherGrade).length
 
   return (
     <div className="min-h-screen bg-[#fffaf0] text-slate-950">
@@ -414,16 +448,16 @@ export function PublicTeachersPage() {
 
               <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
-                  <p className="text-2xl font-black tabular-nums">{teachers.length}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">đang hiển thị</p>
+                  <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">giáo viên toàn hệ thống</p>
+                </div>
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
+                  <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.students)}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">học viên đang học</p>
                 </div>
                 <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{availableCount}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">có lịch rảnh</p>
-                </div>
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
-                  <p className="text-2xl font-black tabular-nums">{featuredCount}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">admin ưu tiên</p>
                 </div>
               </div>
             </div>
