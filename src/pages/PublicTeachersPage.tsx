@@ -36,7 +36,6 @@ import {
 } from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { db } from '@/lib/firebase'
-import { MINUTE_PRESETS } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability } from '@/types'
 
@@ -74,6 +73,13 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 
 const DAY_ORDER = Object.keys(DAY_LABELS) as DayOfWeek[]
 const WEEK_DAYS = DAY_ORDER
+const TIME_WINDOWS = [
+  { key: '24h', label: '24h', start: 0, end: 1500 },
+  { key: '0-8', label: '0:00-8:00', start: 0, end: 480 },
+  { key: '6-14', label: '6:00-14:00', start: 360, end: 840 },
+  { key: '12-20', label: '12:00-20:00', start: 720, end: 1200 },
+  { key: '18-25', label: '18:00-25:00', start: 1080, end: 1500 },
+] as const
 
 function formatDateISO(date: Date) {
   const year = date.getFullYear()
@@ -325,7 +331,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-sky-50 text-2xl font-black text-[#0f766e]">
+    <div className="flex h-full w-full items-center justify-center bg-[#fff8df] text-2xl font-black text-[#d69a00]">
       {getInitials(teacher.name)}
     </div>
   )
@@ -335,13 +341,25 @@ function ScheduleWeekPicker({
   options,
   selectedSlot,
   onSelect,
+  duration,
+  onDurationChange,
+  windowKey,
+  onWindowChange,
 }: {
   options: ScheduleOption[]
   selectedSlot: string
   onSelect: (value: string) => void
+  duration: number
+  onDurationChange: (minutes: number) => void
+  windowKey: string
+  onWindowChange: (key: string) => void
 }) {
   const weekDates = getWeekDates()
-  const weekOptions = options.filter((option) => WEEK_DAYS.includes(option.day))
+  const activeWindow = TIME_WINDOWS.find((item) => item.key === windowKey) || TIME_WINDOWS[0]
+  const weekOptions = options.filter((option) => {
+    const start = timeToMinutes(option.start)
+    return WEEK_DAYS.includes(option.day) && start >= activeWindow.start && start < activeWindow.end
+  })
   const rowStarts = Array.from(new Set(weekOptions.map((option) => option.start))).sort(
     (a, b) => timeToMinutes(a) - timeToMinutes(b)
   )
@@ -356,13 +374,41 @@ function ScheduleWeekPicker({
   }
 
   return (
-    <div className="mt-2 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
+    <div className="mt-2 overflow-hidden rounded-2xl border border-[#e2d5b7] bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[#e2d5b7] bg-[#fffaf0] p-3">
+        <select
+          value={windowKey}
+          onChange={(event) => onWindowChange(event.target.value)}
+          className="h-10 rounded border border-[#d8c7a2] bg-white px-3 text-sm font-semibold text-slate-800 outline-none"
+        >
+          {TIME_WINDOWS.map((item) => (
+            <option key={item.key} value={item.key}>{item.label}</option>
+          ))}
+        </select>
+        {[25, 50].map((minutes) => (
+          <label key={minutes} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+            <input
+              type="radio"
+              checked={duration === minutes}
+              onChange={() => onDurationChange(minutes)}
+              className="h-4 w-4 accent-[#d12a9c]"
+            />
+            {minutes}mins
+          </label>
+        ))}
+        <button
+          type="button"
+          className="ml-auto h-10 rounded-lg bg-gradient-to-b from-[#ef52ba] to-[#cf2496] px-8 text-sm font-black text-white shadow-md shadow-pink-100"
+        >
+          View
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <div className="min-w-[860px]">
-          <div className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-100 bg-sky-50/80">
+          <div className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-[#e2d5b7] bg-[#f7f7f7]">
             <div className="px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-slate-500">Giờ</div>
             {weekDates.map(({ day, dateLabel }) => (
-              <div key={day} className="border-l border-sky-100 px-3 py-3 text-center text-sm font-black text-slate-800">
+              <div key={day} className="border-l border-[#e2d5b7] px-3 py-3 text-center text-sm font-black text-slate-800">
                 <span className="block">{DAY_LABELS[day]}</span>
                 <span className="mt-0.5 block text-xs font-bold text-slate-500">{dateLabel}</span>
               </div>
@@ -371,30 +417,30 @@ function ScheduleWeekPicker({
 
           <div className="max-h-[360px] overflow-y-auto">
             {rowStarts.map((start) => (
-              <div key={start} className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-50 last:border-b-0">
-                <div className="bg-slate-50/80 px-3 py-2 text-xs font-black tabular-nums text-slate-500">{start}</div>
+              <div key={start} className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-[#ece6d6] last:border-b-0">
+                <div className="bg-[#fafafa] px-3 py-2 text-xs font-black tabular-nums text-slate-500">{start}~</div>
                 {weekDates.map(({ day, dateISO }) => {
                   const option = optionByCell.get(`${dateISO}|${start}`)
-                  const value = option ? `${option.day}|${option.start}|${option.end}` : ''
+                  const value = option ? `${option.dateISO}|${option.day}|${option.start}|${option.end}` : ''
                   const selected = value && selectedSlot === value
 
                   return (
-                    <div key={`${day}-${start}`} className="border-l border-sky-50 p-1.5">
+                    <div key={`${day}-${start}`} className="border-l border-[#ece6d6] p-1.5">
                       {option ? (
                         <button
                           type="button"
                           onClick={() => onSelect(value)}
                           className={`min-h-11 w-full rounded-xl px-2 py-2 text-center text-xs font-black transition active:scale-[0.98] ${
                             selected
-                              ? 'bg-[#0f766e] text-white shadow-md shadow-teal-100'
-                              : 'bg-sky-50 text-slate-700 ring-1 ring-sky-100 hover:bg-white hover:text-slate-950 hover:ring-[#0f766e]/30'
+                              ? 'bg-[#149ec4] text-white shadow-md shadow-sky-100'
+                              : 'bg-gradient-to-b from-[#43c1e8] to-[#149ec4] text-white shadow-sm hover:from-[#55ccef] hover:to-[#128db0]'
                           }`}
                         >
                           <span className="block text-[10px] opacity-80">{option.start}-{option.end}</span>
                           OPEN
                         </button>
                       ) : (
-                        <div className="flex min-h-11 items-center justify-center rounded-xl bg-slate-50 text-sm font-black text-slate-200">
+                        <div className="flex min-h-11 items-center justify-center bg-white text-lg font-black text-slate-200">
                           ×
                         </div>
                       )}
@@ -406,7 +452,7 @@ function ScheduleWeekPicker({
           </div>
         </div>
       </div>
-      <p className="border-t border-sky-100 bg-sky-50/60 px-3 py-2 text-xs font-semibold text-slate-500">
+      <p className="border-t border-[#e2d5b7] bg-[#fffaf0] px-3 py-2 text-xs font-semibold text-slate-500">
         Kéo ngang trên điện thoại để xem đủ thứ 2 đến Chủ nhật.
       </p>
     </div>
@@ -427,12 +473,12 @@ function TeacherCard({
   const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-teal-200 hover:shadow-xl hover:shadow-sky-100/70">
+    <article className="group overflow-hidden rounded-2xl border border-[#eadfbd] bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#e3c55d] hover:shadow-xl hover:shadow-amber-100/70">
       <div className={compact ? 'flex gap-4 p-4' : 'grid gap-0 md:grid-cols-[210px_1fr]'}>
-        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-sky-50 md:h-full'}>
+        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-[#fff8df] md:h-full'}>
           <TeacherPhoto teacher={teacher} />
           {!compact && teacher.priorityReasons[0] && (
-            <div className="absolute left-3 top-3 rounded-full bg-[#0f766e] px-3 py-1 text-xs font-bold text-white shadow-sm">
+            <div className="absolute left-3 top-3 rounded-full bg-[#020617]/90 px-3 py-1 text-xs font-bold text-white shadow-sm">
               {teacher.priorityReasons[0]}
             </div>
           )}
@@ -441,7 +487,7 @@ function TeacherCard({
         <div className={compact ? 'min-w-0 flex-1' : 'flex min-w-0 flex-col p-5'}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0f766e]">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
                 {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
               <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{teacher.name}</h3>
@@ -496,7 +542,7 @@ function TeacherCard({
             <button
               type="button"
               onClick={() => onSelect(teacher)}
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#115e59] active:scale-[0.98] sm:w-auto"
+              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-4 py-3 text-sm font-black text-slate-950 transition hover:-translate-y-0.5 hover:bg-[#f0ae00] active:scale-[0.98] sm:w-auto"
             >
               <CalendarDays className="h-4 w-4" />
               Xem lịch và yêu cầu
@@ -519,7 +565,8 @@ function TeacherBookingModal({
   const [student, setStudent] = useState<Student | null>(null)
   const [studentError, setStudentError] = useState('')
   const [studentLoading, setStudentLoading] = useState(false)
-  const [duration, setDuration] = useState<number>(50)
+  const [duration, setDuration] = useState<number>(25)
+  const [timeWindow, setTimeWindow] = useState<string>('24h')
   const [selectedSlot, setSelectedSlot] = useState('')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -528,7 +575,7 @@ function TeacherBookingModal({
     () => buildScheduleOptions(teacher?.availability, duration),
     [duration, teacher?.availability]
   )
-  const selectedSchedule = scheduleOptions.find((option) => `${option.day}|${option.start}|${option.end}` === selectedSlot)
+  const selectedSchedule = scheduleOptions.find((option) => `${option.dateISO}|${option.day}|${option.start}|${option.end}` === selectedSlot)
   const fund = student ? getStudentMinuteFund(student) : null
   const canAfford = !fund || fund.available >= duration
   const highlights = teacher ? buildHighlights(teacher) : []
@@ -538,14 +585,15 @@ function TeacherBookingModal({
     setStudentCode('')
     setStudent(null)
     setStudentError('')
-    setDuration(50)
+    setDuration(25)
+    setTimeWindow('24h')
     setSelectedSlot('')
     setNote('')
   }, [teacher?.id])
 
   useEffect(() => {
     setSelectedSlot('')
-  }, [duration, teacher?.id])
+  }, [duration, timeWindow, teacher?.id])
 
   if (!teacher) return null
 
@@ -736,6 +784,7 @@ function TeacherBookingModal({
               </div>
 
               <div className="mt-5 grid gap-4">
+                {selectedSchedule && (
                 <label className="block">
                   <span className="text-sm font-bold text-slate-700">Mã học viên</span>
                   <div className="mt-2 flex gap-2">
@@ -750,7 +799,7 @@ function TeacherBookingModal({
                       type="button"
                       onClick={lookupStudent}
                       disabled={studentLoading}
-                      className="h-12 rounded-xl bg-[#0f766e] px-4 text-sm font-black text-white transition hover:bg-[#115e59] disabled:opacity-60"
+                      className="h-12 rounded-xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
                     >
                       {studentLoading ? 'Đang kiểm tra' : 'Kiểm tra'}
                     </button>
@@ -762,8 +811,9 @@ function TeacherBookingModal({
                     </span>
                   )}
                 </label>
+                )}
 
-                {student && fund && (
+                {selectedSchedule && student && fund && (
                   <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
                     <div className="flex items-center gap-2">
                       <UserRound className="h-4 w-4 text-[#b18400]" />
@@ -792,38 +842,42 @@ function TeacherBookingModal({
                 )}
 
                 <div>
-                  <p className="text-sm font-bold text-slate-700">Thời lượng muốn giữ</p>
-                  <div className="mt-2 grid grid-cols-4 gap-2">
-                    {MINUTE_PRESETS.map((minutes) => (
-                      <button
-                        key={minutes}
-                        type="button"
-                        onClick={() => setDuration(minutes)}
-                        className={`h-11 rounded-xl text-sm font-black transition active:scale-[0.98] ${
-                          duration === minutes
-                            ? 'bg-[#0f766e] text-white shadow-lg shadow-teal-100'
-                            : 'bg-white text-slate-700 ring-1 ring-sky-100 hover:text-slate-950'
-                        }`}
-                      >
-                        {minutes} phút
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs font-medium text-slate-500">
-                    Hệ thống hiện hỗ trợ các mốc 25, 50, 75 và 100 phút. Khung bắt đầu được tách theo bước 30 phút từ lịch rảnh giáo viên.
-                  </p>
-                </div>
-
-                <div>
                   <p className="text-sm font-bold text-slate-700">Khung giờ mong muốn</p>
-                  <ScheduleWeekPicker options={scheduleOptions} selectedSlot={selectedSlot} onSelect={setSelectedSlot} />
+                  <ScheduleWeekPicker
+                    options={scheduleOptions}
+                    selectedSlot={selectedSlot}
+                    onSelect={setSelectedSlot}
+                    duration={duration}
+                    onDurationChange={setDuration}
+                    windowKey={timeWindow}
+                    onWindowChange={setTimeWindow}
+                  />
                   {selectedSchedule && (
-                    <p className="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800">
-                      Đã chọn: {selectedSchedule.label}
-                    </p>
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-[#d4c6ad] bg-white">
+                      <div className="bg-gradient-to-b from-slate-700 to-slate-950 px-4 py-2 text-center text-sm font-black text-white">
+                        Reservation
+                      </div>
+                      <div className="space-y-3 p-4">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">1</span>Confirm the teacher and schedule.</p>
+                          <div className="mt-2 flex items-center gap-3 rounded border border-slate-200 bg-white p-3">
+                            <div className="h-12 w-12 overflow-hidden rounded bg-[#fff8df]">
+                              <TeacherPhoto teacher={teacher} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-black text-[#c34d3f]">{selectedSchedule.dateISO} {selectedSchedule.start}-{selectedSchedule.end} ({duration}mins)</p>
+                              <p className="text-sm font-semibold text-slate-500">{teacher.name}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">2</span>Nhập mã học viên ở phía trên để kiểm tra quỹ phút.</p>
+                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">3</span>Confirm the points: <span className="text-xl font-black text-[#c34d3f]">{duration} phút</span></p>
+                      </div>
+                    </div>
                   )}
                 </div>
 
+                {selectedSchedule && (
                 <label className="block">
                   <span className="text-sm font-bold text-slate-700">Ghi chú cho học vụ</span>
                   <textarea
@@ -834,20 +888,23 @@ function TeacherBookingModal({
                     className="mt-2 w-full resize-none rounded-xl border border-sky-100 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
                   />
                 </label>
+                )}
               </div>
             </div>
 
-            <div className="sticky bottom-0 -mx-4 mt-4 border-t border-sky-100 bg-slate-50/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+            {selectedSchedule && (
+            <div className="sticky bottom-0 -mx-4 mt-4 border-t border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
               <button
                 type="button"
                 onClick={submitRequest}
                 disabled={submitting || !student || !selectedSchedule || !canAfford}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0f766e] px-5 py-3 text-sm font-black text-white shadow-lg shadow-teal-100 transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#ef52ba] to-[#cf2496] px-5 py-3 text-sm font-black text-white shadow-lg shadow-pink-100 transition hover:from-[#f364c2] hover:to-[#bd1d86] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 {submitting ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu cho học vụ'}
               </button>
             </div>
+            )}
           </section>
         </div>
       </div>
@@ -1004,20 +1061,20 @@ export function PublicTeachersPage() {
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
 
   return (
-    <div className="min-h-screen bg-[#f8fbff] text-slate-950">
+    <div className="min-h-screen bg-[#fffaf0] text-slate-950">
       <PublicNav />
 
       <main>
         <section
-          className="relative overflow-hidden border-b border-sky-100 bg-[#f6fbff] bg-cover bg-center bg-no-repeat"
+          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/teacher-hero-bg.png')" }}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-white/90 via-sky-50/72 to-white/35" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.58),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(14,165,233,0.14),transparent_32%)]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#fff7dc]/82 via-[#fff0bc]/58 to-[#fffaf0]/30" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.52),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(255,193,7,0.16),transparent_32%)]" />
           <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
-                <ShieldCheck className="h-4 w-4 text-[#0f766e]" />
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                <ShieldCheck className="h-4 w-4 text-[#d69700]" />
                 Dành cho học viên và phụ huynh đã có tài khoản 123English
               </div>
               <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
@@ -1028,28 +1085,28 @@ export function PublicTeachersPage() {
               </p>
 
               <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">giáo viên toàn hệ thống</p>
                 </div>
-                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.students)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">học viên đang học</p>
                 </div>
-                <div className="rounded-2xl border border-sky-100 bg-white/90 p-4">
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{availableCount}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">có lịch rảnh</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-2xl shadow-sky-100/80 ring-8 ring-white/70">
+            <div className="rounded-[2rem] border border-[#eadfbd] bg-white p-5 shadow-2xl shadow-amber-200/60 ring-8 ring-white/70">
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#b18400]">Gợi ý hôm nay</p>
                   <h2 className="text-2xl font-black text-slate-950">Ưu tiên hiển thị</h2>
                 </div>
-                <Award className="h-7 w-7 text-[#0f766e]" />
+                <Award className="h-7 w-7 text-[#ffb900]" />
               </div>
               <div className="space-y-3">
                 {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
@@ -1057,7 +1114,7 @@ export function PublicTeachersPage() {
                     key={teacher.id}
                     type="button"
                     onClick={() => setSelectedTeacher(teacher)}
-                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-teal-100"
+                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#ffde63]/40"
                   >
                     <TeacherCard teacher={teacher} compact />
                   </button>
@@ -1073,7 +1130,7 @@ export function PublicTeachersPage() {
         </section>
 
         <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="sticky top-0 z-10 -mx-4 border-y border-sky-100 bg-[#f8fbff]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
+          <div className="sticky top-0 z-10 -mx-4 border-y border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -1081,7 +1138,7 @@ export function PublicTeachersPage() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Tìm tên giáo viên, môn dạy, chứng chỉ, trường học..."
-                  className="h-12 w-full rounded-xl border border-sky-100 bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
+                  className="h-12 w-full rounded-xl border border-[#eadfbd] bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
                 />
               </label>
 
@@ -1094,8 +1151,8 @@ export function PublicTeachersPage() {
                     title={item.helper}
                     className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold transition active:scale-[0.98] ${
                       filter === item.key
-                        ? 'bg-[#0f766e] text-white shadow-lg shadow-teal-100'
-                        : 'bg-white text-slate-700 ring-1 ring-sky-100 hover:text-slate-950'
+                        ? 'bg-[#FFC107] text-slate-950 shadow-lg shadow-amber-200'
+                        : 'bg-white text-slate-700 ring-1 ring-[#eadfbd] hover:text-slate-950'
                     }`}
                   >
                     {item.key === 'recommended' && <CheckCircle2 className="h-4 w-4" />}
@@ -1122,7 +1179,7 @@ export function PublicTeachersPage() {
           </div>
 
           {!loading && filteredTeachers.length === 0 && (
-            <div className="mt-8 rounded-3xl border border-dashed border-sky-200 bg-white p-10 text-center">
+            <div className="mt-8 rounded-3xl border border-dashed border-[#d9c36c] bg-white p-10 text-center">
               <BookOpen className="mx-auto h-10 w-10 text-[#c89000]" />
               <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy giáo viên phù hợp trong danh sách đã tải</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
@@ -1137,7 +1194,7 @@ export function PublicTeachersPage() {
                 type="button"
                 onClick={() => loadTeachers(false)}
                 disabled={loadingMore}
-                className="rounded-full bg-[#0f766e] px-7 py-3 text-sm font-black text-white shadow-lg shadow-teal-100 transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-[#FFC107] px-7 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loadingMore ? 'Đang tải thêm...' : 'Xem thêm giáo viên'}
               </button>
