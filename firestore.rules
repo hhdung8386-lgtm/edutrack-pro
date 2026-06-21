@@ -89,6 +89,17 @@ service cloud.firestore {
       allow write: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
     }
 
+    // Booking requests from public teacher page
+    match /bookingRequests/{requestId} {
+      allow create: if request.resource.data.status == 'pending'
+                    && request.resource.data.teacherId is string
+                    && request.resource.data.studentId is string
+                    && request.resource.data.studentCode is string
+                    && request.resource.data.requestedMinutes is int
+                    && request.resource.data.requestedMinutes in [25, 50, 75, 100];
+      allow read, update, delete: if isAdmin();
+    }
+
     // Contracts collection
     match /contracts/{contractId} {
       allow read: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());

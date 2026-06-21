@@ -16,6 +16,8 @@ export interface Student {
   totalMinutes?: number
   usedMinutes?: number
   remainingMinutes?: number
+  reservedMinutes?: number
+  heldMinutes?: number
   status: 'active' | 'inactive' | 'expired'
   createdAt: Timestamp
   updatedAt: Timestamp

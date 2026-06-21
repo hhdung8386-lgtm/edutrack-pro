@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  addDoc,
   collection,
   doc,
   DocumentData,
@@ -9,26 +10,34 @@ import {
   limit as firestoreLimit,
   query,
   QueryDocumentSnapshot,
+  serverTimestamp,
   startAfter,
   where,
 } from 'firebase/firestore'
 import {
+  AlertCircle,
   Award,
   BookOpen,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  ClipboardCheck,
   Filter,
   GraduationCap,
   Search,
+  Send,
   ShieldCheck,
   Star,
   TrendingUp,
+  UserRound,
   Users,
+  X,
 } from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { db } from '@/lib/firebase'
-import { DayOfWeek, Teacher, TeacherAvailability } from '@/types'
+import { MINUTE_PRESETS } from '@/lib/constants'
+import { toast } from '@/stores/toastStore'
+import { DayOfWeek, Student, Teacher, TeacherAvailability } from '@/types'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -39,6 +48,13 @@ type TeacherView = Teacher & {
 }
 
 type FilterKey = 'recommended' | 'all' | 'available' | 'featured' | 'experienced' | 'foreign'
+
+type ScheduleOption = {
+  day: DayOfWeek
+  start: string
+  end: string
+  label: string
+}
 
 const PAGE_SIZE = 24
 
@@ -51,6 +67,8 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sat: 'Thứ 7',
   sun: 'Chủ nhật',
 }
+
+const DAY_ORDER = Object.keys(DAY_LABELS) as DayOfWeek[]
 
 const GRADE_WEIGHT: Record<string, number> = {
   A: 30,
@@ -91,6 +109,56 @@ function getInitials(name: string) {
 function hasSchedule(availability?: TeacherAvailability) {
   if (!availability?.slots) return false
   return Object.values(availability.slots).some((slot) => slot?.available && slot.timeRanges?.length > 0)
+}
+
+function timeToMinutes(time: string) {
+  const [hours = '0', minutes = '0'] = time.split(':')
+  return Number(hours) * 60 + Number(minutes)
+}
+
+function minutesToTime(total: number) {
+  const hours = Math.floor(total / 60)
+  const minutes = total % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function buildScheduleOptions(availability: TeacherAvailability | undefined, duration: number): ScheduleOption[] {
+  if (!availability?.slots) return []
+
+  return DAY_ORDER.flatMap((day) => {
+    const slot = availability.slots[day]
+    if (!slot?.available || !slot.timeRanges?.length) return []
+
+    return slot.timeRanges.flatMap((range) => {
+      const start = timeToMinutes(range.start)
+      const end = timeToMinutes(range.end)
+      const options: ScheduleOption[] = []
+
+      for (let cursor = start; cursor + duration <= end; cursor += 30) {
+        const optionStart = minutesToTime(cursor)
+        const optionEnd = minutesToTime(cursor + duration)
+        options.push({
+          day,
+          start: optionStart,
+          end: optionEnd,
+          label: `${DAY_LABELS[day]}, ${optionStart}-${optionEnd}`,
+        })
+      }
+
+      return options
+    })
+  })
+}
+
+function getStudentMinuteFund(student: Student) {
+  const minutesPerSession = student.minutesPerSession || 50
+  const total = student.totalMinutes ?? student.totalSessions * minutesPerSession
+  const used = student.usedMinutes ?? student.usedSessions * minutesPerSession
+  const remaining = student.remainingMinutes ?? Math.max(0, total - used)
+  const held = student.reservedMinutes ?? student.heldMinutes ?? 0
+  const available = Math.max(0, remaining - held)
+
+  return { total, used, held, available }
 }
 
 function isForeignTeacher(teacher: Teacher) {
@@ -203,7 +271,15 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
   )
 }
 
-function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compact?: boolean }) {
+function TeacherCard({
+  teacher,
+  compact = false,
+  onSelect,
+}: {
+  teacher: TeacherView
+  compact?: boolean
+  onSelect?: (teacher: TeacherView) => void
+}) {
   const highlights = buildHighlights(teacher)
   const strengths = (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 3)
   const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
@@ -273,9 +349,375 @@ function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compa
               </>
             )}
           </div>
+
+          {!compact && onSelect && (
+            <button
+              type="button"
+              onClick={() => onSelect(teacher)}
+              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-slate-800 active:scale-[0.98] sm:w-auto"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Xem lịch và yêu cầu
+            </button>
+          )}
         </div>
       </div>
     </article>
+  )
+}
+
+function TeacherBookingModal({
+  teacher,
+  onClose,
+}: {
+  teacher: TeacherView | null
+  onClose: () => void
+}) {
+  const [studentCode, setStudentCode] = useState('')
+  const [student, setStudent] = useState<Student | null>(null)
+  const [studentError, setStudentError] = useState('')
+  const [studentLoading, setStudentLoading] = useState(false)
+  const [duration, setDuration] = useState<number>(50)
+  const [selectedSlot, setSelectedSlot] = useState('')
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const scheduleOptions = useMemo(
+    () => buildScheduleOptions(teacher?.availability, duration).slice(0, 48),
+    [duration, teacher?.availability]
+  )
+  const selectedSchedule = scheduleOptions.find((option) => `${option.day}|${option.start}|${option.end}` === selectedSlot)
+  const fund = student ? getStudentMinuteFund(student) : null
+  const canAfford = !fund || fund.available >= duration
+  const highlights = teacher ? buildHighlights(teacher) : []
+  const strengths = teacher ? (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 4) : []
+
+  useEffect(() => {
+    setStudentCode('')
+    setStudent(null)
+    setStudentError('')
+    setDuration(50)
+    setSelectedSlot('')
+    setNote('')
+  }, [teacher?.id])
+
+  useEffect(() => {
+    setSelectedSlot('')
+  }, [duration, teacher?.id])
+
+  if (!teacher) return null
+
+  const lookupStudent = async () => {
+    const code = studentCode.trim().toUpperCase()
+    setStudentError('')
+    setStudent(null)
+
+    if (!code) {
+      setStudentError('Vui lòng nhập mã học viên.')
+      return
+    }
+
+    setStudentLoading(true)
+    try {
+      const studentQuery = query(collection(db, 'students'), where('code', '==', code))
+      const studentSnap = await getDocs(studentQuery)
+      if (studentSnap.empty) {
+        setStudentError('Không tìm thấy mã học viên này.')
+        return
+      }
+
+      const foundStudent = { id: studentSnap.docs[0].id, ...studentSnap.docs[0].data() } as Student
+      setStudent(foundStudent)
+    } catch (error) {
+      console.error('Error looking up student for booking:', error)
+      setStudentError('Chưa thể kiểm tra mã học viên, vui lòng thử lại.')
+    } finally {
+      setStudentLoading(false)
+    }
+  }
+
+  const submitRequest = async () => {
+    if (!student) {
+      setStudentError('Vui lòng kiểm tra mã học viên trước khi gửi yêu cầu.')
+      return
+    }
+
+    if (!selectedSchedule) {
+      toast.warning('Vui lòng chọn khung giờ mong muốn.')
+      return
+    }
+
+    if (!canAfford) {
+      toast.warning('Quỹ phút khả dụng chưa đủ cho khung giờ đã chọn.')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      await addDoc(collection(db, 'bookingRequests'), {
+        status: 'pending',
+        teacherId: teacher.id,
+        teacherCode: teacher.code,
+        teacherName: teacher.name,
+        teacherPhotoURL: teacher.photoURL || '',
+        studentId: student.id,
+        studentCode: student.code,
+        studentName: student.name,
+        subjectId: student.subjectId,
+        subjectName: student.subjectName || teacher.subjectNames?.[0] || '',
+        requestedDay: selectedSchedule.day,
+        requestedStart: selectedSchedule.start,
+        requestedEnd: selectedSchedule.end,
+        requestedMinutes: duration,
+        availableMinutesAtRequest: fund?.available ?? 0,
+        heldMinutesAtRequest: fund?.held ?? 0,
+        note: note.trim(),
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success('Đã gửi yêu cầu. Học vụ sẽ kiểm tra và xác nhận lịch.')
+      onClose()
+    } catch (error) {
+      console.error('Error submitting booking request:', error)
+      toast.error('Chưa gửi được yêu cầu. Có thể cần cập nhật quyền ghi bookingRequests trên Firebase.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[94dvh] w-full max-w-6xl overflow-hidden rounded-t-[1.75rem] bg-[#fffaf0] shadow-2xl sm:rounded-[2rem]">
+        <div className="flex items-center justify-between border-b border-[#eadfbd] bg-white px-4 py-3 sm:px-6">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Chi tiết giáo viên</p>
+            <h2 className="truncate text-xl font-black text-slate-950">{teacher.name}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-950"
+            aria-label="Đóng"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid max-h-[calc(94dvh-68px)] overflow-y-auto lg:grid-cols-[0.9fr_1.1fr]">
+          <aside className="border-b border-[#eadfbd] bg-white p-4 sm:p-6 lg:border-b-0 lg:border-r">
+            <div className="grid gap-4 sm:grid-cols-[160px_1fr] lg:grid-cols-1">
+              <div className="overflow-hidden rounded-2xl bg-[#fff8df] aspect-[4/5]">
+                <TeacherPhoto teacher={teacher} />
+              </div>
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  {teacher.priorityReasons.map((reason) => (
+                    <span key={reason} className="rounded-full bg-[#fff3c4] px-3 py-1 text-xs font-bold text-[#8a6200]">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm leading-6 text-slate-600">{summarizeBio(teacher)}</p>
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-[#fff6d8] p-4">
+                    <p className="text-2xl font-black tabular-nums">{teacher.studentsTaughtCount || 0}+</p>
+                    <p className="text-xs font-semibold text-slate-600">học viên đã dạy</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#fff6d8] p-4">
+                    <p className="text-2xl font-black tabular-nums">{teacher.teachingYears || 0}</p>
+                    <p className="text-xs font-semibold text-slate-600">năm kinh nghiệm</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {(highlights.length > 0 || strengths.length > 0) && (
+              <div className="mt-6">
+                <h3 className="text-sm font-black text-slate-950">Điểm nổi bật</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[...highlights, ...strengths].map((item) => (
+                    <span key={item} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6">
+              <h3 className="text-sm font-black text-slate-950">Lịch rảnh đã cập nhật</h3>
+              <div className="mt-3 space-y-2">
+                {DAY_ORDER.map((day) => {
+                  const slot = teacher.availability?.slots?.[day]
+                  if (!slot?.available || !slot.timeRanges?.length) return null
+                  return (
+                    <div key={day} className="flex items-center justify-between gap-3 rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-3 py-2">
+                      <span className="text-sm font-bold text-slate-800">{DAY_LABELS[day]}</span>
+                      <span className="text-right text-xs font-semibold text-slate-600">
+                        {slot.timeRanges.map((range) => `${range.start}-${range.end}`).join(', ')}
+                      </span>
+                    </div>
+                  )
+                })}
+                {!teacher.hasAvailableSchedule && (
+                  <div className="rounded-xl border border-dashed border-[#d9c36c] bg-[#fffaf0] p-4 text-sm font-semibold text-slate-600">
+                    Giáo viên chưa cập nhật lịch rảnh. Phụ huynh vẫn có thể gửi ghi chú để học vụ tư vấn.
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
+
+          <section className="p-4 sm:p-6">
+            <div className="rounded-3xl border border-[#eadfbd] bg-white p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFC107]/20 text-[#9a6a00]">
+                  <ClipboardCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-950">Gửi yêu cầu giữ lịch</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Đây là yêu cầu chờ học vụ xác nhận, chưa trừ phút và chưa tính lương.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                <label className="block">
+                  <span className="text-sm font-bold text-slate-700">Mã học viên</span>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={studentCode}
+                      onChange={(event) => setStudentCode(event.target.value.toUpperCase())}
+                      onKeyDown={(event) => event.key === 'Enter' && lookupStudent()}
+                      placeholder="VD: HS8X2K91"
+                      className="h-12 min-w-0 flex-1 rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-4 font-mono text-sm font-black uppercase tracking-widest text-slate-950 outline-none transition focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={lookupStudent}
+                      disabled={studentLoading}
+                      className="h-12 rounded-xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {studentLoading ? 'Đang kiểm tra' : 'Kiểm tra'}
+                    </button>
+                  </div>
+                  {studentError && (
+                    <span className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      {studentError}
+                    </span>
+                  )}
+                </label>
+
+                {student && fund && (
+                  <div className="rounded-2xl border border-[#eadfbd] bg-[#fffaf0] p-4">
+                    <div className="flex items-center gap-2">
+                      <UserRound className="h-4 w-4 text-[#b18400]" />
+                      <p className="text-sm font-black text-slate-950">{student.name}</p>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-500">{student.subjectName}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {[
+                        ['Số phút hiện có', fund.total],
+                        ['Đã sử dụng', fund.used],
+                        ['Đã giữ chỗ', fund.held],
+                        ['Khả dụng', fund.available],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl bg-white p-3">
+                          <p className="text-lg font-black tabular-nums text-slate-950">{Number(value).toLocaleString('vi-VN')}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {!canAfford && (
+                      <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        Quỹ phút khả dụng chưa đủ cho {duration} phút. Hãy chọn thời lượng ngắn hơn hoặc liên hệ học vụ.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-sm font-bold text-slate-700">Thời lượng muốn giữ</p>
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {MINUTE_PRESETS.map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() => setDuration(minutes)}
+                        className={`h-11 rounded-xl text-sm font-black transition active:scale-[0.98] ${
+                          duration === minutes
+                            ? 'bg-[#FFC107] text-slate-950 shadow-lg shadow-amber-100'
+                            : 'bg-[#fffaf0] text-slate-700 ring-1 ring-[#eadfbd] hover:text-slate-950'
+                        }`}
+                      >
+                        {minutes} phút
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    Hệ thống hiện hỗ trợ các mốc 25, 50, 75 và 100 phút. Khung bắt đầu được tách theo bước 30 phút từ lịch rảnh giáo viên.
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-bold text-slate-700">Khung giờ mong muốn</p>
+                  {scheduleOptions.length > 0 ? (
+                    <div className="mt-2 grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                      {scheduleOptions.map((option) => {
+                        const value = `${option.day}|${option.start}|${option.end}`
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setSelectedSlot(value)}
+                            className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition active:scale-[0.98] ${
+                              selectedSlot === value
+                                ? 'border-slate-950 bg-slate-950 text-white'
+                                : 'border-[#eadfbd] bg-[#fffaf0] text-slate-700 hover:border-[#d6a600] hover:text-slate-950'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-2 rounded-2xl border border-dashed border-[#d9c36c] bg-[#fffaf0] p-4 text-sm font-semibold text-slate-600">
+                      Chưa có khung phù hợp với thời lượng đã chọn. Hãy đổi thời lượng hoặc ghi chú để học vụ hỗ trợ.
+                    </div>
+                  )}
+                </div>
+
+                <label className="block">
+                  <span className="text-sm font-bold text-slate-700">Ghi chú cho học vụ</span>
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    rows={3}
+                    placeholder="Ví dụ: bé muốn học thử với giáo viên này vào buổi tối, ưu tiên thứ 3 hoặc thứ 5."
+                    className="mt-2 w-full resize-none rounded-xl border border-[#eadfbd] bg-[#fffaf0] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 -mx-4 mt-4 border-t border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+              <button
+                type="button"
+                onClick={submitRequest}
+                disabled={submitting || !student || !selectedSchedule || !canAfford}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-100 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+                {submitting ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu cho học vụ'}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -288,6 +730,7 @@ export function PublicTeachersPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterKey>('recommended')
   const [summaryCounts, setSummaryCounts] = useState({ teachers: 0, students: 0 })
+  const [selectedTeacher, setSelectedTeacher] = useState<TeacherView | null>(null)
 
   const loadTeachers = useCallback(async (reset = false) => {
     if (reset) {
@@ -431,8 +874,11 @@ export function PublicTeachersPage() {
       <PublicNav />
 
       <main>
-        <section className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8]">
-          <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top_right,#ffe07a,transparent_38%),linear-gradient(135deg,transparent,#fffaf0)] lg:block" />
+        <section
+          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center"
+          style={{ backgroundImage: "url('/teacher-hero-bg.png')" }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-[#fff6d8]/95 via-[#fff6d8]/82 to-[#fffaf0]/70" />
           <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
@@ -472,7 +918,14 @@ export function PublicTeachersPage() {
               </div>
               <div className="space-y-3">
                 {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} compact />
+                  <button
+                    key={teacher.id}
+                    type="button"
+                    onClick={() => setSelectedTeacher(teacher)}
+                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#ffde63]/40"
+                  >
+                    <TeacherCard teacher={teacher} compact />
+                  </button>
                 ))}
                 {!loading && teachers.length === 0 && (
                   <div className="rounded-2xl bg-[#fff8df] p-6 text-center text-sm font-semibold text-slate-600">
@@ -528,7 +981,9 @@ export function PublicTeachersPage() {
               ? Array.from({ length: 6 }).map((_, index) => (
                   <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-[#eadfbd]" />
                 ))
-              : filteredTeachers.map((teacher) => <TeacherCard key={teacher.id} teacher={teacher} />)}
+              : filteredTeachers.map((teacher) => (
+                  <TeacherCard key={teacher.id} teacher={teacher} onSelect={setSelectedTeacher} />
+                ))}
           </div>
 
           {!loading && filteredTeachers.length === 0 && (
@@ -557,6 +1012,8 @@ export function PublicTeachersPage() {
           </div>
         </section>
       </main>
+
+      <TeacherBookingModal teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
     </div>
   )
 }
