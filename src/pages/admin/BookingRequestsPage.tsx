@@ -440,7 +440,7 @@ export function BookingRequestsPage() {
                         <p className="mt-1 text-lg font-bold text-slate-900">{request.teacherName}</p>
                         <p className="mt-1 font-mono text-xs font-semibold text-amber-700">{request.teacherCode}</p>
                         <p className="mt-2 text-sm font-semibold text-slate-700">
-                          {DAY_LABELS[request.requestedDay]}, {request.requestedStart}-{request.requestedEnd}
+                          {DAY_LABELS[request.requestedDay]}{request.requestedDate ? ` ${request.requestedDate}` : ''}, {request.requestedStart}-{request.requestedEnd}
                           <span className="ml-2 text-slate-400">({request.requestedMinutes} phút)</span>
                         </p>
                       </div>

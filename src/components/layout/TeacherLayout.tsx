@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { PenLine, History, User, LogOut, FileText, Globe, Calendar } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { signOut } from '@/lib/auth'
 import { db } from '@/lib/firebase'
@@ -8,24 +8,18 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
 import { Logo } from '@/components/shared/Logo'
-import { Teacher, TeacherAvailability } from '@/types'
-
-function hasAvailability(availability: TeacherAvailability | null) {
-  if (!availability?.slots) return false
-  return Object.values(availability.slots).some((slot) => slot?.available && slot.timeRanges?.length > 0)
-}
+import { Teacher } from '@/types'
 
 export function TeacherLayout() {
   const { user, teacherId } = useAuthStore()
   const { lang, setLang, t } = useLanguageStore()
   const navigate = useNavigate()
-  const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean; missingAvailability: boolean } | null>(null)
+  const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean } | null>(null)
 
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
     { to: '/teacher/history', icon: History, labelKey: 'nav.history' },
     { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract' },
-    { to: '/teacher/availability', icon: Calendar, labelKey: 'nav.availability' },
     { to: '/teacher/profile', icon: User, labelKey: 'nav.profile' },
   ]
 
@@ -48,22 +42,15 @@ export function TeacherLayout() {
 
     async function loadReminderState() {
       try {
-        const [teacherSnap, availabilitySnap] = await Promise.all([
-          getDoc(doc(db, 'teachers', currentTeacherId)),
-          getDoc(doc(db, 'teacherAvailability', currentTeacherId)),
-        ])
+        const teacherSnap = await getDoc(doc(db, 'teachers', currentTeacherId))
 
         if (!active) return
 
         const teacher = teacherSnap.exists() ? ({ id: teacherSnap.id, ...teacherSnap.data() } as Teacher) : null
-        const availability = availabilitySnap.exists()
-          ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
-          : null
 
         const missingPhoto = !teacher?.photoURL
-        const missingAvailability = !hasAvailability(availability)
 
-        setProfileReminder(missingPhoto || missingAvailability ? { missingPhoto, missingAvailability } : null)
+        setProfileReminder(missingPhoto ? { missingPhoto } : null)
       } catch (error) {
         console.error('Error loading teacher profile reminder:', error)
       }
@@ -140,13 +127,7 @@ export function TeacherLayout() {
                 <div>
                   <p className="text-sm font-bold">Cập nhật hồ sơ để được ưu tiên hiển thị</p>
                   <p className="mt-1 text-xs leading-5 text-amber-800">
-                    Trang Đội ngũ giáo viên mới sẽ ưu tiên hồ sơ có ảnh rõ ràng và lịch rảnh. Vui lòng cập nhật
-                    {profileReminder.missingPhoto && profileReminder.missingAvailability
-                      ? ' ảnh đại diện và lịch rảnh'
-                      : profileReminder.missingPhoto
-                      ? ' ảnh đại diện'
-                      : ' lịch rảnh'}
-                    .
+                    Trang Đội ngũ giáo viên mới sẽ ưu tiên hồ sơ có ảnh rõ ràng. Lịch rảnh hiện do Admin quản lý để đảm bảo xếp lịch thống nhất.
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -159,15 +140,6 @@ export function TeacherLayout() {
                       Cập nhật ảnh
                     </button>
                   )}
-                  {profileReminder.missingAvailability && (
-                    <button
-                      type="button"
-                      onClick={() => navigate('/teacher/availability')}
-                      className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-700"
-                    >
-                      Cập nhật lịch
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
@@ -178,7 +150,7 @@ export function TeacherLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <div className="grid grid-cols-5 h-14">
+        <div className="grid grid-cols-4 h-14">
           {navItems.map((item) => (
             <NavLink
               key={item.to}

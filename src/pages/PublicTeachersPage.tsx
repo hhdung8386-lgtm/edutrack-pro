@@ -52,6 +52,9 @@ type FilterKey = 'recommended' | 'all' | 'available' | 'featured' | 'experienced
 
 type ScheduleOption = {
   day: DayOfWeek
+  dateISO: string
+  dateLabel: string
+  weekStartISO: string
   start: string
   end: string
   label: string
@@ -71,6 +74,50 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 
 const DAY_ORDER = Object.keys(DAY_LABELS) as DayOfWeek[]
 const WEEK_DAYS = DAY_ORDER
+
+function formatDateISO(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getMonday(date: Date) {
+  const copy = new Date(date)
+  copy.setHours(0, 0, 0, 0)
+  const day = copy.getDay()
+  copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day))
+  return copy
+}
+
+function addDays(date: Date, days: number) {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() + days)
+  return copy
+}
+
+function formatShortDate(date: Date) {
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getWeekDates() {
+  const monday = getMonday(new Date())
+  const weekStartISO = formatDateISO(monday)
+  return WEEK_DAYS.map((day, index) => {
+    const date = addDays(monday, index)
+    return {
+      day,
+      date,
+      dateISO: formatDateISO(date),
+      dateLabel: formatShortDate(date),
+      weekStartISO,
+    }
+  })
+}
+
+function getEffectiveSlots(availability: TeacherAvailability | undefined, weekStartISO: string) {
+  return availability?.weekOverrides?.[weekStartISO]?.slots || availability?.slots
+}
 
 const GRADE_WEIGHT: Record<string, number> = {
   A: 30,
@@ -111,8 +158,10 @@ function getInitials(name: string) {
 }
 
 function hasSchedule(availability?: TeacherAvailability) {
-  if (!availability?.slots) return false
-  return Object.values(availability.slots).some((slot) => slot?.available && slot.timeRanges?.length > 0)
+  const weekStartISO = formatDateISO(getMonday(new Date()))
+  const slots = getEffectiveSlots(availability, weekStartISO)
+  if (!slots) return false
+  return Object.values(slots).some((slot) => slot?.available && slot.timeRanges?.length > 0)
 }
 
 function timeToMinutes(time: string) {
@@ -127,10 +176,12 @@ function minutesToTime(total: number) {
 }
 
 function buildScheduleOptions(availability: TeacherAvailability | undefined, duration: number): ScheduleOption[] {
-  if (!availability?.slots) return []
+  const weekDates = getWeekDates()
+  const slots = getEffectiveSlots(availability, weekDates[0].weekStartISO)
+  if (!slots) return []
 
-  return DAY_ORDER.flatMap((day) => {
-    const slot = availability.slots[day]
+  return weekDates.flatMap(({ day, dateISO, dateLabel, weekStartISO }) => {
+    const slot = slots[day]
     if (!slot?.available || !slot.timeRanges?.length) return []
 
     return slot.timeRanges.flatMap((range) => {
@@ -143,9 +194,12 @@ function buildScheduleOptions(availability: TeacherAvailability | undefined, dur
         const optionEnd = minutesToTime(cursor + duration)
         options.push({
           day,
+          dateISO,
+          dateLabel,
+          weekStartISO,
           start: optionStart,
           end: optionEnd,
-          label: `${DAY_LABELS[day]}, ${optionStart}-${optionEnd}`,
+          label: `${DAY_LABELS[day]} ${dateLabel}, ${optionStart}-${optionEnd}`,
         })
       }
 
@@ -207,13 +261,15 @@ function buildHighlights(teacher: Teacher) {
 }
 
 function getNextSchedule(availability?: TeacherAvailability) {
-  if (!availability?.slots) return 'Chưa cập nhật lịch rảnh'
+  const weekDates = getWeekDates()
+  const slots = getEffectiveSlots(availability, weekDates[0].weekStartISO)
+  if (!slots) return 'Chưa cập nhật lịch rảnh'
 
-  for (const day of Object.keys(DAY_LABELS) as DayOfWeek[]) {
-    const slot = availability.slots[day]
+  for (const { day, dateLabel } of weekDates) {
+    const slot = slots[day]
     if (slot?.available && slot.timeRanges?.length) {
       const first = slot.timeRanges[0]
-      return `${DAY_LABELS[day]}, ${first.start}-${first.end}`
+      return `${DAY_LABELS[day]} ${dateLabel}, ${first.start}-${first.end}`
     }
   }
 
@@ -284,11 +340,12 @@ function ScheduleWeekPicker({
   selectedSlot: string
   onSelect: (value: string) => void
 }) {
+  const weekDates = getWeekDates()
   const weekOptions = options.filter((option) => WEEK_DAYS.includes(option.day))
   const rowStarts = Array.from(new Set(weekOptions.map((option) => option.start))).sort(
     (a, b) => timeToMinutes(a) - timeToMinutes(b)
   )
-  const optionByCell = new Map(weekOptions.map((option) => [`${option.day}|${option.start}`, option]))
+  const optionByCell = new Map(weekOptions.map((option) => [`${option.dateISO}|${option.start}`, option]))
 
   if (weekOptions.length === 0) {
     return (
@@ -304,9 +361,10 @@ function ScheduleWeekPicker({
         <div className="min-w-[860px]">
           <div className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-100 bg-sky-50/80">
             <div className="px-3 py-3 text-xs font-black uppercase tracking-[0.14em] text-slate-500">Giờ</div>
-            {WEEK_DAYS.map((day) => (
+            {weekDates.map(({ day, dateLabel }) => (
               <div key={day} className="border-l border-sky-100 px-3 py-3 text-center text-sm font-black text-slate-800">
-                {DAY_LABELS[day]}
+                <span className="block">{DAY_LABELS[day]}</span>
+                <span className="mt-0.5 block text-xs font-bold text-slate-500">{dateLabel}</span>
               </div>
             ))}
           </div>
@@ -315,8 +373,8 @@ function ScheduleWeekPicker({
             {rowStarts.map((start) => (
               <div key={start} className="grid grid-cols-[86px_repeat(7,minmax(104px,1fr))] border-b border-sky-50 last:border-b-0">
                 <div className="bg-slate-50/80 px-3 py-2 text-xs font-black tabular-nums text-slate-500">{start}</div>
-                {WEEK_DAYS.map((day) => {
-                  const option = optionByCell.get(`${day}|${start}`)
+                {weekDates.map(({ day, dateISO }) => {
+                  const option = optionByCell.get(`${dateISO}|${start}`)
                   const value = option ? `${option.day}|${option.start}|${option.end}` : ''
                   const selected = value && selectedSlot === value
 
@@ -332,11 +390,12 @@ function ScheduleWeekPicker({
                               : 'bg-sky-50 text-slate-700 ring-1 ring-sky-100 hover:bg-white hover:text-slate-950 hover:ring-[#0f766e]/30'
                           }`}
                         >
-                          {option.start}-{option.end}
+                          <span className="block text-[10px] opacity-80">{option.start}-{option.end}</span>
+                          OPEN
                         </button>
                       ) : (
                         <div className="flex min-h-11 items-center justify-center rounded-xl bg-slate-50 text-sm font-black text-slate-200">
-                          -
+                          ×
                         </div>
                       )}
                     </div>
@@ -466,7 +525,7 @@ function TeacherBookingModal({
   const [submitting, setSubmitting] = useState(false)
 
   const scheduleOptions = useMemo(
-    () => buildScheduleOptions(teacher?.availability, duration).slice(0, 48),
+    () => buildScheduleOptions(teacher?.availability, duration),
     [duration, teacher?.availability]
   )
   const selectedSchedule = scheduleOptions.find((option) => `${option.day}|${option.start}|${option.end}` === selectedSlot)
@@ -549,6 +608,8 @@ function TeacherBookingModal({
         subjectId: student.subjectId,
         subjectName: student.subjectName || teacher.subjectNames?.[0] || '',
         requestedDay: selectedSchedule.day,
+        requestedDate: selectedSchedule.dateISO,
+        requestedWeekStart: selectedSchedule.weekStartISO,
         requestedStart: selectedSchedule.start,
         requestedEnd: selectedSchedule.end,
         requestedMinutes: duration,
@@ -639,12 +700,12 @@ function TeacherBookingModal({
             <div className="mt-6">
               <h3 className="text-sm font-black text-slate-950">Lịch rảnh đã cập nhật</h3>
               <div className="mt-3 space-y-2">
-                {DAY_ORDER.map((day) => {
-                  const slot = teacher.availability?.slots?.[day]
+                {getWeekDates().map(({ day, dateLabel, weekStartISO }) => {
+                  const slot = getEffectiveSlots(teacher.availability, weekStartISO)?.[day]
                   if (!slot?.available || !slot.timeRanges?.length) return null
                   return (
                     <div key={day} className="flex items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50/70 px-3 py-2">
-                      <span className="text-sm font-bold text-slate-800">{DAY_LABELS[day]}</span>
+                      <span className="text-sm font-bold text-slate-800">{DAY_LABELS[day]} {dateLabel}</span>
                       <span className="text-right text-xs font-semibold text-slate-600">
                         {slot.timeRanges.map((range) => `${range.start}-${range.end}`).join(', ')}
                       </span>

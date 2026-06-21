@@ -135,6 +135,8 @@ export interface BookingRequest {
   subjectId?: string
   subjectName?: string
   requestedDay: DayOfWeek
+  requestedDate?: string
+  requestedWeekStart?: string
   requestedStart: string
   requestedEnd: string
   requestedMinutes: 25 | 50 | 75 | 100
@@ -187,6 +189,11 @@ export interface TeacherAvailability {
   id: string              // = teacherId
   teacherId: string
   slots: Record<DayOfWeek, DayAvailability>
+  weekOverrides?: Record<string, {
+    slots: Record<DayOfWeek, DayAvailability>
+    note?: string
+    updatedAt?: string
+  }>
   note: string
   updatedAt: Timestamp
 }

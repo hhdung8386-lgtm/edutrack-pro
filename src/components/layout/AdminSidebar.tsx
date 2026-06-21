@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
-  LogOut, FileText, CalendarClock
+  LogOut, FileText, CalendarClock, CalendarDays
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/admin/students', icon: Users, label: 'Học viên' },
   { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
+  { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
   { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },

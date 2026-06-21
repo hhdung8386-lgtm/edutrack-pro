@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -19,6 +19,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
   '/admin/students': 'Học viên',
   '/admin/teachers': 'Giáo viên',
+  '/admin/teacher-availability': 'Lịch giáo viên',
   '/admin/bookings': 'Yêu cầu giáo viên',
   '/admin/subjects': 'Môn học',
   '/admin/approvals': 'Duyệt buổi dạy',
@@ -80,6 +81,7 @@ export function AdminLayout() {
             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
               {[
                 { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
+                { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
                 { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
                 { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
                 { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },

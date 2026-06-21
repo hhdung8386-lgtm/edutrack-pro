@@ -19,6 +19,7 @@ const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage').then(m => (
 const StudentDetailPage = lazy(() => import('@/pages/admin/StudentDetailPage').then(m => ({ default: m.StudentDetailPage })))
 const TeachersPage = lazy(() => import('@/pages/admin/TeachersPage').then(m => ({ default: m.TeachersPage })))
 const TeacherDetailPage = lazy(() => import('@/pages/admin/TeacherDetailPage').then(m => ({ default: m.TeacherDetailPage })))
+const TeacherAvailabilityPage = lazy(() => import('@/pages/admin/TeacherAvailabilityPage').then(m => ({ default: m.TeacherAvailabilityPage })))
 const SubjectsPage = lazy(() => import('@/pages/admin/SubjectsPage').then(m => ({ default: m.SubjectsPage })))
 const ApprovalsPage = lazy(() => import('@/pages/admin/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })))
 const BookingRequestsPage = lazy(() => import('@/pages/admin/BookingRequestsPage').then(m => ({ default: m.BookingRequestsPage })))
@@ -32,7 +33,6 @@ const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPa
 const AttendancePage = lazy(() => import('@/pages/teacher/AttendancePage').then(m => ({ default: m.AttendancePage })))
 const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage').then(m => ({ default: m.LessonHistoryPage })))
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
-const AvailabilityPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
 
 // Lazy loaded Parent Pages
 const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPage').then(m => ({ default: m.ParentDashboardPage })))
@@ -107,6 +107,7 @@ function App() {
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<TeachersPage />} />
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
+            <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="bookings" element={<BookingRequestsPage />} />
@@ -140,7 +141,7 @@ function App() {
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="availability" element={<AvailabilityPage />} />
+            <Route path="availability" element={<Navigate to="../profile" replace />} />
             <Route index element={<Navigate to="attendance" replace />} />
           </Route>
 
