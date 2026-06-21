@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   collection,
+  doc,
+  DocumentData,
+  getDoc,
   getDocs,
+  limit as firestoreLimit,
   query,
+  QueryDocumentSnapshot,
+  startAfter,
   where,
 } from 'firebase/firestore'
 import {
@@ -11,31 +16,30 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
-  ChevronLeft,
   Clock3,
   Filter,
   GraduationCap,
   Search,
+  ShieldCheck,
   Star,
+  TrendingUp,
   Users,
 } from 'lucide-react'
+import { PublicNav } from '@/components/layout/PublicNav'
 import { db } from '@/lib/firebase'
 import { DayOfWeek, Teacher, TeacherAvailability } from '@/types'
 
-type LessonStats = {
-  lessons: number
-  minutes: number
-}
-
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
-  lessonStats: LessonStats
   priorityScore: number
+  priorityReasons: string[]
   isForeignTeacher: boolean
   hasAvailableSchedule: boolean
 }
 
-type FilterKey = 'all' | 'featured' | 'available' | 'foreign'
+type FilterKey = 'recommended' | 'all' | 'available' | 'featured' | 'experienced' | 'foreign'
+
+const PAGE_SIZE = 24
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -48,11 +52,11 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 }
 
 const GRADE_WEIGHT: Record<string, number> = {
-  A: 28,
-  B: 16,
-  C: 8,
-  PH: 18,
-  SA: 18,
+  A: 30,
+  B: 22,
+  PH: 22,
+  SA: 22,
+  C: 12,
 }
 
 const STRENGTH_LABELS: Record<string, string> = {
@@ -63,6 +67,15 @@ const STRENGTH_LABELS: Record<string, string> = {
   progress_reports: 'Báo cáo tiến độ',
   tools_proficiency: 'Dạy online tốt',
 }
+
+const FILTERS: Array<{ key: FilterKey; label: string; helper: string }> = [
+  { key: 'recommended', label: 'Đề xuất phù hợp', helper: 'Có lịch, hồ sơ tốt, ưu tiên cao' },
+  { key: 'available', label: 'Có lịch gần', helper: 'Dễ xếp buổi học tiếp theo' },
+  { key: 'featured', label: 'Admin ưu tiên', helper: 'Được học vụ đưa lên trước' },
+  { key: 'experienced', label: 'Dạy nhiều', helper: 'Kinh nghiệm và số học viên cao' },
+  { key: 'foreign', label: 'Nước ngoài', helper: 'PH, SA hoặc hồ sơ quốc tế' },
+  { key: 'all', label: 'Tất cả', helper: 'Danh sách đang tải' },
+]
 
 function getInitials(name: string) {
   return name
@@ -85,6 +98,7 @@ function isForeignTeacher(teacher: Teacher) {
     teacher.livingArea,
     teacher.university,
     teacher.degreeType,
+    teacher.otherCerts,
     ...(teacher.languagesTaught || []),
     ...(teacher.subjectNames || []),
   ]
@@ -112,7 +126,7 @@ function buildHighlights(teacher: Teacher) {
   if (teacher.ielts) highlights.push(`IELTS ${teacher.ielts}`)
   if (teacher.toeic) highlights.push(`TOEIC ${teacher.toeic}`)
   if (teacher.tesolTefl) highlights.push('TESOL/TEFL')
-  if (teacher.pedagogicalCert) highlights.push('Nghiệp vụ sư phạm')
+  if (teacher.pedagogicalCert) highlights.push('Sư phạm')
   if (teacher.teachingYears) highlights.push(`${teacher.teachingYears} năm kinh nghiệm`)
   if (teacher.studentsTaughtCount) highlights.push(`${teacher.studentsTaughtCount}+ học viên`)
 
@@ -133,20 +147,35 @@ function getNextSchedule(availability?: TeacherAvailability) {
   return 'Chưa cập nhật lịch rảnh'
 }
 
-function calculatePriority(teacher: Teacher, availability: TeacherAvailability | undefined, stats: LessonStats) {
-  const scheduleScore = hasSchedule(availability) ? 18 : 0
-  const photoScore = teacher.photoURL ? 30 : 0
-  const adminScore = teacher.teacherGrade ? GRADE_WEIGHT[teacher.teacherGrade] || 0 : 0
-  const teachingScore = Math.min(22, Math.floor(stats.minutes / 250))
-  const profileScore = buildHighlights(teacher).length * 3
-
-  return photoScore + adminScore + scheduleScore + teachingScore + profileScore
-}
-
 function summarizeBio(teacher: Teacher) {
   const source = teacher.bio || teacher.studentResults || teacher.otherStrengths || ''
-  if (!source) return 'Hồ sơ đang được cập nhật. Giáo viên có kinh nghiệm phù hợp sẽ được tư vấn theo mục tiêu học của học viên.'
-  return source.length > 150 ? `${source.slice(0, 150).trim()}...` : source
+  if (!source) return 'Hồ sơ đang được cập nhật. Học vụ sẽ tư vấn giáo viên phù hợp theo mục tiêu học của học viên.'
+  return source.length > 145 ? `${source.slice(0, 145).trim()}...` : source
+}
+
+function getPriorityReasons(teacher: Teacher, availability?: TeacherAvailability) {
+  const reasons: string[] = []
+
+  if (hasSchedule(availability)) reasons.push('Có lịch rảnh')
+  if (teacher.teacherGrade) reasons.push(`Admin ưu tiên ${teacher.teacherGrade}`)
+  if (teacher.photoURL) reasons.push('Có ảnh hồ sơ')
+  if ((teacher.teachingYears || 0) >= 2) reasons.push('Kinh nghiệm tốt')
+  if ((teacher.studentsTaughtCount || 0) >= 20) reasons.push('Đã dạy nhiều học viên')
+  if (buildHighlights(teacher).length >= 2) reasons.push('Hồ sơ đầy đủ')
+
+  return reasons.slice(0, 4)
+}
+
+function calculatePriority(teacher: Teacher, availability?: TeacherAvailability) {
+  const scheduleScore = hasSchedule(availability) ? 34 : 0
+  const adminScore = teacher.teacherGrade ? GRADE_WEIGHT[teacher.teacherGrade] || 0 : 0
+  const photoScore = teacher.photoURL ? 18 : 0
+  const experienceScore = Math.min(18, (teacher.teachingYears || 0) * 3)
+  const taughtScore = Math.min(18, Math.floor((teacher.studentsTaughtCount || 0) / 5))
+  const profileScore = Math.min(14, buildHighlights(teacher).length * 4 + (teacher.bio ? 2 : 0))
+  const foreignScore = isForeignTeacher(teacher) ? 6 : 0
+
+  return scheduleScore + adminScore + photoScore + experienceScore + taughtScore + profileScore + foreignScore
 }
 
 function TeacherPhoto({ teacher }: { teacher: Teacher }) {
@@ -162,7 +191,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-slate-100 text-2xl font-black text-slate-400">
+    <div className="flex h-full w-full items-center justify-center bg-[#fff8df] text-2xl font-black text-[#d69a00]">
       {getInitials(teacher.name)}
     </div>
   )
@@ -171,16 +200,16 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
 function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compact?: boolean }) {
   const highlights = buildHighlights(teacher)
   const strengths = (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 3)
-  const chips = [...highlights, ...strengths].slice(0, compact ? 3 : 5)
+  const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/70">
-      <div className={compact ? 'flex gap-4 p-4' : 'grid gap-0 md:grid-cols-[220px_1fr]'}>
-        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-slate-100 md:h-full'}>
+    <article className="group overflow-hidden rounded-2xl border border-[#eadfbd] bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#e3c55d] hover:shadow-xl hover:shadow-amber-100/70">
+      <div className={compact ? 'flex gap-4 p-4' : 'grid gap-0 md:grid-cols-[210px_1fr]'}>
+        <div className={compact ? 'h-24 w-24 shrink-0 overflow-hidden rounded-xl' : 'relative h-64 overflow-hidden bg-[#fff8df] md:h-full'}>
           <TeacherPhoto teacher={teacher} />
-          {!compact && teacher.teacherGrade && (
-            <div className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-slate-800 shadow-sm">
-              Admin ưu tiên
+          {!compact && teacher.priorityReasons[0] && (
+            <div className="absolute left-3 top-3 rounded-full bg-[#020617]/90 px-3 py-1 text-xs font-bold text-white shadow-sm">
+              {teacher.priorityReasons[0]}
             </div>
           )}
         </div>
@@ -188,22 +217,18 @@ function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compa
         <div className={compact ? 'min-w-0 flex-1' : 'flex min-w-0 flex-col p-5'}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
                 {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
               <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{teacher.name}</h3>
             </div>
-            <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+            <div className="flex shrink-0 items-center gap-1 rounded-full bg-[#fff3c4] px-2.5 py-1 text-xs font-black text-[#9a5d00]">
               <Star className="h-3.5 w-3.5 fill-current" />
-              {teacher.lessonStats.lessons || teacher.studentsTaughtCount || 0}
+              {teacher.priorityScore}
             </div>
           </div>
 
-          {!compact && (
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {summarizeBio(teacher)}
-            </p>
-          )}
+          {!compact && <p className="mt-3 text-sm leading-6 text-slate-600">{summarizeBio(teacher)}</p>}
 
           <div className="mt-4 flex flex-wrap gap-2">
             {teacher.hasAvailableSchedule && (
@@ -226,18 +251,18 @@ function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compa
 
           <div className={compact ? 'mt-3 text-xs text-slate-500' : 'mt-auto grid gap-3 pt-5 sm:grid-cols-3'}>
             <div className="flex items-center gap-2 text-sm text-slate-600">
-              <CalendarDays className="h-4 w-4 text-slate-400" />
+              <CalendarDays className="h-4 w-4 text-[#c89000]" />
               <span>{getNextSchedule(teacher.availability)}</span>
             </div>
             {!compact && (
               <>
                 <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <Users className="h-4 w-4 text-slate-400" />
-                  <span>{teacher.lessonStats.minutes.toLocaleString('vi-VN')} phút đã dạy</span>
+                  <Users className="h-4 w-4 text-[#c89000]" />
+                  <span>{teacher.studentsTaughtCount || 0}+ học viên</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <GraduationCap className="h-4 w-4 text-slate-400" />
-                  <span>Level lương x{teacher.level}</span>
+                  <GraduationCap className="h-4 w-4 text-[#c89000]" />
+                  <span>{teacher.teachingYears || 0} năm kinh nghiệm</span>
                 </div>
               </>
             )}
@@ -251,72 +276,86 @@ function TeacherCard({ teacher, compact = false }: { teacher: TeacherView; compa
 export function PublicTeachersPage() {
   const [teachers, setTeachers] = useState<TeacherView[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<FilterKey>('all')
+  const [filter, setFilter] = useState<FilterKey>('recommended')
+
+  const loadTeachers = useCallback(async (reset = false) => {
+    if (reset) {
+      setLoading(true)
+      setTeachers([])
+      setLastDoc(null)
+      setHasMore(true)
+    } else {
+      setLoadingMore(true)
+    }
+
+    try {
+      const teachersQuery = reset || !lastDoc
+        ? query(
+            collection(db, 'teachers'),
+            where('status', '==', 'active'),
+            firestoreLimit(PAGE_SIZE)
+          )
+        : query(
+            collection(db, 'teachers'),
+            where('status', '==', 'active'),
+            startAfter(lastDoc),
+            firestoreLimit(PAGE_SIZE)
+          )
+
+      const teacherSnap = await getDocs(teachersQuery)
+      const rawTeachers = teacherSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
+      const availabilityPairs = await Promise.all(
+        rawTeachers.map(async (teacher) => {
+          try {
+            const availabilitySnap = await getDoc(doc(db, 'teacherAvailability', teacher.id))
+            return [
+              teacher.id,
+              availabilitySnap.exists()
+                ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
+                : undefined,
+            ] as const
+          } catch {
+            return [teacher.id, undefined] as const
+          }
+        })
+      )
+      const availabilityMap = new Map(availabilityPairs)
+
+      const pageTeachers = rawTeachers.map((teacher) => {
+        const availability = availabilityMap.get(teacher.id)
+        return {
+          ...teacher,
+          availability,
+          priorityScore: calculatePriority(teacher, availability),
+          priorityReasons: getPriorityReasons(teacher, availability),
+          isForeignTeacher: isForeignTeacher(teacher),
+          hasAvailableSchedule: hasSchedule(availability),
+        }
+      })
+
+      setTeachers((prev) => {
+        const merged = reset ? pageTeachers : [...prev, ...pageTeachers]
+        const byId = new Map(merged.map((teacher) => [teacher.id, teacher]))
+        return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || a.name.localeCompare(b.name, 'vi'))
+      })
+      setLastDoc(teacherSnap.docs[teacherSnap.docs.length - 1] || null)
+      setHasMore(teacherSnap.docs.length === PAGE_SIZE)
+    } catch (error) {
+      console.error('Error loading public teachers:', error)
+      if (reset) setTeachers([])
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [lastDoc])
 
   useEffect(() => {
     document.title = 'Đội ngũ giáo viên 123English'
-
-    let active = true
-
-    async function loadTeachers() {
-      setLoading(true)
-      try {
-        const [teacherSnap, availabilitySnap, lessonSnap] = await Promise.all([
-          getDocs(query(collection(db, 'teachers'), where('status', '==', 'active'))),
-          getDocs(collection(db, 'teacherAvailability')),
-          getDocs(query(collection(db, 'publicLessons'), where('status', '==', 'approved'))),
-        ])
-
-        if (!active) return
-
-        const availabilityMap = new Map<string, TeacherAvailability>()
-        availabilitySnap.docs.forEach((docSnap) => {
-          availabilityMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as TeacherAvailability)
-        })
-
-        const lessonMap: Record<string, LessonStats> = {}
-        lessonSnap.docs.forEach((docSnap) => {
-          const data = docSnap.data()
-          const teacherId = String(data.teacherId || '')
-          if (!teacherId) return
-          lessonMap[teacherId] = lessonMap[teacherId] || { lessons: 0, minutes: 0 }
-          lessonMap[teacherId].lessons += 1
-          lessonMap[teacherId].minutes += Number(data.minutes) || 0
-        })
-
-        const nextTeachers = teacherSnap.docs
-          .map((docSnap) => {
-            const teacher = { id: docSnap.id, ...docSnap.data() } as Teacher
-            const availability = availabilityMap.get(teacher.id)
-            const lessonStats = lessonMap[teacher.id] || { lessons: 0, minutes: 0 }
-            const hasAvailableSchedule = hasSchedule(availability)
-
-            return {
-              ...teacher,
-              availability,
-              lessonStats,
-              priorityScore: calculatePriority(teacher, availability, lessonStats),
-              isForeignTeacher: isForeignTeacher(teacher),
-              hasAvailableSchedule,
-            }
-          })
-          .sort((a, b) => b.priorityScore - a.priorityScore || a.name.localeCompare(b.name, 'vi'))
-
-        setTeachers(nextTeachers)
-      } catch (error) {
-        console.error('Error loading public teachers:', error)
-        setTeachers([])
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
-    loadTeachers()
-
-    return () => {
-      active = false
-    }
+    loadTeachers(true)
   }, [])
 
   const filteredTeachers = useMemo(() => {
@@ -339,8 +378,10 @@ export function PublicTeachersPage() {
       const matchesSearch = !keyword || haystack.includes(keyword)
       const matchesFilter =
         filter === 'all' ||
-        (filter === 'featured' && !!teacher.teacherGrade) ||
+        (filter === 'recommended' && teacher.priorityScore >= 45) ||
         (filter === 'available' && teacher.hasAvailableSchedule) ||
+        (filter === 'featured' && !!teacher.teacherGrade) ||
+        (filter === 'experienced' && ((teacher.teachingYears || 0) >= 2 || (teacher.studentsTaughtCount || 0) >= 20)) ||
         (filter === 'foreign' && teacher.isForeignTeacher)
 
       return matchesSearch && matchesFilter
@@ -348,165 +389,139 @@ export function PublicTeachersPage() {
   }, [filter, search, teachers])
 
   const topTeachers = filteredTeachers.slice(0, 3)
-  const foreignTeachers = teachers.filter((teacher) => teacher.isForeignTeacher).slice(0, 4)
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
+  const featuredCount = teachers.filter((teacher) => teacher.teacherGrade).length
 
   return (
-    <div className="min-h-screen bg-[#f6f8fb] text-slate-950">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/login" className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-slate-950">
-            <ChevronLeft className="h-4 w-4" />
-            Về trang chủ
-          </Link>
-          <a
-            href="tel:0906966691"
-            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 active:scale-[0.98]"
-          >
-            Tư vấn chọn giáo viên
-          </a>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#fffaf0] text-slate-950">
+      <PublicNav />
 
       <main>
-        <section className="relative overflow-hidden bg-white">
-          <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-sky-50 to-white" />
-          <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-16">
+        <section className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8]">
+          <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top_right,#ffe07a,transparent_38%),linear-gradient(135deg,transparent,#fffaf0)] lg:block" />
+          <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                Ưu tiên giáo viên có ảnh, lịch rảnh và hồ sơ đầy đủ
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                <ShieldCheck className="h-4 w-4 text-[#d69700]" />
+                Dành cho học viên và phụ huynh đã có tài khoản 123English
               </div>
               <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-                Đội ngũ giáo viên 123English
+                Chọn giáo viên phù hợp cho buổi học tiếp theo
               </h1>
-              <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                Tìm giáo viên phù hợp theo môn học, kinh nghiệm, lịch rảnh và mức ưu tiên từ admin. Các hồ sơ có ảnh và cập nhật lịch rảnh sẽ được hiển thị nổi bật hơn.
+              <p className="mt-5 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg">
+                Danh sách ưu tiên giáo viên có lịch rảnh, hồ sơ rõ ràng, được học vụ đề xuất và có kinh nghiệm phù hợp. Khi cần đổi giáo viên hoặc xếp lịch mới, phụ huynh có thể dùng trang này để chọn nhanh trước khi nhắn học vụ.
               </p>
 
               <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
-                <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{teachers.length}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">giáo viên active</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">đang hiển thị</p>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
                   <p className="text-2xl font-black tabular-nums">{availableCount}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">đã có lịch rảnh</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">có lịch rảnh</p>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-2xl font-black tabular-nums">{foreignTeachers.length}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">giáo viên nước ngoài</p>
+                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
+                  <p className="text-2xl font-black tabular-nums">{featuredCount}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">admin ưu tiên</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-slate-200 bg-slate-950 p-3 shadow-2xl shadow-slate-300/60">
-              <div className="rounded-[1.45rem] bg-white p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Gợi ý hôm nay</p>
-                    <h2 className="text-xl font-black text-slate-950">Hồ sơ nổi bật</h2>
+            <div className="rounded-[2rem] border-[10px] border-slate-950 bg-white p-5 shadow-2xl shadow-amber-200/60">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#b18400]">Gợi ý hôm nay</p>
+                  <h2 className="text-2xl font-black text-slate-950">Ưu tiên hiển thị</h2>
+                </div>
+                <Award className="h-7 w-7 text-[#ffb900]" />
+              </div>
+              <div className="space-y-3">
+                {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
+                  <TeacherCard key={teacher.id} teacher={teacher} compact />
+                ))}
+                {!loading && teachers.length === 0 && (
+                  <div className="rounded-2xl bg-[#fff8df] p-6 text-center text-sm font-semibold text-slate-600">
+                    Chưa có hồ sơ giáo viên công khai.
                   </div>
-                  <Award className="h-6 w-6 text-amber-500" />
-                </div>
-                <div className="space-y-3">
-                  {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
-                    <TeacherCard key={teacher.id} teacher={teacher} compact />
-                  ))}
-                  {!loading && teachers.length === 0 && (
-                    <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm font-semibold text-slate-500">
-                      Chưa có hồ sơ giáo viên công khai.
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
         </section>
 
         <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <div className="sticky top-0 z-10 -mx-4 border-y border-slate-200 bg-[#f6f8fb]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
+          <div className="sticky top-0 z-10 -mx-4 border-y border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Tìm theo tên, môn dạy, chứng chỉ, trường học..."
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
+                  placeholder="Tìm tên giáo viên, môn dạy, chứng chỉ, trường học..."
+                  className="h-12 w-full rounded-xl border border-[#eadfbd] bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
                 />
               </label>
 
               <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
-                {[
-                  ['all', 'Tất cả'],
-                  ['featured', 'Admin ưu tiên'],
-                  ['available', 'Có lịch rảnh'],
-                  ['foreign', 'Nước ngoài'],
-                ].map(([key, label]) => (
+                {FILTERS.map((item) => (
                   <button
-                    key={key}
+                    key={item.key}
                     type="button"
-                    onClick={() => setFilter(key as FilterKey)}
+                    onClick={() => setFilter(item.key)}
+                    title={item.helper}
                     className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold transition active:scale-[0.98] ${
-                      filter === key
-                        ? 'bg-slate-950 text-white shadow-lg shadow-slate-300'
-                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:text-slate-950'
+                      filter === item.key
+                        ? 'bg-slate-950 text-white shadow-lg shadow-amber-200'
+                        : 'bg-white text-slate-700 ring-1 ring-[#eadfbd] hover:text-slate-950'
                     }`}
                   >
-                    {key === 'all' && <Filter className="h-4 w-4" />}
-                    {label}
+                    {item.key === 'recommended' && <CheckCircle2 className="h-4 w-4" />}
+                    {item.key === 'all' && <Filter className="h-4 w-4" />}
+                    {item.key === 'experienced' && <TrendingUp className="h-4 w-4" />}
+                    {item.label}
                   </button>
                 ))}
               </div>
             </div>
+            <p className="mt-3 text-xs font-medium text-slate-500">
+              Bộ lọc chỉ áp dụng trên danh sách đã tải. Bấm Xem thêm để mở rộng thêm hồ sơ giáo viên.
+            </p>
           </div>
 
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             {loading
-              ? Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" />
+              ? Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-[#eadfbd]" />
                 ))
-              : filteredTeachers.map((teacher) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} />
-                ))}
+              : filteredTeachers.map((teacher) => <TeacherCard key={teacher.id} teacher={teacher} />)}
           </div>
 
           {!loading && filteredTeachers.length === 0 && (
-            <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center">
-              <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
-              <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy giáo viên phù hợp</h2>
+            <div className="mt-8 rounded-3xl border border-dashed border-[#d9c36c] bg-white p-10 text-center">
+              <BookOpen className="mx-auto h-10 w-10 text-[#c89000]" />
+              <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy giáo viên phù hợp trong danh sách đã tải</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                Thử đổi từ khóa hoặc chọn lại bộ lọc. Bộ phận học vụ có thể tư vấn giáo viên phù hợp theo mục tiêu học.
+                Thử đổi bộ lọc hoặc bấm Xem thêm để tải thêm giáo viên. Học vụ vẫn có thể tư vấn theo mã học viên và lịch học hiện tại.
               </p>
             </div>
           )}
-        </section>
 
-        {foreignTeachers.length > 0 && (
-          <section className="bg-white py-10">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <div className="mb-5 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Foreign teachers</p>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Giáo viên nước ngoài</h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFilter('foreign')}
-                  className="hidden rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 transition hover:border-slate-400 hover:text-slate-950 sm:block"
-                >
-                  Xem nhóm này
-                </button>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {foreignTeachers.map((teacher) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} compact />
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
+          <div className="mt-8 flex justify-center">
+            {hasMore ? (
+              <button
+                type="button"
+                onClick={() => loadTeachers(false)}
+                disabled={loadingMore}
+                className="rounded-full bg-[#FFC107] px-7 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingMore ? 'Đang tải thêm...' : 'Xem thêm giáo viên'}
+              </button>
+            ) : (
+              <p className="text-sm font-semibold text-slate-500">Đã tải hết danh sách giáo viên hiện có.</p>
+            )}
+          </div>
+        </section>
       </main>
     </div>
   )

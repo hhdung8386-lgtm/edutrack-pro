@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { Phone, Globe, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
+import { PublicNav } from '@/components/layout/PublicNav'
 
 export function LienHePage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', subject: '', message: '' })
@@ -9,29 +9,7 @@ export function LienHePage() {
 
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
-      {/* NAV */}
-      <nav className="bg-white border-b border-slate-100 py-3 px-6 md:px-12 lg:px-20 shrink-0 relative z-20">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-12">
-            <div className="flex items-center gap-2" />
-            <div className="hidden lg:flex items-center gap-8 text-sm font-semibold text-slate-600">
-              <Link to="/login" className="hover:text-[#FFC107] transition-colors pb-1">Trang chủ</Link>
-              <Link to="/chuong-trinh-hoc" className="hover:text-[#FFC107] transition-colors pb-1">Chương trình học</Link>
-              <Link to="/lien-he" className="text-slate-900 border-b-2 border-[#FFC107] pb-1">Liên hệ</Link>
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <a href="tel:0906966691" className="hidden sm:flex items-center gap-2 font-bold text-slate-800 hover:text-[#FFC107] transition-colors text-sm">
-              <Phone className="w-4 h-4 text-[#FFC107]" />
-              090.696.6691
-            </a>
-            <button className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
-              <Globe className="w-4 h-4" />
-              EN
-            </button>
-          </div>
-        </div>
-      </nav>
+      <PublicNav />
 
       {/* HERO */}
       <section className="grid grid-cols-1 lg:grid-cols-[46%_54%] flex-[0_0_36%] min-h-0 bg-[#FFFBF0]">

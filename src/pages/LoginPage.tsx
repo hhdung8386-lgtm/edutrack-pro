@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, Lock, Eye, EyeOff, Search, BarChart2, MessageSquare, Users, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen, X } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, Search, BarChart2, MessageSquare, Users, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen } from 'lucide-react'
 import { signIn, signInTeacher } from '@/lib/auth'
 import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
-import { Logo } from '@/components/shared/Logo'
+import { PublicNav } from '@/components/layout/PublicNav'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -23,7 +23,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const { lang, setLang, t } = useLanguageStore()
+  const { t } = useLanguageStore()
   
   // Login modal state
   const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
@@ -86,8 +86,6 @@ export function LoginPage() {
     if (!studentCode.trim()) return
     navigate(`/parent?code=${encodeURIComponent(studentCode.trim())}`)
   }
-
-  const toggleLang = () => setLang(lang === 'vi' ? 'en' : 'vi')
 
   const openLogin = (role: 'teacher' | 'admin') => {
     setLoginRole(role)
@@ -195,32 +193,7 @@ export function LoginPage() {
 
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
-      {/* Navigation */}
-      <nav className="bg-white border-b border-slate-100 py-3 px-6 md:px-12 lg:px-20 shrink-0 relative z-20">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-12">
-            <div className="flex items-center gap-2">
-              <Logo />
-            </div>
-            <div className="hidden lg:flex items-center gap-8 text-sm font-semibold text-slate-600">
-              <button className="text-slate-900 border-b-2 border-[#FFC107] pb-1 hover:text-slate-900 transition-colors">{t('landing.nav_home')}</button>
-              <Link to="/chuong-trinh-hoc" className="hover:text-[#FFC107] transition-colors pb-1">{t('landing.nav_programs')}</Link>
-              <Link to="/giao-vien" className="hover:text-[#FFC107] transition-colors pb-1">Giáo viên</Link>
-              <Link to="/lien-he" className="hover:text-[#FFC107] transition-colors pb-1">{t('landing.nav_contact')}</Link>
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <a href="tel:0906966691" className="hidden sm:flex items-center gap-2 font-bold text-slate-800 hover:text-[#FFC107] transition-colors text-sm">
-              <Phone className="w-4 h-4 text-[#FFC107]" />
-              090.696.6691
-            </a>
-            <button onClick={toggleLang} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
-              <Globe className="w-4 h-4" />
-              {lang === 'vi' ? 'EN' : 'VI'}
-            </button>
-          </div>
-        </div>
-      </nav>
+      <PublicNav />
 
       {/* Main Content - two column layout */}
       <main className="flex-1 grid lg:grid-cols-2 min-h-0">
