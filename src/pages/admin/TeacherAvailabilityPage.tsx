@@ -1,29 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, Plus, Save, Search, X } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search } from 'lucide-react'
 import { db } from '@/lib/firebase'
-import { DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange } from '@/types'
+import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-const DAY_LABELS: Record<DayOfWeek, string> = {
-  mon: 'Thứ 2',
-  tue: 'Thứ 3',
-  wed: 'Thứ 4',
-  thu: 'Thứ 5',
-  fri: 'Thứ 6',
-  sat: 'Thứ 7',
-  sun: 'CN',
-}
-
-const TIME_OPTIONS: string[] = []
-for (let h = 0; h <= 24; h += 1) {
-  TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`)
-  if (h < 24) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`)
+const DAY_LABELS_EN: Record<DayOfWeek, string> = {
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+  sat: 'Sat',
+  sun: 'Sun',
 }
 
 const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }
+const TIME_WINDOWS = [
+  { key: '24h', label: '24h', start: 0, end: 1440 },
+  { key: '0-8', label: '0:00-8:00', start: 0, end: 480 },
+  { key: '6-14', label: '6:00-14:00', start: 360, end: 840 },
+  { key: '12-20', label: '12:00-20:00', start: 720, end: 1200 },
+  { key: '18-25', label: '18:00-25:00', start: 1080, end: 1500 },
+] as const
 
 function emptySlots(): Record<DayOfWeek, DayAvailability> {
   return {
@@ -77,8 +78,83 @@ function formatShortDate(date: Date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
+function formatShortHeaderDate(date: Date) {
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
 function getWeekDates(weekStart: Date) {
   return DAYS.map((day, index) => ({ day, date: addDays(weekStart, index), iso: formatDateISO(addDays(weekStart, index)) }))
+}
+
+function timeToMinutes(time: string) {
+  const [hours = '0', minutes = '0'] = time.split(':')
+  return Number(hours) * 60 + Number(minutes)
+}
+
+function minutesToTime(total: number) {
+  const hours = Math.floor(total / 60)
+  const minutes = total % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function getVisibleStarts(windowKey: string) {
+  const activeWindow = TIME_WINDOWS.find((item) => item.key === windowKey) || TIME_WINDOWS[0]
+  const starts: string[] = []
+  for (let cursor = activeWindow.start; cursor < activeWindow.end; cursor += 30) {
+    starts.push(minutesToTime(cursor))
+  }
+  return starts
+}
+
+function rangeCovers(range: TimeRange, start: number, end: number) {
+  return timeToMinutes(range.start) <= start && timeToMinutes(range.end) >= end
+}
+
+function removeInterval(ranges: TimeRange[], start: number, end: number) {
+  const next: TimeRange[] = []
+
+  ranges.forEach((range) => {
+    const rangeStart = timeToMinutes(range.start)
+    const rangeEnd = timeToMinutes(range.end)
+
+    if (rangeEnd <= start || rangeStart >= end) {
+      next.push(range)
+      return
+    }
+
+    if (rangeStart < start) next.push({ start: range.start, end: minutesToTime(start) })
+    if (rangeEnd > end) next.push({ start: minutesToTime(end), end: range.end })
+  })
+
+  return next.filter((range) => timeToMinutes(range.end) > timeToMinutes(range.start))
+}
+
+function addInterval(ranges: TimeRange[], start: number, end: number) {
+  const all = [...ranges, { start: minutesToTime(start), end: minutesToTime(end) }]
+    .map(r => ({ ...r }))
+    .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start))
+
+  const merged: TimeRange[] = []
+  all.forEach((range) => {
+    if (merged.length === 0) {
+      merged.push(range)
+      return
+    }
+    const last = merged[merged.length - 1]
+    const lastEnd = timeToMinutes(last.end)
+    const currentStart = timeToMinutes(range.start)
+
+    if (currentStart <= lastEnd) {
+      const currentEnd = timeToMinutes(range.end)
+      if (currentEnd > lastEnd) {
+        last.end = range.end
+      }
+    } else {
+      merged.push(range)
+    }
+  })
+
+  return merged
 }
 
 export function TeacherAvailabilityPage() {
@@ -89,11 +165,22 @@ export function TeacherAvailabilityPage() {
   const [note, setNote] = useState('')
   const [search, setSearch] = useState('')
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+
+  // Temporary states for filters
+  const [tempTimeWindow, setTempTimeWindow] = useState<string>('24h')
+  const [tempDuration, setTempDuration] = useState<25 | 50>(25)
+
+  // Active states for filters
+  const [timeWindow, setTimeWindow] = useState<string>('24h')
+  const [duration, setDuration] = useState<25 | 50>(25)
+
+  const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [savingMode, setSavingMode] = useState<'week' | 'future' | null>(null)
 
   const weekStartISO = formatDateISO(weekStart)
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
+  const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
 
   useEffect(() => {
@@ -147,56 +234,81 @@ export function TeacherAvailabilityPage() {
     })
   }, [selectedTeacherId, weekStartISO])
 
+  useEffect(() => {
+    if (!selectedTeacherId) {
+      setBookingRequests([])
+      return
+    }
+
+    async function loadBookingRequests() {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'bookingRequests'),
+            where('teacherId', '==', selectedTeacherId)
+          )
+        )
+        const items = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+        setBookingRequests(items)
+      } catch (error) {
+        console.error('Error loading booking requests for teacher:', error)
+      }
+    }
+
+    loadBookingRequests()
+  }, [selectedTeacherId])
+
   const filteredTeachers = teachers.filter((teacher) => {
     const keyword = search.trim().toLowerCase()
     if (!keyword) return true
     return `${teacher.name} ${teacher.code}`.toLowerCase().includes(keyword)
   })
 
-  const toggleDay = (day: DayOfWeek) => {
+  const isCellOpen = (day: DayOfWeek, start: string) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + duration
+    return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+  }
+
+  const isCellReserved = (dateISO: string, time: string) => {
+    const startMinute = timeToMinutes(time)
+    const endMinute = startMinute + duration
+
+    return bookingRequests.some((req) => {
+      if (req.requestedDate !== dateISO) return false
+      if (req.status !== 'confirmed' && req.status !== 'pending') return false
+
+      const reqStart = timeToMinutes(req.requestedStart)
+      const reqEnd = timeToMinutes(req.requestedEnd)
+
+      return Math.max(startMinute, reqStart) < Math.min(endMinute, reqEnd)
+    })
+  }
+
+  const toggleCell = (day: DayOfWeek, start: string) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + duration
+
     setSlots((current) => {
-      const nextOn = !current[day].available
+      const dayRanges = current[day].timeRanges
+      const open = dayRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+      const timeRanges = open
+        ? removeInterval(dayRanges, startMinute, endMinute)
+        : addInterval(dayRanges, startMinute, endMinute)
+
       return {
         ...current,
         [day]: {
-          available: nextOn,
-          timeRanges: nextOn ? current[day].timeRanges.length ? current[day].timeRanges : [{ start: '08:00', end: '12:00' }] : [],
+          available: timeRanges.length > 0,
+          timeRanges,
         },
       }
     })
   }
 
-  const addTimeRange = (day: DayOfWeek) => {
-    setSlots((current) => ({
-      ...current,
-      [day]: {
-        available: true,
-        timeRanges: [...current[day].timeRanges, { start: '13:00', end: '17:00' }],
-      },
-    }))
-  }
-
-  const removeTimeRange = (day: DayOfWeek, index: number) => {
-    setSlots((current) => {
-      const timeRanges = current[day].timeRanges.filter((_, itemIndex) => itemIndex !== index)
-      return {
-        ...current,
-        [day]: { available: timeRanges.length > 0, timeRanges },
-      }
-    })
-  }
-
-  const updateTimeRange = (day: DayOfWeek, index: number, field: keyof TimeRange, value: string) => {
-    setSlots((current) => ({
-      ...current,
-      [day]: {
-        ...current[day],
-        available: true,
-        timeRanges: current[day].timeRanges.map((range, itemIndex) =>
-          itemIndex === index ? { ...range, [field]: value } : range
-        ),
-      },
-    }))
+  const handleApplyFilters = () => {
+    setTimeWindow(tempTimeWindow)
+    setDuration(tempDuration)
   }
 
   const saveWeekOnly = async () => {
@@ -260,7 +372,7 @@ export function TeacherAvailabilityPage() {
             </div>
             <div>
               <h1 className="text-2xl font-black">Quản lý lịch rảnh giáo viên</h1>
-              <p className="mt-1 text-sm text-white/85">Admin chọn giáo viên, chỉnh lịch theo tuần và quyết định lưu riêng tuần này hoặc áp dụng cho tương lai.</p>
+              <p className="mt-1 text-sm text-white/85">Admin chọn giáo viên, cấu hình lịch mở (OPEN) và xem lịch học viên đã đặt (RESERVED) trực quan theo bảng.</p>
             </div>
           </div>
           {selectedTeacher && (
@@ -314,86 +426,153 @@ export function TeacherAvailabilityPage() {
         </aside>
 
         <section className="space-y-5">
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-black text-slate-900">Tuần {formatShortDate(weekStart)} - {formatShortDate(addDays(weekStart, 6))}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Lưu tuần này chỉ ảnh hưởng đúng tuần đang xem. Lưu hiện tại và tương lai sẽ làm mẫu lịch mới cho các tuần sau.</p>
+          {/* Filter Bar exactly matching the reference image */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Dropdown select */}
+              <div className="relative">
+                <select
+                  value={tempTimeWindow}
+                  onChange={(e) => setTempTimeWindow(e.target.value)}
+                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold outline-none focus:border-sky-400 min-w-[140px] appearance-none pr-8 cursor-pointer"
+                >
+                  {TIME_WINDOWS.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">▼</div>
+              </div>
+
+              {/* Radio buttons */}
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="duration"
+                    checked={tempDuration === 25}
+                    onChange={() => setTempDuration(25)}
+                    className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
+                  />
+                  25mins
+                </label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="duration"
+                    checked={tempDuration === 50}
+                    onChange={() => setTempDuration(50)}
+                    className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
+                  />
+                  50mins
+                </label>
+              </div>
+
+              {/* View Button */}
+              <button
+                type="button"
+                onClick={handleApplyFilters}
+                className="h-10 px-6 rounded-lg bg-[#d946ef] hover:bg-[#c084fc] text-white font-bold text-sm transition shadow-sm"
+              >
+                View
+              </button>
             </div>
+
+            {/* Quick week controls */}
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
-                <ChevronLeft className="h-4 w-4" />
+              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
                 Tuần trước
               </Button>
-              <Button variant="outline" onClick={() => setWeekStart(getMonday(new Date()))}>Tuần này</Button>
-              <Button variant="outline" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
+              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+                Tuần này
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
                 Tuần sau
-                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-7">
-            {weekDates.map(({ day, date }) => {
-              const slot = slots[day]
-              const isOn = slot.available
-              return (
-                <div key={day} className={`overflow-hidden rounded-2xl border-2 transition ${isOn ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}>
-                  <button
-                    type="button"
-                    onClick={() => toggleDay(day)}
-                    className={`w-full px-3 py-4 text-center transition ${isOn ? 'bg-emerald-100' : 'bg-slate-50 hover:bg-slate-100'}`}
-                  >
-                    <p className={`text-sm font-black ${isOn ? 'text-emerald-700' : 'text-slate-500'}`}>{DAY_LABELS[day]}</p>
-                    <p className="mt-1 text-xs font-bold text-slate-500">{formatShortDate(date)}</p>
-                    <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${isOn ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-200 text-slate-500'}`}>
-                      {isOn ? 'Rảnh' : 'Bận'}
-                    </span>
-                  </button>
+          {/* Grid schedule table */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
+            <table className="w-full min-w-[700px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  {/* Angle cell for week navigation (previous week) */}
+                  <th className="p-2 text-center border-r border-slate-200 w-24">
+                    <button
+                      type="button"
+                      onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
+                      title="Tuần trước"
+                    >
+                      <ChevronLeft className="h-4 w-4 mx-auto" />
+                    </button>
+                  </th>
+                  {/* Day headers */}
+                  {weekDates.map(({ day, date }) => (
+                    <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 min-w-[90px]">
+                      <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
+                      <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS_EN[day]}</div>
+                    </th>
+                  ))}
+                  {/* Navigation column header (next week) */}
+                  <th className="p-2 text-center w-12">
+                    <button
+                      type="button"
+                      onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
+                      title="Tuần sau"
+                    >
+                      <ChevronRight className="h-4 w-4 mx-auto" />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {visibleStarts.map((start) => (
+                  <tr key={start} className="hover:bg-slate-50/50 transition">
+                    {/* Time column header */}
+                    <td className="p-3 text-center font-bold text-slate-600 border-r border-slate-200 align-middle">
+                      {start}~
+                    </td>
+                    {/* Day cells */}
+                    {weekDates.map(({ day, iso }) => {
+                      const reserved = isCellReserved(iso, start)
+                      const open = isCellOpen(day, start)
 
-                  {isOn && (
-                    <div className="space-y-2 p-2.5">
-                      {slot.timeRanges.map((range, index) => (
-                        <div key={index} className="relative rounded-xl border border-emerald-200 bg-white p-2">
-                          <button
-                            type="button"
-                            onClick={() => removeTimeRange(day, index)}
-                            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-rose-500 transition hover:bg-rose-200"
-                            aria-label="Xóa khung giờ"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                          <div className="space-y-1.5">
-                            <select
-                              value={range.start}
-                              onChange={(event) => updateTimeRange(day, index, 'start', event.target.value)}
-                              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-400"
+                      return (
+                        <td key={day} className="p-2 border-r border-slate-200 align-middle text-center min-h-[50px]">
+                          {reserved ? (
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block py-2 select-none">
+                              RESERVED
+                            </span>
+                          ) : open ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleCell(day, start)}
+                              className="w-full py-2 px-1 rounded-lg bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-extrabold text-[10px] uppercase tracking-wider transition shadow-sm"
                             >
-                              {TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}
-                            </select>
-                            <div className="text-center text-[10px] font-black text-slate-300">↓</div>
-                            <select
-                              value={range.end}
-                              onChange={(event) => updateTimeRange(day, index, 'end', event.target.value)}
-                              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-400"
+                              OPEN
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleCell(day, start)}
+                              className="w-full py-2 text-slate-300 hover:text-[#3BB8EB] font-black text-sm transition flex items-center justify-center"
                             >
-                              {TIME_OPTIONS.map((time) => <option key={time} value={time}>{time}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addTimeRange(day)}
-                        className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-emerald-300 py-2 text-xs font-black text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Thêm khung giờ
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                              ×
+                            </button>
+                          )}
+                        </td>
+                      )
+                    })}
+                    {/* Empty cell to align with next week header */}
+                    <td className="p-2"></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -435,3 +614,4 @@ export function TeacherAvailabilityPage() {
     </div>
   )
 }
+
