@@ -46,9 +46,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const totalMinutes = student.totalMinutes ?? (student.totalSessions * mps)
           const prevUsedMinutes = student.usedMinutes ?? ((student.usedSessions || 0) * mps)
           const prevRemainingMinutes = student.remainingMinutes ?? (totalMinutes - prevUsedMinutes)
+          const prevHeldMinutes = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0
 
           const newUsedMinutes = prevUsedMinutes + lesson.minutes
           const newRemainingMinutes = totalMinutes - newUsedMinutes
+          const newHeldMinutes = Math.max(0, prevHeldMinutes - lesson.minutes)
           const newRemainingSessions = Math.floor(newRemainingMinutes / mps)
           const newUsedSessionsRaw = newUsedMinutes / mps
           const newUsedSessions =
@@ -78,6 +80,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             minutesPerSession: mps,
             usedSessions: newUsedSessions,
             remainingSessions: newRemainingSessions,
+            reservedMinutes: newHeldMinutes,
+            heldMinutes: newHeldMinutes,
             status: newRemainingMinutes <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
           })
@@ -130,6 +134,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               minutesDeducted: lesson.minutes,
               minutesBefore: prevRemainingMinutes,
               minutesAfter: newRemainingMinutes,
+              heldMinutesBefore: prevHeldMinutes,
+              heldMinutesAfter: newHeldMinutes,
             },
             createdAt: serverTimestamp(),
           })

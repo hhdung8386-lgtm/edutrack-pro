@@ -122,6 +122,35 @@ export interface Payroll {
   createdAt: Timestamp
 }
 
+export interface BookingRequest {
+  id: string
+  status: 'pending' | 'confirmed' | 'rejected' | 'released'
+  teacherId: string
+  teacherCode: string
+  teacherName: string
+  teacherPhotoURL?: string
+  studentId: string
+  studentCode: string
+  studentName: string
+  subjectId?: string
+  subjectName?: string
+  requestedDay: DayOfWeek
+  requestedStart: string
+  requestedEnd: string
+  requestedMinutes: 25 | 50 | 75 | 100
+  availableMinutesAtRequest?: number
+  heldMinutesAtRequest?: number
+  note?: string
+  adminNote?: string
+  createdAt: Timestamp
+  confirmedAt?: Timestamp
+  confirmedBy?: string
+  rejectedAt?: Timestamp
+  rejectedBy?: string
+  releasedAt?: Timestamp
+  releasedBy?: string
+}
+
 export interface AdminLog {
   id: string
   adminId: string

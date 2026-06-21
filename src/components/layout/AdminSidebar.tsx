@@ -2,18 +2,20 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
-  LogOut, ChevronRight, FileText
+  LogOut, FileText, CalendarClock
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
+import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 import { Logo } from '@/components/shared/Logo'
 
 const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/admin/students', icon: Users, label: 'Học viên' },
   { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
+  { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
   { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
@@ -26,6 +28,7 @@ export function AdminSidebar() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const pendingCount = usePendingCount()
+  const pendingBookingCount = usePendingBookingCount()
 
   const handleSignOut = async () => {
     await signOut()
@@ -64,6 +67,11 @@ export function AdminSidebar() {
                 {item.hasBadge && pendingCount > 0 && (
                   <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                     {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+                {item.bookingBadge && pendingBookingCount > 0 && (
+                  <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                    {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
                   </span>
                 )}
               </>

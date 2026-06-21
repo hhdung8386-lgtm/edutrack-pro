@@ -1,23 +1,25 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, BarChart2, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
+import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 
 const mobileNavItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/admin/students', icon: Users, label: 'Học viên' },
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
-  { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
+  { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu', bookingBadge: true },
 ]
 
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
   '/admin/students': 'Học viên',
   '/admin/teachers': 'Giáo viên',
+  '/admin/bookings': 'Yêu cầu giáo viên',
   '/admin/subjects': 'Môn học',
   '/admin/approvals': 'Duyệt buổi dạy',
   '/admin/reports': 'Báo cáo',
@@ -31,6 +33,7 @@ export function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
+  const pendingBookingCount = usePendingBookingCount()
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
 
   const handleSignOut = async () => {
@@ -77,6 +80,7 @@ export function AdminLayout() {
             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
               {[
                 { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
+                { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
                 { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
                 { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
                 { to: '/admin/contracts', icon: ClipboardCheck, label: 'Hợp đồng' },
@@ -93,6 +97,11 @@ export function AdminLayout() {
                 >
                   <item.icon className="w-5 h-5" />
                   {item.label}
+                  {item.bookingBadge && pendingBookingCount > 0 && (
+                    <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </nav>
@@ -135,6 +144,11 @@ export function AdminLayout() {
                     {item.hasBadge && pendingCount > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                         {pendingCount > 9 ? '9+' : pendingCount}
+                      </span>
+                    )}
+                    {item.bookingBadge && pendingBookingCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {pendingBookingCount > 9 ? '9+' : pendingBookingCount}
                       </span>
                     )}
                   </div>

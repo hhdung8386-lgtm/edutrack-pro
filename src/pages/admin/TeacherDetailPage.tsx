@@ -355,9 +355,11 @@ export function TeacherDetailPage() {
           const totalMinutes = Number(student.totalMinutes ?? totalSessionsNum * mps) || 0
           const prevUsedMinutes = Number(student.usedMinutes ?? usedSessionsNum * mps) || 0
           const prevRemainingMinutes = Number(student.remainingMinutes ?? (totalMinutes - prevUsedMinutes)) || 0
+          const prevHeldMinutes = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0
 
           const newUsedMinutes = prevUsedMinutes + lessonMinutes
           const newRemainingMinutes = totalMinutes - newUsedMinutes
+          const newHeldMinutes = Math.max(0, prevHeldMinutes - lessonMinutes)
           const newRemainingSessions = Math.floor(newRemainingMinutes / mps)
           const newUsedSessionsRaw = newUsedMinutes / mps
           const newUsedSessions =
@@ -388,6 +390,8 @@ export function TeacherDetailPage() {
             minutesPerSession: mps,
             usedSessions: newUsedSessions,
             remainingSessions: newRemainingSessions,
+            reservedMinutes: newHeldMinutes,
+            heldMinutes: newHeldMinutes,
             status: newRemainingMinutes <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
           })
@@ -440,6 +444,8 @@ export function TeacherDetailPage() {
               minutesDeducted: lessonMinutes,
               minutesBefore: prevRemainingMinutes,
               minutesAfter: newRemainingMinutes,
+              heldMinutesBefore: prevHeldMinutes,
+              heldMinutesAfter: newHeldMinutes,
             },
             createdAt: serverTimestamp(),
           })
