@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore'
+import { collection, query, orderBy, getDocs, doc, updateDoc, getDoc, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -15,12 +15,13 @@ export function ContractsPage() {
   const [search, setSearch] = useState('')
   const [teacherNames, setTeacherNames] = useState<Record<string, string>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [limitVal, setLimitVal] = useState(15)
 
   useEffect(() => {
     let active = true
     const fetchContracts = async () => {
       try {
-        const q = query(collection(db, 'contracts'), orderBy('createdAt', 'desc'))
+        const q = query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(limitVal))
         const snap = await getDocs(q)
         if (!active) return
         const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -56,7 +57,7 @@ export function ContractsPage() {
     }
     fetchContracts()
     return () => { active = false }
-  }, [])
+  }, [limitVal])
 
   const getTeacherName = (c: any) => {
     return c.teacherName || teacherNames[c.teacherId] || 'Đang tải...'
@@ -257,6 +258,14 @@ export function ContractsPage() {
           </div>
         )}
       </Card>
+
+      {contracts.length >= limitVal && (
+        <div className="flex justify-center mt-6">
+          <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 15)}>
+            Xem thêm
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

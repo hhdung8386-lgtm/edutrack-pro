@@ -137,7 +137,8 @@ export function ApprovalsPage() {
             tx.get(doc(db, 'subjects', student.subjectId)),
           ])
 
-          const teacherLevel = (approvingLesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+          const teacherData = teacherSnap.data()
+          const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
           const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
           const subjectId = student.subjectId
           const subjectName = student.subjectName || subjectSnap.data()?.name || ''

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, onSnapshot, orderBy, where, deleteDoc, doc, updateDoc } from 'firebase/firestore'
+import { collection, query, onSnapshot, orderBy, where, deleteDoc, doc, updateDoc, getDocs, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -108,28 +108,45 @@ export function TeachersPage() {
   const [deleting, setDeleting] = useState(false)
   // Map teacherId -> total approved minutes
   const [minutesMap, setMinutesMap] = useState<Record<string, number>>({})
+  const [limitVal, setLimitVal] = useState(20)
 
   useEffect(() => {
-    const q = query(collection(db, 'teachers'), orderBy('createdAt', 'desc'))
-    return onSnapshot(q, (snap) => {
-      setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
-      setLoading(false)
-    })
-  }, [])
+    const q = query(collection(db, 'teachers'), orderBy('createdAt', 'desc'), limit(limitVal))
+    return onSnapshot(
+      q,
+      (snap) => {
+        setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error loading teachers:', err)
+        toast.error('Không có quyền truy cập danh sách giáo viên hoặc lỗi kết nối')
+        setLoading(false)
+      }
+    )
+  }, [limitVal])
 
-  // Subscribe to all approved lessons to compute per-teacher total minutes
+  // Fetch approved lessons to compute per-teacher total minutes once on mount
   useEffect(() => {
-    const q = query(collection(db, 'lessons'), where('status', '==', 'approved'))
-    return onSnapshot(q, (snap) => {
-      const map: Record<string, number> = {}
-      snap.docs.forEach((d) => {
-        const data = d.data()
-        const tid: string = data.teacherId
-        const mins: number = Number(data.minutes) || 0
-        if (tid) map[tid] = (map[tid] || 0) + mins
+    let active = true
+    getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved')))
+      .then((snap) => {
+        if (!active) return
+        const map: Record<string, number> = {}
+        snap.docs.forEach((d) => {
+          const data = d.data()
+          const tid: string = data.teacherId
+          const mins: number = Number(data.minutes) || 0
+          if (tid) map[tid] = (map[tid] || 0) + mins
+        })
+        setMinutesMap(map)
       })
-      setMinutesMap(map)
-    })
+      .catch((err: any) => {
+        console.error('Error loading approved lessons minutes:', err)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   const filtered = teachers.filter((t) => {
@@ -322,6 +339,14 @@ export function TeachersPage() {
               </Card>
             ))}
           </div>
+
+          {teachers.length >= limitVal && (
+            <div className="flex justify-center mt-6">
+              <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 20)}>
+                Xem thêm
+              </Button>
+            </div>
+          )}
         </>
       )}
 

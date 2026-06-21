@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, getDocs, deleteDoc, doc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, getDocs, deleteDoc, doc, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +11,7 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { toast } from '@/stores/toastStore'
 import { Users, Plus, Search, Eye, UserX, MoreVertical, Building2, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -29,17 +30,33 @@ export function StudentsPage() {
   const [addSessions, setAddSessions] = useState<Student | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
+  const [limitVal, setLimitVal] = useState(20)
 
   useEffect(() => {
-    const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(q, (snap) => {
-      setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Student)))
-      setLoading(false)
-    })
-    getDocs(query(collection(db, 'branches'), where('status', '==', 'active'))).then((snap) => {
-      setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() } as Branch)))
-    })
+    const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(limitVal))
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Student)))
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error loading students:', err)
+        toast.error('Không có quyền truy cập danh sách học viên hoặc lỗi kết nối')
+        setLoading(false)
+      }
+    )
     return unsub
+  }, [limitVal])
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
+      .then((snap) => {
+        setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() } as Branch)))
+      })
+      .catch((err) => {
+        console.error('Error loading branches:', err)
+      })
   }, [])
 
   const filtered = students.filter((s) => {
@@ -283,6 +300,14 @@ export function StudentsPage() {
               </Card>
             ))}
           </div>
+
+          {students.length >= limitVal && (
+            <div className="flex justify-center mt-6">
+              <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 20)}>
+                Xem thêm
+              </Button>
+            </div>
+          )}
         </>
       )}
 

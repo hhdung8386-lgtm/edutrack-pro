@@ -27,12 +27,39 @@ export interface Teacher {
   name: string
   subjectIds: string[]
   subjectNames?: string[]
+  subjectRates?: Record<string, number>
   level: number
   bio: string
   photoURL: string
   status: 'active' | 'inactive'
   teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
+  // Interview fields
+  yob?: number
+  livingArea?: string
+  degreeType?: string
+  university?: string
+  major?: string
+  gradYear?: string
+  gpa?: string
+  academicAwards?: string
+  scholarship?: string
+  ielts?: string
+  toeic?: string
+  toefl?: string
+  cefr?: string[]
+  tesolTefl?: string
+  pedagogicalCert?: string
+  otherCerts?: string
+  teachingYears?: number
+  studentsTaughtCount?: number
+  studentAgesTaught?: string
+  teachingFormats?: string[]
+  studentResults?: string
+  strengths?: string[]
+  otherStrengths?: string
+  languagesTaught?: string[]
+  academicSubjectsTaught?: string[]
   createdAt: Timestamp
 }
 

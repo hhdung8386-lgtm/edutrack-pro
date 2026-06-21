@@ -44,10 +44,26 @@ export function PayrollPage() {
     getDocs(collection(db, 'teachers')).then((snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
     })
-    getDocs(collection(db, 'lessons')).then((snap) => {
-      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
-    })
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const start = month + '-01'
+    const end = month + '-31'
+    getDocs(query(
+      collection(db, 'lessons'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    )).then((snap) => {
+      if (!active) return
+      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+    }).catch((err) => {
+      console.error("Error loading lessons for month:", err)
+    })
+    return () => {
+      active = false
+    }
+  }, [month])
 
   const [year, mon] = month.split('-')
   const monthLabel = `Tháng ${parseInt(mon)} / ${year}`

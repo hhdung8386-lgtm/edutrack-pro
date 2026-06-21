@@ -85,7 +85,8 @@ service cloud.firestore {
 
     // Teacher Availability collection
     match /teacherAvailability/{teacherId} {
-      allow read, write: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
+      allow read: if true;
+      allow write: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
     }
 
     // Contracts collection

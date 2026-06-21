@@ -50,17 +50,22 @@ export function DashboardPage() {
   const [chartData, setChartData] = useState<{ month: string; count: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [approvingLesson, setApprovingLesson] = useState<Lesson | null>(null)
+  const [todayLimit, setTodayLimit] = useState(5)
 
   useEffect(() => {
     const unsubs: (() => void)[] = []
 
     unsubs.push(
       onSnapshot(
-        query(collection(db, 'lessons'), where('date', '==', today)),
+        query(collection(db, 'lessons'), where('date', '==', today), limit(todayLimit)),
         (snap) => {
           const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
           docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
           setTodayLessons(docs)
+          setLoading(false)
+        },
+        (err) => {
+          console.error("Error loading today's lessons:", err)
           setLoading(false)
         }
       )
@@ -73,10 +78,17 @@ export function DashboardPage() {
           const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
           docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
           setPendingLessons(docs.slice(0, 5))
+        },
+        (err) => {
+          console.error("Error loading pending lessons:", err)
         }
       )
     )
 
+    return () => unsubs.forEach((u) => u())
+  }, [today, todayLimit])
+
+  useEffect(() => {
     // One-shot count queries instead of full-document subscriptions (1 read each)
     getCountFromServer(query(collection(db, 'students'), where('status', '==', 'active')))
       .then((snap) => setStudentCount(snap.data().count))
@@ -86,43 +98,42 @@ export function DashboardPage() {
       .then((snap) => setTeacherCount(snap.data().count))
       .catch((err) => console.error('[dashboard-teacher-count]', err))
 
-    // Chart data: last 6 months. Use a single equality query (no composite
-    // index needed) and bucket by month client-side. Catches errors so a
-    // single failed query doesn't surface as an unhandled promise rejection.
     const months = Array.from({ length: 6 }, (_, i) => {
       const d = subMonths(new Date(), 5 - i)
       return format(d, 'yyyy-MM')
     })
 
-    // Only fetch lessons within the 6-month window (single-field where, no composite index).
-    // Filter status client-side to keep this index-free.
-    const sixMonthsAgo = months[0] + '-01'
-    getDocs(query(collection(db, 'lessons'), where('date', '>=', sixMonthsAgo)))
-      .then((snap) => {
-        const counts = new Map<string, number>(months.map((m) => [m, 0]))
-        snap.docs.forEach((d) => {
-          const data = d.data() as { date?: string; status?: string }
-          if (data.status !== 'approved') return
-          const month = (data.date || '').slice(0, 7) // YYYY-MM
-          if (counts.has(month)) counts.set(month, (counts.get(month) || 0) + 1)
-        })
-        setChartData(
-          months.map((month) => ({
-            month: month.slice(5) + '/' + month.slice(2, 4),
-            count: counts.get(month) || 0,
-          })),
-        )
+    Promise.all(
+      months.map(async (m) => {
+        try {
+          const snap = await getCountFromServer(
+            query(
+              collection(db, 'lessons'),
+              where('status', '==', 'approved'),
+              where('date', '>=', m + '-01'),
+              where('date', '<=', m + '-31')
+            )
+          )
+          return {
+            month: m.slice(5) + '/' + m.slice(2, 4),
+            count: snap.data().count
+          }
+        } catch (err) {
+          console.error(`[dashboard-chart-month] Error for ${m}:`, err)
+          return {
+            month: m.slice(5) + '/' + m.slice(2, 4),
+            count: 0
+          }
+        }
+      })
+    )
+      .then((data) => {
+        setChartData(data)
       })
       .catch((err) => {
         console.error('[dashboard-chart]', err)
-        setChartData(months.map((month) => ({
-          month: month.slice(5) + '/' + month.slice(2, 4),
-          count: 0,
-        })))
       })
-
-    return () => unsubs.forEach((u) => u())
-  }, [today])
+  }, [])
 
   const pendingCount = pendingLessons.length
 
@@ -212,6 +223,13 @@ export function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+              {todayLessons.length >= todayLimit && (
+                <div className="flex justify-center p-3 border-t border-slate-200/50">
+                  <Button variant="ghost" size="sm" onClick={() => setTodayLimit(prev => prev + 5)}>
+                    Xem thêm
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </Card>

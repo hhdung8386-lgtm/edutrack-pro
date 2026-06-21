@@ -115,26 +115,35 @@ export function StudentFormModal({ student, onClose }: Props) {
         // If the subject has changed, automatically sync all lessons and unpaid payrolls in parallel!
         if (isSubjectChanged && subject) {
           const lessonsQ = query(collection(db, 'lessons'), where('studentId', '==', student.id))
-          const lessonsSnap = await getDocs(lessonsQ)
+          const [lessonsSnap, teachersSnap] = await Promise.all([
+            getDocs(lessonsQ),
+            getDocs(collection(db, 'teachers')),
+          ])
           
+          const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
           const lessonUpdates: Promise<any>[] = [];
           const payrollQueries: Promise<any>[] = [];
           const lessonNewSalaries: Record<string, number> = {};
+          const lessonRates: Record<string, number> = {};
 
           lessonsSnap.docs.forEach(lessonDoc => {
             const lessonId = lessonDoc.id
             const lesson = lessonDoc.data()
+            const lessonRate = newRate
+
             const minutes = Number(lesson.minutes) || 0
             const teacherLevel = Number(lesson.teacherLevel) || 1
-            const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0
+            const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, lessonRate, teacherLevel) : 0
 
             lessonNewSalaries[lessonId] = newSalary
+            lessonRates[lessonId] = lessonRate
 
             lessonUpdates.push(
               updateDoc(doc(db, 'lessons', lessonId), {
                 subjectId: data.subjectId,
                 subjectName: subject.name,
-                pricePerMinute: newRate,
+                pricePerMinute: lessonRate,
                 salary: newSalary,
                 updatedAt: serverTimestamp(),
               })
@@ -164,6 +173,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           payrollSnaps.forEach((payrollSnap, index) => {
             const lessonId = lessonsSnap.docs[index].id
             const newSalary = lessonNewSalaries[lessonId]
+            const lessonRate = lessonRates[lessonId]
 
             payrollSnap.docs.forEach((pDoc: any) => {
               const payroll = pDoc.data()
@@ -171,7 +181,7 @@ export function StudentFormModal({ student, onClose }: Props) {
                 payrollUpdates.push(
                   updateDoc(doc(db, 'payroll', pDoc.id), {
                     amount: newSalary,
-                    pricePerMinute: newRate,
+                    pricePerMinute: lessonRate,
                     recalculatedAt: serverTimestamp(),
                   })
                 )

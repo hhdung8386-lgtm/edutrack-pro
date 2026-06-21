@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { Upload, X } from 'lucide-react'
+import { parseVietnameseNumber, formatVietnameseNumberInput } from '@/pages/admin/SubjectsPage'
 
 const schema = z.object({
   name: z.string().optional().default(''),
@@ -36,6 +37,39 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
 
+
+
+  // Interview profile states
+  const [yob, setYob] = useState<string>(teacher?.yob ? String(teacher.yob) : '')
+  const [livingArea, setLivingArea] = useState(teacher?.livingArea || '')
+  const [degreeType, setDegreeType] = useState(teacher?.degreeType || 'Đại học')
+  const [university, setUniversity] = useState(teacher?.university || '')
+  const [major, setMajor] = useState(teacher?.major || '')
+  const [gradYear, setGradYear] = useState(teacher?.gradYear || '')
+  const [gpa, setGpa] = useState(teacher?.gpa || '')
+  const [academicAwards, setAcademicAwards] = useState(teacher?.academicAwards || '')
+  const [scholarship, setScholarship] = useState(teacher?.scholarship || '')
+
+  const [ielts, setIelts] = useState(teacher?.ielts || '')
+  const [toeic, setToeic] = useState(teacher?.toeic || '')
+  const [toefl, setToefl] = useState(teacher?.toefl || '')
+  const [cefr, setCefr] = useState<string[]>(teacher?.cefr || [])
+  const [tesolTefl, setTesolTefl] = useState(teacher?.tesolTefl || '')
+  const [pedagogicalCert, setPedagogicalCert] = useState(teacher?.pedagogicalCert || '')
+  const [otherCerts, setOtherCerts] = useState(teacher?.otherCerts || '')
+
+  const [teachingYears, setTeachingYears] = useState<string>(teacher?.teachingYears ? String(teacher.teachingYears) : '')
+  const [studentsTaughtCount, setStudentsTaughtCount] = useState<string>(teacher?.studentsTaughtCount ? String(teacher.studentsTaughtCount) : '')
+  const [studentAgesTaught, setStudentAgesTaught] = useState(teacher?.studentAgesTaught || '')
+  const [teachingFormats, setTeachingFormats] = useState<string[]>(teacher?.teachingFormats || [])
+  const [studentResults, setStudentResults] = useState(teacher?.studentResults || '')
+  const [strengths, setStrengths] = useState<string[]>(teacher?.strengths || [])
+  const [otherStrengths, setOtherStrengths] = useState(teacher?.otherStrengths || '')
+
+  const [languagesTaught, setLanguagesTaught] = useState<string[]>(teacher?.languagesTaught || [])
+  const [academicSubjectsTaught, setAcademicSubjectsTaught] = useState<string[]>(teacher?.academicSubjectsTaught || [])
+  const [generatedCode, setGeneratedCode] = useState('')
+
   const isEdit = !!teacher
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
@@ -53,6 +87,22 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     })
   }, [])
+
+  useEffect(() => {
+    if (!isEdit && !generatedCode) {
+      generateUniqueCode('teacher')
+        .then((code) => {
+          setGeneratedCode(code)
+          setNewUsername(code)
+        })
+        .catch((err) => {
+          console.error(err)
+          toast.error('Không thể sinh mã tài khoản giáo viên')
+        })
+    }
+  }, [isEdit, generatedCode])
+
+
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -135,9 +185,35 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     try {
       const finalName = data.name?.trim() || ''
 
-
-
       const subjectNames = selectedSubjects.map((id) => subjects.find((s) => s.id === id)?.name || '')
+
+      const interviewData = {
+        yob: yob ? Number(yob) : null,
+        livingArea: livingArea || '',
+        degreeType: degreeType || '',
+        university: university || '',
+        major: major || '',
+        gradYear: gradYear || '',
+        gpa: gpa || '',
+        academicAwards: academicAwards || '',
+        scholarship: scholarship || '',
+        ielts: ielts || '',
+        toeic: toeic || '',
+        toefl: toefl || '',
+        cefr: cefr || [],
+        tesolTefl: tesolTefl || '',
+        pedagogicalCert: pedagogicalCert || '',
+        otherCerts: otherCerts || '',
+        teachingYears: teachingYears ? Number(teachingYears) : null,
+        studentsTaughtCount: studentsTaughtCount ? Number(studentsTaughtCount) : null,
+        studentAgesTaught: studentAgesTaught || '',
+        teachingFormats: teachingFormats || [],
+        studentResults: studentResults || '',
+        strengths: strengths || [],
+        otherStrengths: otherStrengths || '',
+        languagesTaught: languagesTaught || [],
+        academicSubjectsTaught: academicSubjectsTaught || [],
+      }
 
       if (isEdit && teacher) {
         let photoURL = teacher.photoURL
@@ -149,6 +225,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           bio: data.bio || '',
           subjectIds: selectedSubjects,
           subjectNames,
+          ...interviewData,
           photoURL,
           updatedAt: serverTimestamp(),
         })
@@ -160,12 +237,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           return
         }
 
-        let code: string
-        try {
-          code = await generateUniqueCode('teacher')
-        } catch (err: any) {
-          toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
-          return
+        let code = generatedCode || newUsername
+        if (!code) {
+          try {
+            code = await generateUniqueCode('teacher')
+          } catch (err: any) {
+            toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
+            return
+          }
         }
 
         const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
@@ -204,6 +283,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           bio: data.bio || '',
           subjectIds: selectedSubjects,
           subjectNames,
+          ...interviewData,
           photoURL,
           status: 'active',
           createdAt: serverTimestamp(),
@@ -234,6 +314,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     <Modal
       open
       onClose={onClose}
+      size="xl"
       title={isEdit ? 'Chỉnh sửa giáo viên' : 'Thêm giáo viên mới'}
       footer={
         <div className="flex gap-3 justify-end">
@@ -407,6 +488,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           </div>
         </div>
 
+
+
         <div>
           <Input
             id="field-level"
@@ -435,12 +518,13 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               selectedSubjects.map(id => {
                 const s = subjects.find(sub => sub.id === id)
                 if (!s) return null
+                const rateVal = s.pricePerMinute
                 const levelInput = document.querySelector<HTMLInputElement>('input[name="level"]')
                 const currentLevel = parseFloat(levelInput?.value || '1')
-                const estSalary = 50 * s.pricePerMinute * (currentLevel || 0)
+                const estSalary = 50 * rateVal * (currentLevel || 0)
                 return (
                   <div key={id} className="flex justify-between items-center">
-                    <span>{s.name} ({s.pricePerMinute.toLocaleString('vi-VN')}đ/p):</span>
+                    <span>{s.name} ({formatVietnameseNumberInput(rateVal)}đ/p):</span>
                     <span className="font-medium text-indigo-600">
                       {estSalary.toLocaleString('vi-VN')}đ
                     </span>
@@ -457,6 +541,409 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           rows={3}
           {...register('bio')}
         />
+
+        {/* Interview Profile Fields */}
+        <div className="border-t border-slate-200 pt-4 space-y-4">
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Hồ sơ phỏng vấn gia sư</h3>
+          
+          {/* Section 1: Thông tin cá nhân & Học vấn */}
+          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-3">
+            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">1. Thông tin cá nhân & Học vấn</h4>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Năm sinh</label>
+                <input
+                  type="number"
+                  placeholder="Ví dụ: 1998"
+                  value={yob}
+                  onChange={e => setYob(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Khu vực sinh sống</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Cầu Giấy, Hà Nội"
+                  value={livingArea}
+                  onChange={e => setLivingArea(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Học vị / Trình độ</label>
+                <select
+                  value={degreeType}
+                  onChange={e => setDegreeType(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="Đại học">Đại học</option>
+                  <option value="Cao đẳng">Cao đẳng</option>
+                  <option value="Thạc sĩ">Thạc sĩ</option>
+                  <option value="Tiến sĩ">Tiến sĩ</option>
+                  <option value="Khác">Khác</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Trường ĐH/CĐ</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Đại học Ngoại thương"
+                  value={university}
+                  onChange={e => setUniversity(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Chuyên ngành</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Tiếng Anh thương mại"
+                  value={major}
+                  onChange={e => setMajor(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Năm tốt nghiệp / Năm học</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 2022 hoặc Sinh viên năm 3"
+                  value={gradYear}
+                  onChange={e => setGradYear(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">GPA</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 3.6/4.0 hoặc 8.5/10"
+                  value={gpa}
+                  onChange={e => setGpa(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Học bổng</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Học bổng khuyến học kỳ II"
+                  value={scholarship}
+                  onChange={e => setScholarship(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học tập nổi bật</label>
+              <textarea
+                placeholder="Nhập thành tích học tập nổi bật..."
+                rows={2}
+                value={academicAwards}
+                onChange={e => setAcademicAwards(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Section 2: Chứng chỉ */}
+          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-3">
+            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">2. Chứng chỉ</h4>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">IELTS</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 7.5"
+                  value={ielts}
+                  onChange={e => setIelts(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">TOEIC</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 850"
+                  value={toeic}
+                  onChange={e => setToeic(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">TOEFL</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 100"
+                  value={toefl}
+                  onChange={e => setToefl(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">TESOL / TEFL</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 120 hours"
+                  value={tesolTefl}
+                  onChange={e => setTesolTefl(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Chứng chỉ sư phạm</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: Nghiệp vụ sư phạm..."
+                  value={pedagogicalCert}
+                  onChange={e => setPedagogicalCert(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2">Khung tham chiếu CEFR</label>
+              <div className="flex gap-4 flex-wrap">
+                {['B1', 'B2', 'C1', 'C2'].map(lvl => (
+                  <label key={lvl} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cefr.includes(lvl)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setCefr(prev => [...prev, lvl])
+                        } else {
+                          setCefr(prev => prev.filter(x => x !== lvl))
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    {lvl}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Chứng chỉ khác</label>
+              <textarea
+                placeholder="Nhập các chứng chỉ khác nếu có..."
+                rows={2}
+                value={otherCerts}
+                onChange={e => setOtherCerts(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Section 2.5: Lĩnh vực & Môn học giảng dạy */}
+          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-4">
+            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Lĩnh vực & Môn học giảng dạy</h4>
+            
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2">Ngoại ngữ có thể giảng dạy</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  'Tiếng Anh Giao Tiếp',
+                  'Tiếng Anh Trẻ Em',
+                  'Tiếng Anh Thiếu Niên',
+                  'Tiếng Anh Người Đi Làm',
+                  'Cambridge Starters/Movers/Flyers/KET/PET',
+                  'IELTS',
+                  'TOEIC',
+                  'TOEFL',
+                  'Tiếng Trung (HSK)',
+                  'Tiếng Nhật (JLPT)',
+                  'Tiếng Hàn (TOPIK)'
+                ].map(lang => (
+                  <label key={lang} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={languagesTaught.includes(lang)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setLanguagesTaught(prev => [...prev, lang])
+                        } else {
+                          setLanguagesTaught(prev => prev.filter(x => x !== lang))
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    {lang}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2">Gia sư Văn Hóa & Học Thuật</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  'Toán Học',
+                  'Vật Lý',
+                  'Hóa Học',
+                  'Sinh Học',
+                  'Ngữ Văn',
+                  'Lịch Sử',
+                  'Địa Lý',
+                  'Tin Học',
+                  'Khoa Học Tự Nhiên',
+                  'Tiếng Việt',
+                  'Luyện Thi Chuyển Cấp',
+                  'Luyện Thi THPT Quốc Gia',
+                  'Chương Trình Quốc Tế SAT/ACT'
+                ].map(subj => (
+                  <label key={subj} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={academicSubjectsTaught.includes(subj)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setAcademicSubjectsTaught(prev => [...prev, subj])
+                        } else {
+                          setAcademicSubjectsTaught(prev => prev.filter(x => x !== subj))
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    {subj}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Kinh nghiệm & Ưu điểm */}
+          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-3">
+            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">3. Kinh nghiệm & Ưu điểm</h4>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Số năm kinh nghiệm</label>
+                <input
+                  type="number"
+                  placeholder="Ví dụ: 3"
+                  value={teachingYears}
+                  onChange={e => setTeachingYears(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Số học viên đã dạy</label>
+                <input
+                  type="number"
+                  placeholder="Ví dụ: 15"
+                  value={studentsTaughtCount}
+                  onChange={e => setStudentsTaughtCount(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Độ tuổi HS từng dạy</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: 6-12 tuổi"
+                  value={studentAgesTaught}
+                  onChange={e => setStudentAgesTaught(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2">Hình thức dạy chính</label>
+              <div className="flex gap-4">
+                {['online', 'offline'].map(format => (
+                  <label key={format} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer capitalize">
+                    <input
+                      type="checkbox"
+                      checked={teachingFormats.includes(format)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setTeachingFormats(prev => [...prev, format])
+                        } else {
+                          setTeachingFormats(prev => prev.filter(x => x !== format))
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    {format === 'online' ? 'Online' : 'Offline'}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học viên đạt được</label>
+              <textarea
+                placeholder="Ví dụ: Học viên đỗ chuyên Anh, tăng band điểm IELTS..."
+                rows={2}
+                value={studentResults}
+                onChange={e => setStudentResults(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-2">Ưu điểm nổi bật</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  { key: 'pronunciation', label: 'Phát âm chuẩn' },
+                  { key: 'patience', label: 'Kiên nhẫn' },
+                  { key: 'lesson_plans', label: 'Có giáo án riêng' },
+                  { key: 'close_followup', label: 'Theo sát học viên' },
+                  { key: 'progress_reports', label: 'Báo cáo tiến độ định kỳ' },
+                  { key: 'tools_proficiency', label: 'Sử dụng Zoom/Meet thành thạo' }
+                ].map(item => (
+                  <label key={item.key} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={strengths.includes(item.key)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setStrengths(prev => [...prev, item.key])
+                        } else {
+                          setStrengths(prev => prev.filter(x => x !== item.key))
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Ưu điểm khác</label>
+              <textarea
+                placeholder="Nhập ưu điểm khác nếu có..."
+                rows={2}
+                value={otherStrengths}
+                onChange={e => setOtherStrengths(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        </div>
       </form>
     </Modal>
   )

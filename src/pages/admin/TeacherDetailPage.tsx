@@ -179,27 +179,35 @@ export function TeacherDetailPage() {
 
       // 2. Query and propagate correct subject details and rate to all lessons in parallel
       const lessonsQ = query(collection(db, 'lessons'), where('studentId', '==', studentId))
-      const lessonsSnap = await getDocs(lessonsQ)
+      const [lessonsSnap, teachersSnap] = await Promise.all([
+        getDocs(lessonsQ),
+        getDocs(collection(db, 'teachers')),
+      ])
+      const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       const newRate = newSubject.pricePerMinute || 0
 
       const lessonUpdates: Promise<any>[] = [];
       const payrollQueries: Promise<any>[] = [];
       const lessonNewSalaries: Record<string, number> = {};
+      const lessonRates: Record<string, number> = {};
 
       lessonsSnap.docs.forEach(lessonDoc => {
         const lessonId = lessonDoc.id
         const lesson = lessonDoc.data()
+        const lessonRate = newRate
+
         const minutes = Number(lesson.minutes) || 0
         const teacherLevel = Number(lesson.teacherLevel) || 1
-        const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0
+        const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, lessonRate, teacherLevel) : 0
 
         lessonNewSalaries[lessonId] = newSalary
+        lessonRates[lessonId] = lessonRate
 
         lessonUpdates.push(
           updateDoc(doc(db, 'lessons', lessonId), {
             subjectId: selectedSubjectId,
             subjectName: newSubject.name,
-            pricePerMinute: newRate,
+            pricePerMinute: lessonRate,
             salary: newSalary,
             updatedAt: serverTimestamp(),
           })
@@ -229,6 +237,7 @@ export function TeacherDetailPage() {
       payrollSnaps.forEach((payrollSnap, index) => {
         const lessonId = lessonsSnap.docs[index].id
         const newSalary = lessonNewSalaries[lessonId]
+        const lessonRate = lessonRates[lessonId]
 
         payrollSnap.docs.forEach((pDoc: any) => {
           const payroll = pDoc.data()
@@ -236,7 +245,7 @@ export function TeacherDetailPage() {
             payrollUpdates.push(
               updateDoc(doc(db, 'payroll', pDoc.id), {
                 amount: newSalary,
-                pricePerMinute: newRate,
+                pricePerMinute: lessonRate,
                 recalculatedAt: serverTimestamp(),
               })
             )
@@ -328,7 +337,8 @@ export function TeacherDetailPage() {
             tx.get(doc(db, 'subjects', student.subjectId)),
           ])
 
-          const teacherLevel = (lesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+          const teacherData = teacherSnap.data()
+          const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
           const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
           const subjectId = student.subjectId
           const subjectName = student.subjectName || subjectSnap.data()?.name || ''
@@ -747,7 +757,9 @@ export function TeacherDetailPage() {
                 </div>
                 <div>
                   <span className="text-slate-500">Môn dạy: </span>
-                  <span className="text-slate-800">{(teacher.subjectNames || []).join(', ') || '—'}</span>
+                  <span className="text-slate-800">
+                    {(teacher.subjectNames || []).join(', ') || '—'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500">Level: </span>
@@ -765,6 +777,224 @@ export function TeacherDetailPage() {
           <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
         </div>
       </Card>
+
+      {/* Interview Profile Card */}
+      {teacher && (teacher.yob || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (
+        <Card>
+          <div className="border-b border-slate-100 pb-4 mb-4">
+            <h3 className="text-base font-semibold text-slate-900">Hồ sơ năng lực & Thông tin phỏng vấn</h3>
+          </div>
+          <div className="space-y-6">
+            {/* Grid 1: Thông tin cá nhân & Học văn */}
+            <div>
+              <h4 className="text-sm font-semibold text-indigo-600 mb-3 uppercase tracking-wider">1. Thông tin cá nhân & Trình độ học vấn</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                {teacher.yob && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Năm sinh: </span>
+                    <span className="text-slate-800">{teacher.yob}</span>
+                  </div>
+                )}
+                {teacher.livingArea && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Khu vực sinh sống: </span>
+                    <span className="text-slate-800">{teacher.livingArea}</span>
+                  </div>
+                )}
+                {teacher.degreeType && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Học vị / Học hàm: </span>
+                    <span className="text-slate-800">{teacher.degreeType}</span>
+                  </div>
+                )}
+                {teacher.university && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Trường ĐH/CĐ: </span>
+                    <span className="text-slate-800">{teacher.university}</span>
+                  </div>
+                )}
+                {teacher.major && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Chuyên ngành: </span>
+                    <span className="text-slate-800">{teacher.major}</span>
+                  </div>
+                )}
+                {teacher.gradYear && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Năm học / Tốt nghiệp: </span>
+                    <span className="text-slate-800">{teacher.gradYear}</span>
+                  </div>
+                )}
+                {teacher.gpa && (
+                  <div>
+                    <span className="text-slate-500 font-medium">GPA: </span>
+                    <span className="text-slate-800">{teacher.gpa}</span>
+                  </div>
+                )}
+                {teacher.scholarship && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Học bổng: </span>
+                    <span className="text-slate-800">{teacher.scholarship}</span>
+                  </div>
+                )}
+                {teacher.academicAwards && (
+                  <div className="md:col-span-3">
+                    <span className="text-slate-500 font-medium">Thành tích học tập nổi bật: </span>
+                    <span className="text-slate-700">{teacher.academicAwards}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Grid 2: Chứng chỉ */}
+            <div className="border-t border-slate-100 pt-4">
+              <h4 className="text-sm font-semibold text-indigo-600 mb-3 uppercase tracking-wider">2. Chứng chỉ</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                {teacher.ielts && (
+                  <div>
+                    <span className="text-slate-500 font-medium">IELTS: </span>
+                    <span className="text-slate-800">{teacher.ielts}</span>
+                  </div>
+                )}
+                {teacher.toeic && (
+                  <div>
+                    <span className="text-slate-500 font-medium">TOEIC: </span>
+                    <span className="text-slate-800">{teacher.toeic}</span>
+                  </div>
+                )}
+                {teacher.toefl && (
+                  <div>
+                    <span className="text-slate-500 font-medium">TOEFL: </span>
+                    <span className="text-slate-800">{teacher.toefl}</span>
+                  </div>
+                )}
+                {teacher.tesolTefl && (
+                  <div>
+                    <span className="text-slate-500 font-medium">TESOL / TEFL: </span>
+                    <span className="text-slate-800">{teacher.tesolTefl}</span>
+                  </div>
+                )}
+                {teacher.pedagogicalCert && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Chứng chỉ sư phạm: </span>
+                    <span className="text-slate-800">{teacher.pedagogicalCert}</span>
+                  </div>
+                )}
+                {teacher.cefr && teacher.cefr.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Khung CEFR: </span>
+                    <span className="text-slate-800">{teacher.cefr.join(', ')}</span>
+                  </div>
+                )}
+                {teacher.otherCerts && (
+                  <div className="md:col-span-3">
+                    <span className="text-slate-500 font-medium">Chứng chỉ khác: </span>
+                    <span className="text-slate-700">{teacher.otherCerts}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lĩnh vực & Môn học giảng dạy */}
+            {((teacher.languagesTaught && teacher.languagesTaught.length > 0) || (teacher.academicSubjectsTaught && teacher.academicSubjectsTaught.length > 0)) && (
+              <div className="border-t border-slate-100 pt-4 space-y-4">
+                {teacher.languagesTaught && teacher.languagesTaught.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-indigo-600 mb-2 uppercase tracking-wider">Ngoại ngữ có thể giảng dạy</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {teacher.languagesTaught.map(lang => (
+                        <span key={lang} className="inline-block bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full text-xs border border-indigo-100 font-medium">
+                          {lang}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {teacher.academicSubjectsTaught && teacher.academicSubjectsTaught.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-indigo-600 mb-2 uppercase tracking-wider">Gia sư Văn Hóa & Học Thuật</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {teacher.academicSubjectsTaught.map(subj => (
+                        <span key={subj} className="inline-block bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs border border-emerald-100 font-medium">
+                          {subj}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Grid 3: Kinh nghiệm & Ưu điểm */}
+            <div className="border-t border-slate-100 pt-4">
+              <h4 className="text-sm font-semibold text-indigo-600 mb-3 uppercase tracking-wider">3. Kinh nghiệm giảng dạy & Ưu điểm</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                {teacher.teachingYears !== undefined && teacher.teachingYears !== null && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Số năm kinh nghiệm: </span>
+                    <span className="text-slate-800">{teacher.teachingYears} năm</span>
+                  </div>
+                )}
+                {teacher.studentsTaughtCount !== undefined && teacher.studentsTaughtCount !== null && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Số học viên đã dạy: </span>
+                    <span className="text-slate-800">{teacher.studentsTaughtCount} học viên</span>
+                  </div>
+                )}
+                {teacher.studentAgesTaught && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Độ tuổi HS từng dạy: </span>
+                    <span className="text-slate-800">{teacher.studentAgesTaught}</span>
+                  </div>
+                )}
+                {teacher.teachingFormats && teacher.teachingFormats.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Hình thức dạy chính: </span>
+                    <span className="text-slate-800">
+                      {teacher.teachingFormats.map(f => f === 'online' ? 'Online' : f === 'offline' ? 'Offline' : f).join(', ')}
+                    </span>
+                  </div>
+                )}
+                {teacher.studentResults && (
+                  <div className="md:col-span-3">
+                    <span className="text-slate-500 font-medium">Thành tích học viên đạt được: </span>
+                    <span className="text-slate-700">{teacher.studentResults}</span>
+                  </div>
+                )}
+                {teacher.strengths && teacher.strengths.length > 0 && (
+                  <div className="md:col-span-3">
+                    <span className="text-slate-500 font-medium">Ưu điểm nổi bật: </span>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {teacher.strengths.map((str) => {
+                        const labelMap: Record<string, string> = {
+                          pronunciation: 'Phát âm chuẩn',
+                          patience: 'Kiên nhẫn',
+                          lesson_plans: 'Có giáo án riêng',
+                          close_followup: 'Theo sát học viên',
+                          progress_reports: 'Báo cáo tiến độ định kỳ',
+                          tools_proficiency: 'Sử dụng Zoom/Meet thành thạo'
+                        };
+                        return (
+                          <span key={str} className="inline-block bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full text-xs border border-sky-100 font-medium">
+                            {labelMap[str] || str}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {teacher.otherStrengths && (
+                  <div className="md:col-span-3">
+                    <span className="text-slate-500 font-medium">Ưu điểm khác: </span>
+                    <span className="text-slate-700">{teacher.otherStrengths}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

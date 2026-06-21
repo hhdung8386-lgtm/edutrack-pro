@@ -95,12 +95,15 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         // 2. Sync to related students, lessons, and payrolls in parallel
         const newRate = data.pricePerMinute;
         
-        // Query students and lessons in parallel
-        const [studentsSnap, lessonsSnap] = await Promise.all([
+        // Query students, lessons and teachers in parallel
+        const [studentsSnap, lessonsSnap, teachersSnap] = await Promise.all([
           getDocs(query(collection(db, 'students'), where('subjectId', '==', subject.id))),
-          getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subject.id)))
+          getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subject.id))),
+          getDocs(collection(db, 'teachers'))
         ]);
         
+        const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
         // Update students in parallel
         const studentUpdates = studentsSnap.docs.map(studentDoc => 
           updateDoc(doc(db, 'students', studentDoc.id), {
@@ -113,15 +116,19 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const lessonUpdates: Promise<any>[] = [];
         const payrollQueries: Promise<any>[] = [];
         const lessonNewSalaries: Record<string, number> = {};
+        const queriedLessonIds: string[] = [];
         
         lessonsSnap.docs.forEach(lessonDoc => {
           const lessonId = lessonDoc.id;
           const lesson = lessonDoc.data();
+
+
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
           const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0;
           
           lessonNewSalaries[lessonId] = newSalary;
+          queriedLessonIds.push(lessonId);
           
           lessonUpdates.push(
             updateDoc(doc(db, 'lessons', lessonId), {
@@ -146,7 +153,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         // Update corresponding unpaid payrolls in parallel
         const payrollUpdates: Promise<any>[] = [];
         payrollSnaps.forEach((payrollSnap, index) => {
-          const lessonId = lessonsSnap.docs[index].id;
+          const lessonId = queriedLessonIds[index];
           const newSalary = lessonNewSalaries[lessonId];
           
           payrollSnap.docs.forEach((pDoc: any) => {
@@ -243,10 +250,18 @@ export function SubjectsPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    return onSnapshot(query(collection(db, 'subjects'), orderBy('createdAt', 'desc')), (snap) => {
-      setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
-      setLoading(false)
-    })
+    return onSnapshot(
+      query(collection(db, 'subjects'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error loading subjects:', err)
+        toast.error('Không có quyền truy cập danh sách môn học hoặc lỗi kết nối')
+        setLoading(false)
+      }
+    )
   }, [])
 
   // Pre-fetch references when opening delete confirm

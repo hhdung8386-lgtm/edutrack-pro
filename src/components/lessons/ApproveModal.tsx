@@ -33,7 +33,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             tx.get(doc(db, 'subjects', student.subjectId)),
           ])
 
-          const teacherLevel = (lesson.teacherLevel ?? teacherSnap.data()?.level ?? 1) || 1
+          const teacherData = teacherSnap.data()
+          const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
           const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
           const subjectId = student.subjectId
           const subjectName = student.subjectName || subjectSnap.data()?.name || ''

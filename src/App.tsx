@@ -41,6 +41,7 @@ const TrackingPage = lazy(() => import('@/pages/tracking/TrackingPage').then(m =
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })))
 const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
 const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default: m.LienHePage })))
+const PublicTeachersPage = lazy(() => import('@/pages/PublicTeachersPage').then(m => ({ default: m.PublicTeachersPage })))
 
 const RootRedirect = () => {
   const { user, role, loading, initialized } = useAuthStore()
@@ -83,6 +84,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/chuong-trinh-hoc" element={<ChuongTrinhHocPage />} />
           <Route path="/lien-he" element={<LienHePage />} />
+          <Route path="/giao-vien" element={<PublicTeachersPage />} />
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/waiting" element={<WaitingApprovalPage />} />

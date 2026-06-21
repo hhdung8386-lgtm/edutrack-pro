@@ -35,10 +35,18 @@ export function SettingsPage() {
 
   useEffect(() => {
     const q = query(collection(db, 'branches'), orderBy('createdAt', 'desc'))
-    return onSnapshot(q, (snap) => {
-      setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() } as Branch)))
-      setLoading(false)
-    })
+    return onSnapshot(
+      q,
+      (snap) => {
+        setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() } as Branch)))
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error loading branches:', err)
+        toast.error('Không có quyền truy cập danh sách chi nhánh hoặc lỗi kết nối')
+        setLoading(false)
+      }
+    )
   }, [])
 
   const openAddModal = () => {

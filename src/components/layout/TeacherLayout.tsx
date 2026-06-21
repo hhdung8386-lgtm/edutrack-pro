@@ -1,15 +1,25 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { PenLine, History, User, LogOut, FileText, Globe, Calendar } from 'lucide-react'
+import { doc, getDoc } from 'firebase/firestore'
 import { signOut } from '@/lib/auth'
+import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
 import { Logo } from '@/components/shared/Logo'
+import { Teacher, TeacherAvailability } from '@/types'
+
+function hasAvailability(availability: TeacherAvailability | null) {
+  if (!availability?.slots) return false
+  return Object.values(availability.slots).some((slot) => slot?.available && slot.timeRanges?.length > 0)
+}
 
 export function TeacherLayout() {
-  const { user } = useAuthStore()
+  const { user, teacherId } = useAuthStore()
   const { lang, setLang, t } = useLanguageStore()
   const navigate = useNavigate()
+  const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean; missingAvailability: boolean } | null>(null)
 
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
@@ -26,6 +36,45 @@ export function TeacherLayout() {
   }
 
   const toggleLang = () => setLang(lang === 'vi' ? 'en' : 'vi')
+
+  useEffect(() => {
+    if (!teacherId) {
+      setProfileReminder(null)
+      return
+    }
+
+    let active = true
+    const currentTeacherId = teacherId
+
+    async function loadReminderState() {
+      try {
+        const [teacherSnap, availabilitySnap] = await Promise.all([
+          getDoc(doc(db, 'teachers', currentTeacherId)),
+          getDoc(doc(db, 'teacherAvailability', currentTeacherId)),
+        ])
+
+        if (!active) return
+
+        const teacher = teacherSnap.exists() ? ({ id: teacherSnap.id, ...teacherSnap.data() } as Teacher) : null
+        const availability = availabilitySnap.exists()
+          ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
+          : null
+
+        const missingPhoto = !teacher?.photoURL
+        const missingAvailability = !hasAvailability(availability)
+
+        setProfileReminder(missingPhoto || missingAvailability ? { missingPhoto, missingAvailability } : null)
+      } catch (error) {
+        console.error('Error loading teacher profile reminder:', error)
+      }
+    }
+
+    loadReminderState()
+
+    return () => {
+      active = false
+    }
+  }, [teacherId])
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -85,6 +134,44 @@ export function TeacherLayout() {
 
       <main className="min-h-screen">
         <div className="pt-14 lg:pt-16 pb-20 lg:pb-6 px-4 sm:px-6 py-6">
+          {profileReminder && (
+            <div className="mx-auto mb-4 max-w-4xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-bold">Cập nhật hồ sơ để được ưu tiên hiển thị</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-800">
+                    Trang Đội ngũ giáo viên mới sẽ ưu tiên hồ sơ có ảnh rõ ràng và lịch rảnh. Vui lòng cập nhật
+                    {profileReminder.missingPhoto && profileReminder.missingAvailability
+                      ? ' ảnh đại diện và lịch rảnh'
+                      : profileReminder.missingPhoto
+                      ? ' ảnh đại diện'
+                      : ' lịch rảnh'}
+                    .
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {profileReminder.missingPhoto && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/teacher/profile')}
+                      className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-amber-900 ring-1 ring-amber-200 transition hover:bg-amber-100"
+                    >
+                      Cập nhật ảnh
+                    </button>
+                  )}
+                  {profileReminder.missingAvailability && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/teacher/availability')}
+                      className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-700"
+                    >
+                      Cập nhật lịch
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <Outlet />
         </div>
       </main>

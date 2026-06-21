@@ -81,7 +81,10 @@ export function StudentDetailPage() {
       subjs.forEach(([k, v]) => { subjectPrice[k] = v as number })
       const teacherLevel: Record<string, number> = {}
       const teacherUid: Record<string, string> = {}
-      tchrs.forEach(([k, lv, uid]) => { teacherLevel[k] = lv as number; teacherUid[k] = uid as string })
+      tchrs.forEach(([k, lv, uid]) => {
+        teacherLevel[k] = lv as number
+        teacherUid[k] = uid as string
+      })
       setLiveRates({ subjectPrice, teacherLevel, teacherUid })
     })
     return () => { cancelled = true }
@@ -347,7 +350,7 @@ export function StudentDetailPage() {
               tx.get(doc(db, 'subjects', reApprovingLesson.subjectId)),
             ])
             teacherLevel = teacherLevel ?? tSnap.data()?.level ?? 1
-            pricePerMinute = pricePerMinute ?? subjSnap.data()?.pricePerMinute ?? 0
+            pricePerMinute = pricePerMinute ?? (subjSnap.data()?.pricePerMinute ?? 0)
           }
 
           const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute as number, teacherLevel as number)
