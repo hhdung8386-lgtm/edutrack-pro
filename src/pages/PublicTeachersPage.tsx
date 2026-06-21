@@ -97,13 +97,15 @@ const FILTERS: Array<{ key: FilterKey; label: string; helper: string }> = [
 ]
 
 function getInitials(name: string) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(-2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
+  const words = name
+    .replace(/\([^)]*\)/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^A-Za-z0-9]+/)
+    .filter((part) => /[A-Za-z0-9]/.test(part))
+
+  const source = words.length > 1 ? words.slice(0, 2) : words.slice(0, 1)
+  return (source.map((part) => part[0]).join('') || 'GV').toUpperCase()
 }
 
 function hasSchedule(availability?: TeacherAvailability) {
@@ -875,10 +877,11 @@ export function PublicTeachersPage() {
 
       <main>
         <section
-          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center"
+          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/teacher-hero-bg.png')" }}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#fff6d8]/95 via-[#fff6d8]/82 to-[#fffaf0]/70" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#fff7dc]/82 via-[#fff0bc]/58 to-[#fffaf0]/30" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.52),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(255,193,7,0.16),transparent_32%)]" />
           <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
