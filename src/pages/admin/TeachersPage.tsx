@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, onSnapshot, orderBy, where, deleteDoc, doc, updateDoc, getDocs, limit } from 'firebase/firestore'
+import { collection, query, onSnapshot, where, deleteDoc, doc, updateDoc, getDocs, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -111,11 +111,13 @@ export function TeachersPage() {
   const [limitVal, setLimitVal] = useState(20)
 
   useEffect(() => {
-    const q = query(collection(db, 'teachers'), orderBy('createdAt', 'desc'), limit(limitVal))
+    const q = query(collection(db, 'teachers'), limit(limitVal))
     return onSnapshot(
       q,
       (snap) => {
-        setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher))
+        items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0) || a.name.localeCompare(b.name, 'vi'))
+        setTeachers(items)
         setLoading(false)
       },
       (err) => {

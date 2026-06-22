@@ -28,13 +28,16 @@ export function ReportsPage() {
       try {
         const q = query(
           collection(db, 'lessons'),
-          where('status', '==', 'approved'),
           where('date', '>=', `${month}-01`),
           where('date', '<=', `${month}-31`)
         )
         const snap = await getDocs(q)
         if (active) {
-          setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+          setLessons(
+            snap.docs
+              .map((d) => ({ id: d.id, ...d.data() } as Lesson))
+              .filter((lesson) => lesson.status === 'approved')
+          )
         }
       } catch (err) {
         console.error(err)
@@ -59,12 +62,11 @@ export function ReportsPage() {
       months.map((m) => {
         const q = query(
           collection(db, 'lessons'),
-          where('status', '==', 'approved'),
           where('date', '>=', `${m}-01`),
           where('date', '<=', `${m}-31`)
         )
         return getDocs(q).then((snap) => {
-          const docs = snap.docs.map((d) => d.data() as Lesson)
+          const docs = snap.docs.map((d) => d.data() as Lesson).filter((lesson) => lesson.status === 'approved')
           return {
             month: m.slice(5) + '/' + m.slice(2, 4),
             count: docs.length,

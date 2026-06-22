@@ -28,12 +28,14 @@ export function ProfilePage() {
     const month = getCurrentMonth()
     const q = query(
       collection(db, 'lessons'),
-      where('teacherId', '==', teacherId),
-      where('status', '==', 'approved'),
-      where('date', '>=', `${month}-01`)
+      where('teacherId', '==', teacherId)
     )
     return onSnapshot(q, (snap) => {
-      setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+      setLessons(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Lesson))
+          .filter((lesson) => lesson.status === 'approved' && lesson.date >= `${month}-01`)
+      )
     })
   }, [teacherId])
 

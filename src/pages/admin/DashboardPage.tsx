@@ -106,17 +106,16 @@ export function DashboardPage() {
     Promise.all(
       months.map(async (m) => {
         try {
-          const snap = await getCountFromServer(
+          const snap = await getDocs(
             query(
               collection(db, 'lessons'),
-              where('status', '==', 'approved'),
               where('date', '>=', m + '-01'),
               where('date', '<=', m + '-31')
             )
           )
           return {
             month: m.slice(5) + '/' + m.slice(2, 4),
-            count: snap.data().count
+            count: snap.docs.filter((docSnap) => docSnap.data().status === 'approved').length
           }
         } catch (err) {
           console.error(`[dashboard-chart-month] Error for ${m}:`, err)
