@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { Student, Lesson } from '@/types'
+import { Student, StudentSubject, Lesson } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -14,6 +14,24 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+
+function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
+  const safeUsedMinutes = Math.max(0, usedMinutes)
+  const remainingMinutes = Math.max(0, pkg.totalMinutes - safeUsedMinutes)
+  const minutesPerSession = pkg.minutesPerSession || 50
+  const usedSessionsRaw = safeUsedMinutes / minutesPerSession
+  const usedSessions = Math.abs(usedSessionsRaw - Math.round(usedSessionsRaw)) < 0.001
+    ? Math.round(usedSessionsRaw)
+    : Math.round(usedSessionsRaw * 100) / 100
+
+  return {
+    ...pkg,
+    usedMinutes: safeUsedMinutes,
+    remainingMinutes,
+    usedSessions,
+    remainingSessions: Math.floor(remainingMinutes / minutesPerSession),
+  }
+}
 
 export function StudentDetailPage() {
   const { id } = useParams()
@@ -34,6 +52,18 @@ export function StudentDetailPage() {
   const [showSubjectPkg, setShowSubjectPkg] = useState(false)
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
   const [reApproveSubjectId, setReApproveSubjectId] = useState<string>('')
+  const [changingSubjectLessonId, setChangingSubjectLessonId] = useState<string | null>(null)
+  const [historyFilters, setHistoryFilters] = useState({
+    date: '',
+    teacher: '',
+    subject: 'all',
+    book: '',
+    minutes: 'all',
+    comment: '',
+    salary: 'all',
+    status: 'all',
+    action: 'all',
+  })
 
   // Live rates per (subjectId, teacherId) for drift detection / recalc
   const [liveRates, setLiveRates] = useState<{
@@ -636,10 +666,176 @@ export function StudentDetailPage() {
         }]
       : []
 
+  const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string) => {
+    if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return
+    const nextSubject = activeSubjects.find((subject) => subject.subjectId === nextSubjectId)
+    if (!nextSubject) {
+      toast.error('Môn học được chọn không hợp lệ')
+      return
+    }
+
+    setChangingSubjectLessonId(lesson.id)
+    try {
+      const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lesson.id)))
+      const activePayrolls = payrollSnap.docs.filter((payrollDoc) => !payrollDoc.data().voided)
+      if (activePayrolls.some((payrollDoc) => payrollDoc.data().paid === true)) {
+        toast.warning('Lương buổi này đã thanh toán, không thể đổi môn học')
+        return
+      }
+
+      const teacherLevel = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
+      const pricePerMinute = nextSubject.pricePerMinute || liveRates.subjectPrice[nextSubjectId] || 0
+      const salary = lesson.status === 'approved'
+        ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel)
+        : 0
+
+      await runTransaction(db, async (tx) => {
+        const lessonRef = doc(db, 'lessons', lesson.id)
+        const studentRef = doc(db, 'students', student.id)
+        const studentSnap = await tx.get(studentRef)
+        const studentData = studentSnap.data()
+        if (!studentData) throw new Error('Không tìm thấy học viên')
+
+        let updatedSubjects: StudentSubject[] = studentData.subjects?.length
+          ? studentData.subjects.map((subject: StudentSubject) => ({ ...subject }))
+          : activeSubjects.map((subject) => ({ ...subject }))
+        let sessionsBeforeApproval = lesson.sessionsBeforeApproval
+        let sessionsAfterApproval = lesson.sessionsAfterApproval
+        let minutesBeforeApproval = lesson.minutesBeforeApproval
+        let minutesAfterApproval = lesson.minutesAfterApproval
+
+        if (lesson.status === 'approved') {
+          const oldIndex = updatedSubjects.findIndex((subject) => subject.subjectId === lesson.subjectId)
+          const newIndex = updatedSubjects.findIndex((subject) => subject.subjectId === nextSubjectId)
+          if (oldIndex === -1) {
+            throw new Error(`Không tìm thấy gói môn cũ ${lesson.subjectName || lesson.subjectId}`)
+          }
+          if (newIndex === -1) throw new Error(`Không tìm thấy gói môn ${nextSubject.subjectName}`)
+
+          const availableForNewSubject = updatedSubjects[newIndex].remainingMinutes || 0
+          if (availableForNewSubject < lesson.minutes) {
+            throw new Error(`Môn ${nextSubject.subjectName} không đủ ${lesson.minutes} phút khả dụng`)
+          }
+
+          updatedSubjects[oldIndex] = withUsedMinutes(
+            updatedSubjects[oldIndex],
+            updatedSubjects[oldIndex].usedMinutes - lesson.minutes,
+          )
+          sessionsBeforeApproval = updatedSubjects[newIndex].remainingSessions
+          minutesBeforeApproval = updatedSubjects[newIndex].remainingMinutes
+          updatedSubjects[newIndex] = withUsedMinutes(
+            updatedSubjects[newIndex],
+            updatedSubjects[newIndex].usedMinutes + lesson.minutes,
+          )
+          sessionsAfterApproval = updatedSubjects[newIndex].remainingSessions
+          minutesAfterApproval = updatedSubjects[newIndex].remainingMinutes
+
+          const totalSessions = updatedSubjects.reduce((sum, subject) => sum + subject.totalSessions, 0)
+          const usedSessions = updatedSubjects.reduce((sum, subject) => sum + subject.usedSessions, 0)
+          const remainingSessions = updatedSubjects.reduce((sum, subject) => sum + subject.remainingSessions, 0)
+          const totalMinutes = updatedSubjects.reduce((sum, subject) => sum + subject.totalMinutes, 0)
+          const usedMinutes = updatedSubjects.reduce((sum, subject) => sum + subject.usedMinutes, 0)
+          const remainingMinutes = updatedSubjects.reduce((sum, subject) => sum + subject.remainingMinutes, 0)
+          const primarySubject = updatedSubjects[0]
+
+          tx.update(studentRef, {
+            subjects: updatedSubjects,
+            totalSessions,
+            usedSessions,
+            remainingSessions,
+            totalMinutes,
+            usedMinutes,
+            remainingMinutes,
+            subjectId: primarySubject?.subjectId || '',
+            subjectName: primarySubject?.subjectName || '',
+            minutesPerSession: primarySubject?.minutesPerSession || 50,
+            status: remainingMinutes <= 0 ? 'expired' : 'active',
+            updatedAt: serverTimestamp(),
+          })
+        }
+
+        tx.update(lessonRef, {
+          subjectId: nextSubject.subjectId,
+          subjectName: nextSubject.subjectName,
+          pricePerMinute,
+          teacherLevel,
+          salary,
+          sessionsBeforeApproval,
+          sessionsAfterApproval,
+          minutesBeforeApproval,
+          minutesAfterApproval,
+          updatedAt: serverTimestamp(),
+        })
+
+        if (lesson.status === 'approved') {
+          tx.set(doc(db, 'publicLessons', lesson.id), {
+            subjectId: nextSubject.subjectId,
+            subjectName: nextSubject.subjectName,
+          }, { merge: true })
+        }
+
+        activePayrolls.forEach((payrollDoc) => {
+          tx.update(payrollDoc.ref, {
+            amount: salary,
+            pricePerMinute,
+            level: teacherLevel,
+            subjectId: nextSubject.subjectId,
+            subjectName: nextSubject.subjectName,
+            recalculatedAt: serverTimestamp(),
+            recalculatedBy: user?.uid || '',
+          })
+        })
+      })
+
+      await addDoc(collection(db, 'adminLogs'), {
+        adminId: user?.uid || '',
+        action: 'CHANGE_LESSON_SUBJECT',
+        targetType: 'lesson',
+        targetId: lesson.id,
+        changes: {
+          oldSubjectId: lesson.subjectId,
+          oldSubjectName: lesson.subjectName,
+          newSubjectId: nextSubject.subjectId,
+          newSubjectName: nextSubject.subjectName,
+          oldSalary: lesson.salary || 0,
+          newSalary: salary,
+          pricePerMinute,
+        },
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success(`Đã đổi sang ${nextSubject.subjectName} và cập nhật lương ${salary.toLocaleString('vi-VN')}đ`)
+    } catch (error) {
+      console.error(error)
+      toast.error(error instanceof Error ? error.message : 'Không thể đổi môn học')
+    } finally {
+      setChangingSubjectLessonId(null)
+    }
+  }
+
+  const filteredHistoryLessons = lessons.filter((lesson) => {
+    const actionType = lesson.status === 'approved' ? 'approved' : lesson.status === 'rejected' ? 'rejected' : 'pending'
+    const salary = lesson.salary || 0
+    const salaryMatches = historyFilters.salary === 'all'
+      || (historyFilters.salary === 'positive' && salary > 0)
+      || (historyFilters.salary === 'zero' && salary <= 0)
+
+    return (selectedSubjectFilter === 'all' || lesson.subjectId === selectedSubjectFilter)
+      && (!historyFilters.date || lesson.date.includes(historyFilters.date))
+      && (!historyFilters.teacher || lesson.teacherName.toLowerCase().includes(historyFilters.teacher.toLowerCase()))
+      && (historyFilters.subject === 'all' || lesson.subjectId === historyFilters.subject)
+      && (!historyFilters.book || (lesson.book || '').toLowerCase().includes(historyFilters.book.toLowerCase()))
+      && (historyFilters.minutes === 'all' || String(lesson.minutes) === historyFilters.minutes)
+      && (!historyFilters.comment || (lesson.comment || '').toLowerCase().includes(historyFilters.comment.toLowerCase()))
+      && salaryMatches
+      && (historyFilters.status === 'all' || lesson.status === historyFilters.status)
+      && (historyFilters.action === 'all' || actionType === historyFilters.action)
+  })
+
   const trackingUrl = `${window.location.origin}/tracking?student=${student.code}`
 
   return (
-    <div className="space-y-6 pt-2 lg:pt-6 max-w-4xl">
+    <div className="space-y-6 pt-2 lg:pt-6 max-w-none">
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="p-2 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg transition-colors" aria-label="Quay lại">
           <ArrowLeft className="w-5 h-5" />
@@ -832,25 +1028,99 @@ export function StudentDetailPage() {
           <p className="text-center text-slate-500 text-sm py-8">Chưa có buổi học nào</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1450px] table-fixed text-sm">
+              <colgroup>
+                <col className="w-[120px]" />
+                <col className="w-[150px]" />
+                <col className="w-[230px]" />
+                <col className="w-[180px]" />
+                <col className="w-[85px]" />
+                <col className="w-[320px]" />
+                <col className="w-[140px]" />
+                <col className="w-[130px]" />
+                <col className="w-[260px]" />
+              </colgroup>
               <thead className="border-b border-slate-200">
                 <tr>
                   {['Ngày', 'Giáo viên', 'Môn học', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
+                    <th key={h} className="text-left px-3 py-3 text-xs font-bold text-slate-500 uppercase">{h}</th>
                   ))}
+                </tr>
+                <tr className="bg-slate-50/80 align-top">
+                  <th className="px-2 pb-3">
+                    <input type="date" value={historyFilters.date} onChange={(event) => setHistoryFilters((current) => ({ ...current, date: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium outline-none focus:border-indigo-400" />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <input value={historyFilters.teacher} onChange={(event) => setHistoryFilters((current) => ({ ...current, teacher: event.target.value }))} placeholder="Tên giáo viên" className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400" />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <select value={historyFilters.subject} onChange={(event) => setHistoryFilters((current) => ({ ...current, subject: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400">
+                      <option value="all">Tất cả môn</option>
+                      {activeSubjects.map((subject) => <option key={subject.subjectId} value={subject.subjectId}>{subject.subjectName}</option>)}
+                    </select>
+                  </th>
+                  <th className="px-2 pb-3">
+                    <input value={historyFilters.book} onChange={(event) => setHistoryFilters((current) => ({ ...current, book: event.target.value }))} placeholder="Tên sách" className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400" />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <select value={historyFilters.minutes} onChange={(event) => setHistoryFilters((current) => ({ ...current, minutes: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-1 text-xs outline-none focus:border-indigo-400">
+                      <option value="all">Tất cả</option>
+                      {[0, 25, 50, 75, 100].map((minutes) => <option key={minutes} value={minutes}>{minutes}'</option>)}
+                    </select>
+                  </th>
+                  <th className="px-2 pb-3">
+                    <input value={historyFilters.comment} onChange={(event) => setHistoryFilters((current) => ({ ...current, comment: event.target.value }))} placeholder="Tìm trong nhận xét" className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400" />
+                  </th>
+                  <th className="px-2 pb-3">
+                    <select value={historyFilters.salary} onChange={(event) => setHistoryFilters((current) => ({ ...current, salary: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400">
+                      <option value="all">Tất cả</option>
+                      <option value="positive">Có lương</option>
+                      <option value="zero">0đ / chưa tính</option>
+                    </select>
+                  </th>
+                  <th className="px-2 pb-3">
+                    <select value={historyFilters.status} onChange={(event) => setHistoryFilters((current) => ({ ...current, status: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400">
+                      <option value="all">Tất cả</option>
+                      <option value="pending">Chờ duyệt</option>
+                      <option value="approved">Đã duyệt</option>
+                      <option value="rejected">Từ chối</option>
+                    </select>
+                  </th>
+                  <th className="px-2 pb-3">
+                    <div className="flex gap-2">
+                      <select value={historyFilters.action} onChange={(event) => setHistoryFilters((current) => ({ ...current, action: event.target.value }))} className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400">
+                        <option value="all">Tất cả thao tác</option>
+                        <option value="approved">Có thể huỷ duyệt</option>
+                        <option value="rejected">Có thể duyệt lại</option>
+                        <option value="pending">Chờ xử lý</option>
+                      </select>
+                      <button type="button" onClick={() => setHistoryFilters({ date: '', teacher: '', subject: 'all', book: '', minutes: 'all', comment: '', salary: 'all', status: 'all', action: 'all' })} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-100">Xóa lọc</button>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {lessons
-                  .filter((lesson) => selectedSubjectFilter === 'all' || lesson.subjectId === selectedSubjectFilter)
-                  .map((lesson) => (
+                {filteredHistoryLessons.map((lesson) => (
                     <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
                       <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
-                          {lesson.subjectName || '—'}
-                        </span>
+                      <td className="px-3 py-3 text-slate-600">
+                        <select
+                          value={lesson.subjectId || ''}
+                          onChange={(event) => handleChangeLessonSubject(lesson, event.target.value)}
+                          disabled={changingSubjectLessonId === lesson.id || activeSubjects.length === 0}
+                          className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:cursor-wait disabled:opacity-60"
+                          title="Đổi môn học và tính lại lương theo đơn giá gói môn"
+                        >
+                          {!activeSubjects.some((subject) => subject.subjectId === lesson.subjectId) && lesson.subjectId && (
+                            <option value={lesson.subjectId}>{lesson.subjectName || 'Môn cũ'}</option>
+                          )}
+                          {activeSubjects.map((subject) => (
+                            <option key={subject.subjectId} value={subject.subjectId}>
+                              {subject.subjectName} · {subject.pricePerMinute.toLocaleString('vi-VN')}đ/phút
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={lesson.book || ''}>{lesson.book || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
@@ -920,6 +1190,13 @@ export function StudentDetailPage() {
                       </td>
                     </tr>
                   ))}
+                {filteredHistoryLessons.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
+                      Không có buổi học phù hợp với bộ lọc.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
