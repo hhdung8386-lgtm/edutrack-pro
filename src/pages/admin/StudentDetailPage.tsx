@@ -217,16 +217,60 @@ export function StudentDetailPage() {
   const pendingLessons = lessons.filter((l) => l.status === 'pending')
   const rejectedLessons = lessons.filter((l) => l.status === 'rejected')
 
+  const storedSubjects = student.subjects && student.subjects.length > 0
+    ? student.subjects
+    : student.subjectId
+      ? [{
+          subjectId: student.subjectId,
+          subjectName: student.subjectName || 'Chưa rõ',
+          totalSessions: student.totalSessions || 0,
+          usedSessions: student.usedSessions || 0,
+          remainingSessions: student.remainingSessions || 0,
+          minutesPerSession: student.minutesPerSession || 50,
+          totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
+          usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
+          remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
+          pricePerMinute: liveRates.subjectPrice[student.subjectId] || 0,
+        }]
+      : []
+
   const sumMinutes = (ls: Lesson[]) => ls.reduce((acc, l) => acc + (l.minutes || 0), 0)
+  const sessionCount = (minutes: number, minutesPerSession: number) => {
+    const raw = minutesPerSession > 0 ? minutes / minutesPerSession : 0
+    return Math.abs(raw - Math.round(raw)) < 0.001
+      ? Math.round(raw)
+      : Math.round(raw * 100) / 100
+  }
   const approvedMinutes = sumMinutes(approvedLessons)
   const pendingMinutes = sumMinutes(pendingLessons)
   const rejectedMinutes = sumMinutes(rejectedLessons)
+  const approvedMinutesBySubject = approvedLessons.reduce<Record<string, number>>((acc, lesson) => {
+    if (!lesson.subjectId) return acc
+    acc[lesson.subjectId] = (acc[lesson.subjectId] || 0) + (lesson.minutes || 0)
+    return acc
+  }, {})
+  const activeSubjects = storedSubjects.map((pkg) => {
+    const subjectUsedMinutes = approvedMinutesBySubject[pkg.subjectId] || 0
+    const subjectMps = pkg.minutesPerSession || 50
+    const subjectTotalMinutes = pkg.totalMinutes ?? (pkg.totalSessions * subjectMps)
+    const subjectRemainingMinutes = Math.max(0, subjectTotalMinutes - subjectUsedMinutes)
+    return {
+      ...pkg,
+      totalMinutes: subjectTotalMinutes,
+      usedMinutes: subjectUsedMinutes,
+      remainingMinutes: subjectRemainingMinutes,
+      usedSessions: sessionCount(subjectUsedMinutes, subjectMps),
+      remainingSessions: Math.floor(subjectRemainingMinutes / subjectMps),
+    }
+  })
 
   const mps = student.minutesPerSession || 50
 
   // ─── ACTUAL values (derived from lessons collection — source of truth) ──
   const actualUsedMinutes = approvedMinutes
-  const totalMinutesFund = student.totalMinutes ?? student.totalSessions * mps
+  const totalMinutesFund = activeSubjects.length > 0
+    ? activeSubjects.reduce((sum, subject) => sum + subject.totalMinutes, 0)
+    : (student.totalMinutes ?? student.totalSessions * mps)
   const actualRemainingMinutes = totalMinutesFund - actualUsedMinutes
   const actualUsedSessionsRaw = mps > 0 ? actualUsedMinutes / mps : 0
   const actualUsedSessions =
@@ -238,24 +282,38 @@ export function StudentDetailPage() {
   // ─── Stored values (from student doc) ──
   const storedUsedMinutes = student.usedMinutes ?? student.usedSessions * mps
   const storedUsedSessions = student.usedSessions
+  const isSubjectMismatch = storedSubjects.some((pkg) => {
+    const actualPkg = activeSubjects.find((subject) => subject.subjectId === pkg.subjectId)
+    return Boolean(actualPkg && (
+      pkg.usedMinutes !== actualPkg.usedMinutes ||
+      pkg.remainingMinutes !== actualPkg.remainingMinutes ||
+      pkg.usedSessions !== actualPkg.usedSessions ||
+      pkg.remainingSessions !== actualPkg.remainingSessions
+    ))
+  })
 
   // ─── Mismatch detection ──
   const isMismatch =
     storedUsedSessions !== actualUsedSessions ||
-    storedUsedMinutes !== actualUsedMinutes
+    storedUsedMinutes !== actualUsedMinutes ||
+    isSubjectMismatch
 
   const handleReconcile = async () => {
     if (!student) return
     setReconciling(true)
     try {
       const newStatus = actualRemainingMinutes <= 0 ? 'expired' : 'active'
+      const primarySubject = activeSubjects.find((subject) => subject.remainingMinutes > 0) || activeSubjects[0] || null
       await updateDoc(doc(db, 'students', student.id), {
+        subjects: activeSubjects,
         usedMinutes: actualUsedMinutes,
         remainingMinutes: actualRemainingMinutes,
         totalMinutes: totalMinutesFund,
-        minutesPerSession: mps,
+        minutesPerSession: primarySubject?.minutesPerSession || mps,
         usedSessions: actualUsedSessions,
         remainingSessions: actualRemainingSessions,
+        subjectId: primarySubject?.subjectId || '',
+        subjectName: primarySubject?.subjectName || '',
         status: newStatus,
         updatedAt: serverTimestamp(),
       })
@@ -268,6 +326,12 @@ export function StudentDetailPage() {
           usedSessions: { from: storedUsedSessions, to: actualUsedSessions },
           usedMinutes: { from: storedUsedMinutes, to: actualUsedMinutes },
           remainingMinutes: { from: student.remainingMinutes, to: actualRemainingMinutes },
+          subjects: activeSubjects.map((subject) => ({
+            subjectId: subject.subjectId,
+            subjectName: subject.subjectName,
+            usedMinutes: subject.usedMinutes,
+            remainingMinutes: subject.remainingMinutes,
+          })),
           basedOnApprovedLessons: approvedLessons.length,
         },
         createdAt: serverTimestamp(),
@@ -648,23 +712,21 @@ export function StudentDetailPage() {
   const usedPct = totalMinutesFund > 0
     ? Math.min(100, Math.round((usedMinutesFund / totalMinutesFund) * 100))
     : 0
-
-  const activeSubjects = student.subjects && student.subjects.length > 0
-    ? student.subjects
-    : student.subjectId
-      ? [{
-          subjectId: student.subjectId,
-          subjectName: student.subjectName || 'Chưa rõ',
-          totalSessions: student.totalSessions || 0,
-          usedSessions: student.usedSessions || 0,
-          remainingSessions: student.remainingSessions || 0,
-          minutesPerSession: student.minutesPerSession || 50,
-          totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
-          usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
-          remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
-          pricePerMinute: liveRates.subjectPrice[student.subjectId] || 0,
-        }]
-      : []
+  const displayPrimarySubject = activeSubjects.find((subject) => subject.remainingMinutes > 0) || activeSubjects[0] || null
+  const reconciledStudent = {
+    ...student,
+    subjects: activeSubjects,
+    totalSessions: activeSubjects.reduce((sum, subject) => sum + subject.totalSessions, 0),
+    usedSessions: displayUsedSessions,
+    remainingSessions: displayRemainingSessions,
+    totalMinutes: totalMinutesFund,
+    usedMinutes: usedMinutesFund,
+    remainingMinutes,
+    subjectId: displayPrimarySubject?.subjectId || '',
+    subjectName: displayPrimarySubject?.subjectName || '',
+    minutesPerSession: displayPrimarySubject?.minutesPerSession || mps,
+    status: actualRemainingMinutes <= 0 ? 'expired' : student.status,
+  }
 
   const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string) => {
     if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return
@@ -1203,11 +1265,11 @@ export function StudentDetailPage() {
         )}
       </Card>
 
-      {showEdit && <StudentFormModal student={student} onClose={() => setShowEdit(false)} />}
-      {showAddSessions && <AddSessionsModal student={student} onClose={() => setShowAddSessions(false)} />}
+      {showEdit && <StudentFormModal student={reconciledStudent} onClose={() => setShowEdit(false)} />}
+      {showAddSessions && <AddSessionsModal student={reconciledStudent} onClose={() => setShowAddSessions(false)} />}
       {showSubjectPkg && (
         <SubjectPackageModal
-          student={student}
+          student={reconciledStudent}
           editingSubjectId={editingSubjectId}
           onClose={() => {
             setShowSubjectPkg(false)
