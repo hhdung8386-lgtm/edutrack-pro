@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, onSnapshot, where, deleteDoc, doc, updateDoc, getDocs, limit } from 'firebase/firestore'
+import { collection, query, getDocs, deleteDoc, doc, updateDoc, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -106,50 +106,33 @@ export function TeachersPage() {
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
   const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null)
   const [deleting, setDeleting] = useState(false)
-  // Map teacherId -> total approved minutes
-  const [minutesMap, setMinutesMap] = useState<Record<string, number>>({})
   const [limitVal, setLimitVal] = useState(20)
 
   useEffect(() => {
     const q = query(collection(db, 'teachers'), limit(limitVal))
-    return onSnapshot(
-      q,
-      (snap) => {
+    let active = true
+    setLoading(true)
+
+    getDocs(q)
+      .then((snap) => {
+        if (!active) return
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher))
         items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0) || a.name.localeCompare(b.name, 'vi'))
         setTeachers(items)
-        setLoading(false)
-      },
-      (err) => {
-        console.error('Error loading teachers:', err)
-        toast.error('Không có quyền truy cập danh sách giáo viên hoặc lỗi kết nối')
-        setLoading(false)
-      }
-    )
-  }, [limitVal])
-
-  // Fetch approved lessons to compute per-teacher total minutes once on mount
-  useEffect(() => {
-    let active = true
-    getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved')))
-      .then((snap) => {
+      })
+      .catch(() => {
         if (!active) return
-        const map: Record<string, number> = {}
-        snap.docs.forEach((d) => {
-          const data = d.data()
-          const tid: string = data.teacherId
-          const mins: number = Number(data.minutes) || 0
-          if (tid) map[tid] = (map[tid] || 0) + mins
-        })
-        setMinutesMap(map)
+        setTeachers([])
+        toast.error('Không có quyền truy cập danh sách giáo viên hoặc lỗi kết nối')
       })
-      .catch((err: any) => {
-        console.error('Error loading approved lessons minutes:', err)
+      .finally(() => {
+        if (active) setLoading(false)
       })
+
     return () => {
       active = false
     }
-  }, [])
+  }, [limitVal])
 
   const filtered = teachers.filter((t) => {
     const matchSearch =
@@ -279,7 +262,7 @@ export function TeachersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-violet-600 font-semibold text-sm">
-                          {(minutesMap[teacher.id] || 0).toLocaleString('vi-VN')}'
+                          {(Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) || 0).toLocaleString('vi-VN')}'
                         </span>
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={teacher.status} /></td>
@@ -334,7 +317,9 @@ export function TeachersPage() {
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Level ×{teacher.level} · {(teacher.subjectNames || []).join(', ')}
-                      {minutesMap[teacher.id] ? ` · ${minutesMap[teacher.id].toLocaleString('vi-VN')}'` : ''}
+                      {Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) > 0
+                        ? ` · ${Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes).toLocaleString('vi-VN')}'`
+                        : ''}
                     </p>
                   </div>
                 </div>

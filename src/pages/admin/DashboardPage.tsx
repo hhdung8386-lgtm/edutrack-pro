@@ -5,7 +5,7 @@ import { Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CardSkeleton, TableSkeleton } from '@/components/shared/LoadingSpinner'
+import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { ApproveModal } from '@/components/lessons/ApproveModal'
 import { formatVND, getToday } from '@/lib/constants'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
@@ -48,7 +48,6 @@ export function DashboardPage() {
   const [studentCount, setStudentCount] = useState(0)
   const [teacherCount, setTeacherCount] = useState(0)
   const [chartData, setChartData] = useState<{ month: string; count: number }[]>([])
-  const [loading, setLoading] = useState(true)
   const [approvingLesson, setApprovingLesson] = useState<Lesson | null>(null)
   const [todayLimit, setTodayLimit] = useState(5)
 
@@ -56,7 +55,6 @@ export function DashboardPage() {
     let active = true
 
     async function loadDashboardLessons() {
-      setLoading(true)
       const [todayResult, pendingResult] = await Promise.allSettled([
         getDocs(query(collection(db, 'lessons'), where('date', '==', today), limit(todayLimit))),
         getDocs(query(collection(db, 'lessons'), where('status', '==', 'pending'), limit(20))),
@@ -80,12 +78,9 @@ export function DashboardPage() {
         setPendingLessons([])
       }
 
-      setLoading(false)
     }
 
-    loadDashboardLessons().catch(() => {
-      if (active) setLoading(false)
-    })
+    loadDashboardLessons().catch(() => undefined)
 
     return () => {
       active = false
@@ -96,59 +91,47 @@ export function DashboardPage() {
     // One-shot count queries instead of full-document subscriptions (1 read each)
     getCountFromServer(query(collection(db, 'students'), where('status', '==', 'active')))
       .then((snap) => setStudentCount(snap.data().count))
-      .catch((err) => console.error('[dashboard-student-count]', err))
+      .catch(() => setStudentCount(0))
 
     getCountFromServer(query(collection(db, 'teachers'), where('status', '==', 'active')))
       .then((snap) => setTeacherCount(snap.data().count))
-      .catch((err) => console.error('[dashboard-teacher-count]', err))
+      .catch(() => setTeacherCount(0))
 
     const months = Array.from({ length: 6 }, (_, i) => {
       const d = subMonths(new Date(), 5 - i)
       return format(d, 'yyyy-MM')
     })
 
-    Promise.all(
-      months.map(async (m) => {
-        try {
-          const snap = await getDocs(
-            query(
-              collection(db, 'lessons'),
-              where('date', '>=', m + '-01'),
-              where('date', '<=', m + '-31')
-            )
-          )
-          return {
-            month: m.slice(5) + '/' + m.slice(2, 4),
-            count: snap.docs.filter((docSnap) => docSnap.data().status === 'approved').length
-          }
-        } catch (err) {
-          console.error(`[dashboard-chart-month] Error for ${m}:`, err)
-          return {
-            month: m.slice(5) + '/' + m.slice(2, 4),
-            count: 0
-          }
-        }
-      })
+    getDocs(
+      query(
+        collection(db, 'lessons'),
+        where('date', '>=', months[0] + '-01'),
+        where('date', '<=', months[months.length - 1] + '-31')
+      )
     )
-      .then((data) => {
-        setChartData(data)
+      .then((snap) => {
+        const counts = new Map(months.map((month) => [month, 0]))
+        snap.docs.forEach((docSnap) => {
+          const lesson = docSnap.data()
+          const month = String(lesson.date || '').slice(0, 7)
+          if (lesson.status === 'approved' && counts.has(month)) {
+            counts.set(month, (counts.get(month) || 0) + 1)
+          }
+        })
+        setChartData(months.map((month) => ({
+          month: month.slice(5) + '/' + month.slice(2, 4),
+          count: counts.get(month) || 0,
+        })))
       })
-      .catch((err) => {
-        console.error('[dashboard-chart]', err)
+      .catch(() => {
+        setChartData(months.map((month) => ({
+          month: month.slice(5) + '/' + month.slice(2, 4),
+          count: 0,
+        })))
       })
   }, [])
 
   const pendingCount = pendingLessons.length
-
-  if (loading) {
-    return (
-      <div className="space-y-6 pt-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => <CardSkeleton key={i} />)}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
@@ -276,8 +259,9 @@ export function DashboardPage() {
           subtitle="6 tháng gần nhất"
           action={<TrendingUp className="w-5 h-5 text-slate-500" />}
         />
-        <div className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-52 min-w-0">
+          {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -289,6 +273,11 @@ export function DashboardPage() {
               <Bar dataKey="count" fill="#6366F1" radius={[4, 4, 0, 0]} name="Buổi dạy" />
             </BarChart>
           </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm font-medium text-slate-400">
+              Dữ liệu biểu đồ đang được cập nhật
+            </div>
+          )}
         </div>
       </Card>
 
