@@ -47,7 +47,7 @@ export function AdminLayout() {
     <div className="min-h-screen bg-slate-50">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
-        <AdminSidebar />
+        <AdminSidebar pendingCount={pendingCount} pendingBookingCount={pendingBookingCount} />
       </div>
 
       {/* Mobile header */}

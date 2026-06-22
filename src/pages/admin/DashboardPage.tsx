@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, limit, getDocs, getCountFromServer } from 'firebase/firestore'
+import { collection, query, where, limit, getDocs, getCountFromServer } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -53,39 +53,43 @@ export function DashboardPage() {
   const [todayLimit, setTodayLimit] = useState(5)
 
   useEffect(() => {
-    const unsubs: (() => void)[] = []
+    let active = true
 
-    unsubs.push(
-      onSnapshot(
-        query(collection(db, 'lessons'), where('date', '==', today), limit(todayLimit)),
-        (snap) => {
-          const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
-          docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
-          setTodayLessons(docs)
-          setLoading(false)
-        },
-        (err) => {
-          console.error("Error loading today's lessons:", err)
-          setLoading(false)
-        }
-      )
-    )
+    async function loadDashboardLessons() {
+      setLoading(true)
+      const [todayResult, pendingResult] = await Promise.allSettled([
+        getDocs(query(collection(db, 'lessons'), where('date', '==', today), limit(todayLimit))),
+        getDocs(query(collection(db, 'lessons'), where('status', '==', 'pending'), limit(20))),
+      ])
 
-    unsubs.push(
-      onSnapshot(
-        query(collection(db, 'lessons'), where('status', '==', 'pending'), limit(20)),
-        (snap) => {
-          const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
-          docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
-          setPendingLessons(docs.slice(0, 5))
-        },
-        (err) => {
-          console.error("Error loading pending lessons:", err)
-        }
-      )
-    )
+      if (!active) return
 
-    return () => unsubs.forEach((u) => u())
+      if (todayResult.status === 'fulfilled') {
+        const docs = todayResult.value.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
+        docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
+        setTodayLessons(docs)
+      } else {
+        setTodayLessons([])
+      }
+
+      if (pendingResult.status === 'fulfilled') {
+        const docs = pendingResult.value.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
+        docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
+        setPendingLessons(docs.slice(0, 5))
+      } else {
+        setPendingLessons([])
+      }
+
+      setLoading(false)
+    }
+
+    loadDashboardLessons().catch(() => {
+      if (active) setLoading(false)
+    })
+
+    return () => {
+      active = false
+    }
   }, [today, todayLimit])
 
   useEffect(() => {

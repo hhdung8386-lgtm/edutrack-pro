@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getCountFromServer, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
 export function usePendingBookingCount() {
@@ -10,10 +10,18 @@ export function usePendingBookingCount() {
       collection(db, 'bookingRequests'),
       where('status', '==', 'pending')
     )
-    const unsub = onSnapshot(q, (snap) => {
-      setCount(snap.size)
-    })
-    return unsub
+    let active = true
+    getCountFromServer(q)
+      .then((snap) => {
+        if (active) setCount(snap.data().count)
+      })
+      .catch(() => {
+        if (active) setCount(0)
+      })
+
+    return () => {
+      active = false
+    }
   }, [])
 
   return count

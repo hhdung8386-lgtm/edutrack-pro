@@ -7,8 +7,6 @@ import {
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
-import { usePendingCount } from '@/hooks/usePendingCount'
-import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 import { Logo } from '@/components/shared/Logo'
 
 const navItems = [
@@ -25,11 +23,9 @@ const navItems = [
   { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
 ]
 
-export function AdminSidebar() {
+export function AdminSidebar({ pendingCount = 0, pendingBookingCount = 0 }: { pendingCount?: number; pendingBookingCount?: number }) {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const pendingCount = usePendingCount()
-  const pendingBookingCount = usePendingBookingCount()
 
   const handleSignOut = async () => {
     await signOut()
