@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { collection, addDoc, updateDoc, doc, getDocs, query, where, serverTimestamp } from 'firebase/firestore'
 import { db, generateUniqueCode } from '@/lib/firebase'
-import { Student, Subject } from '@/types'
+import { Student } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -21,9 +21,6 @@ const schema = z.object({
   code: z.string().min(1, 'Mã học viên không được để trống').toUpperCase(),
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
-  subjectId: z.string().min(1, 'Chọn môn học'),
-  sessions: z.coerce.number(),
-  minutesPerSession: z.coerce.number().min(1, 'Chọn số phút'),
   branchId: z.string().optional(),
 })
 
@@ -35,28 +32,20 @@ interface Props {
 }
 
 export function StudentFormModal({ student, onClose }: Props) {
-  const [subjects, setSubjects] = useState<Subject[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [generatedCode, setGeneratedCode] = useState('')
   const isEdit = !!student
-  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: student
       ? {
           code: student.code,
           name: student.name,
           parentPhone: student.parentPhone,
-          subjectId: student.subjectId,
-          sessions: student.totalSessions,
-          minutesPerSession: student.minutesPerSession || 50,
           branchId: student.branchId || '',
         }
-      : { code: '', sessions: 10, minutesPerSession: 50, branchId: '' },
+      : { code: '', branchId: '' },
   })
-
-  const watchedSessions = watch('sessions') || 0
-  const watchedMinutesPerSession = watch('minutesPerSession') || 0
-  const totalMinutes = watchedSessions * watchedMinutesPerSession
 
   useEffect(() => {
     if (!isEdit && !generatedCode) {
@@ -74,9 +63,6 @@ export function StudentFormModal({ student, onClose }: Props) {
   }, [generatedCode, isEdit, setValue])
 
   useEffect(() => {
-    getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
-      setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
-    })
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active'))).then((snap) => {
       setBranches(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Branch)))
     })
@@ -84,7 +70,6 @@ export function StudentFormModal({ student, onClose }: Props) {
 
   const onSubmit = async (data: FormData) => {
     try {
-      const subject = subjects.find((s) => s.id === data.subjectId)
       const branch = data.branchId ? branches.find((b) => b.id === data.branchId) : null
       if (isEdit && student) {
         await updateDoc(doc(db, 'students', student.id), {
@@ -97,39 +82,23 @@ export function StudentFormModal({ student, onClose }: Props) {
         toast.success('Đã cập nhật học viên')
       } else {
         const studentCode = generatedCode || await generateUniqueCode('student')
-        const totalMinutes = data.sessions * data.minutesPerSession
-        const subjectPrice = subject?.pricePerMinute || 0
-
-        const initialSubject = {
-          subjectId: data.subjectId,
-          subjectName: subject?.name || '',
-          totalSessions: data.sessions,
-          usedSessions: 0,
-          remainingSessions: data.sessions,
-          minutesPerSession: data.minutesPerSession,
-          totalMinutes,
-          usedMinutes: 0,
-          remainingMinutes: totalMinutes,
-          pricePerMinute: subjectPrice,
-        }
-
         await addDoc(collection(db, 'students'), {
           code: studentCode,
           name: data.name,
           parentPhone: data.parentPhone,
-          subjectId: data.subjectId,
-          subjectName: subject?.name || '',
+          subjectId: '',
+          subjectName: '',
           branchId: data.branchId || '',
           branchName: branch?.name || '',
-          totalSessions: data.sessions,
+          totalSessions: 0,
           usedSessions: 0,
-          remainingSessions: data.sessions,
-          minutesPerSession: data.minutesPerSession,
-          totalMinutes,
+          remainingSessions: 0,
+          minutesPerSession: 50,
+          totalMinutes: 0,
           usedMinutes: 0,
-          remainingMinutes: totalMinutes,
-          status: 'active',
-          subjects: [initialSubject],
+          remainingMinutes: 0,
+          status: 'inactive',
+          subjects: [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -182,19 +151,11 @@ export function StudentFormModal({ student, onClose }: Props) {
           error={errors.parentPhone?.message}
           {...register('parentPhone')}
         />
-        <div className={isEdit ? 'hidden' : ''}>
-          <label className="block text-sm font-medium text-slate-600 mb-1.5">Môn học *</label>
-          <select
-            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            {...register('subjectId')}
-          >
-            <option value="">-- Chọn môn học --</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          {errors.subjectId && <p className="mt-1.5 text-xs text-rose-400">{errors.subjectId.message}</p>}
-        </div>
+        {!isEdit && (
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm leading-6 text-slate-600">
+            Học viên sẽ được tạo chưa có môn học. Admin có thể thêm gói môn tại trang chi tiết sau khi tạo tài khoản.
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Chi nhánh</label>
           <select
@@ -207,40 +168,6 @@ export function StudentFormModal({ student, onClose }: Props) {
             ))}
           </select>
         </div>
-        <div className={isEdit ? 'hidden' : ''}>
-          <Input
-            label="Tổng số buổi *"
-            type="number"
-            placeholder="10"
-            error={errors.sessions?.message}
-            {...register('sessions')}
-          />
-        </div>
-        <div className={isEdit ? 'hidden' : ''}>
-          <label className="block text-sm font-medium text-slate-600 mb-1.5">Số phút / buổi *</label>
-          <select
-            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            {...register('minutesPerSession')}
-          >
-            <option value={25}>25 phút</option>
-            <option value={50}>50 phút</option>
-            <option value={75}>75 phút</option>
-            <option value={100}>100 phút</option>
-          </select>
-          {errors.minutesPerSession && <p className="mt-1.5 text-xs text-rose-400">{errors.minutesPerSession.message}</p>}
-        </div>
-        {!isEdit && (
-          <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm">
-            <p className="text-slate-500 mb-2">Tổng phút theo quỹ</p>
-            <div className="flex flex-wrap items-center gap-2 text-slate-700">
-              <span className="font-semibold">{watchedSessions} buổi</span>
-              <span>×</span>
-              <span className="font-semibold">{watchedMinutesPerSession} phút</span>
-              <span>=</span>
-              <span className="font-semibold text-indigo-700">{totalMinutes} phút</span>
-            </div>
-          </div>
-        )}
       </form>
     </Modal>
   )

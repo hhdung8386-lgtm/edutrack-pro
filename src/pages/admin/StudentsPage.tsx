@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, getDocs, deleteDoc, doc, limit } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, getDocs, getCountFromServer, deleteDoc, doc, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -31,8 +31,10 @@ export function StudentsPage() {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
   const [limitVal, setLimitVal] = useState(20)
+  const [totalStudents, setTotalStudents] = useState<number | null>(null)
 
   useEffect(() => {
+    setLoading(true)
     const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(limitVal))
     const unsub = onSnapshot(
       q,
@@ -48,6 +50,12 @@ export function StudentsPage() {
     )
     return unsub
   }, [limitVal])
+
+  useEffect(() => {
+    getCountFromServer(collection(db, 'students'))
+      .then((snap) => setTotalStudents(snap.data().count))
+      .catch((err) => console.error('Error counting students:', err))
+  }, [])
 
   useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
@@ -84,7 +92,9 @@ export function StudentsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Học viên</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{students.length} học viên tổng cộng</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Đã tải {students.length}{totalStudents !== null ? ` / ${totalStudents}` : ''} học viên
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => setShowAdd(true)} className="shadow-sm">
@@ -104,6 +114,19 @@ export function StudentsPage() {
           className="w-full lg:max-w-md"
         />
         <div className="flex gap-3 items-center flex-wrap">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <span className="whitespace-nowrap">Số học viên</span>
+            <select
+              value={limitVal}
+              onChange={(event) => setLimitVal(Number(event.target.value))}
+              className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+              aria-label="Chọn số lượng học viên cần tải"
+            >
+              {[20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000].map((count) => (
+                <option key={count} value={count}>{count}</option>
+              ))}
+            </select>
+          </label>
           <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
             {['all', 'active', 'inactive', 'expired'].map((s) => (
               <button
@@ -301,13 +324,9 @@ export function StudentsPage() {
             ))}
           </div>
 
-          {students.length >= limitVal && (
-            <div className="flex justify-center mt-6">
-              <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 20)}>
-                Xem thêm
-              </Button>
-            </div>
-          )}
+          <p className="mt-4 text-center text-xs text-slate-500">
+            Đang hiển thị {filtered.length} kết quả trong {students.length} hồ sơ đã tải.
+          </p>
         </>
       )}
 
