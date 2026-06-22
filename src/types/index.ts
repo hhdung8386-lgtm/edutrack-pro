@@ -1,5 +1,18 @@
 import { Timestamp } from 'firebase/firestore'
 
+export interface StudentSubject {
+  subjectId: string
+  subjectName: string
+  totalSessions: number
+  usedSessions: number
+  remainingSessions: number
+  minutesPerSession: number
+  totalMinutes: number
+  usedMinutes: number
+  remainingMinutes: number
+  pricePerMinute: number
+}
+
 export interface Student {
   id: string
   code: string
@@ -19,6 +32,7 @@ export interface Student {
   reservedMinutes?: number
   heldMinutes?: number
   status: 'active' | 'inactive' | 'expired'
+  subjects?: StudentSubject[]
   createdAt: Timestamp
   updatedAt: Timestamp
 }

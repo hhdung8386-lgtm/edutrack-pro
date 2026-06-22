@@ -9,8 +9,9 @@ import { StatusBadge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
+import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator } from 'lucide-react'
+import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -27,6 +28,13 @@ export function StudentDetailPage() {
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
   const [actioning, setActioning] = useState(false)
+
+  // State variables for subject package management
+  const [editingSubjectId, setEditingSubjectId] = useState<string | undefined>(undefined)
+  const [showSubjectPkg, setShowSubjectPkg] = useState(false)
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
+  const [reApproveSubjectId, setReApproveSubjectId] = useState<string>('')
+
   // Live rates per (subjectId, teacherId) for drift detection / recalc
   const [liveRates, setLiveRates] = useState<{
     subjectPrice: Record<string, number>
@@ -63,10 +71,13 @@ export function StudentDetailPage() {
     return () => { unsubStudent(); unsubLessons() }
   }, [id])
 
-  // Load live subject prices & teacher levels referenced by approved lessons
+  // Load live subject prices & teacher levels referenced by approved lessons or student primary subject
   useEffect(() => {
-    if (lessons.length === 0) return
-    const subjectIds = Array.from(new Set(lessons.map(l => l.subjectId).filter(Boolean)))
+    if (lessons.length === 0 && !student?.subjectId) return
+    const subjectIds = Array.from(new Set([
+      ...lessons.map(l => l.subjectId),
+      student?.subjectId
+    ].filter(Boolean) as string[]))
     const teacherIds = Array.from(new Set(lessons.map(l => l.teacherId).filter(Boolean)))
     let cancelled = false
     Promise.all([
@@ -88,7 +99,7 @@ export function StudentDetailPage() {
       setLiveRates({ subjectPrice, teacherLevel, teacherUid })
     })
     return () => { cancelled = true }
-  }, [lessons.length])
+  }, [lessons.length, student?.subjectId])
 
   // Helper: compute current expected salary from live rates
   const expectedSalary = (lesson: Lesson) => {
@@ -240,6 +251,53 @@ export function StudentDetailPage() {
     }
   }
 
+  const handleDeleteSubject = async (subjectId: string) => {
+    if (!student) return
+    const hasHistory = lessons.some((l) => l.subjectId === subjectId)
+    if (hasHistory) {
+      toast.error('Không thể xóa môn học đã có lịch sử học')
+      return
+    }
+
+    if (!confirm('Bạn có chắc chắn muốn xóa môn học này?')) return
+
+    setActioning(true)
+    try {
+      const updatedSubjects = (student.subjects || []).filter(s => s.subjectId !== subjectId)
+      
+      // Recalculate aggregates
+      const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
+      const aggUsedSessions = updatedSubjects.reduce((sum, s) => sum + s.usedSessions, 0)
+      const aggRemainingSessions = updatedSubjects.reduce((sum, s) => sum + s.remainingSessions, 0)
+      const aggTotalMinutes = updatedSubjects.reduce((sum, s) => sum + s.totalMinutes, 0)
+      const aggUsedMinutes = updatedSubjects.reduce((sum, sumS) => sum + sumS.usedMinutes, 0)
+      const aggRemainingMinutes = updatedSubjects.reduce((sum, sumS) => sum + sumS.remainingMinutes, 0)
+
+      const primarySubject = updatedSubjects[0] || null
+
+      await updateDoc(doc(db, 'students', student.id), {
+        subjects: updatedSubjects,
+        totalSessions: aggTotalSessions,
+        usedSessions: aggUsedSessions,
+        remainingSessions: aggRemainingSessions,
+        totalMinutes: aggTotalMinutes,
+        usedMinutes: aggUsedMinutes,
+        remainingMinutes: aggRemainingMinutes,
+        subjectId: primarySubject ? primarySubject.subjectId : '',
+        subjectName: primarySubject ? primarySubject.subjectName : '',
+        minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
+        status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
+        updatedAt: serverTimestamp(),
+      })
+      toast.success('Đã xóa môn học thành công')
+    } catch (err) {
+      console.error(err)
+      toast.error('Xóa môn học thất bại')
+    } finally {
+      setActioning(false)
+    }
+  }
+
   // ─── Reverse approval: approved → rejected, restore minutes, void payroll ──
   const handleReverseApproval = async () => {
     if (!reversingLesson || !student) return
@@ -256,17 +314,55 @@ export function StudentDetailPage() {
         const studentSnap = await tx.get(studentRef)
         const s = studentSnap.data()!
 
-        const sMps = s.minutesPerSession || 50
-        const sTotal = s.totalMinutes ?? s.totalSessions * sMps
-        const sPrevUsed = s.usedMinutes ?? (s.usedSessions || 0) * sMps
-        const newUsed = Math.max(0, sPrevUsed - reversingLesson.minutes)
-        const newRemaining = sTotal - newUsed
-        const newRemainingSessions = Math.floor(newRemaining / sMps)
-        const rawSessions = newUsed / sMps
-        const newUsedSessions =
-          Math.abs(rawSessions - Math.round(rawSessions)) < 0.001
-            ? Math.round(rawSessions)
-            : Math.round(rawSessions * 100) / 100
+        // Initialize subjects array for backward compatibility if needed
+        let updatedSubjects = s.subjects && s.subjects.length > 0
+          ? [...s.subjects]
+          : s.subjectId
+            ? [{
+                subjectId: s.subjectId,
+                subjectName: s.subjectName || 'Chưa rõ',
+                totalSessions: s.totalSessions || 0,
+                usedSessions: s.usedSessions || 0,
+                remainingSessions: s.remainingSessions || 0,
+                minutesPerSession: s.minutesPerSession || 50,
+                totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
+                usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
+                remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
+                pricePerMinute: reversingLesson.pricePerMinute || 0,
+              }]
+            : []
+
+        // Find the matching subject package
+        const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === reversingLesson.subjectId)
+        if (sIdx !== -1) {
+          const subPkg = updatedSubjects[sIdx]
+          const subUsedMinutes = Math.max(0, subPkg.usedMinutes - reversingLesson.minutes)
+          const subRemainingMinutes = subPkg.totalMinutes - subUsedMinutes
+          const subMps = subPkg.minutesPerSession || 50
+          const subUsedSessionsRaw = subMps > 0 ? subUsedMinutes / subMps : 0
+          const subUsedSessions = Math.abs(subUsedSessionsRaw - Math.round(subUsedSessionsRaw)) < 0.001
+            ? Math.round(subUsedSessionsRaw)
+            : Math.round(subUsedSessionsRaw * 100) / 100
+          const subRemainingSessions = Math.floor(subRemainingMinutes / subMps)
+
+          updatedSubjects[sIdx] = {
+            ...subPkg,
+            usedMinutes: subUsedMinutes,
+            remainingMinutes: subRemainingMinutes,
+            usedSessions: subUsedSessions,
+            remainingSessions: subRemainingSessions
+          }
+        }
+
+        // Recalculate aggregates
+        const aggTotalSessions = updatedSubjects.reduce((sum, sub) => sum + sub.totalSessions, 0)
+        const aggUsedSessions = updatedSubjects.reduce((sum, sub) => sum + sub.usedSessions, 0)
+        const aggRemainingSessions = updatedSubjects.reduce((sum, sub) => sum + sub.remainingSessions, 0)
+        const aggTotalMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.totalMinutes, 0)
+        const aggUsedMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.usedMinutes, 0)
+        const aggRemainingMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.remainingMinutes, 0)
+
+        const primarySubject = updatedSubjects[0] || null
 
         tx.update(lessonRef, {
           status: 'rejected',
@@ -281,13 +377,18 @@ export function StudentDetailPage() {
         })
 
         tx.update(studentRef, {
-          usedMinutes: newUsed,
-          remainingMinutes: newRemaining,
-          totalMinutes: sTotal,
-          minutesPerSession: sMps,
-          usedSessions: newUsedSessions,
-          remainingSessions: newRemainingSessions,
-          status: newRemaining <= 0 ? 'expired' : 'active',
+          subjects: updatedSubjects,
+          totalSessions: aggTotalSessions,
+          usedSessions: aggUsedSessions,
+          remainingSessions: aggRemainingSessions,
+          totalMinutes: aggTotalMinutes,
+          usedMinutes: aggUsedMinutes,
+          remainingMinutes: aggRemainingMinutes,
+          // Legacy fields mapping to primary subject
+          subjectId: primarySubject ? primarySubject.subjectId : '',
+          subjectName: primarySubject ? primarySubject.subjectName : '',
+          minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
+          status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
           updatedAt: serverTimestamp(),
         })
 
@@ -315,6 +416,8 @@ export function StudentDetailPage() {
           restoredMinutes: reversingLesson.minutes,
           voidedPayrolls: payrollIds.length,
           voidedSalary: reversingLesson.salary || 0,
+          subjectId: reversingLesson.subjectId,
+          subjectName: reversingLesson.subjectName,
         },
         createdAt: serverTimestamp(),
       })
@@ -331,9 +434,15 @@ export function StudentDetailPage() {
 
   // ─── Re-approve a rejected lesson: rejected → approved, deduct minutes again ──
   const handleReApprove = async () => {
-    if (!reApprovingLesson || !student) return
+    if (!reApprovingLesson || !student || !reApproveSubjectId) return
     setActioning(true)
     try {
+      const chosenSubjectPkg = activeSubjects.find(s => s.subjectId === reApproveSubjectId)
+      if (!chosenSubjectPkg) {
+        toast.error('Môn học được chọn không hợp lệ')
+        return
+      }
+
       await runTransaction(
         db,
         async (tx) => {
@@ -342,33 +451,67 @@ export function StudentDetailPage() {
           const studentSnap = await tx.get(studentRef)
           const s = studentSnap.data()!
 
-          let teacherLevel = reApprovingLesson.teacherLevel
-          let pricePerMinute = reApprovingLesson.pricePerMinute
-          if (teacherLevel == null || pricePerMinute == null) {
-            const [tSnap, subjSnap] = await Promise.all([
-              tx.get(doc(db, 'teachers', reApprovingLesson.teacherId)),
-              tx.get(doc(db, 'subjects', reApprovingLesson.subjectId)),
-            ])
-            teacherLevel = teacherLevel ?? tSnap.data()?.level ?? 1
-            pricePerMinute = pricePerMinute ?? (subjSnap.data()?.pricePerMinute ?? 0)
+          let teacherLevel: number = reApprovingLesson.teacherLevel ?? 1
+          if (reApprovingLesson.teacherLevel == null) {
+            const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
+            teacherLevel = tSnap.data()?.level ?? 1
           }
 
-          const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute as number, teacherLevel as number)
+          const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
+          const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel)
           const month = reApprovingLesson.date.slice(0, 7)
 
-          const sMps = s.minutesPerSession || 50
-          const sTotal = s.totalMinutes ?? s.totalSessions * sMps
-          const sPrevUsed = s.usedMinutes ?? (s.usedSessions || 0) * sMps
-          const sPrevRemaining = s.remainingMinutes ?? (sTotal - sPrevUsed)
+          // Initialize subjects array for backward compatibility if needed
+          let updatedSubjects = s.subjects && s.subjects.length > 0
+            ? [...s.subjects]
+            : s.subjectId
+              ? [{
+                  subjectId: s.subjectId,
+                  subjectName: s.subjectName || 'Chưa rõ',
+                  totalSessions: s.totalSessions || 0,
+                  usedSessions: s.usedSessions || 0,
+                  remainingSessions: s.remainingSessions || 0,
+                  minutesPerSession: s.minutesPerSession || 50,
+                  totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
+                  usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
+                  remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
+                  pricePerMinute: reApprovingLesson.pricePerMinute || 0,
+                }]
+              : []
 
-          const newUsed = sPrevUsed + reApprovingLesson.minutes
-          const newRemaining = sTotal - newUsed
-          const newRemainingSessions = Math.floor(newRemaining / sMps)
-          const rawSessions = newUsed / sMps
-          const newUsedSessions =
-            Math.abs(rawSessions - Math.round(rawSessions)) < 0.001
-              ? Math.round(rawSessions)
-              : Math.round(rawSessions * 100) / 100
+          // Deduct from the selected subject package
+          const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === reApproveSubjectId)
+          if (sIdx === -1) {
+            throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
+          }
+
+          const subPkg = updatedSubjects[sIdx]
+          const newSubUsedMinutes = subPkg.usedMinutes + reApprovingLesson.minutes
+          const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
+          const subMps = subPkg.minutesPerSession || 50
+          const subUsedSessionsRaw = subMps > 0 ? newSubUsedMinutes / subMps : 0
+          const newSubUsedSessions = Math.abs(subUsedSessionsRaw - Math.round(subUsedSessionsRaw)) < 0.001
+            ? Math.round(subUsedSessionsRaw)
+            : Math.round(subUsedSessionsRaw * 100) / 100
+          const newSubRemainingSessions = Math.floor(newSubRemainingMinutes / subMps)
+
+          updatedSubjects[sIdx] = {
+            ...subPkg,
+            usedMinutes: newSubUsedMinutes,
+            remainingMinutes: newSubRemainingMinutes,
+            usedSessions: newSubUsedSessions,
+            remainingSessions: newSubRemainingSessions
+          }
+
+          // Recalculate student aggregates
+          const aggTotalSessions = updatedSubjects.reduce((sum, sub) => sum + sub.totalSessions, 0)
+          const aggUsedSessions = updatedSubjects.reduce((sum, sub) => sum + sub.usedSessions, 0)
+          const aggRemainingSessions = updatedSubjects.reduce((sum, sub) => sum + sub.remainingSessions, 0)
+          const aggTotalMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.totalMinutes, 0)
+          const aggUsedMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.usedMinutes, 0)
+          const aggRemainingMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.remainingMinutes, 0)
+
+          const primarySubject = updatedSubjects[0] || null
 
           tx.update(lessonRef, {
             status: 'approved',
@@ -378,21 +521,28 @@ export function StudentDetailPage() {
             salary,
             teacherLevel,
             pricePerMinute,
-            sessionsBeforeApproval: s.remainingSessions,
-            sessionsAfterApproval: newRemainingSessions,
-            minutesBeforeApproval: sPrevRemaining,
-            minutesAfterApproval: newRemaining,
+            subjectId: chosenSubjectPkg.subjectId,
+            subjectName: chosenSubjectPkg.subjectName,
+            sessionsBeforeApproval: subPkg.remainingSessions,
+            sessionsAfterApproval: newSubRemainingSessions,
+            minutesBeforeApproval: subPkg.remainingMinutes,
+            minutesAfterApproval: newSubRemainingMinutes,
             updatedAt: serverTimestamp(),
           })
 
           tx.update(studentRef, {
-            usedMinutes: newUsed,
-            remainingMinutes: newRemaining,
-            totalMinutes: sTotal,
-            minutesPerSession: sMps,
-            usedSessions: newUsedSessions,
-            remainingSessions: newRemainingSessions,
-            status: newRemaining <= 0 ? 'expired' : 'active',
+            subjects: updatedSubjects,
+            totalSessions: aggTotalSessions,
+            usedSessions: aggUsedSessions,
+            remainingSessions: aggRemainingSessions,
+            totalMinutes: aggTotalMinutes,
+            usedMinutes: aggUsedMinutes,
+            remainingMinutes: aggRemainingMinutes,
+            // Legacy fields mapping to primary subject
+            subjectId: primarySubject ? primarySubject.subjectId : '',
+            subjectName: primarySubject ? primarySubject.subjectName : '',
+            minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
+            status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
             updatedAt: serverTimestamp(),
           })
 
@@ -405,8 +555,8 @@ export function StudentDetailPage() {
             teacherId: reApprovingLesson.teacherId,
             teacherCode: reApprovingLesson.teacherCode ?? '',
             teacherName: reApprovingLesson.teacherName ?? '',
-            subjectId: reApprovingLesson.subjectId,
-            subjectName: reApprovingLesson.subjectName ?? '',
+            subjectId: chosenSubjectPkg.subjectId,
+            subjectName: chosenSubjectPkg.subjectName,
             date: reApprovingLesson.date,
             minutes: reApprovingLesson.minutes,
             comment: reApprovingLesson.comment || '',
@@ -443,11 +593,13 @@ export function StudentDetailPage() {
         changes: {
           lessonDate: reApprovingLesson.date,
           deductedMinutes: reApprovingLesson.minutes,
+          subjectId: chosenSubjectPkg.subjectId,
+          subjectName: chosenSubjectPkg.subjectName,
         },
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã duyệt lại, trừ ${reApprovingLesson.minutes} phút`)
+      toast.success(`Đã duyệt lại môn ${chosenSubjectPkg.subjectName}, trừ ${reApprovingLesson.minutes} phút`)
       setReApprovingLesson(null)
     } catch (err) {
       console.error(err)
@@ -466,6 +618,23 @@ export function StudentDetailPage() {
   const usedPct = totalMinutesFund > 0
     ? Math.min(100, Math.round((usedMinutesFund / totalMinutesFund) * 100))
     : 0
+
+  const activeSubjects = student.subjects && student.subjects.length > 0
+    ? student.subjects
+    : student.subjectId
+      ? [{
+          subjectId: student.subjectId,
+          subjectName: student.subjectName || 'Chưa rõ',
+          totalSessions: student.totalSessions || 0,
+          usedSessions: student.usedSessions || 0,
+          remainingSessions: student.remainingSessions || 0,
+          minutesPerSession: student.minutesPerSession || 50,
+          totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
+          usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
+          remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
+          pricePerMinute: liveRates.subjectPrice[student.subjectId] || 0,
+        }]
+      : []
 
   const trackingUrl = `${window.location.origin}/tracking?student=${student.code}`
 
@@ -536,94 +705,128 @@ export function StudentDetailPage() {
         </Card>
       )}
 
-      {/* Session stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-slate-700">{student.totalSessions}</p>
-          <p className="text-xs text-slate-500 mt-1">Tổng buổi</p>
-          <p className="text-xs text-slate-400 mt-0.5">{totalMinutesFund} phút</p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-3xl font-bold text-indigo-400">{displayUsedSessions}</p>
-          <p className="text-xs text-slate-500 mt-1">Đã học</p>
-          <p className="text-xs text-indigo-300 mt-0.5">{usedMinutesFund} phút</p>
-        </Card>
-        <Card className="text-center">
-          <p className={`text-3xl font-bold ${displayRemainingSessions <= 0 ? 'text-rose-400' : displayRemainingSessions <= 3 ? 'text-amber-400' : 'text-emerald-400'}`}>
-            {displayRemainingSessions}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">Còn lại</p>
-          <p className={`text-xs mt-0.5 ${remainingMinutes <= 0 ? 'text-rose-400' : 'text-emerald-300'}`}>
-            {remainingMinutes} phút
-          </p>
-        </Card>
+      {/* Môn học đang học */}
+      <div className="space-y-4">
+        <h3 className="text-base font-bold text-slate-900">Môn học đang học</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {activeSubjects.map((pkg) => {
+            const pkgPct = pkg.totalMinutes > 0
+              ? Math.min(100, Math.round((pkg.usedMinutes / pkg.totalMinutes) * 100))
+              : 0;
+            const hasHistory = lessons.some(l => l.subjectId === pkg.subjectId);
+            
+            return (
+              <Card key={pkg.subjectId} className="relative overflow-visible">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-indigo-500" />
+                    <span className="font-bold text-slate-900 text-base">{pkg.subjectName}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setEditingSubjectId(pkg.subjectId)
+                        setShowSubjectPkg(true)
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors"
+                      title="Chỉnh sửa"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSubject(pkg.subjectId)}
+                      disabled={hasHistory}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-30 disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                      title={hasHistory ? "Không thể xóa môn học đã có lịch sử học" : "Xóa môn học"}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 rounded-xl p-3 mb-4 text-xs">
+                  <div>
+                    <p className="font-bold text-slate-700 text-sm">{pkg.totalSessions}</p>
+                    <p className="text-slate-500 font-medium mt-0.5">Tổng buổi</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{pkg.totalMinutes} phút</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-indigo-500 text-sm">{pkg.usedSessions}</p>
+                    <p className="text-slate-500 font-medium mt-0.5">Đã học</p>
+                    <p className="text-[10px] text-indigo-400 mt-0.5">{pkg.usedMinutes} phút</p>
+                  </div>
+                  <div>
+                    <p className={`font-bold text-sm ${pkg.remainingSessions <= 0 ? 'text-rose-500' : pkg.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                      {pkg.remainingSessions}
+                    </p>
+                    <p className="text-slate-500 font-medium mt-0.5">Còn lại</p>
+                    <p className={`text-[10px] mt-0.5 ${pkg.remainingMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+                      {pkg.remainingMinutes} phút
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold text-slate-600">
+                    <span>Tiến độ học</span>
+                    <span>{pkgPct}%</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-300"
+                      style={{ width: `${pkgPct}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Đơn giá gói: {pkg.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                  </p>
+                </div>
+              </Card>
+            )
+          })}
+
+          <button
+            onClick={() => {
+              setEditingSubjectId(undefined)
+              setShowSubjectPkg(true)
+            }}
+            className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-2xl hover:border-indigo-500 hover:text-indigo-600 text-slate-400 transition-all duration-200 min-h-[180px] bg-white hover:bg-slate-50/50"
+          >
+            <Plus className="w-6 h-6 mb-2" />
+            <span className="font-semibold text-sm">Thêm môn học</span>
+          </button>
+        </div>
       </div>
-
-      {/* Progress bar */}
-      <style>{`.progress-bar-used { width: ${usedPct}%; }`}</style>
-      <Card>
-        <div className="flex justify-between text-sm mb-2">
-          <span className="text-slate-500">Tiến độ học</span>
-          <span className="text-slate-600 font-medium">{usedPct}%</span>
-        </div>
-        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full transition-all duration-500 progress-bar-used"
-          />
-        </div>
-        <p className="text-xs text-slate-500 mt-2">
-          {displayUsedSessions} / {student.totalSessions} buổi đã học
-          <span className="ml-2 text-slate-400">({usedMinutesFund} / {totalMinutesFund} phút)</span>
-        </p>
-      </Card>
-
-      {/* Session breakdown by status */}
-      <Card>
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Phân loại buổi học</h3>
-        <div className="divide-y divide-slate-100">
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-              <span className="text-sm text-slate-600">Đã duyệt</span>
-            </div>
-            <div className="text-sm text-right">
-              <span className="font-medium text-slate-700">{approvedLessons.length} buổi</span>
-              {approvedMinutes > 0 && (
-                <span className="text-slate-400 ml-2">/ {approvedMinutes} phút</span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-              <span className="text-sm text-slate-600">Chờ duyệt</span>
-            </div>
-            <div className="text-sm text-right">
-              <span className="font-medium text-slate-700">{pendingLessons.length} buổi</span>
-              {pendingMinutes > 0 && (
-                <span className="text-slate-400 ml-2">/ {pendingMinutes} phút</span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
-              <span className="text-sm text-slate-600">Từ chối</span>
-            </div>
-            <div className="text-sm text-right">
-              <span className="font-medium text-slate-700">{rejectedLessons.length} buổi</span>
-              {rejectedMinutes > 0 && (
-                <span className="text-slate-400 ml-2">/ {rejectedMinutes} phút</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* Lesson history */}
       <Card padding="none">
-        <div className="px-5 py-4 border-b border-slate-200">
+        <div className="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h3 className="text-base font-semibold text-slate-900">Lịch sử buổi học</h3>
+          <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar text-xs">
+            <button
+              onClick={() => setSelectedSubjectFilter('all')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
+                selectedSubjectFilter === 'all'
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              Tất cả môn
+            </button>
+            {activeSubjects.map((s) => (
+              <button
+                key={s.subjectId}
+                onClick={() => setSelectedSubjectFilter(s.subjectId)}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
+                  selectedSubjectFilter === s.subjectId
+                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+              >
+                {s.subjectName}
+              </button>
+            ))}
+          </div>
         </div>
         {lessons.length === 0 ? (
           <p className="text-center text-slate-500 text-sm py-8">Chưa có buổi học nào</p>
@@ -632,84 +835,91 @@ export function StudentDetailPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
-                  {['Ngày', 'Giáo viên', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
+                  {['Ngày', 'Giáo viên', 'Môn học', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {lessons.map((lesson) => (
-                  <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
-                    <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
-                    <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={lesson.book || ''}>{lesson.book || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
-                    <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{lesson.comment || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                      {lesson.status === 'approved' && lesson.salary != null ? (
-                        (() => {
+                {lessons
+                  .filter((lesson) => selectedSubjectFilter === 'all' || lesson.subjectId === selectedSubjectFilter)
+                  .map((lesson) => (
+                    <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
+                      <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
+                          {lesson.subjectName || '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={lesson.book || ''}>{lesson.book || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
+                      <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{lesson.comment || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                        {lesson.status === 'approved' && lesson.salary != null ? (
+                          (() => {
+                            const exp = expectedSalary(lesson)
+                            const drift = exp.salary !== lesson.salary && exp.salary > 0
+                            return (
+                              <div>
+                                <span className={drift ? 'text-amber-600 font-medium' : ''}>
+                                  {lesson.salary.toLocaleString('vi-VN')}đ
+                                </span>
+                                {drift && (
+                                  <div className="text-[11px] text-amber-600 mt-0.5 font-normal">
+                                    Giá hiện tại: {exp.salary.toLocaleString('vi-VN')}đ
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={lesson.status} /></td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {lesson.status === 'approved' && (() => {
                           const exp = expectedSalary(lesson)
                           const drift = exp.salary !== lesson.salary && exp.salary > 0
                           return (
-                            <div>
-                              <span className={drift ? 'text-amber-600 font-medium' : ''}>
-                                {lesson.salary.toLocaleString('vi-VN')}đ
-                              </span>
+                            <div className="flex items-center gap-1">
                               {drift && (
-                                <div className="text-[11px] text-amber-600 mt-0.5 font-normal">
-                                  Giá hiện tại: {exp.salary.toLocaleString('vi-VN')}đ
-                                </div>
+                                <button
+                                  onClick={() => openRecalc(lesson)}
+                                  disabled={recalcOpening}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-50 rounded-md border border-amber-200 transition-colors disabled:opacity-50"
+                                  title="Tính lại lương theo giá môn / level GV hiện tại"
+                                >
+                                  <Calculator className="w-3.5 h-3.5" />
+                                  Tính lại lương
+                                </button>
                               )}
+                              <button
+                                onClick={() => setReversingLesson(lesson)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-200 transition-colors"
+                                title="Huỷ duyệt: trả phút lại, void lương"
+                              >
+                                <Undo2 className="w-3.5 h-3.5" />
+                                Huỷ duyệt
+                              </button>
                             </div>
                           )
-                        })()
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3"><StatusBadge status={lesson.status} /></td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {lesson.status === 'approved' && (() => {
-                        const exp = expectedSalary(lesson)
-                        const drift = exp.salary !== lesson.salary && exp.salary > 0
-                        return (
-                          <div className="flex items-center gap-1">
-                            {drift && (
-                              <button
-                                onClick={() => openRecalc(lesson)}
-                                disabled={recalcOpening}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-50 rounded-md border border-amber-200 transition-colors disabled:opacity-50"
-                                title="Tính lại lương theo giá môn / level GV hiện tại"
-                              >
-                                <Calculator className="w-3.5 h-3.5" />
-                                Tính lại lương
-                              </button>
-                            )}
-                            <button
-                              onClick={() => setReversingLesson(lesson)}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-md border border-rose-200 transition-colors"
-                              title="Huỷ duyệt: trả phút lại, void lương"
-                            >
-                              <Undo2 className="w-3.5 h-3.5" />
-                              Huỷ duyệt
-                            </button>
-                          </div>
-                        )
-                      })()}
-                      {lesson.status === 'rejected' && (
-                        <button
-                          onClick={() => setReApprovingLesson(lesson)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md border border-indigo-200 transition-colors"
-                          title="Duyệt lại: trừ phút và tính lương"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          Duyệt lại
-                        </button>
-                      )}
-                      {lesson.status === 'pending' && (
-                        <span className="text-xs text-slate-400">— Xử lý ở trang Duyệt —</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        })()}
+                        {lesson.status === 'rejected' && (
+                          <button
+                            onClick={() => setReApprovingLesson(lesson)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md border border-indigo-200 transition-colors"
+                            title="Duyệt lại: trừ phút và tính lương"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Duyệt lại
+                          </button>
+                        )}
+                        {lesson.status === 'pending' && (
+                          <span className="text-xs text-slate-400">— Xử lý ở trang Duyệt —</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -718,6 +928,16 @@ export function StudentDetailPage() {
 
       {showEdit && <StudentFormModal student={student} onClose={() => setShowEdit(false)} />}
       {showAddSessions && <AddSessionsModal student={student} onClose={() => setShowAddSessions(false)} />}
+      {showSubjectPkg && (
+        <SubjectPackageModal
+          student={student}
+          editingSubjectId={editingSubjectId}
+          onClose={() => {
+            setShowSubjectPkg(false)
+            setEditingSubjectId(undefined)
+          }}
+        />
+      )}
 
       {/* Reverse approval confirm */}
       {reversingLesson && (
@@ -816,22 +1036,45 @@ export function StudentDetailPage() {
           confirmLabel="Duyệt lại"
           loading={actioning}
         >
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 text-sm space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Trừ quỹ phút</span>
-              <span className="text-rose-600 font-semibold">− {reApprovingLesson.minutes} phút</span>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 text-sm space-y-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-slate-600">Chọn môn học áp dụng *</label>
+              <select
+                value={reApproveSubjectId}
+                onChange={(e) => setReApproveSubjectId(e.target.value)}
+                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {activeSubjects.map((sub) => {
+                  const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
+                  return (
+                    <option key={sub.subjectId} value={sub.subjectId}>
+                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {sub.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                    </option>
+                  )
+                })}
+              </select>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Tạo bản ghi lương mới</span>
-              <span className="text-emerald-600 font-semibold">
-                {reApprovingLesson.pricePerMinute != null
-                  ? '+ ' + calculateSalary(reApprovingLesson.minutes, reApprovingLesson.pricePerMinute, reApprovingLesson.teacherLevel ?? 1).toLocaleString('vi-VN') + 'đ'
-                  : 'Tính khi duyệt'}
-              </span>
-            </div>
-            <div className="flex justify-between border-t border-indigo-200 pt-1.5 mt-1.5">
-              <span className="text-slate-600">Trạng thái mới</span>
-              <span className="text-slate-700 font-medium">Đã duyệt</span>
+            
+            <div className="space-y-1.5 border-t border-indigo-200/50 pt-2.5">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Trừ quỹ phút</span>
+                <span className="text-rose-600 font-semibold">− {reApprovingLesson.minutes} phút</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Lương giáo viên (tính theo môn đã chọn)</span>
+                <span className="text-emerald-600 font-semibold">
+                  {(() => {
+                    const chosen = activeSubjects.find(s => s.subjectId === reApproveSubjectId)
+                    const price = chosen?.pricePerMinute ?? 0
+                    const teacherLevel = reApprovingLesson.teacherLevel ?? 1
+                    return '+ ' + calculateSalary(reApprovingLesson.minutes, price, teacherLevel).toLocaleString('vi-VN') + 'đ'
+                  })()}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-indigo-200/30 pt-1.5 mt-1.5">
+                <span className="text-slate-600">Trạng thái mới</span>
+                <span className="text-slate-700 font-medium">Đã duyệt</span>
+              </div>
             </div>
           </div>
         </ConfirmDialog>

@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
+import { ApproveModal } from '@/components/lessons/ApproveModal'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
@@ -488,26 +489,69 @@ export function TeacherDetailPage() {
             const s = studentSnap.data()!
             const lessonMinutes = Number(lesson.minutes) || 0
 
-            const sMps = s.minutesPerSession || 50
-            const sTotal = s.totalMinutes ?? s.totalSessions * sMps
-            const sPrevUsed = s.usedMinutes ?? (s.usedSessions || 0) * sMps
-            const newUsed = Math.max(0, sPrevUsed - lessonMinutes)
-            const newRemaining = sTotal - newUsed
-            const newRemainingSessions = Math.floor(newRemaining / sMps)
-            const rawSessions = newUsed / sMps
-            const newUsedSessions =
-              Math.abs(rawSessions - Math.round(rawSessions)) < 0.001
-                ? Math.round(rawSessions)
-                : Math.round(rawSessions * 100) / 100
+            // Initialize subjects array for backward compatibility if needed
+            let updatedSubjects = s.subjects && s.subjects.length > 0
+              ? [...s.subjects]
+              : s.subjectId
+                ? [{
+                    subjectId: s.subjectId,
+                    subjectName: s.subjectName || 'Chưa rõ',
+                    totalSessions: s.totalSessions || 0,
+                    usedSessions: s.usedSessions || 0,
+                    remainingSessions: s.remainingSessions || 0,
+                    minutesPerSession: s.minutesPerSession || 50,
+                    totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
+                    usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
+                    remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
+                    pricePerMinute: lesson.pricePerMinute || 0,
+                  }]
+                : []
+
+            // Find the matching subject package
+            const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === lesson.subjectId)
+            if (sIdx !== -1) {
+              const subPkg = updatedSubjects[sIdx]
+              const subUsedMinutes = Math.max(0, subPkg.usedMinutes - lessonMinutes)
+              const subRemainingMinutes = subPkg.totalMinutes - subUsedMinutes
+              const subMps = subPkg.minutesPerSession || 50
+              const subUsedSessionsRaw = subMps > 0 ? subUsedMinutes / subMps : 0
+              const subUsedSessions = Math.abs(subUsedSessionsRaw - Math.round(subUsedSessionsRaw)) < 0.001
+                ? Math.round(subUsedSessionsRaw)
+                : Math.round(subUsedSessionsRaw * 100) / 100
+              const subRemainingSessions = Math.floor(subRemainingMinutes / subMps)
+
+              updatedSubjects[sIdx] = {
+                ...subPkg,
+                usedMinutes: subUsedMinutes,
+                remainingMinutes: subRemainingMinutes,
+                usedSessions: subUsedSessions,
+                remainingSessions: subRemainingSessions
+              }
+            }
+
+            // Recalculate aggregates
+            const aggTotalSessions = updatedSubjects.reduce((sum, sub) => sum + sub.totalSessions, 0)
+            const aggUsedSessions = updatedSubjects.reduce((sum, sub) => sum + sub.usedSessions, 0)
+            const aggRemainingSessions = updatedSubjects.reduce((sum, sub) => sum + sub.remainingSessions, 0)
+            const aggTotalMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.totalMinutes, 0)
+            const aggUsedMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.usedMinutes, 0)
+            const aggRemainingMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.remainingMinutes, 0)
+
+            const primarySubject = updatedSubjects[0] || null
 
             tx.update(studentRef, {
-              usedMinutes: newUsed,
-              remainingMinutes: newRemaining,
-              totalMinutes: sTotal,
-              minutesPerSession: sMps,
-              usedSessions: newUsedSessions,
-              remainingSessions: newRemainingSessions,
-              status: newRemaining <= 0 ? 'expired' : 'active',
+              subjects: updatedSubjects,
+              totalSessions: aggTotalSessions,
+              usedSessions: aggUsedSessions,
+              remainingSessions: aggRemainingSessions,
+              totalMinutes: aggTotalMinutes,
+              usedMinutes: aggUsedMinutes,
+              remainingMinutes: aggRemainingMinutes,
+              // Legacy compatibility
+              subjectId: primarySubject ? primarySubject.subjectId : '',
+              subjectName: primarySubject ? primarySubject.subjectName : '',
+              minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
+              status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
               updatedAt: serverTimestamp(),
             })
           }
@@ -1861,35 +1905,10 @@ export function TeacherDetailPage() {
 
       {/* Approve Confirm Dialog */}
       {approvingLesson && (
-        <ConfirmDialog
-          open
+        <ApproveModal
+          lesson={approvingLesson}
           onClose={() => setApprovingLesson(null)}
-          onConfirm={handleApprove}
-          title="Xác nhận duyệt buổi dạy?"
-          confirmLabel="Duyệt buổi dạy"
-          loading={approving}
-        >
-          <div className="bg-white rounded-xl p-4 text-sm space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Học viên</span>
-              <span className="text-slate-700">{approvingLesson.studentName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Thời lượng buổi này</span>
-              <span className="text-slate-700 font-medium">{approvingLesson.minutes} phút</span>
-            </div>
-            {approvingLesson.pricePerMinute != null && (
-              <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1">
-                <span className="text-slate-500">Lương giáo viên</span>
-                <span className="text-emerald-500 font-semibold">
-                  +{formatVND(
-                    calculateSalary(approvingLesson.minutes, approvingLesson.pricePerMinute, approvingLesson.teacherLevel ?? teacher?.level ?? 1)
-                  )}
-                </span>
-              </div>
-            )}
-          </div>
-        </ConfirmDialog>
+        />
       )}
 
       {/* Revert Confirm Dialog */}
