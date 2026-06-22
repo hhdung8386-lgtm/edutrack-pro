@@ -60,6 +60,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   const watchedSubjectId = watch('subjectId')
   const previewTotalMinutes = watchedSessions * watchedMinutes
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
+  const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== editingSubjectId)
+  const transferableMinutes = editingPkg?.remainingMinutes || 0
+  const transferredSessions = watchedMinutes > 0
+    ? Math.round((transferableMinutes / watchedMinutes) * 100) / 100
+    : 0
   const filteredSubjects = subjectsList.filter((subject) =>
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
@@ -71,13 +76,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         const list = snap.docs
           .map(d => ({ id: d.id, ...d.data() } as Subject))
           .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }))
-        if (isEdit) {
-          setSubjectsList(list)
-        } else {
-          // Add mode: Filter out subjects the student already has
-          const existingIds = currentSubjects.map(cs => cs.subjectId)
-          setSubjectsList(list.filter(s => !existingIds.includes(s.id)))
-        }
+        const existingIds = currentSubjects.map(cs => cs.subjectId)
+        setSubjectsList(list.filter(s => s.id === editingSubjectId || !existingIds.includes(s.id)))
       })
       .catch((err) => {
         console.error(err)
@@ -95,18 +95,72 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         const index = updatedSubjects.findIndex(s => s.subjectId === editingSubjectId)
         if (index !== -1) {
           const prevPkg = updatedSubjects[index]
-          const delta = data.totalSessions - prevPkg.totalSessions
-          const newRemainingSessions = prevPkg.remainingSessions + delta
-          const newTotalMinutes = data.totalSessions * data.minutesPerSession
-          const newRemainingMinutes = Math.max(0, newTotalMinutes - prevPkg.usedMinutes)
+          const selectedSubjectObj = subjectsList.find(s => s.id === data.subjectId)
+          const isSubjectChanged = data.subjectId !== editingSubjectId
 
-          updatedSubjects[index] = {
-            ...prevPkg,
-            totalSessions: data.totalSessions,
-            minutesPerSession: data.minutesPerSession,
-            remainingSessions: newRemainingSessions,
-            totalMinutes: newTotalMinutes,
-            remainingMinutes: newRemainingMinutes,
+          if (isSubjectChanged) {
+            if (!selectedSubjectObj) throw new Error('Môn học mới không hợp lệ')
+            if (updatedSubjects.some((pkg, pkgIndex) => pkgIndex !== index && pkg.subjectId === data.subjectId)) {
+              throw new Error('Học viên đã có gói môn học này')
+            }
+
+            if (prevPkg.usedMinutes > 0) {
+              if (prevPkg.remainingMinutes <= 0) {
+                throw new Error('Gói môn cũ không còn phút để chuyển sang môn mới')
+              }
+
+              const historicalSessions = prevPkg.usedSessions || Math.round(
+                (prevPkg.usedMinutes / (prevPkg.minutesPerSession || 50)) * 100,
+              ) / 100
+              const newSessions = Math.round((prevPkg.remainingMinutes / data.minutesPerSession) * 100) / 100
+
+              updatedSubjects[index] = {
+                ...prevPkg,
+                totalSessions: historicalSessions,
+                remainingSessions: 0,
+                totalMinutes: prevPkg.usedMinutes,
+                remainingMinutes: 0,
+              }
+              updatedSubjects.push({
+                subjectId: selectedSubjectObj.id,
+                subjectName: selectedSubjectObj.name,
+                totalSessions: newSessions,
+                usedSessions: 0,
+                remainingSessions: newSessions,
+                minutesPerSession: data.minutesPerSession,
+                totalMinutes: prevPkg.remainingMinutes,
+                usedMinutes: 0,
+                remainingMinutes: prevPkg.remainingMinutes,
+                pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+              })
+            } else {
+              const newTotalMinutes = data.totalSessions * data.minutesPerSession
+              updatedSubjects[index] = {
+                ...prevPkg,
+                subjectId: selectedSubjectObj.id,
+                subjectName: selectedSubjectObj.name,
+                pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                totalSessions: data.totalSessions,
+                remainingSessions: data.totalSessions,
+                minutesPerSession: data.minutesPerSession,
+                totalMinutes: newTotalMinutes,
+                remainingMinutes: newTotalMinutes,
+              }
+            }
+          } else {
+            const delta = data.totalSessions - prevPkg.totalSessions
+            const newRemainingSessions = prevPkg.remainingSessions + delta
+            const newTotalMinutes = data.totalSessions * data.minutesPerSession
+            const newRemainingMinutes = Math.max(0, newTotalMinutes - prevPkg.usedMinutes)
+
+            updatedSubjects[index] = {
+              ...prevPkg,
+              totalSessions: data.totalSessions,
+              minutesPerSession: data.minutesPerSession,
+              remainingSessions: newRemainingSessions,
+              totalMinutes: newTotalMinutes,
+              remainingMinutes: newRemainingMinutes,
+            }
           }
         }
       } else {
@@ -141,8 +195,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
       const aggUsedMinutes = updatedSubjects.reduce((sum, s) => sum + s.usedMinutes, 0)
       const aggRemainingMinutes = updatedSubjects.reduce((sum, s) => sum + s.remainingMinutes, 0)
 
-      // Primary subject falls back to the first subject in the list for legacy compatibility
-      const primarySubject = updatedSubjects[0] || null
+      // Legacy fields point to a package that can still fund upcoming lessons.
+      const primarySubject = updatedSubjects.find((pkg) => pkg.remainingMinutes > 0) || updatedSubjects[0] || null
 
       await updateDoc(doc(db, 'students', student.id), {
         subjects: updatedSubjects,
@@ -160,11 +214,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         updatedAt: serverTimestamp(),
       })
 
-      toast.success(isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
+      toast.success(isTransferringSubject ? 'Đã chuyển số phút còn lại sang môn mới' : isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
       onClose()
     } catch (err) {
       console.error(err)
-      toast.error('Lỗi khi lưu thông tin môn học')
+      toast.error(err instanceof Error ? err.message : 'Lỗi khi lưu thông tin môn học')
     } finally {
       setLoading(false)
     }
@@ -187,81 +241,87 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
       <form id="subject-pkg-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Môn học *</label>
-          {isEdit ? (
-            <>
-              <input type="hidden" {...register('subjectId')} />
-              <div className="flex min-h-[46px] items-center justify-between rounded-lg border border-slate-200 bg-slate-100 px-4 text-sm text-slate-700">
-                <span className="font-semibold">{editingPkg?.subjectName || 'Môn học hiện tại'}</span>
-                <span className="text-xs text-slate-500">Không thể đổi môn</span>
-              </div>
-            </>
-          ) : (
-            <div className="relative">
-              <input type="hidden" {...register('subjectId')} />
-              <button
-                type="button"
-                onClick={() => setSubjectMenuOpen((open) => !open)}
-                className="flex min-h-[46px] w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-4 text-left text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-indigo-500"
-                aria-expanded={subjectMenuOpen}
-              >
-                <span className={selectedSubject ? 'font-medium' : 'text-slate-500'}>
-                  {selectedSubject
-                    ? `${selectedSubject.name} (${selectedSubject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút)`
-                    : '-- Chọn môn học --'}
-                </span>
-                <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${subjectMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
+          <div className="relative">
+            <input type="hidden" {...register('subjectId')} />
+            <button
+              type="button"
+              onClick={() => setSubjectMenuOpen((open) => !open)}
+              className="flex min-h-[46px] w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-4 text-left text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-indigo-500"
+              aria-expanded={subjectMenuOpen}
+            >
+              <span className={selectedSubject ? 'font-medium' : 'text-slate-500'}>
+                {selectedSubject
+                  ? `${selectedSubject.name} (${selectedSubject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút)`
+                  : editingPkg?.subjectName || '-- Chọn môn học --'}
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${subjectMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-              {subjectMenuOpen && (
-                <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                  <div className="border-b border-slate-100 p-2">
-                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3">
-                      <Search className="h-4 w-4 text-slate-400" />
-                      <input
-                        autoFocus
-                        value={subjectSearch}
-                        onChange={(event) => setSubjectSearch(event.target.value)}
-                        placeholder="Tìm tên môn học..."
-                        className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                      />
-                    </div>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto p-1.5">
-                    {filteredSubjects.length === 0 ? (
-                      <p className="px-3 py-6 text-center text-sm text-slate-500">Không tìm thấy môn học.</p>
-                    ) : filteredSubjects.map((subject) => (
-                      <button
-                        key={subject.id}
-                        type="button"
-                        onClick={() => {
-                          setValue('subjectId', subject.id, { shouldValidate: true })
-                          setSubjectMenuOpen(false)
-                          setSubjectSearch('')
-                        }}
-                        className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none"
-                      >
-                        <span>
-                          <span className="block font-medium text-slate-800">{subject.name}</span>
-                          <span className="text-xs text-slate-500">{subject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút</span>
-                        </span>
-                        {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
-                      </button>
-                    ))}
+            {subjectMenuOpen && (
+              <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div className="border-b border-slate-100 p-2">
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3">
+                    <Search className="h-4 w-4 text-slate-400" />
+                    <input
+                      autoFocus
+                      value={subjectSearch}
+                      onChange={(event) => setSubjectSearch(event.target.value)}
+                      placeholder="Tìm tên môn học..."
+                      className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                    />
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+                <div className="max-h-64 overflow-y-auto p-1.5">
+                  {filteredSubjects.length === 0 ? (
+                    <p className="px-3 py-6 text-center text-sm text-slate-500">Không tìm thấy môn học.</p>
+                  ) : filteredSubjects.map((subject) => (
+                    <button
+                      key={subject.id}
+                      type="button"
+                      onClick={() => {
+                        setValue('subjectId', subject.id, { shouldValidate: true })
+                        setSubjectMenuOpen(false)
+                        setSubjectSearch('')
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none"
+                    >
+                      <span>
+                        <span className="block font-medium text-slate-800">{subject.name}</span>
+                        <span className="text-xs text-slate-500">{subject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút</span>
+                      </span>
+                      {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           {errors.subjectId && <p className="mt-1.5 text-xs text-rose-400">{errors.subjectId.message}</p>}
+          {isTransferringSubject && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              {editingPkg?.usedMinutes
+                ? `Lịch sử đã học vẫn thuộc môn cũ. Hệ thống chỉ chuyển ${transferableMinutes.toLocaleString('vi-VN')} phút còn lại sang môn mới.`
+                : 'Gói chưa phát sinh buổi học nên hệ thống sẽ đổi trực tiếp sang môn mới.'}
+            </p>
+          )}
         </div>
 
-        <Input
-          label="Tổng số buổi *"
-          type="number"
-          placeholder="10"
-          error={errors.totalSessions?.message}
-          {...register('totalSessions')}
-        />
+        {isTransferringSubject && editingPkg && editingPkg.usedMinutes > 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+            <p className="text-xs font-medium text-slate-500">Quỹ chuyển sang môn mới</p>
+            <p className="mt-1 font-semibold text-slate-800">
+              {transferableMinutes.toLocaleString('vi-VN')} phút · tương đương {transferredSessions.toLocaleString('vi-VN')} buổi
+            </p>
+          </div>
+        ) : (
+          <Input
+            label="Tổng số buổi *"
+            type="number"
+            placeholder="10"
+            error={errors.totalSessions?.message}
+            {...register('totalSessions')}
+          />
+        )}
 
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Số phút / buổi *</label>
@@ -278,13 +338,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         </div>
 
         <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm">
-          <p className="text-slate-500 mb-2">Tổng phút theo quỹ</p>
+          <p className="text-slate-500 mb-2">{isTransferringSubject && editingPkg?.usedMinutes ? 'Quỹ sau khi chuyển môn' : 'Tổng phút theo quỹ'}</p>
           <div className="flex flex-wrap items-center gap-2 text-slate-700">
-            <span className="font-semibold">{watchedSessions} buổi</span>
+            <span className="font-semibold">{isTransferringSubject && editingPkg?.usedMinutes ? transferredSessions : watchedSessions} buổi</span>
             <span>×</span>
             <span className="font-semibold">{watchedMinutes} phút</span>
             <span>=</span>
-            <span className="font-semibold text-indigo-700">{previewTotalMinutes} phút</span>
+            <span className="font-semibold text-indigo-700">{isTransferringSubject && editingPkg?.usedMinutes ? transferableMinutes : previewTotalMinutes} phút</span>
           </div>
         </div>
       </form>
