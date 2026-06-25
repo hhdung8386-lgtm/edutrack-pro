@@ -21,17 +21,50 @@ export function StudentsPage() {
   const navigate = useNavigate()
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [branchFilter, setBranchFilter] = useState<string>('all')
+  const [search, setSearch] = useState(() => sessionStorage.getItem('students_search') || '')
+  const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('students_statusFilter') || 'all')
+  const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('students_branchFilter') || 'all')
   const [branches, setBranches] = useState<Branch[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editStudent, setEditStudent] = useState<Student | null>(null)
   const [addSessions, setAddSessions] = useState<Student | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
-  const [limitVal, setLimitVal] = useState(20)
+  const [limitVal, setLimitVal] = useState<number>(() => {
+    const stored = sessionStorage.getItem('students_limitVal')
+    return stored ? Number(stored) : 20
+  })
   const [totalStudents, setTotalStudents] = useState<number | null>(null)
+
+  // Sync filters to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('students_search', search)
+    sessionStorage.setItem('students_statusFilter', statusFilter)
+    sessionStorage.setItem('students_branchFilter', branchFilter)
+    sessionStorage.setItem('students_limitVal', String(limitVal))
+  }, [search, statusFilter, branchFilter, limitVal])
+
+  // Sync scroll position to sessionStorage
+  useEffect(() => {
+    const handleScroll = () => {
+      sessionStorage.setItem('students_scroll', String(window.scrollY))
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Restore scroll position once data loading has completed
+  useEffect(() => {
+    if (!loading && students.length > 0) {
+      const savedScroll = sessionStorage.getItem('students_scroll')
+      if (savedScroll) {
+        const scrollTimer = setTimeout(() => {
+          window.scrollTo(0, Number(savedScroll))
+        }, 100)
+        return () => clearTimeout(scrollTimer)
+      }
+    }
+  }, [loading, students])
 
   useEffect(() => {
     setLoading(true)
