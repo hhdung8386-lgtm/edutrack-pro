@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, getDocs, deleteDoc, doc, updateDoc, limit } from 'firebase/firestore'
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -11,10 +11,11 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { GraduationCap, Plus, Search, Eye, Trash2, ChevronDown } from 'lucide-react'
+import { GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, Building2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 type TeacherGrade = 'A' | 'B' | 'C' | 'PH' | 'SA'
+interface Branch { id: string; name: string; status: string }
 
 const GRADE_STYLES: Record<TeacherGrade, { badge: string; dot: string }> = {
   A: { badge: 'bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200', dot: 'bg-amber-400' },
@@ -100,46 +101,94 @@ export function TeachersPage() {
   const navigate = useNavigate()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [gradeFilter, setGradeFilter] = useState<'' | TeacherGrade>('')
+  const [search, setSearch] = useState(() => sessionStorage.getItem('teachers_search') || '')
+  const [gradeFilter, setGradeFilter] = useState<'' | TeacherGrade>(() => (sessionStorage.getItem('teachers_gradeFilter') as '' | TeacherGrade) || '')
+  const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
+  const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
+  const [branches, setBranches] = useState<Branch[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
   const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [limitVal, setLimitVal] = useState(20)
+  const [limitVal, setLimitVal] = useState<number>(() => {
+    const stored = sessionStorage.getItem('teachers_limitVal')
+    return stored ? Number(stored) : 20
+  })
+
+  // Sync filters to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('teachers_search', search)
+    sessionStorage.setItem('teachers_gradeFilter', gradeFilter)
+    sessionStorage.setItem('teachers_statusFilter', statusFilter)
+    sessionStorage.setItem('teachers_branchFilter', branchFilter)
+    sessionStorage.setItem('teachers_limitVal', String(limitVal))
+  }, [search, gradeFilter, statusFilter, branchFilter, limitVal])
+
+  // Sync scroll position to sessionStorage
+  useEffect(() => {
+    const handleScroll = () => {
+      sessionStorage.setItem('teachers_scroll', String(window.scrollY))
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Restore scroll position once data loading has completed
+  useEffect(() => {
+    if (!loading && teachers.length > 0) {
+      const savedScroll = sessionStorage.getItem('teachers_scroll')
+      if (savedScroll) {
+        const scrollTimer = setTimeout(() => {
+          window.scrollTo(0, Number(savedScroll))
+        }, 100)
+        return () => clearTimeout(scrollTimer)
+      }
+    }
+  }, [loading, teachers])
 
   useEffect(() => {
     const q = query(collection(db, 'teachers'), limit(limitVal))
-    let active = true
     setLoading(true)
 
-    getDocs(q)
-      .then((snap) => {
-        if (!active) return
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher))
         items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0) || a.name.localeCompare(b.name, 'vi'))
         setTeachers(items)
-      })
-      .catch(() => {
-        if (!active) return
+        setLoading(false)
+      },
+      (err) => {
+        console.error(err)
         setTeachers([])
         toast.error('Không có quyền truy cập danh sách giáo viên hoặc lỗi kết nối')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+        setLoading(false)
+      }
+    )
 
     return () => {
-      active = false
+      unsub()
     }
   }, [limitVal])
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
+      .then((snap) => {
+        setBranches(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Branch)))
+      })
+      .catch((err) => {
+        console.error('Error loading branches:', err)
+      })
+  }, [])
 
   const filtered = teachers.filter((t) => {
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
       t.code.toLowerCase().includes(search.toLowerCase())
     const matchGrade = gradeFilter ? t.teacherGrade === gradeFilter : true
-    return matchSearch && matchGrade
+    const matchStatus = statusFilter === 'all' || t.status === statusFilter
+    const matchBranch = branchFilter === 'all' || t.branchId === branchFilter
+    return matchSearch && matchGrade && matchStatus && matchBranch
   })
 
   const handleDelete = async () => {
@@ -169,44 +218,89 @@ export function TeachersPage() {
         </Button>
       </div>
 
-      {/* Search + Grade Filter */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Filters */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <Input
           placeholder="Tìm theo tên hoặc mã giáo viên..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
+          className="w-full lg:max-w-md"
         />
 
-        {/* Grade filter buttons */}
-        <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1">
-          {FILTER_GRADES.map((g) => (
-            <button
-              key={g === '' ? 'all' : g}
-              onClick={() => setGradeFilter(g)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                gradeFilter === g
-                  ? g === ''
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : `bg-white shadow-sm ${
-                        g === 'A'
-                          ? 'text-amber-700'
-                          : g === 'B'
-                          ? 'text-sky-700'
-                          : g === 'C'
-                          ? 'text-violet-700'
-                          : g === 'PH'
-                          ? 'text-rose-700'
-                          : 'text-emerald-700'
-                      }`
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-              aria-label={g === '' ? 'Tất cả cấp' : `Lọc cấp ${g}`}
+        <div className="flex gap-3 items-center flex-wrap">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <span className="whitespace-nowrap">Số giáo viên</span>
+            <select
+              value={limitVal}
+              onChange={(event) => setLimitVal(Number(event.target.value))}
+              className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+              aria-label="Chọn số lượng giáo viên cần tải"
             >
-              {g === '' ? 'Tất cả' : `Cấp ${g}`}
-            </button>
-          ))}
+              {[20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000].map((count) => (
+                <option key={count} value={count}>{count}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
+            {['all', 'active', 'inactive'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  statusFilter === status
+                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+              >
+                {status === 'all' ? 'Tất cả' : status === 'active' ? 'Đang dạy' : 'Tạm dừng'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1 overflow-x-auto hide-scrollbar">
+            {FILTER_GRADES.map((g) => (
+              <button
+                key={g === '' ? 'all' : g}
+                onClick={() => setGradeFilter(g)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  gradeFilter === g
+                    ? g === ''
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : `bg-white shadow-sm ${
+                          g === 'A'
+                            ? 'text-amber-700'
+                            : g === 'B'
+                            ? 'text-sky-700'
+                            : g === 'C'
+                            ? 'text-violet-700'
+                            : g === 'PH'
+                            ? 'text-rose-700'
+                            : 'text-emerald-700'
+                        }`
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+                aria-label={g === '' ? 'Tất cả cấp' : `Lọc cấp ${g}`}
+              >
+                {g === '' ? 'Tất cả cấp' : `Cấp ${g}`}
+              </button>
+            ))}
+          </div>
+
+          {branches.length > 0 && (
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[40px]"
+              aria-label="Lọc theo chi nhánh"
+            >
+              <option value="all">Tất cả chi nhánh</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -226,7 +320,7 @@ export function TeachersPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên giáo viên', 'Môn dạy', 'Level', 'Cấp độ', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên giáo viên', 'Môn dạy', 'Chi nhánh', 'Level', 'Cấp độ', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -253,6 +347,16 @@ export function TeachersPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-500">
                         {(teacher.subjectNames || []).join(', ') || '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {teacher.branchName ? (
+                          <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
+                            <Building2 className="w-3 h-3" />
+                            {teacher.branchName}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-slate-600 font-medium">×{teacher.level}</span>
@@ -315,6 +419,12 @@ export function TeachersPage() {
                       )}
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
+                    {teacher.branchName && (
+                      <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
+                        <Building2 className="w-2.5 h-2.5" />
+                        {teacher.branchName}
+                      </span>
+                    )}
                     <p className="text-xs text-slate-500 mt-0.5">
                       Level ×{teacher.level} · {(teacher.subjectNames || []).join(', ')}
                       {Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) > 0
