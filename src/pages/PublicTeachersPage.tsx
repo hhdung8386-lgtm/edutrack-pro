@@ -37,7 +37,7 @@ import {
 import { PublicNav } from '@/components/layout/PublicNav'
 import { db } from '@/lib/firebase'
 import { toast } from '@/stores/toastStore'
-import { DayOfWeek, Student, Teacher, TeacherAvailability } from '@/types'
+import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -57,6 +57,7 @@ type ScheduleOption = {
   start: string
   end: string
   label: string
+  isBooked?: boolean
 }
 
 const PAGE_SIZE = 24
@@ -429,15 +430,18 @@ function ScheduleWeekPicker({
                       {option ? (
                         <button
                           type="button"
+                          disabled={option.isBooked}
                           onClick={() => onSelect(value)}
                           className={`min-h-11 w-full rounded-xl px-2 py-2 text-center text-xs font-black transition active:scale-[0.98] ${
-                            selected
-                              ? 'bg-[#149ec4] text-white shadow-md shadow-sky-100'
-                              : 'bg-gradient-to-b from-[#43c1e8] to-[#149ec4] text-white shadow-sm hover:from-[#55ccef] hover:to-[#128db0]'
+                            option.isBooked
+                              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                              : selected
+                                ? 'bg-[#149ec4] text-white shadow-md shadow-sky-100'
+                                : 'bg-gradient-to-b from-[#43c1e8] to-[#149ec4] text-white shadow-sm hover:from-[#55ccef] hover:to-[#128db0]'
                           }`}
                         >
                           <span className="block text-[10px] opacity-80">{option.start}-{option.end}</span>
-                          OPEN
+                          {option.isBooked ? 'ĐÃ ĐẶT' : 'OPEN'}
                         </button>
                       ) : (
                         <div className="flex min-h-11 items-center justify-center bg-white text-lg font-black text-slate-200">
@@ -571,10 +575,43 @@ function TeacherBookingModal({
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const scheduleOptions = useMemo(
-    () => buildScheduleOptions(teacher?.availability, duration),
-    [duration, teacher?.availability]
-  )
+  const [teacherBookings, setTeacherBookings] = useState<BookingRequest[]>([])
+
+  useEffect(() => {
+    if (!teacher?.id) {
+      setTeacherBookings([])
+      return
+    }
+
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', teacher.id)
+    )
+
+    getDocs(q).then((snap) => {
+      const list = snap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() } as BookingRequest))
+        .filter((b) => ['confirmed', 'pending'].includes(b.status))
+      setTeacherBookings(list)
+    }).catch((err) => {
+      console.error('Error fetching teacher bookings:', err)
+    })
+  }, [teacher?.id])
+
+  const scheduleOptions = useMemo(() => {
+    const rawOptions = buildScheduleOptions(teacher?.availability, duration)
+    return rawOptions.map((opt) => {
+      const optStart = timeToMinutes(opt.start)
+      const optEnd = timeToMinutes(opt.end)
+      const isBooked = teacherBookings.some((req) => {
+        if (req.requestedDate !== opt.dateISO) return false
+        const reqStart = timeToMinutes(req.requestedStart)
+        const reqEnd = timeToMinutes(req.requestedEnd)
+        return Math.max(optStart, reqStart) < Math.min(optEnd, reqEnd)
+      })
+      return { ...opt, isBooked }
+    })
+  }, [duration, teacher?.availability, teacherBookings])
   const selectedSchedule = scheduleOptions.find((option) => `${option.dateISO}|${option.day}|${option.start}|${option.end}` === selectedSlot)
   const fund = student ? getStudentMinuteFund(student) : null
   const canAfford = !fund || fund.available >= duration
