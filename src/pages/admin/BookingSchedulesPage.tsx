@@ -152,10 +152,12 @@ export function BookingSchedulesPage() {
   // Selection mode states
   const [multiSelectMode, setMultiSelectMode] = useState(false)
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([])
+  const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
 
   // Modal states
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState(false)
+  const [showCancelBatchModal, setShowCancelBatchModal] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null)
 
   // Form states inside Schedule Modal
@@ -164,10 +166,12 @@ export function BookingSchedulesPage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const [duration, setDuration] = useState<25 | 50>(50)
   const [classroomURL, setClassroomURL] = useState('')
+  const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
 
   // Release booking state
   const [releasing, setReleasing] = useState(false)
+  const [cancellingBatch, setCancellingBatch] = useState(false)
 
   const weekStartISO = formatDateISO(weekStart)
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
@@ -305,8 +309,19 @@ export function BookingSchedulesPage() {
   const handleCellClick = (day: DayOfWeek, dateISO: string, time: string) => {
     const booking = findBookingForCell(dateISO, time)
     if (booking) {
-      setSelectedBooking(booking)
-      setShowDetailModal(true)
+      if (multiSelectMode) {
+        setSelectedBookingIds((current) => {
+          const exists = current.includes(booking.id)
+          if (exists) {
+            return current.filter((id) => id !== booking.id)
+          } else {
+            return [...current, booking.id]
+          }
+        })
+      } else {
+        setSelectedBooking(booking)
+        setShowDetailModal(true)
+      }
       return
     }
 
@@ -369,8 +384,7 @@ export function BookingSchedulesPage() {
     setScheduling(true)
     try {
       const studentId = selectedStudent.id
-      const slotsCount = selectedSlots.length
-      const totalRequired = slotsCount * duration
+      let totalScheduled = 0
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
@@ -380,8 +394,95 @@ export function BookingSchedulesPage() {
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(currentStudent)
 
-        if (fund.available < totalRequired) {
-          throw new Error('NOT_ENOUGH_MINUTES')
+        let totalRequired = 0
+        let bookingsToCreate: any[] = []
+
+        if (!isRecurring) {
+          totalRequired = selectedSlots.length * duration
+          if (fund.available < totalRequired) {
+            throw new Error('NOT_ENOUGH_MINUTES')
+          }
+          totalScheduled = selectedSlots.length
+
+          for (const slot of selectedSlots) {
+            const startMin = timeToMinutes(slot.time)
+            const endMin = startMin + duration
+
+            bookingsToCreate.push({
+              status: 'confirmed',
+              teacherId: selectedTeacher.id,
+              teacherCode: selectedTeacher.code,
+              teacherName: selectedTeacher.name,
+              teacherPhotoURL: selectedTeacher.photoURL || '',
+              studentId: currentStudent.id,
+              studentCode: currentStudent.code,
+              studentName: currentStudent.name,
+              subjectId: selectedSubjectId,
+              subjectName: sub.subjectName,
+              requestedDay: slot.day,
+              requestedDate: slot.dateISO,
+              requestedWeekStart: weekStartISO,
+              requestedStart: slot.time,
+              requestedEnd: minutesToTime(endMin),
+              requestedMinutes: duration,
+              adminNote: 'Xếp lịch trực tiếp từ bảng admin',
+              classroomURL: currentStudent.classroomURL || '',
+              createdAt: serverTimestamp(),
+              confirmedAt: serverTimestamp(),
+              confirmedBy: user?.uid ?? 'admin',
+            })
+          }
+        } else {
+          const maxSessions = Math.floor(fund.available / duration)
+          if (maxSessions === 0) {
+            throw new Error('NOT_ENOUGH_MINUTES')
+          }
+
+          let sessionsScheduled = 0
+          let weekIndex = 0
+          while (sessionsScheduled < maxSessions) {
+            for (const slot of selectedSlots) {
+              if (sessionsScheduled >= maxSessions) break
+
+              // Calculate date for the slot in the current week offset
+              const slotDate = addDays(new Date(slot.dateISO), weekIndex * 7)
+              const slotDateISO = formatDateISO(slotDate)
+              const slotWeekStart = formatDateISO(getMonday(slotDate))
+
+              const startMin = timeToMinutes(slot.time)
+              const endMin = startMin + duration
+
+              bookingsToCreate.push({
+                status: 'confirmed',
+                teacherId: selectedTeacher.id,
+                teacherCode: selectedTeacher.code,
+                teacherName: selectedTeacher.name,
+                teacherPhotoURL: selectedTeacher.photoURL || '',
+                studentId: currentStudent.id,
+                studentCode: currentStudent.code,
+                studentName: currentStudent.name,
+                subjectId: selectedSubjectId,
+                subjectName: sub.subjectName,
+                requestedDay: slot.day,
+                requestedDate: slotDateISO,
+                requestedWeekStart: slotWeekStart,
+                requestedStart: slot.time,
+                requestedEnd: minutesToTime(endMin),
+                requestedMinutes: duration,
+                adminNote: 'Xếp lịch định kỳ từ bảng admin',
+                classroomURL: currentStudent.classroomURL || '',
+                createdAt: serverTimestamp(),
+                confirmedAt: serverTimestamp(),
+                confirmedBy: user?.uid ?? 'admin',
+              })
+
+              sessionsScheduled++
+            }
+            weekIndex++
+          }
+
+          totalRequired = sessionsScheduled * duration
+          totalScheduled = sessionsScheduled
         }
 
         const nextHeld = fund.held + totalRequired
@@ -390,37 +491,14 @@ export function BookingSchedulesPage() {
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
           heldMinutes: nextHeld,
-          classroomURL: classroomURL.trim(),
           updatedAt: serverTimestamp(),
         })
 
-        // Create booking requests
-        for (const slot of selectedSlots) {
+        // Set booking documents
+        for (const booking of bookingsToCreate) {
           const bookingRef = doc(collection(db, 'bookingRequests'))
-          const startMin = timeToMinutes(slot.time)
-          const endMin = startMin + duration
-
           tx.set(bookingRef, {
-            status: 'confirmed',
-            teacherId: selectedTeacher.id,
-            teacherCode: selectedTeacher.code,
-            teacherName: selectedTeacher.name,
-            teacherPhotoURL: selectedTeacher.photoURL || '',
-            studentId: currentStudent.id,
-            studentCode: currentStudent.code,
-            studentName: currentStudent.name,
-            subjectId: selectedSubjectId,
-            subjectName: sub.subjectName,
-            requestedDay: slot.day,
-            requestedDate: slot.dateISO,
-            requestedWeekStart: weekStartISO,
-            requestedStart: slot.time,
-            requestedEnd: minutesToTime(endMin),
-            requestedMinutes: duration,
-            adminNote: 'Xếp lịch trực tiếp từ bảng admin',
-            createdAt: serverTimestamp(),
-            confirmedAt: serverTimestamp(),
-            confirmedBy: user?.uid ?? 'admin',
+            ...booking,
             heldMinutesAfterConfirm: nextHeld,
           })
         }
@@ -428,26 +506,28 @@ export function BookingSchedulesPage() {
         // Add admin log
         tx.set(doc(collection(db, 'adminLogs')), {
           adminId: user?.uid ?? 'admin',
-          action: 'BATCH_SCHEDULE_CLASSES',
+          action: isRecurring ? 'RECURRING_BATCH_SCHEDULE_CLASSES' : 'BATCH_SCHEDULE_CLASSES',
           targetType: 'student',
           targetId: studentId,
           changes: {
             teacherId: selectedTeacher.id,
             teacherName: selectedTeacher.name,
-            slotsCount,
+            slotsCount: totalScheduled,
             duration,
             totalRequired,
             heldMinutesAfter: nextHeld,
+            isRecurring,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Đã xếp thành công ${slotsCount} lớp học`)
+      toast.success(`Đã xếp thành công ${totalScheduled} ca học ${isRecurring ? '(Lịch định kỳ lặp lại)' : ''}`)
       setShowScheduleModal(false)
       setSelectedSlots([])
       setSelectedStudent(null)
       setStudentSearch('')
+      setIsRecurring(false)
     } catch (error: any) {
       console.error('Direct scheduling failed:', error)
       if (error?.message === 'NOT_ENOUGH_MINUTES') {
@@ -457,6 +537,87 @@ export function BookingSchedulesPage() {
       }
     } finally {
       setScheduling(false)
+    }
+  }
+
+  // Execute batch cancellation
+  const executeBatchCancel = async () => {
+    if (selectedBookingIds.length === 0) return
+    setCancellingBatch(true)
+    try {
+      const bookingSnaps = await Promise.all(
+        selectedBookingIds.map((id) => getDoc(doc(db, 'bookingRequests', id)))
+      )
+
+      const bookingsToCancel = bookingSnaps
+        .filter((snap) => snap.exists())
+        .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+
+      if (bookingsToCancel.length === 0) {
+        toast.warning('Không tìm thấy thông tin các ca cần hủy')
+        setCancellingBatch(false)
+        return
+      }
+
+      // Group bookings by studentId
+      const studentRefunds: Record<string, { minutes: number; bookings: BookingRequest[] }> = {}
+      for (const booking of bookingsToCancel) {
+        if (!studentRefunds[booking.studentId]) {
+          studentRefunds[booking.studentId] = { minutes: 0, bookings: [] }
+        }
+        studentRefunds[booking.studentId].minutes += booking.requestedMinutes
+        studentRefunds[booking.studentId].bookings.push(booking)
+      }
+
+      await runTransaction(db, async (tx) => {
+        // Update each student's minutes balance
+        for (const studentId of Object.keys(studentRefunds)) {
+          const studentRef = doc(db, 'students', studentId)
+          const studentSnap = await tx.get(studentRef)
+          if (!studentSnap.exists()) continue
+
+          const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
+          const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
+          const refundMinutes = studentRefunds[studentId].minutes
+          const nextHeld = Math.max(0, currentHeld - refundMinutes)
+
+          tx.update(studentRef, {
+            reservedMinutes: nextHeld,
+            heldMinutes: nextHeld,
+            updatedAt: serverTimestamp(),
+          })
+        }
+
+        // Delete all selected booking documents
+        for (const booking of bookingsToCancel) {
+          tx.delete(doc(db, 'bookingRequests', booking.id))
+        }
+
+        // Add admin log
+        tx.set(doc(collection(db, 'adminLogs')), {
+          adminId: user?.uid ?? 'admin',
+          action: 'BATCH_CANCEL_CLASSES',
+          targetType: 'student',
+          changes: {
+            bookingCount: bookingsToCancel.length,
+            bookingIds: selectedBookingIds,
+            refundSummary: Object.entries(studentRefunds).map(([id, info]) => ({
+              studentId: id,
+              refundMinutes: info.minutes,
+            })),
+          },
+          createdAt: serverTimestamp(),
+        })
+      })
+
+      toast.success(`Đã hủy thành công ${bookingsToCancel.length} ca xếp lớp và hoàn trả phút cho học viên!`)
+      setSelectedBookingIds([])
+      setShowCancelBatchModal(false)
+    } catch (error) {
+      console.error('Batch cancel failed:', error)
+      toast.error('Gặp lỗi khi hủy ca xếp lớp hàng loạt')
+    } finally {
+      setCancellingBatch(false)
     }
   }
 
@@ -628,8 +789,10 @@ export function BookingSchedulesPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setMultiSelectMode(!multiSelectMode)
+                  const nextMode = !multiSelectMode
+                  setMultiSelectMode(nextMode)
                   setSelectedSlots([])
+                  setSelectedBookingIds([])
                 }}
                 className={`h-10 px-4 rounded-lg text-sm font-bold transition flex items-center gap-1.5 border ${
                   multiSelectMode
@@ -638,9 +801,9 @@ export function BookingSchedulesPage() {
                 }`}
               >
                 {multiSelectMode ? 'Đang chọn nhiều' : 'Chọn nhiều ca'}
-                {multiSelectMode && selectedSlots.length > 0 && (
+                {multiSelectMode && (selectedSlots.length > 0 || selectedBookingIds.length > 0) && (
                   <span className="bg-white text-indigo-700 text-xs px-2 py-0.5 rounded-full font-black">
-                    {selectedSlots.length}
+                    {selectedSlots.length + selectedBookingIds.length}
                   </span>
                 )}
               </button>
@@ -652,7 +815,19 @@ export function BookingSchedulesPage() {
                   onClick={handleOpenBatchSchedule}
                   className="h-10 px-5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-md flex items-center gap-1.5 animate-pulse"
                 >
-                  Xếp lớp nhanh
+                  Xếp lớp nhanh ({selectedSlots.length})
+                </button>
+              )}
+
+              {/* Batch Cancel button */}
+              {multiSelectMode && selectedBookingIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCancelBatchModal(true)}
+                  className="h-10 px-5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition shadow-md flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4.5 h-4.5" />
+                  Hủy {selectedBookingIds.length} ca đã xếp
                 </button>
               )}
             </div>
@@ -728,18 +903,28 @@ export function BookingSchedulesPage() {
                           }`}
                         >
                           {booking ? (
-                            <button
-                              type="button"
-                              onClick={() => handleCellClick(day, iso, start)}
-                              className="w-full py-1.5 px-2 rounded-xl bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border border-amber-200/50 transition shadow-sm text-left block"
-                            >
-                              <div className="font-extrabold text-[11px] truncate tracking-tight">
-                                AC {booking.studentName}
-                              </div>
-                              <div className="text-[9px] font-semibold text-amber-700/80 mt-0.5 truncate">
-                                {booking.studentCode} · {booking.subjectName}
-                              </div>
-                            </button>
+                            (() => {
+                              const isBookingSelected = selectedBookingIds.includes(booking.id)
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCellClick(day, iso, start)}
+                                  className={`w-full py-1.5 px-2 rounded-xl border transition shadow-sm text-left block ${
+                                    isBookingSelected
+                                      ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-500 text-rose-900'
+                                      : 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border border-amber-200/50'
+                                  }`}
+                                >
+                                  <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-between">
+                                    <span>AC {booking.studentName}</span>
+                                    {isBookingSelected && <span className="text-[8px] bg-rose-500 text-white px-1 py-0.5 rounded font-black leading-none">HỦY</span>}
+                                  </div>
+                                  <div className={`text-[9px] font-semibold mt-0.5 truncate ${isBookingSelected ? 'text-rose-700/80' : 'text-amber-700/80'}`}>
+                                    {booking.studentCode} · {booking.subjectName}
+                                  </div>
+                                </button>
+                              )
+                            })()
                           ) : open ? (
                             <button
                               type="button"
@@ -929,21 +1114,36 @@ export function BookingSchedulesPage() {
               </div>
             </div>
 
-            {/* Classroom Link (Optional override/fill) */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Link phòng học của học viên</label>
-              <div className="relative">
-                <Link className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input
-                  type="text"
-                  value={classroomURL}
-                  onChange={(e) => setClassroomURL(e.target.value)}
-                  placeholder="https://zoom.us/j/... hoặc MS Teams"
-                  className="w-full rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm outline-none focus:border-indigo-500"
-                />
+            {/* Recurring schedule switch */}
+            {selectedStudent && (
+              <div className="rounded-xl border border-indigo-100 bg-slate-50 p-4 space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isRecurring}
+                    onChange={(e) => setIsRecurring(e.target.checked)}
+                    className="h-4.5 w-4.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer mt-0.5"
+                  />
+                  <div>
+                    <span className="text-sm font-bold text-slate-800 block">Lặp lại lịch hàng tuần (Xếp lịch định kỳ)</span>
+                    <span className="text-xs text-slate-500 block mt-0.5">
+                      Hệ thống sẽ tự động xếp ca này định kỳ các tuần tiếp theo cho đến khi học viên hết số phút học.
+                    </span>
+                  </div>
+                </label>
+
+                {isRecurring && (() => {
+                  const fund = getStudentMinuteFund(selectedStudent)
+                  const maxWeeks = Math.floor(fund.available / duration)
+                  return (
+                    <div className="mt-2 text-xs font-bold text-indigo-600 border-t border-slate-200/50 pt-2 flex justify-between">
+                      <span>Dự kiến xếp liên tục:</span>
+                      <span>{maxWeeks} tuần ({maxWeeks} ca)</span>
+                    </div>
+                  )
+                })()}
               </div>
-              <p className="text-[11px] text-slate-400">Tự động điền từ thông tin học viên. Thay đổi ở đây sẽ cập nhật vào hồ sơ học viên.</p>
-            </div>
+            )}
           </div>
         </Modal>
       )}
@@ -1025,6 +1225,40 @@ export function BookingSchedulesPage() {
                   </div>
                 ) : null
               })()}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL 3: Batch Cancel Confirmation Modal */}
+      {showCancelBatchModal && selectedBookingIds.length > 0 && (
+        <Modal
+          open
+          onClose={() => setShowCancelBatchModal(false)}
+          title="Xác nhận hủy lịch xếp lớp hàng loạt"
+          footer={
+            <div className="flex gap-3 justify-end">
+              <Button variant="ghost" onClick={() => setShowCancelBatchModal(false)}>Hủy</Button>
+              <Button variant="danger" loading={cancellingBatch} onClick={executeBatchCancel}>
+                Hủy {selectedBookingIds.length} ca học
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 font-semibold">
+              Bạn có chắc chắn muốn hủy <span className="font-black text-rose-600">{selectedBookingIds.length}</span> ca học đã xếp của giáo viên này?
+            </p>
+            <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 text-xs space-y-1.5 text-rose-800">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-500" />
+                Lưu ý quan trọng:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 font-semibold">
+                <li>Các ca học này sẽ bị xóa bỏ hoàn toàn khỏi lịch.</li>
+                <li>Quỹ phút giữ chỗ sẽ được tự động hoàn trả đầy đủ cho học sinh.</li>
+                <li>Hành động này không thể khôi phục sau khi bấm xác nhận.</li>
+              </ul>
             </div>
           </div>
         </Modal>
