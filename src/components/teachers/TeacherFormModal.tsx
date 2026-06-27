@@ -14,7 +14,23 @@ import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { Upload, X } from 'lucide-react'
-import { parseVietnameseNumber, formatVietnameseNumberInput } from '@/pages/admin/SubjectsPage'
+import { formatVietnameseNumberInput } from '@/pages/admin/SubjectsPage'
+
+interface Branch {
+  id: string
+  name: string
+  status: string
+}
+
+const DEFAULT_BRANCH_KEYWORD = 'binh tan'
+
+const normalizeBranchName = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
 
 const schema = z.object({
   name: z.string().optional().default(''),
@@ -26,7 +42,9 @@ type FormData = z.infer<typeof schema>
 
 export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onClose: () => void }) {
   const [subjects, setSubjects] = useState<Subject[]>([])
+  const [branches, setBranches] = useState<Branch[]>([])
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(teacher?.subjectIds || [])
+  const [selectedBranchId, setSelectedBranchId] = useState(teacher?.branchId || '')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -72,7 +90,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   const isEdit = !!teacher
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, formState: { isSubmitting } } = useForm<FormData>({
     // @ts-ignore
     resolver: zodResolver(schema),
     defaultValues: teacher ? {
@@ -87,6 +105,21 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     })
   }, [])
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'branches'), where('status', '==', 'active'))).then((snap) => {
+      const activeBranches = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Branch))
+      setBranches(activeBranches)
+
+      setSelectedBranchId((currentBranchId: string) => {
+        if (isEdit || currentBranchId) return currentBranchId
+        const defaultBranch = activeBranches.find((branch) =>
+          normalizeBranchName(branch.name).includes(DEFAULT_BRANCH_KEYWORD)
+        )
+        return defaultBranch?.id || currentBranchId
+      })
+    })
+  }, [isEdit])
 
   useEffect(() => {
     if (!isEdit && !generatedCode) {
@@ -186,6 +219,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       const finalName = data.name?.trim() || ''
 
       const subjectNames = selectedSubjects.map((id) => subjects.find((s) => s.id === id)?.name || '')
+      const branch = selectedBranchId ? branches.find((b) => b.id === selectedBranchId) : null
 
       const interviewData = {
         yob: yob ? Number(yob) : null,
@@ -225,6 +259,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           bio: data.bio || '',
           subjectIds: selectedSubjects,
           subjectNames,
+          branchId: selectedBranchId || '',
+          branchName: branch?.name || '',
           ...interviewData,
           photoURL,
           updatedAt: serverTimestamp(),
@@ -283,6 +319,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           bio: data.bio || '',
           subjectIds: selectedSubjects,
           subjectNames,
+          branchId: selectedBranchId || '',
+          branchName: branch?.name || '',
           ...interviewData,
           photoURL,
           status: 'active',
@@ -420,6 +458,20 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             }
           })()}
         />
+
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Chi nhánh</label>
+          <select
+            value={selectedBranchId}
+            onChange={(e) => setSelectedBranchId(e.target.value)}
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">-- Chọn chi nhánh --</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>{branch.name}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Subject multi-select with Search */}
         <div className="relative">

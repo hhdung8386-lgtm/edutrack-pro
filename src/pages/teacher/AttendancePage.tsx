@@ -15,7 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { formatVND, getToday, MINUTE_PRESETS } from '@/lib/constants'
-import { Search, X, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 
 const schema = z.object({
@@ -272,6 +272,19 @@ export function AttendancePage() {
                 <p className="text-xl font-bold text-slate-900">{student.name}</p>
                 <p className="font-mono text-sm text-[#3BB8EB] mt-0.5">{student.code}</p>
                 <p className="text-sm text-slate-500 mt-1">{student.subjectName}</p>
+                {student.classroomURL && (
+                  <div className="mt-3">
+                    <a
+                      href={student.classroomURL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors animate-pulse"
+                    >
+                      Vào phòng học
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
               </div>
               <div className="text-right">
                 <p className={`text-3xl font-bold ${

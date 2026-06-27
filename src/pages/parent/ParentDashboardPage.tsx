@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, Lesson } from '@/types'
-import { Search, ArrowLeft, LogOut, X } from 'lucide-react'
+import { Search, ArrowLeft, LogOut, X, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
 import {
@@ -293,6 +293,35 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
             </div>
           </div>
         </section>
+
+        {/* Classroom Link Card */}
+        {student.classroomURL && (
+          <section className="animate-slide-up [animation-delay:50ms]">
+            <div className="bg-gradient-to-r from-indigo-50 to-indigo-100/50 border border-indigo-200/60 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-indigo-100">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  Phòng học trực tuyến
+                </h3>
+                <p className="text-xs text-slate-500 leading-normal">
+                  Bấm vào đây để tham gia lớp học trực tuyến cùng giáo viên.
+                </p>
+              </div>
+              <a
+                href={student.classroomURL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center gap-1.5 flex-shrink-0 animate-pulse"
+              >
+                Vào học ngay
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </section>
+        )}
 
         {/* Quick insights row */}
         <section className="grid grid-cols-2 gap-3 animate-slide-up [animation-delay:80ms]">

@@ -22,9 +22,20 @@ const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
   branchId: z.string().optional(),
+  classroomURL: z.string().optional().or(z.literal('')),
 })
 
 type FormData = z.infer<typeof schema>
+
+const DEFAULT_BRANCH_KEYWORD = 'binh tan'
+
+const normalizeBranchName = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
 
 interface Props {
   student?: Student
@@ -35,7 +46,7 @@ export function StudentFormModal({ student, onClose }: Props) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [generatedCode, setGeneratedCode] = useState('')
   const isEdit = !!student
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: student
       ? {
@@ -43,8 +54,9 @@ export function StudentFormModal({ student, onClose }: Props) {
           name: student.name,
           parentPhone: student.parentPhone,
           branchId: student.branchId || '',
+          classroomURL: student.classroomURL || '',
         }
-      : { code: '', branchId: '' },
+      : { code: '', branchId: '', classroomURL: '' },
   })
 
   useEffect(() => {
@@ -64,9 +76,19 @@ export function StudentFormModal({ student, onClose }: Props) {
 
   useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active'))).then((snap) => {
-      setBranches(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Branch)))
+      const activeBranches = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Branch))
+      setBranches(activeBranches)
+
+      if (!isEdit && !getValues('branchId')) {
+        const defaultBranch = activeBranches.find((branch) =>
+          normalizeBranchName(branch.name).includes(DEFAULT_BRANCH_KEYWORD)
+        )
+        if (defaultBranch) {
+          setValue('branchId', defaultBranch.id)
+        }
+      }
     })
-  }, [])
+  }, [getValues, isEdit, setValue])
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -77,6 +99,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           parentPhone: data.parentPhone,
           branchId: data.branchId || '',
           branchName: branch?.name || '',
+          classroomURL: data.classroomURL || '',
           updatedAt: serverTimestamp(),
         })
         toast.success('Đã cập nhật học viên')
@@ -99,6 +122,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           remainingMinutes: 0,
           status: 'inactive',
           subjects: [],
+          classroomURL: data.classroomURL || '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -150,6 +174,12 @@ export function StudentFormModal({ student, onClose }: Props) {
           placeholder="0901234567"
           error={errors.parentPhone?.message}
           {...register('parentPhone')}
+        />
+        <Input
+          label="Link phòng học"
+          placeholder="https://zoom.us/j/... hoặc link MS Teams, Meet"
+          error={errors.classroomURL?.message}
+          {...register('classroomURL')}
         />
         {!isEdit && (
           <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm leading-6 text-slate-600">

@@ -931,6 +931,20 @@ export function StudentDetailPage() {
                 <span className="text-slate-500">Môn học: </span>
                 <span className="text-slate-700">{student.subjectName || '—'}</span>
               </div>
+              {student.classroomURL && (
+                <div className="col-span-2 mt-1 flex items-center gap-1">
+                  <span className="text-slate-500">Link phòng học: </span>
+                  <a
+                    href={student.classroomURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 hover:text-indigo-800 underline font-medium inline-flex items-center gap-1"
+                  >
+                    Vào phòng học
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">

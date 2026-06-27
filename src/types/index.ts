@@ -33,6 +33,7 @@ export interface Student {
   heldMinutes?: number
   status: 'active' | 'inactive' | 'expired'
   subjects?: StudentSubject[]
+  classroomURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -44,6 +45,8 @@ export interface Teacher {
   subjectIds: string[]
   subjectNames?: string[]
   subjectRates?: Record<string, number>
+  branchId?: string
+  branchName?: string
   level: number
   bio: string
   photoURL: string
