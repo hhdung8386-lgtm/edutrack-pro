@@ -264,7 +264,13 @@ export function BookingSchedulesPage() {
 
   const isCellOpen = (day: DayOfWeek, start: string) => {
     const startMinute = timeToMinutes(start)
-    const endMinute = startMinute + 30
+    const endMinute = startMinute + 25
+    return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+  }
+
+  const doesSlotCover50 = (day: DayOfWeek, start: string) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + 50
     return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
@@ -324,6 +330,7 @@ export function BookingSchedulesPage() {
       setStudentSearch('')
       setSelectedSubjectId('')
       setClassroomURL('')
+      setDuration(doesSlotCover50(day, time) ? 50 : 25)
       setShowScheduleModal(true)
     }
   }

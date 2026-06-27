@@ -219,7 +219,7 @@ export function BookingSchedulesPage() {
 
   const isCellOpen = (day: DayOfWeek, start: string) => {
     const startMinute = timeToMinutes(start)
-    const endMinute = startMinute + 30
+    const endMinute = startMinute + 25
     return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
