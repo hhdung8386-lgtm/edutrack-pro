@@ -187,10 +187,17 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
     return copy
   }
 
+  const getLocalISODate = (date: Date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
   const weekDates = useMemo(() => {
     return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day, idx) => {
       const d = addDays(weekStart, idx)
-      return { day, date: d, iso: d.toISOString().split('T')[0] }
+      return { day, date: d, iso: getLocalISODate(d) }
     })
   }, [weekStart])
 
