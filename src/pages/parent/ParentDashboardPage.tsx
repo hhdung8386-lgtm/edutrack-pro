@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Student, Lesson } from '@/types'
-import { Search, ArrowLeft, LogOut, X, ExternalLink } from 'lucide-react'
+import { Student, Lesson, BookingRequest } from '@/types'
+import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
@@ -31,7 +33,7 @@ export function ParentDashboardPage() {
   const [studentCode, setStudentCode] = useState('')
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<{ student: Student; lessons: Lesson[] } | null>(null)
+  const [result, setResult] = useState<{ student: Student; lessons: Lesson[]; bookings: BookingRequest[] } | null>(null)
   const [autoLoading, setAutoLoading] = useState(true)
 
   useEffect(() => {
@@ -71,8 +73,12 @@ export function ParentDashboardPage() {
       const lessons = lSnap.docs.map(d => ({ id: d.id, ...d.data() } as Lesson))
       lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
 
+      const bq = query(collection(db, 'bookingRequests'), where('studentId', '==', student.id), where('status', 'in', ['confirmed', 'pending']))
+      const bSnap = await getDocs(bq)
+      const bookings = bSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+
       saveSession(finalCode)
-      setResult({ student, lessons })
+      setResult({ student, lessons, bookings })
     } catch (err) {
       console.error(err)
       setError('Có lỗi xảy ra, vui lòng thử lại')
@@ -94,7 +100,7 @@ export function ParentDashboardPage() {
     )
   }
 
-  if (result) return <ParentView student={result.student} lessons={result.lessons} onBack={reset} />
+  if (result) return <ParentView student={result.student} lessons={result.lessons} bookings={result.bookings} onBack={reset} />
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-sky-50 relative overflow-hidden">
@@ -154,8 +160,65 @@ export function ParentDashboardPage() {
   )
 }
 
-function ParentView({ student, lessons, onBack }: { student: Student; lessons: Lesson[]; onBack: () => void }) {
+function ParentView({ student, lessons, bookings, onBack }: { student: Student; lessons: Lesson[]; bookings: BookingRequest[]; onBack: () => void }) {
   const [viewImage, setViewImage] = useState<string | null>(null)
+  const [selectedParentBooking, setSelectedParentBooking] = useState<BookingRequest | null>(null)
+  const [weekStart, setWeekStart] = useState(() => {
+    const d = new Date()
+    const day = d.getDay()
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+    d.setDate(diff)
+    d.setHours(0, 0, 0, 0)
+    return d
+  })
+
+  const getMonday = (d: Date) => {
+    const copy = new Date(d)
+    const day = copy.getDay()
+    const diff = copy.getDate() - day + (day === 0 ? -6 : 1)
+    copy.setDate(diff)
+    copy.setHours(0, 0, 0, 0)
+    return copy
+  }
+
+  const addDays = (d: Date, days: number) => {
+    const copy = new Date(d)
+    copy.setDate(copy.getDate() + days)
+    return copy
+  }
+
+  const weekDates = useMemo(() => {
+    return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day, idx) => {
+      const d = addDays(weekStart, idx)
+      return { day, date: d, iso: d.toISOString().split('T')[0] }
+    })
+  }, [weekStart])
+
+  const visibleStarts = useMemo(() => {
+    const starts = []
+    for (let min = 420; min < 1320; min += 30) {
+      const hrs = Math.floor(min / 60)
+      const mns = min % 60
+      starts.push(`${String(hrs).padStart(2, '0')}:${String(mns).padStart(2, '0')}`)
+    }
+    return starts
+  }, [])
+
+  const timeToMinutes = (time: string) => {
+    const [hours = '0', minutes = '0'] = time.split(':')
+    return Number(hours) * 60 + Number(minutes)
+  }
+
+  const findBookingForCell = (dateISO: string, time: string) => {
+    const cellStart = timeToMinutes(time)
+    const cellEnd = cellStart + 30
+    return bookings.find((req) => {
+      if (req.requestedDate !== dateISO) return false
+      const reqStart = timeToMinutes(req.requestedStart)
+      const reqEnd = timeToMinutes(req.requestedEnd)
+      return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+    })
+  }
 
   const pMps = student.minutesPerSession || 50
   const pTotalMin = student.totalMinutes ?? student.totalSessions * pMps
@@ -328,6 +391,82 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
           </section>
         )}
 
+        {/* Subject Packages Section */}
+        <section className="space-y-4 animate-slide-up [animation-delay:60ms]">
+          <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight px-1">Gói học phí các môn</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {(student.subjects && student.subjects.length > 0
+              ? student.subjects
+              : student.subjectId
+                ? [{
+                    subjectId: student.subjectId,
+                    subjectName: student.subjectName || 'Chưa rõ',
+                    totalSessions: student.totalSessions || 0,
+                    usedSessions: student.usedSessions || 0,
+                    remainingSessions: student.remainingSessions || 0,
+                    minutesPerSession: student.minutesPerSession || 50,
+                    totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
+                    usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
+                    remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
+                    pricePerMinute: 0,
+                  }]
+                : []
+            ).map((sub) => {
+              const totalSess25 = Math.floor(sub.totalMinutes / 25)
+              const usedSess25 = Math.floor(sub.usedMinutes / 25)
+              const bookedMins = bookings
+                .filter((b) => b.subjectId === sub.subjectId)
+                .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+              const bookedSess25 = Math.floor(bookedMins / 25)
+              const availMins = Math.max(0, sub.remainingMinutes - bookedMins)
+              const availSess25 = Math.floor(availMins / 25)
+              const subPct = sub.totalMinutes > 0 ? Math.min(100, Math.round((sub.usedMinutes / sub.totalMinutes) * 100)) : 0
+
+              return (
+                <div key={sub.subjectId} className="bg-white border border-slate-200/70 rounded-2xl p-5 hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <h4 className="font-bold text-slate-800 text-sm leading-tight truncate max-w-[80%]" title={sub.subjectName}>{sub.subjectName}</h4>
+                    <span className="text-[10px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full font-bold">
+                      {subPct}%
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-4">
+                    <div
+                      className="h-full bg-gradient-to-r from-sky-400 to-indigo-500 rounded-full"
+                      style={{ width: `${subPct}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1 text-center bg-slate-50/70 rounded-xl p-2.5 text-[10px]">
+                    <div>
+                      <p className="font-bold text-slate-700">{totalSess25}</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Tổng buổi</p>
+                      <p className="text-[8px] text-slate-400 mt-1">{sub.totalMinutes}p</p>
+                    </div>
+                    <div>
+                      <p className="font-bold text-indigo-500">{usedSess25}</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Đã học</p>
+                      <p className="text-[8px] text-indigo-400 mt-1">{sub.usedMinutes}p</p>
+                    </div>
+                    <div>
+                      <p className="font-bold text-amber-600">{bookedSess25}</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Đã đặt</p>
+                      <p className="text-[8px] text-amber-500 mt-1">{bookedMins}p</p>
+                    </div>
+                    <div>
+                      <p className={`font-bold ${availSess25 <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{availSess25}</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Khả dụng</p>
+                      <p className="text-[8px] text-slate-400 mt-1">{availMins}p</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         {/* Quick insights row */}
         <section className="grid grid-cols-2 gap-3 animate-slide-up [animation-delay:80ms]">
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
@@ -344,96 +483,116 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
           </div>
         </section>
 
-        {/* Analytics: 2 charts */}
-        <section className="space-y-3 animate-slide-up [animation-delay:160ms]">
-          <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">Phân tích học tập</h3>
-            <span className="text-[11px] text-slate-400 font-medium">{lessons.length} buổi tổng cộng</span>
-          </div>
+        {/* Weekly Timetable Section */}
+        {(() => {
+          const weekBookings = bookings.filter((b) => {
+            return weekDates.some((wd) => wd.iso === b.requestedDate)
+          })
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Monthly bar chart */}
-            <div className="md:col-span-3 bg-white border border-slate-200/70 rounded-2xl p-5 hover:shadow-md transition-shadow duration-300">
-              <p className="text-[13px] font-semibold text-slate-700 mb-1">Buổi học theo tháng</p>
-              <p className="text-[11px] text-slate-400 mb-4">6 tháng gần nhất</p>
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 10, fill: '#94a3b8' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: '#94a3b8' }}
-                      axisLine={false}
-                      tickLine={false}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      cursor={{ fill: '#f1f5f9' }}
-                      contentStyle={{
-                        background: 'white',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 12,
-                        fontSize: 12,
-                        padding: '8px 12px',
-                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.08)',
-                      }}
-                      formatter={(v, name) => [v as number, name === 'buoi' ? 'buổi' : 'phút']}
-                      labelStyle={{ color: '#475569', fontWeight: 600, marginBottom: 4 }}
-                    />
-                    <Bar dataKey="buoi" fill="#3BB8EB" radius={[6, 6, 0, 0]} maxBarSize={36} />
-                  </BarChart>
-                </ResponsiveContainer>
+          return (
+            <section className="space-y-3 animate-slide-up [animation-delay:160ms]">
+              <div className="flex items-center justify-between px-1">
+                <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-indigo-500" />
+                  Thời khóa biểu tuần
+                </h3>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setWeekStart(prev => getMonday(addDays(prev, -7)))}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                    title="Tuần trước"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeekStart(getMonday(new Date()))}
+                    className="px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"
+                  >
+                    Tuần này
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeekStart(prev => getMonday(addDays(prev, 7)))}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                    title="Tuần sau"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Duration distribution pie */}
-            <div className="md:col-span-2 bg-white border border-slate-200/70 rounded-2xl p-5 hover:shadow-md transition-shadow duration-300">
-              <p className="text-[13px] font-semibold text-slate-700 mb-1">Phân bố thời lượng</p>
-              <p className="text-[11px] text-slate-400 mb-4">Buổi theo độ dài</p>
-              {durationData.length === 0 ? (
-                <p className="text-center text-slate-400 text-xs py-8">Chưa có dữ liệu</p>
+              {weekBookings.length === 0 ? (
+                <div className="bg-white border border-slate-200/70 rounded-2xl text-center py-10 px-4">
+                  <Info className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-slate-500 text-xs font-semibold">Không có lịch học trong tuần này</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Tuần {weekDates[0].date.getDate()}/{weekDates[0].date.getMonth() + 1} - {weekDates[6].date.getDate()}/{weekDates[6].date.getMonth() + 1}
+                  </p>
+                </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="w-24 h-24 shrink-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={durationData}
-                          dataKey="value"
-                          innerRadius={28}
-                          outerRadius={44}
-                          paddingAngle={2}
-                          stroke="white"
-                          strokeWidth={2}
-                        >
-                          {durationData.map((_, i) => (
-                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    {durationData.map((d, i) => (
-                      <div key={d.name} className="flex items-center gap-2 text-[11px]">
-                        <span
-                          className="w-2.5 h-2.5 rounded-sm shrink-0"
-                          style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
-                        />
-                        <span className="text-slate-600 flex-1">{d.name}</span>
-                        <span className="text-slate-900 font-semibold tabular-nums">{d.value}</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="bg-white border border-slate-200/70 rounded-2xl p-4 shadow-sm overflow-x-auto">
+                  <table className="w-full min-w-[500px] border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="p-2 text-center text-slate-400 font-bold w-14 border-r border-slate-100">Giờ</th>
+                        {weekDates.map(({ day, date }) => {
+                          const isToday = date.toDateString() === new Date().toDateString()
+                          return (
+                            <th key={day} className={`p-2 text-center font-extrabold border-r border-slate-100 min-w-[65px] ${isToday ? 'bg-indigo-50/40 text-indigo-600' : 'text-slate-600'}`}>
+                              <div>{date.getDate()}/{date.getMonth() + 1}</div>
+                              <div className="text-[8px] uppercase tracking-wide opacity-75 mt-0.5">
+                                {day === 'sun' ? 'CN' : `T${day === 'mon' ? '2' : day === 'tue' ? '3' : day === 'wed' ? '4' : day === 'thu' ? '5' : day === 'fri' ? '6' : '7'}`}
+                              </div>
+                            </th>
+                          )
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const activeStarts = visibleStarts.filter((start) => {
+                          return weekDates.some(({ iso }) => findBookingForCell(iso, start))
+                        })
+                        return activeStarts.map((start) => (
+                          <tr key={start} className="hover:bg-slate-50/20 transition">
+                            <td className="p-2 text-center font-bold text-slate-400 border-r border-slate-100 bg-slate-50/30 align-middle">
+                              {start}
+                            </td>
+                            {weekDates.map(({ day, iso }) => {
+                              const booking = findBookingForCell(iso, start)
+                              return (
+                                <td key={day} className="p-1 border-r border-slate-100 align-middle text-center min-h-[40px]">
+                                  {booking ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedParentBooking(booking)}
+                                      className={`w-full py-1.5 px-1 rounded-xl text-center block transition hover:opacity-90 ${
+                                        booking.status === 'confirmed'
+                                          ? 'bg-indigo-50 border border-indigo-150 text-indigo-700'
+                                          : 'bg-amber-50 border border-amber-150 text-amber-800'
+                                      }`}
+                                    >
+                                      <p className="font-extrabold text-[10px] truncate leading-none">{booking.subjectName}</p>
+                                      <p className="text-[8px] opacity-75 mt-0.5 leading-none">{booking.teacherName}</p>
+                                    </button>
+                                  ) : (
+                                    <span className="text-slate-200 select-none">-</span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))
+                      })()}
+                    </tbody>
+                  </table>
                 </div>
               )}
-            </div>
-          </div>
-        </section>
+            </section>
+          )
+        })()}
 
         {/* Homework & Comments */}
         <section className="space-y-3 animate-slide-up [animation-delay:240ms]">
@@ -461,7 +620,7 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
                         {lesson.date}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        {lesson.teacherName}
+                        {lesson.teacherName} {lesson.subjectName && `· ${lesson.subjectName}`}
                       </p>
                     </div>
                     <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full tabular-nums">
@@ -567,6 +726,69 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+      {/* Booking Detail Modal */}
+      {selectedParentBooking && (
+        <Modal
+          open
+          onClose={() => setSelectedParentBooking(null)}
+          title="Chi tiết lịch học"
+          footer={
+            <div className="flex justify-end">
+              <Button variant="ghost" onClick={() => setSelectedParentBooking(null)}>Đóng</Button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-2">
+              <p className="text-[10px] font-bold uppercase text-indigo-700 tracking-wider">Thời gian học</p>
+              <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-indigo-500" />
+                Thứ {selectedParentBooking.requestedDay === 'sun' ? 'Nhật' : selectedParentBooking.requestedDay === 'mon' ? '2' : selectedParentBooking.requestedDay === 'tue' ? '3' : selectedParentBooking.requestedDay === 'wed' ? '4' : selectedParentBooking.requestedDay === 'thu' ? '5' : selectedParentBooking.requestedDay === 'fri' ? '6' : '7'}
+                {` (${selectedParentBooking.requestedDate})`} · {selectedParentBooking.requestedStart} - {selectedParentBooking.requestedEnd}
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-start gap-2.5">
+                <UserIcon className="w-4 h-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">Giáo viên</span>
+                  <span className="text-sm font-bold text-slate-800 block mt-1">{selectedParentBooking.teacherName}</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 pt-3 border-t border-slate-100">
+                <Info className="w-4 h-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">Môn học</span>
+                  <span className="text-sm font-bold text-indigo-600 block mt-1">{selectedParentBooking.subjectName}</span>
+                </div>
+              </div>
+
+              {(() => {
+                const roomLink = selectedParentBooking.classroomURL || student.classroomURL
+                return roomLink ? (
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Phòng học trực tuyến</span>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">{roomLink}</p>
+                    </div>
+                    <a
+                      href={roomLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 flex-shrink-0 animate-pulse"
+                    >
+                      Vào phòng học
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                ) : null
+              })()}
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )

@@ -156,10 +156,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       if (!firstErrorFieldId) firstErrorFieldId = 'field-name'
     }
 
-    if (selectedSubjects.length === 0) {
-      newErrors.subjects = 'Vui lòng chọn môn dạy'
-      if (!firstErrorFieldId) firstErrorFieldId = 'field-subjects'
-    }
+
 
     const levelVal = parseFloat(levelInput?.value || '0')
     if (isNaN(levelVal) || levelVal <= 0) {
@@ -473,72 +470,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           </select>
         </div>
 
-        {/* Subject multi-select with Search */}
-        <div className="relative">
-          <label className="block text-sm font-medium text-slate-600 mb-2">Môn dạy *</label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {selectedSubjects.map((id) => {
-              const s = subjects.find(sub => sub.id === id)
-              if (!s) return null
-              return (
-                <div key={id} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md text-sm">
-                  <span>{s.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSubjects(prev => prev.filter(x => x !== id))}
-                    className="hover:text-indigo-900"
-                    aria-label="Xóa môn"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-          
-          <div className="relative">
-            <input
-              id="field-subjects"
-              type="text"
-              placeholder="Tìm và chọn môn học..."
-              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.subjects ? 'border-red-500' : 'border-slate-300'}`}
-              value={subjectSearch}
-              onChange={e => {
-                setSubjectSearch(e.target.value)
-                setIsSubjectDropdownOpen(true)
-                if (localErrors.subjects) setLocalErrors(prev => ({ ...prev, subjects: '' }))
-              }}
-              onFocus={() => setIsSubjectDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setIsSubjectDropdownOpen(false), 200)}
-            />
-            {localErrors.subjects && <p className="mt-1.5 text-xs text-red-500">{localErrors.subjects}</p>}
-            {isSubjectDropdownOpen && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {subjects.filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase())).length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-slate-500 text-center">Không tìm thấy môn học</div>
-                ) : (
-                  subjects.filter(s => s.name.toLowerCase().includes(subjectSearch.toLowerCase())).map(s => (
-                    <div
-                      key={s.id}
-                      className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer flex justify-between items-center"
-                      onClick={() => {
-                        if (!selectedSubjects.includes(s.id)) {
-                          setSelectedSubjects(prev => [...prev, s.id])
-                        }
-                        setSubjectSearch('')
-                        setIsSubjectDropdownOpen(false)
-                        if (localErrors.subjects) setLocalErrors(prev => ({ ...prev, subjects: '' }))
-                      }}
-                    >
-                      <span className="font-medium text-slate-700">{s.name}</span>
-                      <span className="text-xs text-slate-500">{s.pricePerMinute.toLocaleString('vi-VN')}đ/phút</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+
 
 
 
@@ -562,29 +494,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               }
             })()}
           />
-          <div className="text-xs text-slate-500 mt-2 space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100">
-            <p className="font-medium text-slate-600 mb-1">Ước tính lương (1 ca 50 phút):</p>
-            {selectedSubjects.length === 0 ? (
-              <p className="italic text-slate-400">Vui lòng chọn môn dạy để xem ước tính</p>
-            ) : (
-              selectedSubjects.map(id => {
-                const s = subjects.find(sub => sub.id === id)
-                if (!s) return null
-                const rateVal = s.pricePerMinute
-                const levelInput = document.querySelector<HTMLInputElement>('input[name="level"]')
-                const currentLevel = parseFloat(levelInput?.value || '1')
-                const estSalary = 50 * rateVal * (currentLevel || 0)
-                return (
-                  <div key={id} className="flex justify-between items-center">
-                    <span>{s.name} ({formatVietnameseNumberInput(rateVal)}đ/p):</span>
-                    <span className="font-medium text-indigo-600">
-                      {estSalary.toLocaleString('vi-VN')}đ
-                    </span>
-                  </div>
-                )
-              })
-            )}
-          </div>
+
         </div>
 
         <Textarea

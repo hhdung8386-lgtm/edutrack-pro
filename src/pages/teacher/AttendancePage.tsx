@@ -54,6 +54,7 @@ export function AttendancePage() {
   const [submitted, setSubmitted] = useState(false)
   const [teacherData, setTeacherData] = useState<{ name: string; code: string; subjectName?: string; level: number } | null>(null)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
+  const [selectedSubjectId, setSelectedSubjectId] = useState('')
 
   const today = getToday()
 
@@ -76,6 +77,25 @@ export function AttendancePage() {
       } else {
         const s = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
         setStudent(s)
+
+        const subjects = s.subjects && s.subjects.length > 0
+          ? s.subjects
+          : s.subjectId
+            ? [{
+                subjectId: s.subjectId,
+                subjectName: s.subjectName || 'Chưa rõ',
+                totalSessions: s.totalSessions || 0,
+                usedSessions: s.usedSessions || 0,
+                remainingSessions: s.remainingSessions || 0,
+                minutesPerSession: s.minutesPerSession || 50,
+                totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
+                usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
+                remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
+                pricePerMinute: 0,
+              }]
+            : []
+        setSelectedSubjectId(subjects[0]?.subjectId || '')
+
         if (teacherId) {
           const tSnap = await getDoc(doc(db, 'teachers', teacherId))
           if (tSnap.exists()) {
@@ -149,16 +169,38 @@ export function AttendancePage() {
 
     setSubmitting(true)
     try {
+      const subjects = student.subjects && student.subjects.length > 0
+        ? student.subjects
+        : student.subjectId
+          ? [{
+              subjectId: student.subjectId,
+              subjectName: student.subjectName || 'Chưa rõ',
+              totalSessions: student.totalSessions || 0,
+              usedSessions: student.usedSessions || 0,
+              remainingSessions: student.remainingSessions || 0,
+              minutesPerSession: student.minutesPerSession || 50,
+              totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
+              usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
+              remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
+              pricePerMinute: 0,
+            }]
+          : []
+
+      const selectedPkg = subjects.find(s => s.subjectId === selectedSubjectId)
+      if (!selectedPkg) {
+        toast.error('Môn học được chọn không hợp lệ')
+        return
+      }
+
       const [tSnap, sSnap] = await Promise.all([
         getDoc(doc(db, 'teachers', teacherId)),
-        getDoc(doc(db, 'subjects', student.subjectId)),
+        getDoc(doc(db, 'subjects', selectedSubjectId)),
       ])
       const teacher = tSnap.data()!
       const subject = sSnap.data()
 
-      const mps = student.minutesPerSession || 50
-      const currentRemainingMinutes =
-        student.remainingMinutes ?? (student.remainingSessions * mps)
+      const currentRemainingMinutes = selectedPkg.remainingMinutes
+      const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
 
       await addDoc(collection(db, 'lessons'), {
         studentId: student.id,
@@ -167,8 +209,8 @@ export function AttendancePage() {
         teacherId,
         teacherCode: teacher.code,
         teacherName: teacher.name,
-        subjectId: student.subjectId,
-        subjectName: student.subjectName || teacherData?.subjectName || '',
+        subjectId: selectedSubjectId,
+        subjectName: selectedPkg.subjectName,
         date: data.date,
         minutes: selectedMinutes,
         comment: data.comment || '',
@@ -177,8 +219,8 @@ export function AttendancePage() {
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,
         status: 'pending',
-        sessionsBeforeApproval: student.remainingSessions,
-        sessionsAfterApproval: student.remainingSessions,
+        sessionsBeforeApproval: remainingSessions25,
+        sessionsAfterApproval: remainingSessions25,
         minutesBeforeApproval: currentRemainingMinutes,
         minutesAfterApproval: currentRemainingMinutes,
         teacherLevel: teacher.level ?? 1,
@@ -264,58 +306,100 @@ export function AttendancePage() {
         </div>
       )}
 
-      {student && (
-        <>
-          <Card className={`transition-all duration-300 transform animate-fade-in-up ${student.remainingSessions <= 0 ? 'border-rose-200 bg-rose-50' : 'border-sky-100 hover:shadow-lg'}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xl font-bold text-slate-900">{student.name}</p>
-                <p className="font-mono text-sm text-[#3BB8EB] mt-0.5">{student.code}</p>
-                <p className="text-sm text-slate-500 mt-1">{student.subjectName}</p>
-                {student.classroomURL && (
-                  <div className="mt-3">
-                    <a
-                      href={student.classroomURL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors animate-pulse"
-                    >
-                      Vào phòng học
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                )}
-              </div>
-              <div className="text-right">
-                <p className={`text-3xl font-bold ${
-                  student.remainingSessions === 0 ? 'text-rose-500' :
-                  student.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
-                }`}>{student.remainingSessions}</p>
-                <p className="text-xs text-slate-500">{t('attendance.remaining')}</p>
-                {(() => {
-                  const mps = student.minutesPerSession || 50
-                  const remaining = student.remainingMinutes ?? student.remainingSessions * mps
-                  return (
-                    <p className={`text-[11px] mt-0.5 ${remaining <= 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                      {remaining} phút
-                    </p>
-                  )
-                })()}
-              </div>
-            </div>
-          </Card>
+      {student && (() => {
+        const subjects = student.subjects && student.subjects.length > 0
+          ? student.subjects
+          : student.subjectId
+            ? [{
+                subjectId: student.subjectId,
+                subjectName: student.subjectName || 'Chưa rõ',
+                totalSessions: student.totalSessions || 0,
+                usedSessions: student.usedSessions || 0,
+                remainingSessions: student.remainingSessions || 0,
+                minutesPerSession: student.minutesPerSession || 50,
+                totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
+                usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
+                remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
+                pricePerMinute: 0,
+              }]
+            : []
 
-          {student.remainingSessions <= 0 && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 flex items-start gap-3">
-              <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-rose-700">{t('attendance.exhausted_title')}</p>
-                <p className="text-sm text-rose-600 mt-1">{t('attendance.exhausted_subtitle')}</p>
-              </div>
-            </div>
-          )}
+        const selectedPkg = subjects.find(s => s.subjectId === selectedSubjectId) || subjects[0]
+        const remainingMinutes = selectedPkg ? selectedPkg.remainingMinutes : 0
+        const remainingSessions = Math.floor(remainingMinutes / 25)
+        const isOutOfMinutes = remainingMinutes <= 0
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        return (
+          <>
+            <Card className={`transition-all duration-300 transform animate-fade-in-up ${isOutOfMinutes ? 'border-rose-200 bg-rose-50/50' : 'border-sky-100 hover:shadow-lg'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xl font-bold text-slate-900">{student.name}</p>
+                  <p className="font-mono text-sm text-[#3BB8EB] mt-0.5">{student.code}</p>
+                  <p className="text-sm font-semibold text-slate-700 mt-1">
+                    Gói đang chọn: <span className="text-indigo-600">{selectedPkg?.subjectName || 'Chưa chọn'}</span>
+                  </p>
+                  {student.classroomURL && (
+                    <div className="mt-3">
+                      <a
+                        href={student.classroomURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        Vào phòng học
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className={`text-3xl font-bold ${
+                    isOutOfMinutes ? 'text-rose-500' :
+                    remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
+                  }`}>{remainingSessions}</p>
+                  <p className="text-xs text-slate-500">buổi còn lại (25p)</p>
+                  <p className={`text-[11px] mt-0.5 ${isOutOfMinutes ? 'text-rose-500' : 'text-slate-400'}`}>
+                    {remainingMinutes} phút
+                  </p>
+                </div>
+              </div>
+
+              {/* Subject Package Dropdown inside Card */}
+              {subjects.length > 0 && (
+                <div className="space-y-1.5 mt-4 pt-3 border-t border-slate-100">
+                  <label className="block text-xs font-bold text-slate-500">CHỌN GÓI MÔN HỌC ĐIỂM DANH *</label>
+                  <select
+                    value={selectedSubjectId}
+                    onChange={(e) => setSelectedSubjectId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
+                  >
+                    {subjects.map((sub) => {
+                      const remSess = Math.floor(sub.remainingMinutes / 25)
+                      return (
+                        <option key={sub.subjectId} value={sub.subjectId}>
+                          {sub.subjectName} (Còn {remSess} buổi / {sub.remainingMinutes}p)
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              )}
+            </Card>
+
+            {isOutOfMinutes && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 flex items-start gap-3 animate-pulse">
+                <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-rose-700">Cảnh báo: Hết quỹ phút học môn này!</p>
+                  <p className="text-xs text-rose-600 mt-1 leading-normal font-semibold">
+                    Môn học được chọn đã hết thời lượng khả dụng (Còn lại 0 buổi / 0 phút). Hãy báo học viên liên hệ trung tâm để nạp thêm buổi.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <label htmlFor="attendance-date" className="block text-sm font-medium text-slate-600 mb-1.5">{t('attendance.date')}</label>
                 <input id="attendance-date" type="date" max={today}
@@ -425,7 +509,7 @@ export function AttendancePage() {
 
               <div className="bg-white rounded-xl p-4 text-sm border border-slate-200">
                 <p className="text-slate-600 font-medium">
-                  {student.name} · {student.subjectName} · {selectedMinutes} {t('attendance.minutes')} · {watch('date')}
+                  {student.name} · {selectedPkg?.subjectName || student.subjectName} · {selectedMinutes} {t('attendance.minutes')} · {watch('date')}
                 </p>
               </div>
 
@@ -433,8 +517,9 @@ export function AttendancePage() {
                 {t('attendance.submit')}
               </Button>
             </form>
-        </>
-      )}
+          </>
+        )
+      })()}
     </div>
   )
 }

@@ -162,6 +162,7 @@ export interface BookingRequest {
   heldMinutesAtRequest?: number
   note?: string
   adminNote?: string
+  classroomURL?: string
   createdAt: Timestamp
   confirmedAt?: Timestamp
   confirmedBy?: string

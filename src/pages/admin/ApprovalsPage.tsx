@@ -17,7 +17,7 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatVND } from '@/lib/constants'
-import { ClipboardCheck, Image as ImageIcon, X, Search } from 'lucide-react'
+import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle } from 'lucide-react'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -41,6 +41,7 @@ export function ApprovalsPage() {
   // Independent counters so badges reflect real DB state, not just current tab's loaded set
   const [totalCounts, setTotalCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
   const [limitVal, setLimitVal] = useState(30)
+  const [studentBalances, setStudentBalances] = useState<Record<string, { available: number; remaining: number }>>({})
 
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
@@ -153,6 +154,30 @@ export function ApprovalsPage() {
   useEffect(() => {
     refreshCounts()
   }, [refreshCounts])
+
+  useEffect(() => {
+    const pendingStudentIds = Array.from(new Set(lessons.filter(l => l.status === 'pending').map(l => l.studentId)))
+    if (pendingStudentIds.length === 0) return
+
+    Promise.all(pendingStudentIds.map(sid => getDoc(doc(db, 'students', sid)))).then(snaps => {
+      const nextBalances: Record<string, { available: number; remaining: number }> = {}
+      snaps.forEach(snap => {
+        if (snap.exists()) {
+          const s = snap.data() as Student
+          const mps = s.minutesPerSession || 50
+          const total = s.totalMinutes ?? s.totalSessions * mps
+          const used = s.usedMinutes ?? s.usedSessions * mps
+          const remaining = s.remainingMinutes ?? Math.max(0, total - used)
+          const held = s.reservedMinutes ?? s.heldMinutes ?? 0
+          const available = Math.max(0, remaining - held)
+          nextBalances[snap.id] = { available, remaining }
+        }
+      })
+      setStudentBalances(prev => ({ ...prev, ...nextBalances }))
+    }).catch(err => {
+      console.error('Error loading student balances for approvals:', err)
+    })
+  }, [lessons])
 
   const filteredLessons = lessons.filter(l =>
     l.studentName.toLowerCase().includes(search.toLowerCase()) ||
@@ -472,17 +497,27 @@ export function ApprovalsPage() {
         />
       ) : (
         <div className="space-y-4">
-          {filteredLessons.map((lesson) => (
-            <Card key={lesson.id} className="relative">
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                <div className="space-y-2 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-700">{lesson.date}</span>
-                    <StatusBadge status={lesson.status} />
-                  </div>
+          {filteredLessons.map((lesson) => {
+            const balance = studentBalances[lesson.studentId]
+            const isOutOfMinutes = balance && balance.remaining <= 0
+            return (
+              <Card key={lesson.id} className="relative">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-700">{lesson.date}</span>
+                      <StatusBadge status={lesson.status} />
+                    </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
-                    <div>
+                    {isOutOfMinutes && lesson.status === 'pending' && (
+                      <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 animate-pulse mb-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                        <span>CẢNH BÁO: Học viên này đã HẾT QUỸ PHÚT HỌC! (Quỹ còn lại: 0 phút)</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
+                      <div>
                       <p className="text-xs text-slate-500 mb-0.5">Học viên</p>
                       <p className="text-slate-700 font-medium">{lesson.studentName}</p>
                       <p className="text-xs text-indigo-400 font-mono">{lesson.studentCode}</p>
@@ -577,7 +612,7 @@ export function ApprovalsPage() {
                 )}
               </div>
             </Card>
-          ))}
+          )})}
           {tab !== 'pending' && lessons.length >= limitVal && (
             <div className="flex justify-center pt-4">
               <Button

@@ -168,6 +168,7 @@ export function BookingSchedulesPage() {
   const [classroomURL, setClassroomURL] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
+  const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
 
   // Release booking state
   const [releasing, setReleasing] = useState(false)
@@ -259,6 +260,25 @@ export function BookingSchedulesPage() {
 
     return unsub
   }, [selectedTeacherId, weekStartISO])
+
+  // Fetch selected student's active booking requests for subject-specific available minutes calculation
+  useEffect(() => {
+    if (!selectedStudent) {
+      setSelectedStudentBookings([])
+      return
+    }
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('studentId', '==', selectedStudent.id),
+      where('status', 'in', ['confirmed', 'pending'])
+    )
+    getDocs(q).then((snap) => {
+      const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+      setSelectedStudentBookings(list)
+    }).catch((error) => {
+      console.error('Error loading student booking requests:', error)
+    })
+  }, [selectedStudent])
 
   const filteredTeachers = teachers.filter((teacher) => {
     const keyword = search.trim().toLowerCase()
@@ -379,6 +399,17 @@ export function BookingSchedulesPage() {
       return
     }
 
+    const bookedMinutesForSubject = selectedStudentBookings
+      .filter((b) => b.subjectId === selectedSubjectId)
+      .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+    const availableSubjectMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSubject)
+    const totalRequired = selectedSlots.length * duration
+
+    if (!isRecurring && availableSubjectMinutes < totalRequired) {
+      toast.error('Học viên không đủ phút khả dụng cho môn học này để xếp lịch!')
+      return
+    }
+
     setScheduling(true)
     try {
       const studentId = selectedStudent.id
@@ -392,12 +423,21 @@ export function BookingSchedulesPage() {
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(currentStudent)
 
+        const subInDb = currentStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
+        if (!subInDb) throw new Error('SUBJECT_NOT_FOUND')
+
+        // Calculate subject-specific booked minutes
+        const bookedMinutesForSubject = selectedStudentBookings
+          .filter((b) => b.subjectId === selectedSubjectId)
+          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+        const availableSubjectMinutes = Math.max(0, subInDb.remainingMinutes - bookedMinutesForSubject)
+
         let totalRequired = 0
         let bookingsToCreate: any[] = []
 
         if (!isRecurring) {
           totalRequired = selectedSlots.length * duration
-          if (fund.available < totalRequired) {
+          if (fund.available < totalRequired || availableSubjectMinutes < totalRequired) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
           totalScheduled = selectedSlots.length
@@ -431,7 +471,7 @@ export function BookingSchedulesPage() {
             })
           }
         } else {
-          const maxSessions = Math.floor(fund.available / duration)
+          const maxSessions = Math.floor(Math.min(fund.available, availableSubjectMinutes) / duration)
           if (maxSessions === 0) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
@@ -1033,15 +1073,20 @@ export function BookingSchedulesPage() {
 
                 {/* Minute Balance Fund Info */}
                 {(() => {
-                  const fund = getStudentMinuteFund(selectedStudent)
+                  const activeSubPkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
+                  const bookedMinutesForSubject = selectedStudentBookings
+                    .filter((b) => b.subjectId === selectedSubjectId)
+                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+                  const availableForSubject = activeSubPkg ? Math.max(0, activeSubPkg.remainingMinutes - bookedMinutesForSubject) : 0
+
                   const totalRequired = selectedSlots.length * duration
-                  const isEnough = fund.available >= totalRequired
+                  const isEnough = availableForSubject >= totalRequired
                   return (
                     <div className="flex items-center justify-between text-xs border-t border-slate-200/50 pt-2 flex-wrap gap-2">
                       <div>
                         <span className="text-slate-500 font-semibold">Khả dụng: </span>
                         <span className={`font-bold ${isEnough ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {fund.available} phút
+                          {availableForSubject} phút
                         </span>
                       </div>
                       <div>
