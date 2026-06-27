@@ -99,7 +99,8 @@ service cloud.firestore {
                     && request.resource.data.requestedMinutes is int
                     && request.resource.data.requestedMinutes in [25, 50, 75, 100]
                     );
-      allow read, update, delete: if isAdmin();
+      allow read: if true;
+      allow update, delete: if isAdmin();
     }
 
     // Contracts collection
