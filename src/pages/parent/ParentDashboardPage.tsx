@@ -490,10 +490,17 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           </div>
         </section>
 
-        {/* Weekly Timetable Section */}
         {(() => {
           const weekBookings = bookings.filter((b) => {
             return weekDates.some((wd) => wd.iso === b.requestedDate)
+          })
+
+          console.log('ParentView Timetable Debug:', {
+            studentCode: student.code,
+            bookings,
+            weekDates: weekDates.map(wd => wd.iso),
+            weekBookings,
+            visibleStartsRange: `${visibleStarts[0]} to ${visibleStarts[visibleStarts.length - 1]} (${visibleStarts.length} slots)`
           })
 
           return (
@@ -562,6 +569,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                         const activeStarts = visibleStarts.filter((start) => {
                           return weekDates.some(({ iso }) => findBookingForCell(iso, start))
                         })
+                        console.log('activeStarts calculated:', activeStarts)
                         return activeStarts.map((start) => (
                           <tr key={start} className="hover:bg-slate-50/20 transition">
                             <td className="p-2 text-center font-bold text-slate-400 border-r border-slate-100 bg-slate-50/30 align-middle">
