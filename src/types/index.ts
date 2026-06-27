@@ -119,6 +119,7 @@ export interface Lesson {
   createdAt: Timestamp
   approvedAt?: Timestamp
   approvedBy?: string
+  bookingRequestId?: string
 }
 
 export interface Payroll {
@@ -168,6 +169,7 @@ export interface BookingRequest {
   rejectedBy?: string
   releasedAt?: Timestamp
   releasedBy?: string
+  lessonId?: string
 }
 
 export interface AdminLog {

@@ -20,6 +20,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/students': 'Học viên',
   '/admin/teachers': 'Giáo viên',
   '/admin/teacher-availability': 'Lịch giáo viên',
+  '/admin/booking-schedules': 'Lịch xếp lớp',
   '/admin/bookings': 'Yêu cầu giáo viên',
   '/admin/subjects': 'Môn học',
   '/admin/approvals': 'Duyệt buổi dạy',
@@ -82,6 +83,7 @@ export function AdminLayout() {
               {[
                 { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
                 { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
+                { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
                 { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
                 { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
                 { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },

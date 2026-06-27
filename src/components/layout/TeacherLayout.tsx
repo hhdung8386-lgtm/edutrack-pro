@@ -1,7 +1,8 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { PenLine, History, User, LogOut, FileText, Globe } from 'lucide-react'
-import { doc, getDoc } from 'firebase/firestore'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock } from 'lucide-react'
+import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
+import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
@@ -18,6 +19,7 @@ export function TeacherLayout() {
 
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
+    { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules' },
     { to: '/teacher/history', icon: History, labelKey: 'nav.history' },
     { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract' },
     { to: '/teacher/profile', icon: User, labelKey: 'nav.profile' },
@@ -61,6 +63,48 @@ export function TeacherLayout() {
     return () => {
       active = false
     }
+  }, [teacherId])
+
+  // Real-time booking schedules notification listener
+  useEffect(() => {
+    if (!teacherId) return
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+
+    // Record session start time to avoid notification alerts for old historic bookings
+    const sessionStart = Timestamp.now()
+
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', teacherId),
+      where('status', '==', 'confirmed')
+    )
+
+    const unsub = onSnapshot(q, (snap) => {
+      snap.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const booking = { id: change.doc.id, ...change.doc.data() } as BookingRequest
+          if (booking.confirmedAt && booking.confirmedAt.seconds > sessionStart.seconds) {
+            // Trigger browser native notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('Lịch dạy mới!', {
+                body: `Bạn có lịch dạy mới với học sinh ${booking.studentName} lúc ${booking.requestedStart} ngày ${booking.requestedDate}.`,
+                icon: '/favicon.ico'
+              })
+            }
+            // Trigger in-app toast
+            toast.success(`Lịch dạy mới: ${booking.studentName} - ${booking.requestedStart} ngày ${booking.requestedDate}`)
+          }
+        }
+      })
+    }, (error) => {
+      console.error('Error listening for new teacher bookings:', error)
+    })
+
+    return unsub
   }, [teacherId])
 
   return (
