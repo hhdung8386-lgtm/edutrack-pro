@@ -164,7 +164,7 @@ export function BookingSchedulesPage() {
   const [studentSearch, setStudentSearch] = useState('')
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
-  const [duration, setDuration] = useState<25 | 50>(50)
+  const duration = 25
   const [classroomURL, setClassroomURL] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
@@ -345,7 +345,6 @@ export function BookingSchedulesPage() {
       setStudentSearch('')
       setSelectedSubjectId('')
       setClassroomURL('')
-      setDuration(doesSlotCover50(day, time) ? 50 : 25)
       setShowScheduleModal(true)
     }
   }
@@ -357,7 +356,6 @@ export function BookingSchedulesPage() {
   const handleStudentSelect = (student: Student) => {
     setSelectedStudent(student)
     setClassroomURL(student.classroomURL || '')
-    setDuration(student.minutesPerSession === 25 ? 25 : 50)
     // Pre-select first active subject if available
     const activeSub = student.subjects?.[0]
     if (activeSub) {
@@ -909,18 +907,15 @@ export function BookingSchedulesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleCellClick(day, iso, start)}
-                                  className={`w-full py-1.5 px-2 rounded-xl border transition shadow-sm text-left block ${
+                                  className={`w-full py-2 px-1 rounded-xl border transition shadow-sm text-center block ${
                                     isBookingSelected
                                       ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-500 text-rose-900'
                                       : 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border border-amber-200/50'
                                   }`}
                                 >
-                                  <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-between">
-                                    <span>AC {booking.studentName}</span>
-                                    {isBookingSelected && <span className="text-[8px] bg-rose-500 text-white px-1 py-0.5 rounded font-black leading-none">HỦY</span>}
-                                  </div>
-                                  <div className={`text-[9px] font-semibold mt-0.5 truncate ${isBookingSelected ? 'text-rose-700/80' : 'text-amber-700/80'}`}>
-                                    {booking.studentCode} · {booking.subjectName}
+                                  <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-1">
+                                    <span>{booking.studentCode}</span>
+                                    {isBookingSelected && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black leading-none flex-shrink-0">HỦY</span>}
                                   </div>
                                 </button>
                               )
@@ -1087,32 +1082,7 @@ export function BookingSchedulesPage() {
               </div>
             )}
 
-            {/* Set Lesson Duration */}
-            <div className="space-y-1">
-              <label className="block text-sm font-bold text-slate-700">Thời lượng mỗi ca học *</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="modal-duration"
-                    checked={duration === 25}
-                    onChange={() => setDuration(25)}
-                    className="h-4 w-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  25 phút
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="modal-duration"
-                    checked={duration === 50}
-                    onChange={() => setDuration(50)}
-                    className="h-4 w-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  50 phút
-                </label>
-              </div>
-            </div>
+
 
             {/* Recurring schedule switch */}
             {selectedStudent && (

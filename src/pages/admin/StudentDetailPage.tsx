@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { Student, StudentSubject, Lesson } from '@/types'
+import { Student, StudentSubject, Lesson, BookingRequest } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -39,6 +39,7 @@ export function StudentDetailPage() {
   const { user } = useAuthStore()
   const [student, setStudent] = useState<Student | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
   const [showAddSessions, setShowAddSessions] = useState(false)
@@ -98,7 +99,18 @@ export function StudentDetailPage() {
       docs.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
       setLessons(docs)
     })
-    return () => { unsubStudent(); unsubLessons() }
+
+    const qBookings = query(
+      collection(db, 'bookingRequests'),
+      where('studentId', '==', id),
+      where('status', 'in', ['confirmed', 'pending'])
+    )
+    const unsubBookings = onSnapshot(qBookings, (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
+      setBookingRequests(docs)
+    })
+
+    return () => { unsubStudent(); unsubLessons(); unsubBookings() }
   }, [id])
 
   // Load live subject prices & teacher levels referenced by approved lessons or student primary subject
@@ -1016,27 +1028,45 @@ export function StudentDetailPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 rounded-xl p-3 mb-4 text-xs">
-                  <div>
-                    <p className="font-bold text-slate-700 text-sm">{pkg.totalSessions}</p>
-                    <p className="text-slate-500 font-medium mt-0.5">Tổng buổi</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{pkg.totalMinutes} phút</p>
-                  </div>
-                  <div>
-                    <p className="font-bold text-indigo-500 text-sm">{pkg.usedSessions}</p>
-                    <p className="text-slate-500 font-medium mt-0.5">Đã học</p>
-                    <p className="text-[10px] text-indigo-400 mt-0.5">{pkg.usedMinutes} phút</p>
-                  </div>
-                  <div>
-                    <p className={`font-bold text-sm ${pkg.remainingSessions <= 0 ? 'text-rose-500' : pkg.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                      {pkg.remainingSessions}
-                    </p>
-                    <p className="text-slate-500 font-medium mt-0.5">Còn lại</p>
-                    <p className={`text-[10px] mt-0.5 ${pkg.remainingMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
-                      {pkg.remainingMinutes} phút
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  const totalSessions25 = Math.floor(pkg.totalMinutes / 25)
+                  const usedSessions25 = Math.floor(pkg.usedMinutes / 25)
+                  const bookedMinutes = bookingRequests
+                    .filter((b) => b.subjectId === pkg.subjectId)
+                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+                  const bookedSessions25 = Math.floor(bookedMinutes / 25)
+                  const availableMinutes = Math.max(0, pkg.remainingMinutes - bookedMinutes)
+                  const availableSessions25 = Math.floor(availableMinutes / 25)
+
+                  return (
+                    <div className="grid grid-cols-4 gap-1.5 text-center bg-slate-50 rounded-xl p-3 mb-4 text-xs">
+                      <div>
+                        <p className="font-bold text-slate-700 text-[13px]">{totalSessions25}</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Tổng buổi</p>
+                        <p className="text-[9px] text-slate-400 mt-1 leading-none">{pkg.totalMinutes}p</p>
+                      </div>
+                      <div>
+                        <p className="font-bold text-indigo-500 text-[13px]">{usedSessions25}</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã học</p>
+                        <p className="text-[9px] text-indigo-400 mt-1 leading-none">{pkg.usedMinutes}p</p>
+                      </div>
+                      <div>
+                        <p className="font-bold text-amber-600 text-[13px]">{bookedSessions25}</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã đặt</p>
+                        <p className="text-[9px] text-amber-500 mt-1 leading-none">{bookedMinutes}p</p>
+                      </div>
+                      <div>
+                        <p className={`font-bold text-[13px] ${availableSessions25 <= 0 ? 'text-rose-500' : availableSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                          {availableSessions25}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Khả dụng</p>
+                        <p className={`text-[9px] mt-1 leading-none ${availableMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+                          {availableMinutes}p
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs font-semibold text-slate-600">

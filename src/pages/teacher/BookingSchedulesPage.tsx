@@ -492,18 +492,15 @@ export function BookingSchedulesPage() {
                           <button
                             type="button"
                             onClick={() => handleCellClick(booking)}
-                            className={`w-full py-1.5 px-2 rounded-xl text-left block transition shadow-sm ${
+                            className={`w-full py-2 px-1 rounded-xl text-center block transition shadow-sm ${
                               booking.lessonId
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                                 : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/50'
                             }`}
                           >
-                            <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center gap-1">
+                            <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-1">
                               {booking.lessonId && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
-                              {booking.studentName}
-                            </div>
-                            <div className={`text-[9px] font-semibold mt-0.5 truncate ${booking.lessonId ? 'text-emerald-600/80' : 'text-amber-700/80'}`}>
-                              {booking.lessonId ? 'Đã điểm danh' : 'Chưa điểm danh'}
+                              <span>{booking.studentCode}</span>
                             </div>
                           </button>
                         ) : open ? (

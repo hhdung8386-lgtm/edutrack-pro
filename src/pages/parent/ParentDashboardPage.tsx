@@ -165,6 +165,11 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
   const pAvailableMin = Math.max(0, pRemainingMin - pHeldMin)
   const usedPct = pTotalMin > 0 ? Math.min(100, Math.round((pUsedMin / pTotalMin) * 100)) : 0
 
+  const totalSessions25 = Math.floor(pTotalMin / 25)
+  const usedSessions25 = Math.floor(pUsedMin / 25)
+  const heldSessions25 = Math.floor(pHeldMin / 25)
+  const availableSessions25 = Math.floor(pAvailableMin / 25)
+
   const homeworkLessons = lessons.filter(l => l.homework || l.comment)
 
   // ─── Analytics ──────────────────────────────────────────────────
@@ -278,10 +283,10 @@ function ParentView({ student, lessons, onBack }: { student: Student; lessons: L
               {/* Stats row */}
               <div className="grid grid-cols-4 divide-x divide-white/15">
                 {[
-                  { label: 'Tổng buổi', val: student.totalSessions, mins: pTotalMin, color: 'text-white' },
-                  { label: 'Đã học', val: student.usedSessions, mins: pUsedMin, color: 'text-sky-200' },
-                  { label: 'Giữ chỗ', val: pHeldMin, mins: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
-                  { label: 'Khả dụng', val: pAvailableMin, mins: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
+                  { label: 'Tổng buổi', val: totalSessions25, mins: pTotalMin, color: 'text-white' },
+                  { label: 'Đã học', val: usedSessions25, mins: pUsedMin, color: 'text-sky-200' },
+                  { label: 'Giữ chỗ', val: heldSessions25, mins: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
+                  { label: 'Khả dụng', val: availableSessions25, mins: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
                 ].map((s) => (
                   <div key={s.label} className="px-3 first:pl-0 last:pr-0">
                     <p className={`text-[32px] font-bold leading-none tracking-tight ${s.color}`}>{s.val}</p>
