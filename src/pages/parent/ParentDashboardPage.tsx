@@ -203,7 +203,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
   const visibleStarts = useMemo(() => {
     const starts = []
-    for (let min = 420; min < 1320; min += 30) {
+    for (let min = 0; min < 1440; min += 30) {
       const hrs = Math.floor(min / 60)
       const mns = min % 60
       starts.push(`${String(hrs).padStart(2, '0')}:${String(mns).padStart(2, '0')}`)
@@ -223,7 +223,19 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
       if (req.requestedDate !== dateISO) return false
       const reqStart = timeToMinutes(req.requestedStart)
       const reqEnd = timeToMinutes(req.requestedEnd)
-      return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+      const overlaps = Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+      if (dateISO === '2026-06-22' && time === '03:00') {
+        console.log('Testing cell 03:00 Monday matching:', {
+          dateISO,
+          time,
+          reqStart,
+          reqEnd,
+          cellStart,
+          cellEnd,
+          overlaps
+        })
+      }
+      return overlaps
     })
   }
 
