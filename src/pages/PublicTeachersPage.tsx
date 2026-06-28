@@ -558,7 +558,7 @@ function TeacherCard({
   )
 }
 
-function TeacherBookingModal({
+function TeacherBookingPage({
   teacher,
   onClose,
 }: {
@@ -715,33 +715,32 @@ function TeacherBookingModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[94dvh] w-full max-w-7xl overflow-hidden rounded-t-[1.75rem] bg-slate-50 shadow-2xl sm:rounded-[2rem]">
-        <div className="flex items-center justify-between border-b border-sky-100 bg-white px-4 py-3 sm:px-6">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex min-w-0 items-center gap-3 rounded-2xl px-1 py-1 text-left transition hover:bg-slate-50 sm:px-2"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-slate-700">
-              <ArrowLeft className="h-5 w-5" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Trở về danh sách</span>
-              <span className="block truncate text-xl font-black text-slate-950">{teacher.name}</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-950"
-            aria-label="Đóng"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <div className="w-full bg-white rounded-3xl border border-[#eadfbd] shadow-xl overflow-hidden">
+      <div className="flex items-center justify-between border-b border-sky-100 bg-white px-4 py-3 sm:px-6">
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex min-w-0 items-center gap-3 rounded-2xl px-1 py-1 text-left transition hover:bg-slate-50 sm:px-2"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-slate-700">
+            <ArrowLeft className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Trở về danh sách</span>
+            <span className="block truncate text-xl font-black text-slate-950">{teacher.name}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-950"
+          aria-label="Đóng"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        <div className="grid max-h-[calc(94dvh-68px)] overflow-y-auto lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
           <aside className="border-b border-sky-100 bg-white p-4 sm:p-6 lg:border-b-0 lg:border-r">
             <div className="grid gap-4 sm:grid-cols-[160px_1fr] lg:grid-cols-1">
               <div className="overflow-hidden rounded-2xl bg-sky-50 aspect-[16/10] lg:aspect-[4/3]">
@@ -943,7 +942,6 @@ function TeacherBookingModal({
             </div>
             )}
           </section>
-        </div>
       </div>
     </div>
   )
@@ -1097,6 +1095,17 @@ export function PublicTeachersPage() {
   const topTeachers = filteredTeachers.slice(0, 3)
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
 
+  if (selectedTeacher) {
+    return (
+      <div className="min-h-screen bg-[#fffaf0] text-slate-950 font-sans pb-16">
+        <PublicNav />
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <TeacherBookingPage teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[#fffaf0] text-slate-950">
       <PublicNav />
@@ -1241,8 +1250,6 @@ export function PublicTeachersPage() {
           </div>
         </section>
       </main>
-
-      <TeacherBookingModal teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
     </div>
   )
 }
