@@ -1,5 +1,11 @@
 import { Timestamp } from 'firebase/firestore'
 
+export interface TopUpBatch {
+  id: string
+  createdAt: string // format DD/MM/YYYY
+  totalSessions: number
+}
+
 export interface StudentSubject {
   subjectId: string
   subjectName: string
@@ -11,6 +17,7 @@ export interface StudentSubject {
   usedMinutes: number
   remainingMinutes: number
   pricePerMinute: number
+  batches?: TopUpBatch[]
 }
 
 export interface Student {

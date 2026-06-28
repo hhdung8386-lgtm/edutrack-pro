@@ -89,6 +89,48 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     setLoading(true)
     try {
       let updatedSubjects: StudentSubject[] = [...currentSubjects]
+      const today = new Date()
+      const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
+
+      const adjustBatches = (
+        currentBatches: any[] | undefined,
+        newTotal: number,
+        originalTotal: number
+      ) => {
+        const rawBatches = (currentBatches && currentBatches.length > 0)
+          ? currentBatches
+          : [{ id: '1', createdAt: dateString, totalSessions: originalTotal }]
+
+        const delta = newTotal - originalTotal
+        if (delta === 0) return rawBatches
+
+        if (delta > 0) {
+          return [
+            ...rawBatches,
+            { id: String(rawBatches.length + 1), createdAt: dateString, totalSessions: delta }
+          ]
+        } else {
+          let toRemove = -delta
+          const result = []
+          for (let i = rawBatches.length - 1; i >= 0; i--) {
+            const batch = rawBatches[i]
+            if (toRemove > 0) {
+              if (batch.totalSessions > toRemove) {
+                result.unshift({ ...batch, totalSessions: batch.totalSessions - toRemove })
+                toRemove = 0
+              } else {
+                toRemove -= batch.totalSessions
+              }
+            } else {
+              result.unshift(batch)
+            }
+          }
+          if (result.length === 0) {
+            return [{ id: '1', createdAt: dateString, totalSessions: newTotal }]
+          }
+          return result.map((b, idx) => ({ ...b, id: String(idx + 1) }))
+        }
+      }
 
       if (isEdit && editingPkg) {
         // Edit mode
@@ -120,6 +162,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 remainingSessions: 0,
                 totalMinutes: prevPkg.usedMinutes,
                 remainingMinutes: 0,
+                batches: adjustBatches(prevPkg.batches, historicalSessions, prevPkg.totalSessions)
               }
               updatedSubjects.push({
                 subjectId: selectedSubjectObj.id,
@@ -132,6 +175,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 usedMinutes: 0,
                 remainingMinutes: prevPkg.remainingMinutes,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                batches: [{
+                  id: '1',
+                  createdAt: dateString,
+                  totalSessions: newSessions
+                }]
               })
             } else {
               const newTotalMinutes = data.totalSessions * data.minutesPerSession
@@ -145,6 +193,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 minutesPerSession: data.minutesPerSession,
                 totalMinutes: newTotalMinutes,
                 remainingMinutes: newTotalMinutes,
+                batches: [{
+                  id: '1',
+                  createdAt: dateString,
+                  totalSessions: data.totalSessions
+                }]
               }
             }
           } else {
@@ -160,6 +213,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               remainingSessions: newRemainingSessions,
               totalMinutes: newTotalMinutes,
               remainingMinutes: newRemainingMinutes,
+              batches: adjustBatches(prevPkg.batches, data.totalSessions, prevPkg.totalSessions)
             }
           }
         }
@@ -182,6 +236,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           usedMinutes: 0,
           remainingMinutes: data.totalSessions * data.minutesPerSession,
           pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+          batches: [{
+            id: '1',
+            createdAt: dateString,
+            totalSessions: data.totalSessions
+          }]
         }
 
         updatedSubjects.push(newPkg)

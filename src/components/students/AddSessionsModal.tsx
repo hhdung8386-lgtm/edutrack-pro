@@ -98,6 +98,29 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         }
       }
 
+      const today = new Date()
+      const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
+      const studentCreatedAtString = student.createdAt
+        ? new Date((student.createdAt as any).seconds * 1000).toLocaleDateString('vi-VN')
+        : dateString
+
+      const currentBatches = prevPkg.batches && prevPkg.batches.length > 0
+        ? prevPkg.batches
+        : [{
+            id: '1',
+            createdAt: studentCreatedAtString,
+            totalSessions: prevPkg.totalSessions
+          }]
+
+      const updatedBatches = [
+        ...currentBatches,
+        {
+          id: String(currentBatches.length + 1),
+          createdAt: dateString,
+          totalSessions: data.sessions
+        }
+      ]
+
       updatedSubjects[sIdx] = {
         ...prevPkg,
         totalSessions: newTotalSessions,
@@ -105,6 +128,7 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         totalMinutes: newTotalMinutes,
         remainingMinutes: newRemainingMinutes,
         pricePerMinute: rate,
+        batches: updatedBatches,
       }
 
       // Recalculate aggregates

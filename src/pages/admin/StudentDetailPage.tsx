@@ -11,7 +11,7 @@ import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus } from 'lucide-react'
+import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -33,6 +33,51 @@ function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubje
   }
 }
 
+interface CalculatedBatch {
+  id: string
+  createdAt: string
+  totalSessions: number
+  usedSessions: number
+  remainingSessions: number
+  status: 'active' | 'completed'
+}
+
+function calculateBatchesFIFO(
+  batches: any[] | undefined,
+  totalSessions: number,
+  usedSessions: number,
+  createdAtFallback: string
+): CalculatedBatch[] {
+  const rawBatches = batches && batches.length > 0
+    ? [...batches]
+    : [{ id: '1', createdAt: createdAtFallback, totalSessions }]
+
+  rawBatches.sort((a, b) => Number(a.id) - Number(b.id))
+
+  let remainingUsed = usedSessions
+  return rawBatches.map((batch) => {
+    let allocatedUsed = 0
+    if (remainingUsed > 0) {
+      if (remainingUsed >= batch.totalSessions) {
+        allocatedUsed = batch.totalSessions
+        remainingUsed -= batch.totalSessions
+      } else {
+        allocatedUsed = remainingUsed
+        remainingUsed = 0
+      }
+    }
+    const remaining = batch.totalSessions - allocatedUsed
+    return {
+      id: batch.id,
+      createdAt: batch.createdAt,
+      totalSessions: batch.totalSessions,
+      usedSessions: allocatedUsed,
+      remainingSessions: remaining,
+      status: remaining <= 0 ? 'completed' : 'active'
+    }
+  })
+}
+
 export function StudentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -51,6 +96,7 @@ export function StudentDetailPage() {
   // State variables for subject package management
   const [editingSubjectId, setEditingSubjectId] = useState<string | undefined>(undefined)
   const [showSubjectPkg, setShowSubjectPkg] = useState(false)
+  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null)
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
   const [reApproveSubjectId, setReApproveSubjectId] = useState<string>('')
   const [changingSubjectLessonId, setChangingSubjectLessonId] = useState<string | null>(null)
@@ -998,7 +1044,11 @@ export function StudentDetailPage() {
               ? Math.min(100, Math.round((pkg.usedMinutes / pkg.totalMinutes) * 100))
               : 0;
             const hasHistory = lessons.some(l => l.subjectId === pkg.subjectId);
-            
+            const isExpanded = expandedSubjectId === pkg.subjectId;
+            const studentCreatedAtFallback = student?.createdAt
+              ? new Date((student.createdAt as any).seconds * 1000).toLocaleDateString('vi-VN')
+              : new Date().toLocaleDateString('vi-VN');
+
             return (
               <Card key={pkg.subjectId} className="relative overflow-visible">
                 <div className="flex justify-between items-start mb-4">
@@ -1083,6 +1133,83 @@ export function StudentDetailPage() {
                     Đơn giá gói: {pkg.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
                   </p>
                 </div>
+
+                {isExpanded && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
+                    <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Các đợt nạp</p>
+                    <div className="overflow-x-auto rounded-xl border border-slate-100">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                            <th className="p-2.5">Đợt</th>
+                            <th className="p-2.5">Ngày nạp</th>
+                            <th className="p-2.5">Gói buổi</th>
+                            <th className="p-2.5">Đã học</th>
+                            <th className="p-2.5">Còn lại</th>
+                            <th className="p-2.5">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
+                          {(() => {
+                            const totalSessions25 = Math.floor(pkg.totalMinutes / 25)
+                            const usedSessions25 = Math.floor(pkg.usedMinutes / 25)
+                            const rawBatches25 = pkg.batches && pkg.batches.length > 0
+                              ? pkg.batches.map(b => ({
+                                  id: b.id,
+                                  createdAt: b.createdAt,
+                                  totalSessions: Math.floor((b.totalSessions * pkg.minutesPerSession) / 25)
+                                }))
+                              : [{
+                                  id: '1',
+                                  createdAt: studentCreatedAtFallback,
+                                  totalSessions: totalSessions25
+                                }]
+
+                            const computedBatches = calculateBatchesFIFO(
+                              rawBatches25,
+                              totalSessions25,
+                              usedSessions25,
+                              studentCreatedAtFallback
+                            )
+
+                            return computedBatches.map((batch) => (
+                              <tr key={batch.id} className="hover:bg-slate-50/50">
+                                <td className="p-2.5 text-slate-700 flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${batch.status === 'active' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                  #{batch.id}
+                                </td>
+                                <td className="p-2.5 text-slate-600">{batch.createdAt}</td>
+                                <td className="p-2.5 text-slate-700">{batch.totalSessions} buổi</td>
+                                <td className="p-2.5 text-indigo-600 font-semibold">{batch.usedSessions} buổi</td>
+                                <td className={`p-2.5 font-semibold ${batch.remainingSessions > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                  {batch.remainingSessions} buổi
+                                </td>
+                                <td className="p-2.5">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    batch.status === 'active'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {batch.status === 'active' ? 'Đang học' : 'Hoàn tất'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setExpandedSubjectId(isExpanded ? null : pkg.subjectId)}
+                  className="w-full flex items-center justify-center gap-1 mt-4 pt-2.5 border-t border-slate-100 text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-slate-50/50 rounded-lg transition-colors"
+                >
+                  <span>{isExpanded ? 'Thu gọn lịch sử nạp' : 'Xem lịch sử các đợt nạp'}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                </button>
               </Card>
             )
           })}
