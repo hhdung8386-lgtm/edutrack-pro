@@ -25,6 +25,7 @@ interface Evaluation {
   proposedCurriculum: string
   postCourseGoals: string
   createdAt?: any
+  imageUrl?: string
 }
 
 const RESULT_LABELS = {
@@ -233,6 +234,25 @@ export default function PublicEvaluationPage() {
               </div>
             </div>
           </div>
+
+          {/* Section 1.5: Ảnh kỷ niệm buổi học thử (nếu có) */}
+          {evaluation.imageUrl && (
+            <div className="border-t border-slate-100 pt-10 pb-10 flex flex-col items-center">
+              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-6">
+                Hình ảnh lớp học đầu vào
+              </h3>
+              <div className="relative max-w-lg w-full bg-slate-50 border border-slate-150 rounded-[24px] overflow-hidden p-2 shadow-sm">
+                <img 
+                  src={evaluation.imageUrl} 
+                  alt="Ảnh lớp học" 
+                  className="w-full h-auto rounded-[18px] object-cover" 
+                />
+              </div>
+              <p className="text-xs font-bold text-slate-500 mt-3 italic text-center">
+                Hình ảnh giáo viên và học viên chụp chung trong buổi đánh giá năng lực đầu vào
+              </p>
+            </div>
+          )}
 
           {/* Section 2: Lộ trình đề xuất */}
           <div className="border-t border-slate-100 pt-12 mb-12">

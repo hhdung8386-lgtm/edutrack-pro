@@ -27,6 +27,7 @@ interface Evaluation {
   postCourseGoals: string
   createdAt?: any
   updatedAt?: any
+  imageUrl?: string
 }
 
 const RESULT_LABELS = {
@@ -154,6 +155,44 @@ export default function AdminEvaluationsPage() {
   const [minutesPerSession, setMinutesPerSession] = useState(50)
   const [proposedCurriculum, setProposedCurriculum] = useState(DEFAULT_CURRICULUM.adult_comm)
   const [postCourseGoals, setPostCourseGoals] = useState(DEFAULT_GOALS.adult_comm)
+  const [imageUrl, setImageUrl] = useState('')
+  const [compressing, setCompressing] = useState(false)
+
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = (event) => {
+        const img = new Image()
+        img.src = event.target?.result as string
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          const MAX_WIDTH = 600
+          let width = img.width
+          let height = img.height
+
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width)
+            width = MAX_WIDTH
+          }
+
+          canvas.width = width
+          canvas.height = height
+
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height)
+            const compressed = canvas.toDataURL('image/jpeg', 0.7)
+            resolve(compressed)
+          } else {
+            resolve(event.target?.result as string)
+          }
+        }
+        img.onerror = (err) => reject(err)
+      }
+      reader.onerror = (err) => reject(err)
+    })
+  }
 
   useEffect(() => {
     const q = collection(db, 'evaluations')
@@ -198,6 +237,7 @@ export default function AdminEvaluationsPage() {
     setMinutesPerSession(evalDoc.minutesPerSession)
     setProposedCurriculum(evalDoc.proposedCurriculum)
     setPostCourseGoals(evalDoc.postCourseGoals)
+    setImageUrl(evalDoc.imageUrl || '')
     setShowForm(true)
   }
 
@@ -241,6 +281,7 @@ export default function AdminEvaluationsPage() {
       minutesPerSession,
       proposedCurriculum,
       postCourseGoals,
+      imageUrl,
       updatedAt: serverTimestamp(),
     }
 
@@ -652,6 +693,51 @@ export default function AdminEvaluationsPage() {
                     value={proposedCurriculum}
                     onChange={(e: any) => setProposedCurriculum(e.target.value)}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-600">Ảnh kỷ niệm buổi học thử (Giáo viên & Học sinh)</label>
+                  <div className="flex flex-col sm:flex-row gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      id="eval-photo-upload-admin"
+                      className="hidden" 
+                      onChange={async (e: any) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          try {
+                            setCompressing(true)
+                            const base64 = await compressImage(file)
+                            setImageUrl(base64)
+                          } catch (err) {
+                            console.error(err)
+                            toast.error('Lỗi khi nén ảnh')
+                          } finally {
+                            setCompressing(false)
+                          }
+                        }
+                      }}
+                    />
+                    <label 
+                      htmlFor="eval-photo-upload-admin"
+                      className="cursor-pointer bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm"
+                    >
+                      {compressing ? 'Đang nén ảnh...' : 'Chọn ảnh từ thiết bị'}
+                    </label>
+                    {imageUrl && (
+                      <div className="relative w-20 h-20 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex-shrink-0">
+                        <img src={imageUrl} alt="Lớp học" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setImageUrl('')}
+                          className="absolute top-0.5 right-0.5 p-1 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-1">
