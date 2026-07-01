@@ -147,7 +147,9 @@ export function TeachersPage() {
   }, [loading, teachers])
 
   useEffect(() => {
-    const q = query(collection(db, 'teachers'), limit(limitVal))
+    const q = limitVal > 0
+      ? query(collection(db, 'teachers'), limit(limitVal))
+      : query(collection(db, 'teachers'))
     setLoading(true)
 
     const unsub = onSnapshot(
@@ -240,6 +242,7 @@ export function TeachersPage() {
               {[20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000].map((count) => (
                 <option key={count} value={count}>{count}</option>
               ))}
+              <option value={0}>Tất cả</option>
             </select>
           </label>
 
@@ -437,7 +440,7 @@ export function TeachersPage() {
             ))}
           </div>
 
-          {teachers.length >= limitVal && (
+          {limitVal > 0 && teachers.length >= limitVal && (
             <div className="flex justify-center mt-6">
               <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 20)}>
                 Xem thêm

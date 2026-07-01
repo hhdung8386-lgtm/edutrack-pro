@@ -68,7 +68,9 @@ export function StudentsPage() {
 
   useEffect(() => {
     setLoading(true)
-    const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(limitVal))
+    const q = limitVal > 0
+      ? query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(limitVal))
+      : query(collection(db, 'students'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -158,6 +160,7 @@ export function StudentsPage() {
               {[20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000].map((count) => (
                 <option key={count} value={count}>{count}</option>
               ))}
+              <option value={0}>Tất cả</option>
             </select>
           </label>
           <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
