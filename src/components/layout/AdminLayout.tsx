@@ -8,12 +8,7 @@ import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 
-const mobileNavItems = [
-  { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/students', icon: Users, label: 'Học viên' },
-  { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
-  { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu', bookingBadge: true },
-]
+import { useAuthStore } from '@/stores/authStore'
 
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
@@ -23,6 +18,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/booking-schedules': 'Lịch xếp lớp',
   '/admin/bookings': 'Yêu cầu giáo viên',
   '/admin/subjects': 'Môn học',
+  '/admin/evaluations': 'Đánh giá học viên',
   '/admin/approvals': 'Duyệt buổi dạy',
   '/admin/reports': 'Báo cáo',
   '/admin/payroll': 'Lương giáo viên',
@@ -36,6 +32,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
+  const { role } = useAuthStore()
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
 
   const handleSignOut = async () => {
@@ -43,6 +40,36 @@ export function AdminLayout() {
     toast.success('Đã đăng xuất')
     navigate('/login')
   }
+
+  const mobileNavItems = [
+    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/admin/students', icon: Users, label: 'Học viên' },
+    { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
+    { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
+    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu', bookingBadge: true },
+  ].filter((item) => {
+    if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
+    if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
+    return true
+  })
+
+  const mobileMenuItems = [
+    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/admin/students', icon: Users, label: 'Học viên' },
+    { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
+    { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
+    { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
+    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
+    { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
+    { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
+    { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
+    { to: '/admin/contracts', icon: ClipboardCheck, label: 'Hợp đồng' },
+    { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
+  ].filter((item) => {
+    if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
+    if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
+    return true
+  })
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -80,16 +107,7 @@ export function AdminLayout() {
               </button>
             </div>
             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-              {[
-                { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
-                { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
-                { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
-                { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
-                { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
-                { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
-                { to: '/admin/contracts', icon: ClipboardCheck, label: 'Hợp đồng' },
-                { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
-              ].map((item) => (
+              {mobileMenuItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}

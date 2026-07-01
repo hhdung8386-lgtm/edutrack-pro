@@ -62,7 +62,7 @@ export function LoginPage() {
       
       const { role } = result
       
-      if (role === 'admin') navigate('/admin/dashboard')
+      if (role === 'admin' || role === 'student_manager' || role === 'teacher_manager') navigate('/admin/dashboard')
       else if (role === 'teacher') navigate('/teacher/attendance')
       else if (role === 'guest') navigate('/waiting')
       else setErrorMsg('Tài khoản không có quyền truy cập')

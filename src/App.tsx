@@ -28,6 +28,7 @@ const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then(m => ({ 
 const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ default: m.PayrollPage })))
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const ContractsPage = lazy(() => import('@/pages/admin/ContractsPage').then(m => ({ default: m.ContractsPage })))
+const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPage'))
 
 // Lazy loaded Teacher Pages
 const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPage').then(m => ({ default: m.TeacherContractPage })))
@@ -35,6 +36,7 @@ const AttendancePage = lazy(() => import('@/pages/teacher/AttendancePage').then(
 const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage').then(m => ({ default: m.LessonHistoryPage })))
 const TeacherSchedulesPage = lazy(() => import('@/pages/teacher/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
+const TeacherEvaluationsPage = lazy(() => import('@/pages/teacher/TeacherEvaluationsPage'))
 
 // Lazy loaded Parent Pages
 const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPage').then(m => ({ default: m.ParentDashboardPage })))
@@ -45,6 +47,7 @@ const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m
 const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
 const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default: m.LienHePage })))
 const PublicTeachersPage = lazy(() => import('@/pages/PublicTeachersPage').then(m => ({ default: m.PublicTeachersPage })))
+const PublicEvaluationPage = lazy(() => import('@/pages/PublicEvaluationPage'))
 
 const RootRedirect = () => {
   const { user, role, loading, initialized } = useAuthStore()
@@ -91,6 +94,7 @@ function App() {
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/waiting" element={<WaitingApprovalPage />} />
+          <Route path="/evaluation/:id" element={<PublicEvaluationPage />} />
 
           {/* Parent Routes - public auth via student code + phone */}
           <Route path="/parent" element={<ParentDashboardPage />} />
@@ -117,6 +121,7 @@ function App() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="payroll" element={<PayrollPage />} />
             <Route path="contracts" element={<ContractsPage />} />
+            <Route path="evaluations" element={<AdminEvaluationsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route index element={<Navigate to="dashboard" replace />} />
           </Route>
@@ -144,6 +149,7 @@ function App() {
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="schedules" element={<TeacherSchedulesPage />} />
+            <Route path="evaluations" element={<TeacherEvaluationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="availability" element={<Navigate to="../profile" replace />} />
             <Route index element={<Navigate to="attendance" replace />} />

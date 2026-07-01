@@ -17,6 +17,7 @@ const navItems = [
   { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
   { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
+  { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
   { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
   { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
@@ -26,13 +27,19 @@ const navItems = [
 
 export function AdminSidebar({ pendingCount = 0, pendingBookingCount = 0 }: { pendingCount?: number; pendingBookingCount?: number }) {
   const navigate = useNavigate()
-  const { user } = useAuthStore()
+  const { user, role } = useAuthStore()
 
   const handleSignOut = async () => {
     await signOut()
     toast.success('Đã đăng xuất')
     navigate('/login')
   }
+
+  const filteredNavItems = navItems.filter((item) => {
+    if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
+    if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
+    return true
+  })
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-slate-50 border-r border-slate-200 flex flex-col z-30">
@@ -46,7 +53,7 @@ export function AdminSidebar({ pendingCount = 0, pendingBookingCount = 0 }: { pe
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-0.5">
-        {navItems.map((item) => (
+        {filteredNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -88,7 +95,9 @@ export function AdminSidebar({ pendingCount = 0, pendingBookingCount = 0 }: { pe
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-slate-600 truncate">{user?.email}</p>
-            <p className="text-[10px] text-slate-500">Quản trị viên</p>
+            <p className="text-[10px] text-slate-500">
+              {role === 'student_manager' ? 'Quản lý Học viên' : role === 'teacher_manager' ? 'Quản lý Giáo viên' : 'Quản trị viên'}
+            </p>
           </div>
           <button
             onClick={handleSignOut}

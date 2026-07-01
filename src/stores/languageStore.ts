@@ -18,6 +18,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'nav.schedules': { vi: 'Lịch dạy của tôi', en: 'My Schedules' },
   'nav.profile': { vi: 'Hồ sơ', en: 'Profile' },
   'nav.teacher': { vi: 'Giáo viên', en: 'Teacher' },
+  'nav.evaluations': { vi: 'Đánh giá', en: 'Evaluations' },
   'nav.signout': { vi: 'Đăng xuất', en: 'Sign out' },
   'nav.signed_out': { vi: 'Đã đăng xuất', en: 'Signed out' },
 

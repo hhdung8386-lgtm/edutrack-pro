@@ -7,7 +7,7 @@ import { db } from '@/lib/firebase'
 
 interface ProtectedRouteProps {
   children: ReactNode
-  requiredRole?: 'admin' | 'teacher'
+  requiredRole?: 'admin' | 'teacher' | 'student_manager' | 'teacher_manager'
   requireContractAccepted?: boolean
 }
 
@@ -55,7 +55,10 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  if (requiredRole && role !== requiredRole) {
+  const isAuthorized = !requiredRole || role === requiredRole || 
+    (requiredRole === 'admin' && (role === 'student_manager' || role === 'teacher_manager'));
+
+  if (!isAuthorized) {
     // If user is a guest (not yet approved), redirect to waiting page
     if (role === 'guest') {
       return <Navigate to="/waiting" replace />
@@ -68,6 +71,33 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         </div>
       </div>
     )
+  }
+
+  // Handle specific path restrictions for managers
+  if (role === 'student_manager') {
+    if (location.pathname.startsWith('/admin/teachers') || location.pathname.startsWith('/admin/contracts')) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-rose-500 mb-2">403</h1>
+            <p className="text-slate-500">Bạn không có quyền truy cập trang này</p>
+          </div>
+        </div>
+      )
+    }
+  }
+
+  if (role === 'teacher_manager') {
+    if (location.pathname.startsWith('/admin/students')) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-rose-500 mb-2">403</h1>
+            <p className="text-slate-500">Bạn không có quyền truy cập trang này</p>
+          </div>
+        </div>
+      )
+    }
   }
 
   // Check if teacher needs to accept contract

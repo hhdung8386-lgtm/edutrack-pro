@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck } from 'lucide-react'
 import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -20,6 +20,7 @@ export function TeacherLayout() {
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
     { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules' },
+    { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations' },
     { to: '/teacher/history', icon: History, labelKey: 'nav.history' },
     { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract' },
     { to: '/teacher/profile', icon: User, labelKey: 'nav.profile' },
@@ -194,7 +195,7 @@ export function TeacherLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <div className="grid grid-cols-4 h-14">
+        <div className="grid grid-flow-col auto-cols-fr h-14">
           {navItems.map((item) => (
             <NavLink
               key={item.to}

@@ -8,7 +8,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student_manager' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher_manager'
+      );
     }
 
     function isTeacher() {
@@ -109,6 +113,12 @@ service cloud.firestore {
       allow create: if isAdmin() || (isTeacher() && request.resource.data.teacherId == getTeacherId());
       allow update: if isAdmin();
       allow delete: if false;
+    }
+
+    // Evaluations collection
+    match /evaluations/{evaluationId} {
+      allow read: if true;
+      allow write: if isAdmin() || isTeacher();
     }
 
     // Catch-all deny
