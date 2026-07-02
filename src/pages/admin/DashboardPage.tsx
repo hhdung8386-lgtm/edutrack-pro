@@ -53,30 +53,28 @@ export function DashboardPage() {
 
   useEffect(() => {
     async function provisionManagers() {
+      if (localStorage.getItem('managers_provisioned_v2')) return
       try {
         const studentUid = 'N64xvLpGA3NKmaAvKm2YFkJEeYo1'
-        const studentSnap = await getDoc(doc(db, 'users', studentUid))
-        if (!studentSnap.exists()) {
-          await setDoc(doc(db, 'users', studentUid), {
-            uid: studentUid,
-            email: 'student_manager@edutrackpro.app',
-            username: 'student_manager',
-            role: 'student_manager',
-            createdAt: serverTimestamp()
-          })
-        }
+        await setDoc(doc(db, 'users', studentUid), {
+          uid: studentUid,
+          email: 'student_manager@edutrackpro.app',
+          username: 'student_manager',
+          role: 'student_manager',
+          createdAt: serverTimestamp()
+        })
 
         const teacherUid = 'SfwV3ILWghRlQh9wKqzovQziKbI3'
-        const teacherSnap = await getDoc(doc(db, 'users', teacherUid))
-        if (!teacherSnap.exists()) {
-          await setDoc(doc(db, 'users', teacherUid), {
-            uid: teacherUid,
-            email: 'teacher_manager@edutrackpro.app',
-            username: 'teacher_manager',
-            role: 'teacher_manager',
-            createdAt: serverTimestamp()
-          })
-        }
+        await setDoc(doc(db, 'users', teacherUid), {
+          uid: teacherUid,
+          email: 'teacher_manager@edutrackpro.app',
+          username: 'teacher_manager',
+          role: 'teacher_manager',
+          createdAt: serverTimestamp()
+        })
+
+        localStorage.setItem('managers_provisioned_v2', 'true')
+        console.log('Managers provisioned successfully!')
       } catch (err) {
         console.error('Failed to auto-provision managers:', err)
       }

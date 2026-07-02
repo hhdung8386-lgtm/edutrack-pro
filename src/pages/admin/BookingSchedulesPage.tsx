@@ -149,6 +149,10 @@ export function BookingSchedulesPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [filterDays, setFilterDays] = useState<DayOfWeek[]>([])
+  const [filterTime, setFilterTime] = useState('17:00')
+  const [allAvailabilities, setAllAvailabilities] = useState<Record<string, TeacherAvailability>>({})
+
   // Selection mode states
   const [multiSelectMode, setMultiSelectMode] = useState(false)
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([])
@@ -179,25 +183,35 @@ export function BookingSchedulesPage() {
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
 
-  // Load teachers
+  // Load teachers and availabilities
   useEffect(() => {
-    async function loadTeachers() {
+    async function loadTeachersAndAvailability() {
       setLoading(true)
       try {
-        const snap = await getDocs(query(collection(db, 'teachers'), where('status', '==', 'active')))
-        const items = snap.docs
+        const [teachersSnap, availSnap] = await Promise.all([
+          getDocs(query(collection(db, 'teachers'), where('status', '==', 'active'))),
+          getDocs(collection(db, 'teacherAvailability'))
+        ])
+
+        const items = teachersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
           .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
         setTeachers(items)
         setSelectedTeacherId((current) => current || items[0]?.id || '')
+
+        const avMap: Record<string, TeacherAvailability> = {}
+        availSnap.docs.forEach(docSnap => {
+          avMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() } as TeacherAvailability
+        })
+        setAllAvailabilities(avMap)
       } catch (error) {
-        console.error('Error loading teachers:', error)
+        console.error('Error loading teachers/availability:', error)
         toast.error('Không tải được danh sách giáo viên')
       } finally {
         setLoading(false)
       }
     }
-    loadTeachers()
+    loadTeachersAndAvailability()
   }, [])
 
   // Load students for scheduling
@@ -281,9 +295,34 @@ export function BookingSchedulesPage() {
   }, [selectedStudent])
 
   const filteredTeachers = teachers.filter((teacher) => {
+    // 1. Text search filter
     const keyword = search.trim().toLowerCase()
-    if (!keyword) return true
-    return `${teacher.name} ${teacher.code}`.toLowerCase().includes(keyword)
+    if (keyword && !`${teacher.name} ${teacher.code}`.toLowerCase().includes(keyword)) {
+      return false
+    }
+
+    // 2. Schedule availability filter
+    if (filterDays.length > 0 && filterTime) {
+      const avail = allAvailabilities[teacher.id]
+      if (!avail) return false
+
+      const weekOverride = avail.weekOverrides?.[weekStartISO]
+      const currentSlots = weekOverride?.slots || avail.slots
+      if (!currentSlots) return false
+
+      const startMinute = timeToMinutes(filterTime)
+      const endMinute = startMinute + duration
+
+      // Must be available on all selected days
+      for (const day of filterDays) {
+        const daySlots = currentSlots[day]
+        if (!daySlots || !daySlots.timeRanges) return false
+        const isAvailable = daySlots.timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+        if (!isAvailable) return false
+      }
+    }
+
+    return true
   })
 
   const isCellOpen = (day: DayOfWeek, start: string) => {
@@ -769,6 +808,68 @@ export function BookingSchedulesPage() {
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
             />
           </label>
+
+          {/* Lọc lịch rảnh */}
+          <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">Lọc theo lịch trống</span>
+              {filterDays.length > 0 && (
+                <button
+                  onClick={() => { setFilterDays([]); setFilterTime('17:00'); }}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-bold transition"
+                >
+                  Xóa lọc
+                </button>
+              )}
+            </div>
+
+            {/* Days list (Mon-Sun) toggles */}
+            <div className="flex flex-wrap gap-1">
+              {DAYS.map((day) => {
+                const isSelected = filterDays.includes(day)
+                const label = day === 'sun' ? 'CN' : `T${DAYS.indexOf(day) + 2}`
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => {
+                      setFilterDays(prev => 
+                        prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+                      )
+                    }}
+                    className={`flex-1 min-w-[36px] h-8 rounded-lg text-xs font-bold transition flex items-center justify-center border ${
+                      isSelected 
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-500/20' 
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Time select dropdown */}
+            {filterDays.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400">Chọn khung giờ bắt đầu</label>
+                <div className="relative">
+                  <select
+                    value={filterTime}
+                    onChange={(e) => setFilterTime(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold outline-none focus:border-indigo-400 appearance-none pr-8 cursor-pointer"
+                  >
+                    {getVisibleStarts('24h').map((time) => (
+                      <option key={time} value={time}>
+                        Ca trống từ {time}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]">▼</div>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="mt-4 max-h-[620px] space-y-2 overflow-y-auto pr-1">
             {loading ? (
