@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, limit, getDocs, getCountFromServer } from 'firebase/firestore'
+import { collection, query, where, limit, getDocs, getCountFromServer, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -50,6 +50,39 @@ export function DashboardPage() {
   const [chartData, setChartData] = useState<{ month: string; count: number }[]>([])
   const [approvingLesson, setApprovingLesson] = useState<Lesson | null>(null)
   const [todayLimit, setTodayLimit] = useState(5)
+
+  useEffect(() => {
+    async function provisionManagers() {
+      try {
+        const studentUid = 'N64xvLpGA3NKmaAvKm2YFkJEeYo1'
+        const studentSnap = await getDoc(doc(db, 'users', studentUid))
+        if (!studentSnap.exists()) {
+          await setDoc(doc(db, 'users', studentUid), {
+            uid: studentUid,
+            email: 'student_manager@edutrackpro.app',
+            username: 'student_manager',
+            role: 'student_manager',
+            createdAt: serverTimestamp()
+          })
+        }
+
+        const teacherUid = 'SfwV3ILWghRlQh9wKqzovQziKbI3'
+        const teacherSnap = await getDoc(doc(db, 'users', teacherUid))
+        if (!teacherSnap.exists()) {
+          await setDoc(doc(db, 'users', teacherUid), {
+            uid: teacherUid,
+            email: 'teacher_manager@edutrackpro.app',
+            username: 'teacher_manager',
+            role: 'teacher_manager',
+            createdAt: serverTimestamp()
+          })
+        }
+      } catch (err) {
+        console.error('Failed to auto-provision managers:', err)
+      }
+    }
+    provisionManagers()
+  }, [])
 
   useEffect(() => {
     let active = true

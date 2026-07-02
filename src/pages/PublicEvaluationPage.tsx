@@ -154,13 +154,6 @@ export default function PublicEvaluationPage() {
                 {evaluation.studentName}
               </h1>
             </div>
-            
-            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm bg-slate-50/50 border border-slate-100 rounded-2xl p-4 min-w-[280px]">
-              <div className="text-slate-400">Giáo viên:</div>
-              <div className="font-semibold text-slate-800 text-right">{evaluation.teacherName}</div>
-              <div className="text-slate-400">Ngày đánh giá:</div>
-              <div className="font-semibold text-slate-800 text-right">{dateString}</div>
-            </div>
           </div>
 
           {/* Section 1: Biểu đồ & Bảng điểm */}

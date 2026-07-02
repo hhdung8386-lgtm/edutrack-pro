@@ -323,7 +323,7 @@ export function TeachersPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên giáo viên', 'Môn dạy', 'Chi nhánh', 'Level', 'Cấp độ', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Cấp độ', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -349,17 +349,9 @@ export function TeachersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-500">
-                        {(teacher.subjectNames || []).join(', ') || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {teacher.branchName ? (
-                          <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                            <Building2 className="w-3 h-3" />
-                            {teacher.branchName}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
+                        {teacher.createdAt?.seconds
+                          ? new Date(teacher.createdAt.seconds * 1000).toLocaleDateString('vi-VN')
+                          : (teacher.createdAt instanceof Date ? teacher.createdAt.toLocaleDateString('vi-VN') : '—')}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-slate-600 font-medium">×{teacher.level}</span>
@@ -422,14 +414,13 @@ export function TeachersPage() {
                       )}
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
-                    {teacher.branchName && (
-                      <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
-                        <Building2 className="w-2.5 h-2.5" />
-                        {teacher.branchName}
-                      </span>
-                    )}
+                    <p className="text-xs text-slate-500 mt-1">
+                      Ngày tạo: {teacher.createdAt?.seconds
+                        ? new Date(teacher.createdAt.seconds * 1000).toLocaleDateString('vi-VN')
+                        : (teacher.createdAt instanceof Date ? teacher.createdAt.toLocaleDateString('vi-VN') : '—')}
+                    </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Level ×{teacher.level} · {(teacher.subjectNames || []).join(', ')}
+                      Level ×{teacher.level}
                       {Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) > 0
                         ? ` · ${Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes).toLocaleString('vi-VN')}'`
                         : ''}
