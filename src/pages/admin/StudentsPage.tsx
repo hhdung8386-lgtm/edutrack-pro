@@ -220,53 +220,53 @@ export function StudentsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filtered.map((student) => (
-                    <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
-                          {student.code}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{student.name}</td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{student.subjectName || '—'}</td>
-                      <td className="px-4 py-3">
-                        {student.branchName ? (
-                          <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                            <Building2 className="w-3 h-3" />
-                            {student.branchName}
+                  {filtered.map((student) => {
+                    const mps = student.minutesPerSession || 50;
+                    const totalMins = student.totalMinutes ?? (student.totalSessions * mps);
+                    const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
+                    const totalSessions25 = Math.floor(totalMins / 25);
+                    const remainingSessions25 = Math.floor(remainingMins / 25);
+
+                    return (
+                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
+                            {student.code}
                           </span>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="leading-tight">
-                          <div>
-                            <span className={`font-semibold ${
-                              student.remainingSessions < 0 ? 'text-rose-600' :
-                              student.remainingSessions === 0 ? 'text-rose-500' :
-                              student.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
-                            }`}>
-                              {student.remainingSessions}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-700">{student.name}</td>
+                        <td className="px-4 py-3 text-slate-500">
+                          {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{student.subjectName || '—'}</td>
+                        <td className="px-4 py-3">
+                          {student.branchName ? (
+                            <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
+                              <Building2 className="w-3 h-3" />
+                              {student.branchName}
                             </span>
-                            <span className="text-slate-500 text-xs"> / {student.totalSessions} buổi</span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="leading-tight">
+                            <div>
+                              <span className={`font-semibold ${
+                                remainingSessions25 < 0 ? 'text-rose-600' :
+                                remainingSessions25 === 0 ? 'text-rose-500' :
+                                remainingSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'
+                              }`}>
+                                {remainingSessions25}
+                              </span>
+                              <span className="text-slate-500 text-xs"> / {totalSessions25} buổi</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              <span className={remainingMins <= 0 ? 'text-rose-300' : ''}>{remainingMins}</span>
+                              <span> / {totalMins} phút</span>
+                            </div>
                           </div>
-                          {(() => {
-                            const mps = student.minutesPerSession || 50
-                            const total = student.totalMinutes ?? student.totalSessions * mps
-                            const remaining = student.remainingMinutes ?? student.remainingSessions * mps
-                            return (
-                              <div className="text-[11px] text-slate-400 mt-0.5">
-                                <span className={remaining <= 0 ? 'text-rose-300' : ''}>{remaining}</span>
-                                <span> / {total} phút</span>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      </td>
+                        </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={student.status} />
                       </td>
@@ -301,8 +301,9 @@ export function StudentsPage() {
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -310,45 +311,44 @@ export function StudentsPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map((student) => (
-              <Card key={student.id} hover onClick={() => navigate(`/admin/students/${student.id}`)}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
-                        {student.code}
-                      </span>
-                      <StatusBadge status={student.status} />
+            {filtered.map((student) => {
+              const mps = student.minutesPerSession || 50;
+              const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
+              const remainingSessions25 = Math.floor(remainingMins / 25);
+
+              return (
+                <Card key={student.id} hover onClick={() => navigate(`/admin/students/${student.id}`)}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
+                          {student.code}
+                        </span>
+                        <StatusBadge status={student.status} />
+                      </div>
+                      <p className="font-semibold text-slate-900">{student.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {student.subjectName} · {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
+                      </p>
+                      {student.branchName && (
+                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
+                          <Building2 className="w-2.5 h-2.5" />
+                          {student.branchName}
+                        </span>
+                      )}
                     </div>
-                    <p className="font-semibold text-slate-900">{student.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {student.subjectName} · {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
-                    </p>
-                    {student.branchName && (
-                      <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
-                        <Building2 className="w-2.5 h-2.5" />
-                        {student.branchName}
-                      </span>
-                    )}
+                    <div className="text-right flex-shrink-0">
+                      <p className={`text-xl font-bold ${
+                        remainingSessions25 < 0 ? 'text-rose-600' :
+                        remainingSessions25 === 0 ? 'text-rose-500' :
+                        remainingSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'
+                      }`}>{remainingSessions25}</p>
+                      <p className="text-xs text-slate-500">buổi còn</p>
+                      <p className={`text-[11px] mt-0.5 ${remainingMins <= 0 ? 'text-rose-300' : 'text-slate-400'}`}>
+                        {remainingMins} phút
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={`text-xl font-bold ${
-                      student.remainingSessions < 0 ? 'text-rose-600' :
-                      student.remainingSessions === 0 ? 'text-rose-500' :
-                      student.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
-                    }`}>{student.remainingSessions}</p>
-                    <p className="text-xs text-slate-500">buổi còn</p>
-                    {(() => {
-                      const mps = student.minutesPerSession || 50
-                      const remaining = student.remainingMinutes ?? student.remainingSessions * mps
-                      return (
-                        <p className={`text-[11px] mt-0.5 ${remaining <= 0 ? 'text-rose-300' : 'text-slate-400'}`}>
-                          {remaining} phút
-                        </p>
-                      )
-                    })()}
-                  </div>
-                </div>
                 <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">
                   <Button size="sm" variant="outline" fullWidth onClick={(e) => { e.stopPropagation(); setAddSessions(student) }}>
                     + Thêm buổi
@@ -361,7 +361,8 @@ export function StudentsPage() {
                   </Button>
                 </div>
               </Card>
-            ))}
+            );
+          })}
           </div>
 
           <p className="mt-4 text-center text-xs text-slate-500">
