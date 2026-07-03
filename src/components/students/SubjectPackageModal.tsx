@@ -14,7 +14,6 @@ import { Check, ChevronDown, Search } from 'lucide-react'
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
   totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
-  minutesPerSession: z.coerce.number().min(1, 'Chọn số phút'),
 })
 
 type FormData = z.infer<typeof schema>
@@ -46,27 +45,21 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
       ? {
           subjectId: editingPkg.subjectId,
           totalMinutes: editingPkg.totalMinutes,
-          minutesPerSession: editingPkg.minutesPerSession,
         }
       : {
           subjectId: '',
           totalMinutes: 500,
-          minutesPerSession: 50,
         },
   })
 
   const watchedTotalMinutes = watch('totalMinutes') || 0
-  const watchedMinutesPerSession = watch('minutesPerSession') || 0
+  const watchedMinutesPerSession = 25
   const watchedSubjectId = watch('subjectId')
-  const calculatedSessions = watchedMinutesPerSession > 0
-    ? Math.round((watchedTotalMinutes / watchedMinutesPerSession) * 100) / 100
-    : 0
+  const calculatedSessions = Math.round((watchedTotalMinutes / watchedMinutesPerSession) * 100) / 100
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
   const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== editingSubjectId)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
-  const transferredSessions = watchedMinutesPerSession > 0
-    ? Math.round((transferableMinutes / watchedMinutesPerSession) * 100) / 100
-    : 0
+  const transferredSessions = Math.round((transferableMinutes / watchedMinutesPerSession) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
@@ -90,6 +83,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     try {
+      const minutesPerSession = 25
       let updatedSubjects: StudentSubject[] = [...currentSubjects]
       const today = new Date()
       const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
@@ -156,7 +150,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               const historicalSessions = prevPkg.usedSessions || Math.round(
                 (prevPkg.usedMinutes / (prevPkg.minutesPerSession || 50)) * 100,
               ) / 100
-              const newSessions = Math.round((prevPkg.remainingMinutes / data.minutesPerSession) * 100) / 100
+              const newSessions = Math.round((prevPkg.remainingMinutes / minutesPerSession) * 100) / 100
 
               updatedSubjects[index] = {
                 ...prevPkg,
@@ -172,7 +166,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 totalSessions: newSessions,
                 usedSessions: 0,
                 remainingSessions: newSessions,
-                minutesPerSession: data.minutesPerSession,
+                minutesPerSession: minutesPerSession,
                 totalMinutes: prevPkg.remainingMinutes,
                 usedMinutes: 0,
                 remainingMinutes: prevPkg.remainingMinutes,
@@ -185,7 +179,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               })
             } else {
               const newTotalMinutes = data.totalMinutes
-              const calculatedTotalSessions = Math.round(newTotalMinutes / data.minutesPerSession)
+              const calculatedTotalSessions = Math.round(newTotalMinutes / minutesPerSession)
               updatedSubjects[index] = {
                 ...prevPkg,
                 subjectId: selectedSubjectObj.id,
@@ -193,7 +187,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
                 totalSessions: calculatedTotalSessions,
                 remainingSessions: calculatedTotalSessions,
-                minutesPerSession: data.minutesPerSession,
+                minutesPerSession: minutesPerSession,
                 totalMinutes: newTotalMinutes,
                 remainingMinutes: newTotalMinutes,
                 batches: [{
@@ -204,7 +198,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               }
             }
           } else {
-            const calculatedTotalSessions = Math.round(data.totalMinutes / data.minutesPerSession)
+            const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
             const delta = calculatedTotalSessions - prevPkg.totalSessions
             const newRemainingSessions = prevPkg.remainingSessions + delta
             const newTotalMinutes = data.totalMinutes
@@ -213,7 +207,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             updatedSubjects[index] = {
               ...prevPkg,
               totalSessions: calculatedTotalSessions,
-              minutesPerSession: data.minutesPerSession,
+              minutesPerSession: minutesPerSession,
               remainingSessions: newRemainingSessions,
               totalMinutes: newTotalMinutes,
               remainingMinutes: newRemainingMinutes,
@@ -229,14 +223,14 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           return
         }
 
-        const calculatedTotalSessions = Math.round(data.totalMinutes / data.minutesPerSession)
+        const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
         const newPkg: StudentSubject = {
           subjectId: data.subjectId,
           subjectName: selectedSubjectObj.name,
           totalSessions: calculatedTotalSessions,
           usedSessions: 0,
           remainingSessions: calculatedTotalSessions,
-          minutesPerSession: data.minutesPerSession,
+          minutesPerSession: minutesPerSession,
           totalMinutes: data.totalMinutes,
           usedMinutes: 0,
           remainingMinutes: data.totalMinutes,
@@ -273,7 +267,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         // Legacy fields mapping to primary subject
         subjectId: primarySubject ? primarySubject.subjectId : '',
         subjectName: primarySubject ? primarySubject.subjectName : '',
-        minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
+        minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 25,
         status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
         updatedAt: serverTimestamp(),
       })
@@ -386,31 +380,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             {...register('totalMinutes')}
           />
         )}
-
-        <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1.5">Số phút / buổi *</label>
-          <select
-            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            {...register('minutesPerSession')}
-          >
-            <option value={25}>25 phút</option>
-            <option value={50}>50 phút</option>
-            <option value={75}>75 phút</option>
-            <option value={100}>100 phút</option>
-          </select>
-          {errors.minutesPerSession && <p className="mt-1.5 text-xs text-rose-400">{errors.minutesPerSession.message}</p>}
-        </div>
-
-        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm">
-          <p className="text-slate-500 mb-2">{isTransferringSubject && editingPkg?.usedMinutes ? 'Quỹ sau khi chuyển môn' : 'Tổng phút theo quỹ'}</p>
-          <div className="flex flex-wrap items-center gap-2 text-slate-700">
-            <span className="font-semibold">{isTransferringSubject && editingPkg?.usedMinutes ? transferableMinutes : watchedTotalMinutes} phút</span>
-            <span>÷</span>
-            <span className="font-semibold">{watchedMinutesPerSession} phút/buổi</span>
-            <span>=</span>
-            <span className="font-semibold text-indigo-700">{isTransferringSubject && editingPkg?.usedMinutes ? transferredSessions : calculatedSessions} buổi</span>
-          </div>
-        </div>
       </form>
     </Modal>
   )
