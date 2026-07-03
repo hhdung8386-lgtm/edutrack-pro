@@ -307,6 +307,12 @@ export function StudentDetailPage() {
     acc[lesson.subjectId] = (acc[lesson.subjectId] || 0) + (lesson.minutes || 0)
     return acc
   }, {})
+  // Find all approved minutes of subjects that do not have a package
+  const packageSubjectIds = new Set(storedSubjects.map((s) => s.subjectId))
+  const orphanMinutes = Object.entries(approvedMinutesBySubject)
+    .filter(([subId]) => !packageSubjectIds.has(subId))
+    .reduce((sum, [_, mins]) => sum + mins, 0)
+
   const activeSubjects = storedSubjects.map((pkg) => {
     const subjectUsedMinutes = approvedMinutesBySubject[pkg.subjectId] || 0
     const subjectMps = pkg.minutesPerSession || 50
@@ -321,6 +327,34 @@ export function StudentDetailPage() {
       remainingSessions: Math.floor(subjectRemainingMinutes / subjectMps),
     }
   })
+
+  // Deduct orphan minutes from remaining minutes of available packages
+  let remainingOrphan = orphanMinutes
+  for (let i = 0; i < activeSubjects.length && remainingOrphan > 0; i++) {
+    const pkg = activeSubjects[i]
+    if (pkg.remainingMinutes > 0) {
+      const deduction = Math.min(pkg.remainingMinutes, remainingOrphan)
+      pkg.remainingMinutes -= deduction
+      pkg.usedMinutes += deduction
+      remainingOrphan -= deduction
+      
+      const subjectMps = pkg.minutesPerSession || 50
+      pkg.usedSessions = sessionCount(pkg.usedMinutes, subjectMps)
+      pkg.remainingSessions = Math.floor(pkg.remainingMinutes / subjectMps)
+    }
+  }
+
+  // If there are still orphan minutes left (i.e. student exceeded their total paid minutes),
+  // deduct them from the first package (making its remainingMinutes go to 0 or negative/extra used minutes)
+  if (remainingOrphan > 0 && activeSubjects.length > 0) {
+    const pkg = activeSubjects[0]
+    pkg.remainingMinutes = 0
+    pkg.usedMinutes += remainingOrphan
+    
+    const subjectMps = pkg.minutesPerSession || 50
+    pkg.usedSessions = sessionCount(pkg.usedMinutes, subjectMps)
+    pkg.remainingSessions = 0
+  }
 
   const mps = student.minutesPerSession || 50
 
@@ -1023,6 +1057,12 @@ export function StudentDetailPage() {
                 Hệ thống lưu: <strong>{storedUsedSessions} buổi ({storedUsedMinutes} phút)</strong> đã học.
                 {' '}Nhưng thực tế trong lịch sử chỉ có <strong>{actualUsedSessions} buổi đã duyệt ({actualUsedMinutes} phút)</strong>.
               </p>
+              {orphanMinutes > 0 && (
+                <p className="text-amber-700 bg-amber-100/60 rounded-lg p-2.5 mt-2 font-medium leading-relaxed border border-amber-200/50">
+                  ⚠️ Phát hiện <strong>{orphanMinutes} phút</strong> học ở môn không thuộc gói đăng ký của học viên (môn khác).
+                  Hệ thống đã tự động khấu trừ số phút này vào các gói hiện có. Bấm nút dưới để đồng bộ vĩnh viễn vào cơ sở dữ liệu.
+                </p>
+              )}
               <p className="text-amber-600/80 text-xs mt-1.5">
                 Có thể do buổi đã duyệt bị xoá trực tiếp ở Firestore, hoặc dữ liệu cũ chưa được đồng bộ.
               </p>
