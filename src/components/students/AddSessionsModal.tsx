@@ -14,7 +14,7 @@ import { useAuthStore } from '@/stores/authStore'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
-  sessions: z.coerce.number().min(1, 'Tối thiểu 1 buổi'),
+  minutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
   reason: z.string().optional(),
 })
 
@@ -45,17 +45,22 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
     resolver: zodResolver(schema) as any,
     defaultValues: {
       subjectId: studentSubjects[0]?.subjectId || '',
-      sessions: 5,
+      minutes: 250,
       reason: '',
     },
   })
 
   const selectedSubjectId = watch('subjectId')
   const selectedPkg = studentSubjects.find(s => s.subjectId === selectedSubjectId)
-  const sessionsToAdd = watch('sessions') || 0
+  const minutesToAdd = watch('minutes') || 0
   const minutesPerSession = selectedPkg?.minutesPerSession || student.minutesPerSession || 50
   const currentRemainingSessions = selectedPkg?.remainingSessions || student.remainingSessions || 0
-  const newTotalMinutes = minutesPerSession ? (currentRemainingSessions + Number(sessionsToAdd)) * minutesPerSession : null
+  const currentRemainingMinutes = selectedPkg
+    ? selectedPkg.remainingMinutes
+    : student.remainingMinutes ?? (currentRemainingSessions * minutesPerSession)
+  const newTotalMinutes = currentRemainingMinutes + Number(minutesToAdd)
+  const addedSessions = minutesPerSession > 0 ? Math.round((Number(minutesToAdd) / minutesPerSession) * 100) / 100 : 0
+  const newTotalSessionsPreview = minutesPerSession > 0 ? Math.round((newTotalMinutes / minutesPerSession) * 100) / 100 : 0
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -83,9 +88,10 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
       }
 
       const prevPkg = updatedSubjects[sIdx]
-      const addedMinutes = data.sessions * prevPkg.minutesPerSession
-      const newTotalSessions = prevPkg.totalSessions + data.sessions
-      const newRemainingSessions = prevPkg.remainingSessions + data.sessions
+      const addedMinutes = data.minutes
+      const addedSessions = prevPkg.minutesPerSession > 0 ? Math.round((addedMinutes / prevPkg.minutesPerSession) * 100) / 100 : 0
+      const newTotalSessions = prevPkg.totalSessions + addedSessions
+      const newRemainingSessions = prevPkg.remainingSessions + addedSessions
       const newTotalMinutes = prevPkg.totalMinutes + addedMinutes
       const newRemainingMinutes = prevPkg.remainingMinutes + addedMinutes
 
@@ -117,7 +123,7 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         {
           id: String(currentBatches.length + 1),
           createdAt: dateString,
-          totalSessions: data.sessions
+          totalSessions: addedSessions
         }
       ]
 
@@ -165,7 +171,7 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         changes: {
           subjectId: prevPkg.subjectId,
           subjectName: prevPkg.subjectName,
-          sessionsAdded: data.sessions,
+          sessionsAdded: addedSessions,
           minutesAdded: addedMinutes,
           reason: data.reason || '',
           totalBefore: prevPkg.totalSessions,
@@ -176,7 +182,7 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã cấp thêm ${data.sessions} buổi (${addedMinutes} phút) môn ${prevPkg.subjectName} cho ${student.name}`)
+      toast.success(`Đã cấp thêm ${addedMinutes} phút (quy đổi ${addedSessions} buổi) môn ${prevPkg.subjectName} cho ${student.name}`)
       onClose()
     } catch (err) {
       console.error(err)
@@ -219,11 +225,11 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
         </div>
 
         <Input
-          label="Số buổi thêm *"
+          label="Số phút thêm *"
           type="number"
           min={1}
-          error={errors.sessions?.message}
-          {...register('sessions')}
+          error={errors.minutes?.message}
+          {...register('minutes')}
         />
 
         <Textarea
@@ -241,25 +247,25 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Hiện tại</span>
-            <span className="text-slate-700 font-medium">{currentRemainingSessions} buổi</span>
+            <span className="text-slate-700 font-medium">{(selectedPkg?.remainingMinutes ?? 0)} phút ({currentRemainingSessions} buổi)</span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Thêm</span>
-            <span className="text-emerald-500 font-medium font-bold">+ {sessionsToAdd} buổi</span>
+            <span className="text-emerald-600 font-bold">+ {minutesToAdd} phút</span>
           </div>
           <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
             <span className="text-slate-600 font-medium">Tổng sau khi thêm</span>
-            <span className="text-indigo-600 font-bold">{currentRemainingSessions + Number(sessionsToAdd)} buổi</span>
+            <span className="text-indigo-600 font-bold">{newTotalMinutes} phút</span>
           </div>
           {minutesPerSession ? (
             <div className="mt-3 rounded-lg bg-white/70 border border-indigo-200 p-3 text-sm">
-              <div className="text-slate-500 mb-1">Quỹ phút theo phút/buổi</div>
+              <div className="text-slate-500 mb-1">Quy đổi số buổi (chia {minutesPerSession} phút/buổi)</div>
               <div className="flex flex-wrap items-center gap-2 text-slate-700">
-                <span className="font-semibold">{currentRemainingSessions + Number(sessionsToAdd)} buổi</span>
-                <span>×</span>
+                <span className="font-semibold">{newTotalMinutes} phút</span>
+                <span>÷</span>
                 <span className="font-semibold">{minutesPerSession} phút</span>
                 <span>=</span>
-                <span className="font-semibold text-indigo-700">{newTotalMinutes} phút</span>
+                <span className="font-semibold text-indigo-700">{newTotalSessionsPreview} buổi</span>
               </div>
             </div>
           ) : null}

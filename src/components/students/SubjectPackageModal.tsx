@@ -13,7 +13,7 @@ import { Check, ChevronDown, Search } from 'lucide-react'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
-  totalSessions: z.coerce.number().min(1, 'Tối thiểu 1 buổi'),
+  totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
   minutesPerSession: z.coerce.number().min(1, 'Chọn số phút'),
 })
 
@@ -45,25 +45,27 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     defaultValues: editingPkg
       ? {
           subjectId: editingPkg.subjectId,
-          totalSessions: editingPkg.totalSessions,
+          totalMinutes: editingPkg.totalMinutes,
           minutesPerSession: editingPkg.minutesPerSession,
         }
       : {
           subjectId: '',
-          totalSessions: 10,
+          totalMinutes: 500,
           minutesPerSession: 50,
         },
   })
 
-  const watchedSessions = watch('totalSessions') || 0
-  const watchedMinutes = watch('minutesPerSession') || 0
+  const watchedTotalMinutes = watch('totalMinutes') || 0
+  const watchedMinutesPerSession = watch('minutesPerSession') || 0
   const watchedSubjectId = watch('subjectId')
-  const previewTotalMinutes = watchedSessions * watchedMinutes
+  const calculatedSessions = watchedMinutesPerSession > 0
+    ? Math.round((watchedTotalMinutes / watchedMinutesPerSession) * 100) / 100
+    : 0
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
   const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== editingSubjectId)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
-  const transferredSessions = watchedMinutes > 0
-    ? Math.round((transferableMinutes / watchedMinutes) * 100) / 100
+  const transferredSessions = watchedMinutesPerSession > 0
+    ? Math.round((transferableMinutes / watchedMinutesPerSession) * 100) / 100
     : 0
   const filteredSubjects = subjectsList.filter((subject) =>
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
@@ -182,38 +184,40 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 }]
               })
             } else {
-              const newTotalMinutes = data.totalSessions * data.minutesPerSession
+              const newTotalMinutes = data.totalMinutes
+              const calculatedTotalSessions = Math.round(newTotalMinutes / data.minutesPerSession)
               updatedSubjects[index] = {
                 ...prevPkg,
                 subjectId: selectedSubjectObj.id,
                 subjectName: selectedSubjectObj.name,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-                totalSessions: data.totalSessions,
-                remainingSessions: data.totalSessions,
+                totalSessions: calculatedTotalSessions,
+                remainingSessions: calculatedTotalSessions,
                 minutesPerSession: data.minutesPerSession,
                 totalMinutes: newTotalMinutes,
                 remainingMinutes: newTotalMinutes,
                 batches: [{
                   id: '1',
                   createdAt: dateString,
-                  totalSessions: data.totalSessions
+                  totalSessions: calculatedTotalSessions
                 }]
               }
             }
           } else {
-            const delta = data.totalSessions - prevPkg.totalSessions
+            const calculatedTotalSessions = Math.round(data.totalMinutes / data.minutesPerSession)
+            const delta = calculatedTotalSessions - prevPkg.totalSessions
             const newRemainingSessions = prevPkg.remainingSessions + delta
-            const newTotalMinutes = data.totalSessions * data.minutesPerSession
+            const newTotalMinutes = data.totalMinutes
             const newRemainingMinutes = Math.max(0, newTotalMinutes - prevPkg.usedMinutes)
 
             updatedSubjects[index] = {
               ...prevPkg,
-              totalSessions: data.totalSessions,
+              totalSessions: calculatedTotalSessions,
               minutesPerSession: data.minutesPerSession,
               remainingSessions: newRemainingSessions,
               totalMinutes: newTotalMinutes,
               remainingMinutes: newRemainingMinutes,
-              batches: adjustBatches(prevPkg.batches, data.totalSessions, prevPkg.totalSessions)
+              batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions)
             }
           }
         }
@@ -225,21 +229,22 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           return
         }
 
+        const calculatedTotalSessions = Math.round(data.totalMinutes / data.minutesPerSession)
         const newPkg: StudentSubject = {
           subjectId: data.subjectId,
           subjectName: selectedSubjectObj.name,
-          totalSessions: data.totalSessions,
+          totalSessions: calculatedTotalSessions,
           usedSessions: 0,
-          remainingSessions: data.totalSessions,
+          remainingSessions: calculatedTotalSessions,
           minutesPerSession: data.minutesPerSession,
-          totalMinutes: data.totalSessions * data.minutesPerSession,
+          totalMinutes: data.totalMinutes,
           usedMinutes: 0,
-          remainingMinutes: data.totalSessions * data.minutesPerSession,
+          remainingMinutes: data.totalMinutes,
           pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
           batches: [{
             id: '1',
             createdAt: dateString,
-            totalSessions: data.totalSessions
+            totalSessions: calculatedTotalSessions
           }]
         }
 
@@ -374,11 +379,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           </div>
         ) : (
           <Input
-            label="Tổng số buổi *"
+            label="Tổng số phút *"
             type="number"
-            placeholder="10"
-            error={errors.totalSessions?.message}
-            {...register('totalSessions')}
+            placeholder="500"
+            error={errors.totalMinutes?.message}
+            {...register('totalMinutes')}
           />
         )}
 
@@ -399,11 +404,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm">
           <p className="text-slate-500 mb-2">{isTransferringSubject && editingPkg?.usedMinutes ? 'Quỹ sau khi chuyển môn' : 'Tổng phút theo quỹ'}</p>
           <div className="flex flex-wrap items-center gap-2 text-slate-700">
-            <span className="font-semibold">{isTransferringSubject && editingPkg?.usedMinutes ? transferredSessions : watchedSessions} buổi</span>
-            <span>×</span>
-            <span className="font-semibold">{watchedMinutes} phút</span>
+            <span className="font-semibold">{isTransferringSubject && editingPkg?.usedMinutes ? transferableMinutes : watchedTotalMinutes} phút</span>
+            <span>÷</span>
+            <span className="font-semibold">{watchedMinutesPerSession} phút/buổi</span>
             <span>=</span>
-            <span className="font-semibold text-indigo-700">{isTransferringSubject && editingPkg?.usedMinutes ? transferableMinutes : previewTotalMinutes} phút</span>
+            <span className="font-semibold text-indigo-700">{isTransferringSubject && editingPkg?.usedMinutes ? transferredSessions : calculatedSessions} buổi</span>
           </div>
         </div>
       </form>
