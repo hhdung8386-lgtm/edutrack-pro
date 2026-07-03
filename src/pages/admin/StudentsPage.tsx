@@ -212,7 +212,7 @@ export function StudentsPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên học viên', 'SĐT PH', 'Môn học', 'Chi nhánh', 'Buổi còn lại', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên học viên', 'Ngày tạo', 'Môn học', 'Chi nhánh', 'Buổi còn lại', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -228,7 +228,9 @@ export function StudentsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-700">{student.name}</td>
-                      <td className="px-4 py-3 text-slate-500">{student.parentPhone}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{student.subjectName || '—'}</td>
                       <td className="px-4 py-3">
                         {student.branchName ? (
@@ -319,7 +321,9 @@ export function StudentsPage() {
                       <StatusBadge status={student.status} />
                     </div>
                     <p className="font-semibold text-slate-900">{student.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{student.subjectName} · {student.parentPhone}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {student.subjectName} · {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
+                    </p>
                     {student.branchName && (
                       <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
                         <Building2 className="w-2.5 h-2.5" />
