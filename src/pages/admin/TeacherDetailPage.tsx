@@ -835,7 +835,7 @@ export function TeacherDetailPage() {
             <h3 className="text-base font-semibold text-slate-900">Hồ sơ năng lực & Thông tin phỏng vấn</h3>
           </div>
           <div className="space-y-6">
-            {/* Grid 1: Thông tin cá nhân & Học văn */}
+            {/* Grid 1: Thông tin cá nhân & Học vấn */}
             <div>
               <h4 className="text-sm font-semibold text-indigo-600 mb-3 uppercase tracking-wider">1. Thông tin cá nhân & Trình độ học vấn</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -843,12 +843,6 @@ export function TeacherDetailPage() {
                   <div>
                     <span className="text-slate-500 font-medium">Năm sinh: </span>
                     <span className="text-slate-800">{teacher.yob}</span>
-                  </div>
-                )}
-                {teacher.livingArea && (
-                  <div>
-                    <span className="text-slate-500 font-medium">Khu vực sinh sống: </span>
-                    <span className="text-slate-800">{teacher.livingArea}</span>
                   </div>
                 )}
                 {teacher.degreeType && (
@@ -869,24 +863,6 @@ export function TeacherDetailPage() {
                     <span className="text-slate-800">{teacher.major}</span>
                   </div>
                 )}
-                {teacher.gradYear && (
-                  <div>
-                    <span className="text-slate-500 font-medium">Năm học / Tốt nghiệp: </span>
-                    <span className="text-slate-800">{teacher.gradYear}</span>
-                  </div>
-                )}
-                {teacher.gpa && (
-                  <div>
-                    <span className="text-slate-500 font-medium">GPA: </span>
-                    <span className="text-slate-800">{teacher.gpa}</span>
-                  </div>
-                )}
-                {teacher.scholarship && (
-                  <div>
-                    <span className="text-slate-500 font-medium">Học bổng: </span>
-                    <span className="text-slate-800">{teacher.scholarship}</span>
-                  </div>
-                )}
                 {teacher.academicAwards && (
                   <div className="md:col-span-3">
                     <span className="text-slate-500 font-medium">Thành tích học tập nổi bật: </span>
@@ -897,52 +873,35 @@ export function TeacherDetailPage() {
             </div>
 
             {/* Grid 2: Chứng chỉ */}
-            <div className="border-t border-slate-100 pt-4">
-              <h4 className="text-sm font-semibold text-indigo-600 mb-3 uppercase tracking-wider">2. Chứng chỉ</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                {teacher.ielts && (
-                  <div>
-                    <span className="text-slate-500 font-medium">IELTS: </span>
-                    <span className="text-slate-800">{teacher.ielts}</span>
-                  </div>
-                )}
-                {teacher.toeic && (
-                  <div>
-                    <span className="text-slate-500 font-medium">TOEIC: </span>
-                    <span className="text-slate-800">{teacher.toeic}</span>
-                  </div>
-                )}
-                {teacher.toefl && (
-                  <div>
-                    <span className="text-slate-500 font-medium">TOEFL: </span>
-                    <span className="text-slate-800">{teacher.toefl}</span>
-                  </div>
-                )}
-                {teacher.tesolTefl && (
-                  <div>
-                    <span className="text-slate-500 font-medium">TESOL / TEFL: </span>
-                    <span className="text-slate-800">{teacher.tesolTefl}</span>
-                  </div>
-                )}
-                {teacher.pedagogicalCert && (
-                  <div>
-                    <span className="text-slate-500 font-medium">Chứng chỉ sư phạm: </span>
-                    <span className="text-slate-800">{teacher.pedagogicalCert}</span>
-                  </div>
-                )}
-                {teacher.cefr && teacher.cefr.length > 0 && (
-                  <div>
-                    <span className="text-slate-500 font-medium">Khung CEFR: </span>
-                    <span className="text-slate-800">{teacher.cefr.join(', ')}</span>
-                  </div>
-                )}
-                {teacher.otherCerts && (
-                  <div className="md:col-span-3">
-                    <span className="text-slate-500 font-medium">Chứng chỉ khác: </span>
-                    <span className="text-slate-700">{teacher.otherCerts}</span>
-                  </div>
-                )}
-              </div>
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <h4 className="text-sm font-semibold text-indigo-600 mb-2 uppercase tracking-wider">2. Chứng chỉ</h4>
+              {teacher.certificates && teacher.certificates.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {teacher.certificates.map((cert, idx) => (
+                    <div key={idx} className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-col justify-between space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
+                            {cert.category === 'foreign_language' ? 'Ngoại ngữ' : cert.category === 'pedagogical' ? 'Sư phạm' : 'Khác'}
+                          </span>
+                          <h5 className="font-bold text-slate-800 text-sm mt-2">{cert.title || 'Chưa đặt tên'}</h5>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cert.status === 'approved' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                          {cert.status === 'approved' ? 'Đã duyệt' : 'Chờ duyệt'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-semibold pt-2 border-t border-slate-200/60">
+                        <span className="text-slate-500">Điểm số: <span className="text-slate-800 font-bold">{cert.score || '—'}</span></span>
+                        {cert.fileURL && (
+                          <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-700 hover:underline">Xem ảnh</a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 italic">Chưa cập nhật chứng chỉ.</p>
+              )}
             </div>
 
             {/* Lĩnh vực & Môn học giảng dạy */}

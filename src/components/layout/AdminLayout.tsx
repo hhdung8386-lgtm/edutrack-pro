@@ -28,12 +28,21 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function AdminLayout() {
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true')
   const location = useLocation()
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
   const { role } = useAuthStore()
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      localStorage.setItem('admin_sidebar_collapsed', String(next))
+      return next
+    })
+  }
 
   const handleSignOut = async () => {
     await signOut()
@@ -75,7 +84,12 @@ export function AdminLayout() {
     <div className="min-h-screen bg-slate-50">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
-        <AdminSidebar pendingCount={pendingCount} pendingBookingCount={pendingBookingCount} />
+        <AdminSidebar 
+          pendingCount={pendingCount} 
+          pendingBookingCount={pendingBookingCount} 
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapse}
+        />
       </div>
 
       {/* Mobile header */}
@@ -141,7 +155,7 @@ export function AdminLayout() {
       )}
 
       {/* Main content */}
-      <main className="lg:pl-64 min-h-screen">
+      <main className={`min-h-screen transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         <div className="pt-14 lg:pt-0 pb-20 lg:pb-0 px-4 sm:px-6 lg:px-6 py-6">
           <Outlet />
         </div>

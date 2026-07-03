@@ -86,7 +86,16 @@ export interface Teacher {
   otherStrengths?: string
   languagesTaught?: string[]
   academicSubjectsTaught?: string[]
+  certificates?: TeacherCertificate[]
   createdAt: Timestamp
+}
+
+export interface TeacherCertificate {
+  category: 'foreign_language' | 'pedagogical' | 'other'
+  title: string
+  score: string
+  fileURL?: string
+  status: 'approved' | 'pending'
 }
 
 export interface Subject {

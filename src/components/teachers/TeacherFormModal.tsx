@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
-import { Teacher, Subject } from '@/types'
+import { Teacher, Subject, TeacherCertificate } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
@@ -75,6 +75,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [tesolTefl, setTesolTefl] = useState(teacher?.tesolTefl || '')
   const [pedagogicalCert, setPedagogicalCert] = useState(teacher?.pedagogicalCert || '')
   const [otherCerts, setOtherCerts] = useState(teacher?.otherCerts || '')
+  const [certificates, setCertificates] = useState<TeacherCertificate[]>(teacher?.certificates || [])
 
   const [teachingYears, setTeachingYears] = useState<string>(teacher?.teachingYears ? String(teacher.teachingYears) : '')
   const [studentsTaughtCount, setStudentsTaughtCount] = useState<string>(teacher?.studentsTaughtCount ? String(teacher.studentsTaughtCount) : '')
@@ -244,6 +245,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         otherStrengths: otherStrengths || '',
         languagesTaught: languagesTaught || [],
         academicSubjectsTaught: academicSubjectsTaught || [],
+        certificates: certificates || [],
       }
 
       if (isEdit && teacher) {
@@ -523,17 +525,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
-              
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Khu vực sinh sống</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Cầu Giấy, Hà Nội"
-                  value={livingArea}
-                  onChange={e => setLivingArea(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Học vị / Trình độ</label>
@@ -571,39 +562,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Năm tốt nghiệp / Năm học</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 2022 hoặc Sinh viên năm 3"
-                  value={gradYear}
-                  onChange={e => setGradYear(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">GPA</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 3.6/4.0 hoặc 8.5/10"
-                  value={gpa}
-                  onChange={e => setGpa(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Học bổng</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Học bổng khuyến học kỳ II"
-                  value={scholarship}
-                  onChange={e => setScholarship(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
             </div>
 
             <div>
@@ -619,99 +577,133 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           </div>
 
           {/* Section 2: Chứng chỉ */}
-          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-3">
-            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">2. Chứng chỉ</h4>
+          <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">2. Chứng chỉ</h4>
+              <span className="text-xs text-slate-500 font-medium">Tổng số: {certificates.length}</span>
+            </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">IELTS</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 7.5"
-                  value={ielts}
-                  onChange={e => setIelts(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
+            <div className="space-y-4">
+              {certificates.map((cert, index) => (
+                <div key={index} className="p-4 bg-white rounded-xl border border-slate-200/80 shadow-sm space-y-3 relative group transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setCertificates(prev => prev.filter((_, idx) => idx !== index))}
+                    className="absolute top-2 right-2 text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                    title="Xóa chứng chỉ"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Loại chứng chỉ</label>
+                      <select
+                        value={cert.category}
+                        onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as any } : c))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="foreign_language">Ngoại ngữ</option>
+                        <option value="pedagogical">Sư phạm</option>
+                        <option value="other">Khác</option>
+                      </select>
+                    </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">TOEIC</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 850"
-                  value={toeic}
-                  onChange={e => setToeic(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Trạng thái duyệt</label>
+                      <select
+                        value={cert.status}
+                        onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, status: e.target.value as any } : c))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="pending">Chờ duyệt</option>
+                        <option value="approved">Đã duyệt</option>
+                      </select>
+                    </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">TOEFL</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 100"
-                  value={toefl}
-                  onChange={e => setToefl(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Tên chứng chỉ</label>
+                      <input
+                        type="text"
+                        placeholder="Ví dụ: IELTS, TOEIC, CEFR..."
+                        value={cert.title}
+                        onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, title: e.target.value } : c))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">TESOL / TEFL</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 120 hours"
-                  value={tesolTefl}
-                  onChange={e => setTesolTefl(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Điểm số / Xếp loại</label>
+                      <input
+                        type="text"
+                        placeholder="Ví dụ: 7.5, Khá, Xuất sắc..."
+                        value={cert.score}
+                        onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, score: e.target.value } : c))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Chứng chỉ sư phạm</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Nghiệp vụ sư phạm..."
-                  value={pedagogicalCert}
-                  onChange={e => setPedagogicalCert(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
+                  {/* Image attachment / preview */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                    <span className="text-xs font-semibold text-slate-500">Ảnh đính kèm:</span>
+                    {cert.fileURL ? (
+                      <div className="flex items-center gap-3">
+                        <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold hover:underline">Xem ảnh</a>
+                        <button
+                          type="button"
+                          onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
+                          className="text-xs text-rose-500 hover:text-rose-600 font-semibold hover:underline"
+                        >
+                          Xóa ảnh
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100/80 rounded-lg text-xs font-bold text-indigo-600 cursor-pointer transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        Tải ảnh lên
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              const reader = new FileReader()
+                              reader.readAsDataURL(file)
+                              reader.onload = (ev) => {
+                                const img = new Image()
+                                img.src = ev.target?.result as string
+                                img.onload = () => {
+                                  const canvas = document.createElement('canvas')
+                                  const MAX = 600
+                                  let { width, height } = img
+                                  if (width > MAX) { height = (height * MAX) / width; width = MAX }
+                                  if (height > MAX) { width = (width * MAX) / height; height = MAX }
+                                  canvas.width = width
+                                  canvas.height = height
+                                  canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+                                  const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+                                  setCertificates(prev => prev.map((c, idx) => idx === index ? { ...c, fileURL: dataUrl } : c))
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-2">Khung tham chiếu CEFR</label>
-              <div className="flex gap-4 flex-wrap">
-                {['B1', 'B2', 'C1', 'C2'].map(lvl => (
-                  <label key={lvl} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={cefr.includes(lvl)}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          setCefr(prev => [...prev, lvl])
-                        } else {
-                          setCefr(prev => prev.filter(x => x !== lvl))
-                        }
-                      }}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                    />
-                    {lvl}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Chứng chỉ khác</label>
-              <textarea
-                placeholder="Nhập các chứng chỉ khác nếu có..."
-                rows={2}
-                value={otherCerts}
-                onChange={e => setOtherCerts(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setCertificates(prev => [...prev, { category: 'foreign_language', title: '', score: '', fileURL: '', status: 'pending' }])}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200/60 text-slate-700 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 border border-slate-200 border-dashed transition-all"
+            >
+              + Thêm chứng chỉ mới
+            </button>
           </div>
 
           {/* Section 2.5: Lĩnh vực & Môn học giảng dạy */}
