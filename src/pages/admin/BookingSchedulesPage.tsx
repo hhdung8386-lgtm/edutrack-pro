@@ -1318,28 +1318,52 @@ export function BookingSchedulesPage() {
                 </div>
               </div>
 
-              {/* Classroom URL display */}
+              {/* Classroom URL & Curriculum Link display */}
               {(() => {
                 // Find student classroom link or booking link
                 const st = students.find(s => s.id === selectedBooking.studentId)
                 const roomLink = st?.classroomURL || selectedBooking.note
-                return roomLink ? (
-                  <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <span className="text-xs text-slate-500 font-semibold block">Phòng học trực tuyến:</span>
-                      <p className="text-[11px] text-slate-400 truncate">{roomLink}</p>
-                    </div>
-                    <a
-                      href={roomLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-indigo-200/50"
-                    >
-                      Mở lớp học
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                ) : null
+                const subjectPkg = st?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
+                const curriculumLink = subjectPkg?.curriculumLink
+
+                return (
+                  <>
+                    {roomLink && (
+                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 font-semibold block">Phòng học trực tuyến:</span>
+                          <p className="text-[11px] text-slate-400 truncate">{roomLink}</p>
+                        </div>
+                        <a
+                          href={roomLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-indigo-200/50"
+                        >
+                          Mở lớp học
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                    {curriculumLink && (
+                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 font-semibold block">Giáo trình môn học:</span>
+                          <p className="text-[11px] text-slate-400 truncate">{curriculumLink}</p>
+                        </div>
+                        <a
+                          href={curriculumLink.startsWith('http') ? curriculumLink : `https://${curriculumLink}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-sky-200/50"
+                        >
+                          Xem giáo trình
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                  </>
+                )
               })()}
             </div>
           </div>

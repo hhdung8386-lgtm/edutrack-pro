@@ -18,6 +18,7 @@ export interface StudentSubject {
   remainingMinutes: number
   pricePerMinute: number
   batches?: TopUpBatch[]
+  curriculumLink?: string
 }
 
 export interface Student {

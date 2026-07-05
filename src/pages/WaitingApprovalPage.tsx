@@ -44,7 +44,7 @@ export function WaitingApprovalPage() {
           </div>
 
           <div className="flex justify-center mb-4">
-            <Logo className="scale-75" />
+            <Logo className="h-10 w-auto max-w-[160px]" />
           </div>
 
           <h2 className="text-2xl font-bold text-slate-900 mb-2">

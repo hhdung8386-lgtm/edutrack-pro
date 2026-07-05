@@ -62,7 +62,7 @@ export function AdminSidebar({
           </div>
         ) : (
           <>
-            <Logo />
+            <Logo className="h-12 w-auto max-w-[190px]" />
             <div className="mt-2 pl-2 w-full">
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hệ thống quản trị</span>
             </div>

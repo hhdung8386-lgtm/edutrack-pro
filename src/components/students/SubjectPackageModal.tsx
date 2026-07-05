@@ -14,6 +14,7 @@ import { Check, ChevronDown, Search } from 'lucide-react'
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
   totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
+  curriculumLink: z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -45,10 +46,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
       ? {
           subjectId: editingPkg.subjectId,
           totalMinutes: editingPkg.totalMinutes,
+          curriculumLink: editingPkg.curriculumLink || '',
         }
       : {
           subjectId: '',
           totalMinutes: 500,
+          curriculumLink: '',
         },
   })
 
@@ -175,7 +178,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                   id: '1',
                   createdAt: dateString,
                   totalSessions: newSessions
-                }]
+                }],
+                curriculumLink: data.curriculumLink || ''
               })
             } else {
               const newTotalMinutes = data.totalMinutes
@@ -194,7 +198,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                   id: '1',
                   createdAt: dateString,
                   totalSessions: calculatedTotalSessions
-                }]
+                }],
+                curriculumLink: data.curriculumLink || ''
               }
             }
           } else {
@@ -211,7 +216,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               remainingSessions: newRemainingSessions,
               totalMinutes: newTotalMinutes,
               remainingMinutes: newRemainingMinutes,
-              batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions)
+              batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
+              curriculumLink: data.curriculumLink || ''
             }
           }
         }
@@ -239,7 +245,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             id: '1',
             createdAt: dateString,
             totalSessions: calculatedTotalSessions
-          }]
+          }],
+          curriculumLink: data.curriculumLink || ''
         }
 
         updatedSubjects.push(newPkg)
@@ -380,6 +387,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             {...register('totalMinutes')}
           />
         )}
+
+        <Input
+          label="Link giáo trình"
+          placeholder="Nhập link giáo trình (không bắt buộc)"
+          error={errors.curriculumLink?.message}
+          {...register('curriculumLink')}
+        />
       </form>
     </Modal>
   )

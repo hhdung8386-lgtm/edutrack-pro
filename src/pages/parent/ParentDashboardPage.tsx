@@ -480,6 +480,20 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                       <p className="text-[8px] text-slate-400 mt-1">{availMins}p</p>
                     </div>
                   </div>
+                  {sub.curriculumLink && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 justify-between">
+                      <span className="text-[11px] font-semibold text-slate-500">Giáo trình:</span>
+                      <a
+                        href={sub.curriculumLink.startsWith('http') ? sub.curriculumLink : `https://${sub.curriculumLink}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-0.5"
+                      >
+                        Xem giáo trình
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
                 </div>
               )
             })}

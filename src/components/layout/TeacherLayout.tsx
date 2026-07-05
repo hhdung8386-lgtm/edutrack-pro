@@ -113,7 +113,7 @@ export function TeacherLayout() {
       {/* Desktop header */}
       <header className="hidden lg:flex fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 items-center px-6 z-30 gap-4 shadow-sm">
         <div className="flex items-center gap-3 flex-1">
-          <Logo className="scale-[0.6] origin-left" />
+          <Logo className="h-9 w-auto max-w-[145px]" />
           <span className="text-xs font-bold text-[#3BB8EB] uppercase tracking-wider border-l border-slate-200 pl-3">{t('nav.teacher')}</span>
         </div>
 
@@ -153,7 +153,7 @@ export function TeacherLayout() {
       {/* Mobile header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 shadow-sm">
         <div className="flex items-center gap-2.5 flex-1">
-          <Logo className="scale-[0.55] origin-left -ml-2" />
+          <Logo className="h-8 w-auto max-w-[128px]" />
         </div>
         <button
           onClick={toggleLang}

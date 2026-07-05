@@ -1169,9 +1169,25 @@ export function StudentDetailPage() {
                       style={{ width: `${pkgPct}%` }}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Đơn giá gói: {pkg.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
-                  </p>
+                  <div className="flex flex-col gap-1 mt-1 text-[11px]">
+                    <p className="text-slate-400">
+                      Đơn giá gói: {pkg.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                    </p>
+                    {pkg.curriculumLink && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">Giáo trình:</span>
+                        <a
+                          href={pkg.curriculumLink.startsWith('http') ? pkg.curriculumLink : `https://${pkg.curriculumLink}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-0.5"
+                        >
+                          Link giáo trình
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {isExpanded && (
