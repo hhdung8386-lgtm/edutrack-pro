@@ -7,8 +7,9 @@ import { DayOfWeek, DayAvailability, TimeRange } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
-import { Calendar, Clock, Save, X, Plus, CheckCircle } from 'lucide-react'
+import { Calendar, Clock, Save, X, Plus, CheckCircle, AlertTriangle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { Modal } from '@/components/ui/Modal'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
@@ -36,10 +37,12 @@ export function AvailabilityPage() {
   const { teacherId } = useAuthStore()
   const { t } = useLanguageStore()
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(getEmptySlots())
+  const [dbSlots, setDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
 
   useEffect(() => {
     if (!teacherId) {
@@ -49,7 +52,10 @@ export function AvailabilityPage() {
     getDoc(doc(db, 'teacherAvailability', teacherId)).then((snap) => {
       if (snap.exists()) {
         const data = snap.data()
-        if (data.slots) setSlots(data.slots)
+        if (data.slots) {
+          setSlots(data.slots)
+          setDbSlots(JSON.parse(JSON.stringify(data.slots)))
+        }
         if (data.note) setNote(data.note)
         if (data.updatedAt) setLastUpdated(data.updatedAt)
       }
@@ -58,6 +64,12 @@ export function AvailabilityPage() {
   }, [teacherId])
 
   const toggleDay = (day: DayOfWeek) => {
+    const wasAvailableInDb = dbSlots?.[day]?.available
+    // If it was available in db, they are not allowed to disable it (cancel slots)
+    if (wasAvailableInDb && slots[day].available) {
+      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
+      return
+    }
     setSlots((prev) => ({
       ...prev,
       [day]: {
@@ -79,6 +91,14 @@ export function AvailabilityPage() {
   }
 
   const removeTimeRange = (day: DayOfWeek, index: number) => {
+    const rangeToRemove = slots[day].timeRanges[index]
+    const wasInDb = dbSlots?.[day]?.timeRanges.some(
+      (r) => r.start === rangeToRemove.start && r.end === rangeToRemove.end
+    )
+    if (wasInDb) {
+      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
+      return
+    }
     setSlots((prev) => {
       const newRanges = prev[day].timeRanges.filter((_, i) => i !== index)
       return {
@@ -93,6 +113,14 @@ export function AvailabilityPage() {
   }
 
   const updateTimeRange = (day: DayOfWeek, index: number, field: keyof TimeRange, value: string) => {
+    const rangeToUpdate = slots[day].timeRanges[index]
+    const wasInDb = dbSlots?.[day]?.timeRanges.some(
+      (r) => r.start === rangeToUpdate.start && r.end === rangeToUpdate.end
+    )
+    if (wasInDb) {
+      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
+      return
+    }
     setSlots((prev) => ({
       ...prev,
       [day]: {
@@ -114,12 +142,16 @@ export function AvailabilityPage() {
         note,
         updatedAt: serverTimestamp(),
       })
-      // Re-fetch to get the server timestamp
       const snap = await getDoc(doc(db, 'teacherAvailability', teacherId))
       if (snap.exists()) {
-        setLastUpdated(snap.data().updatedAt)
+        const data = snap.data()
+        setLastUpdated(data.updatedAt)
+        if (data.slots) {
+          setDbSlots(JSON.parse(JSON.stringify(data.slots)))
+        }
       }
       toast.success(t('avail.saved'))
+      setShowConfirmModal(false)
     } catch (e) {
       console.error(e)
       toast.error(t('avail.save_fail'))
@@ -155,6 +187,17 @@ export function AvailabilityPage() {
             {t('avail.last_updated')} {lastUpdated.toDate().toLocaleString('vi-VN')}
           </div>
         )}
+      </div>
+
+      {/* Warning Banner */}
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 text-amber-800 text-xs leading-normal">
+        <span className="text-lg">⚠️</span>
+        <div>
+          <p className="font-bold text-sm text-amber-900">Cân nhắc kỹ lịch dạy trống trước khi lưu!</p>
+          <p className="mt-0.5 font-medium opacity-90">
+            Các khung giờ lịch dạy rảnh sau khi bấm lưu sẽ <strong className="underline">không thể tự chỉnh sửa hoặc hủy/xóa được</strong>. Muốn thay đổi, bạn phải liên hệ với quản lý. Hãy cân nhắc lịch!
+          </p>
+        </div>
       </div>
 
       {/* Weekly Grid - Desktop */}
@@ -333,13 +376,40 @@ export function AvailabilityPage() {
         <Button
           fullWidth
           loading={saving}
-          onClick={handleSave}
+          onClick={() => setShowConfirmModal(true)}
           className="!bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5] !shadow-lg !shadow-[#3BB8EB]/30 !rounded-xl !py-3.5"
         >
           <Save className="w-4 h-4" />
           {saving ? t('avail.saving') : t('avail.save')}
         </Button>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <Modal
+          open
+          onClose={() => setShowConfirmModal(false)}
+          title="Xác nhận lưu lịch dạy rảnh"
+          footer={
+            <div className="flex gap-3 justify-end w-full">
+              <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>Hủy</Button>
+              <Button onClick={handleSave} loading={saving} className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white">
+                Tôi đã cân nhắc lịch và đồng ý
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 text-sm text-slate-600 leading-normal">
+            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mx-auto mb-2">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <p className="font-extrabold text-slate-800 text-center text-base">Bạn đã cân nhắc lịch kỹ chưa?</p>
+            <p className="text-center text-xs text-slate-500">
+              Mọi khung giờ lịch dạy rảnh sau khi lưu sẽ <strong className="text-rose-600 font-bold">không thể tự chỉnh sửa hoặc tự xóa được</strong>. Muốn thay đổi, bạn sẽ bắt buộc phải liên hệ báo với quản lý.
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

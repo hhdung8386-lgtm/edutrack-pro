@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ReactNode, useEffect, useState } from 'react'
-import { collection, query, where, getDocs } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
 interface ProtectedRouteProps {
@@ -14,36 +14,50 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, requiredRole, requireContractAccepted = false }: ProtectedRouteProps) {
   const { user, role, loading, initialized, teacherId } = useAuthStore()
   const location = useLocation()
-  const [checkingContract, setCheckingContract] = useState(requireContractAccepted && role === 'teacher')
+  const [checkingRequirements, setCheckingRequirements] = useState(requireContractAccepted && role === 'teacher')
   const [hasAcceptedContract, setHasAcceptedContract] = useState(false)
+  const [hasRegisteredAvailability, setHasRegisteredAvailability] = useState(false)
 
-  // Check if teacher has accepted contract
+  // Check if teacher has accepted contract and registered availability
   useEffect(() => {
     if (!requireContractAccepted || role !== 'teacher' || !teacherId) {
-      setCheckingContract(false)
+      setCheckingRequirements(false)
       return
     }
 
-    const checkContract = async () => {
+    const checkRequirements = async () => {
       try {
-        const q = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
-        const snapshot = await getDocs(q)
-        const hasAccepted = snapshot.docs.some(doc => {
-          const data = doc.data()
+        // 1. Check contract acceptance
+        const contractQ = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
+        const contractSnapshot = await getDocs(contractQ)
+        const hasAccepted = contractSnapshot.docs.some(docSnap => {
+          const data = docSnap.data()
           return data.status === 'agreed' || data.type === 'terms_of_service'
         })
         setHasAcceptedContract(hasAccepted)
+
+        // 2. Check if availability is registered
+        if (hasAccepted) {
+          const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
+          if (availDoc.exists()) {
+            const data = availDoc.data()
+            const hasSlots = data.slots && Object.values(data.slots).some((day: any) => day.available === true)
+            setHasRegisteredAvailability(!!hasSlots)
+          } else {
+            setHasRegisteredAvailability(false)
+          }
+        }
       } catch (err) {
-        console.error('Error checking contract:', err)
+        console.error('Error checking requirements:', err)
       } finally {
-        setCheckingContract(false)
+        setCheckingRequirements(false)
       }
     }
 
-    checkContract()
+    checkRequirements()
   }, [requireContractAccepted, role, teacherId])
 
-  if (!initialized || loading || (requireContractAccepted && checkingContract)) {
+  if (!initialized || loading || (requireContractAccepted && checkingRequirements)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -103,6 +117,13 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
   // Check if teacher needs to accept contract
   if (requireContractAccepted && role === 'teacher' && !hasAcceptedContract) {
     return <Navigate to="/teacher/contract" replace />
+  }
+
+  // Check if teacher needs to register availability slots (after contract accepted)
+  if (requireContractAccepted && role === 'teacher' && hasAcceptedContract && !hasRegisteredAvailability) {
+    if (location.pathname !== '/teacher/availability') {
+      return <Navigate to="/teacher/availability" replace />
+    }
   }
 
   return <>{children}</>

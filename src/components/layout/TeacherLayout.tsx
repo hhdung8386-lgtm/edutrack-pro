@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange } from 'lucide-react'
 import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -19,6 +19,7 @@ export function TeacherLayout() {
 
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
+    { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability' },
     { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules' },
     { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations' },
     { to: '/teacher/history', icon: History, labelKey: 'nav.history' },

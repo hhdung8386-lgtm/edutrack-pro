@@ -37,6 +37,7 @@ const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage')
 const TeacherSchedulesPage = lazy(() => import('@/pages/teacher/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const TeacherEvaluationsPage = lazy(() => import('@/pages/teacher/TeacherEvaluationsPage'))
+const TeacherAvailabilityEditPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
 
 // Lazy loaded Parent Pages
 const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPage').then(m => ({ default: m.ParentDashboardPage })))
@@ -151,7 +152,7 @@ function App() {
             <Route path="schedules" element={<TeacherSchedulesPage />} />
             <Route path="evaluations" element={<TeacherEvaluationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="availability" element={<Navigate to="../profile" replace />} />
+            <Route path="availability" element={<TeacherAvailabilityEditPage />} />
             <Route index element={<Navigate to="attendance" replace />} />
           </Route>
 
