@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
   LogOut, FileText, CalendarClock, CalendarDays,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Bell
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -23,6 +23,7 @@ const navItems = [
   { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
   { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
   { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
+  { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
   { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
 ]
 
@@ -47,6 +48,7 @@ export function AdminSidebar({
   }
 
   const filteredNavItems = navItems.filter((item) => {
+    if (item.to === '/admin/notifications' && role !== 'admin') return false
     if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
     if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
     return true

@@ -29,6 +29,7 @@ const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ 
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const ContractsPage = lazy(() => import('@/pages/admin/ContractsPage').then(m => ({ default: m.ContractsPage })))
 const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPage'))
+const NotificationsPage = lazy(() => import('@/pages/admin/NotificationsPage').then(m => ({ default: m.NotificationsPage })))
 
 // Lazy loaded Teacher Pages
 const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPage').then(m => ({ default: m.TeacherContractPage })))
@@ -123,6 +124,7 @@ function App() {
             <Route path="payroll" element={<PayrollPage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="evaluations" element={<AdminEvaluationsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route index element={<Navigate to="dashboard" replace />} />
           </Route>

@@ -5,6 +5,7 @@ import { Student, Lesson, BookingRequest } from '@/types'
 import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
+import { NotificationDrawer } from '@/components/shared/NotificationDrawer'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import {
@@ -335,7 +336,11 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               {student.code}
             </p>
           </div>
-          <Logo className="scale-[0.55] origin-right opacity-80" />
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Notification bell drawer */}
+            <NotificationDrawer targetType="students" targetId={student.id} />
+            <Logo className="scale-[0.55] origin-right opacity-80" />
+          </div>
         </div>
       </header>
 

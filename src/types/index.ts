@@ -239,3 +239,17 @@ export type LessonStatus = 'pending' | 'approved' | 'rejected'
 export type StudentStatus = 'active' | 'inactive' | 'expired'
 export type TeacherStatus = 'active' | 'inactive'
 export type MinutePreset = 25 | 50 | 75 | 100
+
+export interface SystemNotification {
+  id: string
+  title: string
+  content: string
+  color: 'indigo' | 'emerald' | 'amber' | 'rose' | 'sky'
+  iconName: 'Bell' | 'Calendar' | 'ClipboardList' | 'ShieldAlert' | 'Clock' | 'MessageSquare'
+  targetType: 'teachers' | 'students' | 'managers'
+  targetIds: string[] // Empty means "all" in that targetType
+  senderId: string
+  senderName: string
+  createdAt: Timestamp
+  readBy?: string[] // array of user/student/teacher IDs
+}

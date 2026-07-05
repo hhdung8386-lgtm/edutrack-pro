@@ -10,6 +10,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
 import { Logo } from '@/components/shared/Logo'
 import { Teacher } from '@/types'
+import { NotificationDrawer } from '../shared/NotificationDrawer'
 
 export function TeacherLayout() {
   const { user, teacherId } = useAuthStore()
@@ -135,6 +136,9 @@ export function TeacherLayout() {
         </nav>
 
         <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
+          {/* Notifications bell drawer */}
+          <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
+
           {/* Language toggle */}
           <button
             onClick={toggleLang}
@@ -152,13 +156,16 @@ export function TeacherLayout() {
       </header>
 
       {/* Mobile header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 shadow-sm">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 shadow-sm gap-2">
         <div className="flex items-center gap-2.5 flex-1">
           <Logo className="h-8 w-auto max-w-[128px]" />
         </div>
+        {/* Notifications bell drawer */}
+        <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
+
         <button
           onClick={toggleLang}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all"
+          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all shrink-0"
         >
           <Globe className="w-3 h-3" />
           {lang === 'vi' ? 'EN' : 'VI'}

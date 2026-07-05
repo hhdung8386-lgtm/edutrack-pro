@@ -9,6 +9,7 @@ import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 
 import { useAuthStore } from '@/stores/authStore'
+import { NotificationDrawer } from '../shared/NotificationDrawer'
 
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
@@ -33,7 +34,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
-  const { role } = useAuthStore()
+  const { user, role } = useAuthStore()
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
 
   const toggleSidebarCollapse = () => {
@@ -92,21 +93,29 @@ export function AdminLayout() {
         />
       </div>
 
-      {/* Mobile header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-50 border-b border-slate-200 flex items-center px-4 z-40 gap-3">
-        <div className="flex items-center gap-2 flex-1">
-          <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center">
-            <GraduationCap className="w-4 h-4 text-slate-900" />
+      {/* Unified Top Header Bar */}
+      <header className={`fixed top-0 right-0 left-0 lg:left-auto ${isSidebarCollapsed ? 'lg:left-20' : 'lg:left-64'} h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 z-40 transition-all duration-300`}>
+        <div className="flex items-center gap-2">
+          <span className="font-extrabold text-slate-800 text-sm hidden lg:inline-block">{pageTitle}</span>
+          <div className="flex items-center gap-2 lg:hidden">
+            <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white text-xs">
+              ET
+            </div>
+            <span className="font-bold text-slate-800 text-sm">{pageTitle}</span>
           </div>
-          <span className="font-semibold text-slate-900 text-sm">{pageTitle}</span>
         </div>
-        <button
-          onClick={() => setSheetOpen(true)}
-          className="p-2 text-slate-500 hover:text-slate-900"
-          aria-label="Mở menu"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Notifications bell drawer */}
+          <NotificationDrawer targetType="managers" targetId={user?.uid || ''} />
+          
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="lg:hidden p-2 text-slate-500 hover:text-slate-900"
+            aria-label="Mở menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {/* Mobile sheet overlay */}
@@ -156,7 +165,7 @@ export function AdminLayout() {
 
       {/* Main content */}
       <main className={`min-h-screen transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
-        <div className="pt-14 lg:pt-0 pb-20 lg:pb-0 px-4 sm:px-6 lg:px-6 py-6">
+        <div className="pt-20 pb-20 lg:pb-6 px-4 sm:px-6 lg:px-6 py-6">
           <Outlet />
         </div>
       </main>
