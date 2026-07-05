@@ -439,7 +439,7 @@ export function BookingSchedulesPage() {
     }
 
     const bookedMinutesForSubject = selectedStudentBookings
-      .filter((b) => b.subjectId === selectedSubjectId)
+      .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
       .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
     const availableSubjectMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSubject)
     const totalRequired = selectedSlots.length * duration
@@ -467,7 +467,7 @@ export function BookingSchedulesPage() {
 
         // Calculate subject-specific booked minutes
         const bookedMinutesForSubject = selectedStudentBookings
-          .filter((b) => b.subjectId === selectedSubjectId)
+          .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
           .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
         const availableSubjectMinutes = Math.max(0, subInDb.remainingMinutes - bookedMinutesForSubject)
 
@@ -1176,7 +1176,7 @@ export function BookingSchedulesPage() {
                 {(() => {
                   const activeSubPkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
                   const bookedMinutesForSubject = selectedStudentBookings
-                    .filter((b) => b.subjectId === selectedSubjectId)
+                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
                     .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
                   const availableForSubject = activeSubPkg ? Math.max(0, activeSubPkg.remainingMinutes - bookedMinutesForSubject) : 0
 

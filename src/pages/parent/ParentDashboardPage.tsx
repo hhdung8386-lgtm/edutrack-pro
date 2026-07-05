@@ -332,7 +332,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               {student.name}
             </h1>
             <p className="text-[11px] text-slate-500 font-mono mt-0.5 tracking-wide">
-              {student.code} · {student.subjectName}
+              {student.code}
             </p>
           </div>
           <Logo className="scale-[0.55] origin-right opacity-80" />
@@ -434,7 +434,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               const totalSess25 = Math.floor(sub.totalMinutes / 25)
               const usedSess25 = Math.floor(sub.usedMinutes / 25)
               const bookedMins = bookings
-                .filter((b) => b.subjectId === sub.subjectId)
+                .filter((b) => b.subjectId === sub.subjectId && !b.lessonId)
                 .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
               const bookedSess25 = Math.floor(bookedMins / 25)
               const availMins = Math.max(0, sub.remainingMinutes - bookedMins)

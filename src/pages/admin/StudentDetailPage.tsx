@@ -1122,7 +1122,7 @@ export function StudentDetailPage() {
                   const totalSessions25 = Math.floor(pkg.totalMinutes / 25)
                   const usedSessions25 = Math.floor(pkg.usedMinutes / 25)
                   const bookedMinutes = bookingRequests
-                    .filter((b) => b.subjectId === pkg.subjectId)
+                    .filter((b) => b.subjectId === pkg.subjectId && !b.lessonId)
                     .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
                   const bookedSessions25 = Math.floor(bookedMinutes / 25)
                   const availableMinutes = Math.max(0, pkg.remainingMinutes - bookedMinutes)
