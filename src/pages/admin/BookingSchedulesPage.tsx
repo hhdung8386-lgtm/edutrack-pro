@@ -1200,9 +1200,16 @@ export function BookingSchedulesPage() {
                         </span>
                       </div>
                       {!isEnough && (
-                        <div className="w-full flex items-center gap-1.5 text-rose-500 font-bold mt-1 bg-rose-50 p-2 rounded-lg border border-rose-100">
-                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>Học viên không đủ phút khả dụng để xếp lịch!</span>
+                        <div className="w-full space-y-1 mt-1 bg-rose-50 p-2.5 rounded-lg border border-rose-100 text-rose-500 font-medium">
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>Học viên không đủ phút khả dụng để xếp lịch!</span>
+                          </div>
+                          {bookedMinutesForSubject > 0 && (
+                            <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
+                              * Đã có {bookedMinutesForSubject} phút ({Math.floor(bookedMinutesForSubject / 25)} buổi) được đặt lịch trong tương lai. Vui lòng hủy các ca tương lai này hoặc nạp thêm buổi học.
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
