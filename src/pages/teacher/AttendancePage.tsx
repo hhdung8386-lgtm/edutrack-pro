@@ -352,6 +352,19 @@ export function AttendancePage() {
                       </a>
                     </div>
                   )}
+                  {selectedPkg?.curriculumLink && (
+                    <div className="mt-2.5">
+                      <a
+                        href={selectedPkg.curriculumLink.startsWith('http') ? selectedPkg.curriculumLink : `https://${selectedPkg.curriculumLink}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        Mở giáo trình học
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className={`text-3xl font-bold ${
