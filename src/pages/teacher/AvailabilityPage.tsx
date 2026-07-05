@@ -3,7 +3,7 @@ import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firest
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { DayOfWeek, DayAvailability, TimeRange } from '@/types'
+import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
@@ -33,9 +33,52 @@ function getEmptySlots(): Record<DayOfWeek, DayAvailability> {
   }
 }
 
+function cloneSlots(slots?: Record<DayOfWeek, DayAvailability>) {
+  const base = getEmptySlots()
+  DAYS.forEach((day) => {
+    const source = slots?.[day]
+    if (source) {
+      base[day] = {
+        available: !!source.available,
+        timeRanges: (source.timeRanges || []).map((range) => ({ ...range })),
+      }
+    }
+  })
+  return base
+}
+
+function getMonday(date: Date) {
+  const copy = new Date(date)
+  copy.setHours(0, 0, 0, 0)
+  const day = copy.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  copy.setDate(copy.getDate() + diff)
+  return copy
+}
+
+function addDays(date: Date, days: number) {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() + days)
+  return copy
+}
+
+function formatDateISO(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatShortDate(date: Date) {
+  const day = String(date.getDate()).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${day}/${month}`
+}
+
 export function AvailabilityPage() {
   const { teacherId } = useAuthStore()
   const { t } = useLanguageStore()
+  const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(getEmptySlots())
   const [dbSlots, setDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
   const [note, setNote] = useState('')
@@ -43,29 +86,42 @@ export function AvailabilityPage() {
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+
+  const weekStartISO = formatDateISO(weekStart)
 
   useEffect(() => {
     if (!teacherId) {
       setLoading(false)
       return
     }
+    setLoading(true)
     getDoc(doc(db, 'teacherAvailability', teacherId)).then((snap) => {
       if (snap.exists()) {
-        const data = snap.data()
-        if (data.slots) {
-          setSlots(data.slots)
-          setDbSlots(JSON.parse(JSON.stringify(data.slots)))
+        const data = snap.data() as TeacherAvailability
+        setAvailability(data)
+        
+        const weekOverride = data.weekOverrides?.[weekStartISO]
+        const loadedSlots = weekOverride?.slots || data.slots
+        if (loadedSlots) {
+          setSlots(cloneSlots(loadedSlots))
+          setDbSlots(cloneSlots(loadedSlots))
         }
         if (data.note) setNote(data.note)
         if (data.updatedAt) setLastUpdated(data.updatedAt)
+      } else {
+        setSlots(getEmptySlots())
+        setDbSlots(null)
       }
       setLoading(false)
+    }).catch(err => {
+      console.error(err)
+      setLoading(false)
     })
-  }, [teacherId])
+  }, [teacherId, weekStartISO])
 
   const toggleDay = (day: DayOfWeek) => {
     const wasAvailableInDb = dbSlots?.[day]?.available
-    // If it was available in db, they are not allowed to disable it (cancel slots)
     if (wasAvailableInDb && slots[day].available) {
       toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
       return
@@ -136,19 +192,29 @@ export function AvailabilityPage() {
     if (!teacherId) return
     setSaving(true)
     try {
+      // Retain past overrides, clear current and future overrides to let the new general slots apply
+      const retainedOverrides = Object.fromEntries(
+        Object.entries(availability?.weekOverrides || {}).filter(([week]) => week < weekStartISO)
+      )
+
       await setDoc(doc(db, 'teacherAvailability', teacherId), {
         teacherId,
-        slots,
+        slots, // Save as general default availability
         note,
+        weekOverrides: retainedOverrides,
         updatedAt: serverTimestamp(),
-      })
+      }, { merge: true })
+
       const snap = await getDoc(doc(db, 'teacherAvailability', teacherId))
       if (snap.exists()) {
-        const data = snap.data()
+        const data = snap.data() as TeacherAvailability
+        setAvailability(data)
         setLastUpdated(data.updatedAt)
-        if (data.slots) {
-          setDbSlots(JSON.parse(JSON.stringify(data.slots)))
-        }
+        
+        const weekOverride = data.weekOverrides?.[weekStartISO]
+        const loadedSlots = weekOverride?.slots || data.slots
+        setSlots(cloneSlots(loadedSlots))
+        setDbSlots(cloneSlots(loadedSlots))
       }
       toast.success(t('avail.saved'))
       setShowConfirmModal(false)
@@ -187,6 +253,27 @@ export function AvailabilityPage() {
             {t('avail.last_updated')} {lastUpdated.toDate().toLocaleString('vi-VN')}
           </div>
         )}
+      </div>
+
+      {/* Week Selector Banner */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div>
+          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Tuần đăng ký lịch dạy</span>
+          <span className="text-sm font-extrabold text-slate-800">
+            Từ {formatShortDate(weekStart)} đến {formatShortDate(addDays(weekStart, 6))}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
+            Tuần trước
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+            Tuần này
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
+            Tuần sau
+          </Button>
+        </div>
       </div>
 
       {/* Warning Banner */}
@@ -380,7 +467,7 @@ export function AvailabilityPage() {
           className="!bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5] !shadow-lg !shadow-[#3BB8EB]/30 !rounded-xl !py-3.5"
         >
           <Save className="w-4 h-4" />
-          {saving ? t('avail.saving') : t('avail.save')}
+          Lưu lịch dạy trống tương lai
         </Button>
       </div>
 
@@ -389,7 +476,7 @@ export function AvailabilityPage() {
         <Modal
           open
           onClose={() => setShowConfirmModal(false)}
-          title="Xác nhận lưu lịch dạy rảnh"
+          title="Xác nhận lưu lịch dạy tương lai"
           footer={
             <div className="flex gap-3 justify-end w-full">
               <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>Hủy</Button>
@@ -403,9 +490,9 @@ export function AvailabilityPage() {
             <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <p className="font-extrabold text-slate-800 text-center text-base">Bạn đã cân nhắc lịch kỹ chưa?</p>
+            <p className="font-extrabold text-slate-800 text-center text-base">Xác nhận lưu lịch dạy?</p>
             <p className="text-center text-xs text-slate-500">
-              Mọi khung giờ lịch dạy rảnh sau khi lưu sẽ <strong className="text-rose-600 font-bold">không thể tự chỉnh sửa hoặc tự xóa được</strong>. Muốn thay đổi, bạn sẽ bắt buộc phải liên hệ báo với quản lý.
+              Lịch này sau khi lưu sẽ được áp dụng cho tuần đã chọn và <strong className="text-[#3BB8EB] font-bold">tất cả các tuần trong tương lai</strong>. Các khung giờ rảnh sau khi lưu sẽ <strong className="text-rose-600 font-bold">không thể tự chỉnh sửa hoặc tự xóa được</strong>. Muốn thay đổi, bạn phải liên hệ với quản lý.
             </p>
           </div>
         </Modal>
