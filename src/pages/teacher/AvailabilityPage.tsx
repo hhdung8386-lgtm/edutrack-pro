@@ -1,40 +1,50 @@
-import { useEffect, useState } from 'react'
-import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { useEffect, useMemo, useState } from 'react'
+import { doc, getDoc, getDocs, setDoc, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability } from '@/types'
+import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability, BookingRequest } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
-import { Calendar, Clock, Save, X, Plus, CheckCircle, AlertTriangle } from 'lucide-react'
+import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
-const TIME_OPTIONS: string[] = []
-for (let h = 6; h <= 22; h++) {
-  TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`)
-  TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`)
+const DAY_LABELS_VI: Record<DayOfWeek, string> = {
+  mon: 'Thứ 2',
+  tue: 'Thứ 3',
+  wed: 'Thứ 4',
+  thu: 'Thứ 5',
+  fri: 'Thứ 6',
+  sat: 'Thứ 7',
+  sun: 'Chủ nhật',
 }
 
-const DEFAULT_SLOT: DayAvailability = { available: false, timeRanges: [] }
+const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }
+const TIME_WINDOWS = [
+  { key: '24h', label: '24h', start: 0, end: 1440 },
+  { key: '0-8', label: '0:00-8:00', start: 0, end: 480 },
+  { key: '6-14', label: '6:00-14:00', start: 360, end: 840 },
+  { key: '12-20', label: '12:00-20:00', start: 720, end: 1200 },
+  { key: '18-25', label: '18:00-25:00', start: 1080, end: 1500 },
+] as const
 
-function getEmptySlots(): Record<DayOfWeek, DayAvailability> {
+function emptySlots(): Record<DayOfWeek, DayAvailability> {
   return {
-    mon: { ...DEFAULT_SLOT, timeRanges: [] },
-    tue: { ...DEFAULT_SLOT, timeRanges: [] },
-    wed: { ...DEFAULT_SLOT, timeRanges: [] },
-    thu: { ...DEFAULT_SLOT, timeRanges: [] },
-    fri: { ...DEFAULT_SLOT, timeRanges: [] },
-    sat: { ...DEFAULT_SLOT, timeRanges: [] },
-    sun: { ...DEFAULT_SLOT, timeRanges: [] },
+    mon: { ...EMPTY_DAY, timeRanges: [] },
+    tue: { ...EMPTY_DAY, timeRanges: [] },
+    wed: { ...EMPTY_DAY, timeRanges: [] },
+    thu: { ...EMPTY_DAY, timeRanges: [] },
+    fri: { ...EMPTY_DAY, timeRanges: [] },
+    sat: { ...EMPTY_DAY, timeRanges: [] },
+    sun: { ...EMPTY_DAY, timeRanges: [] },
   }
 }
 
 function cloneSlots(slots?: Record<DayOfWeek, DayAvailability>) {
-  const base = getEmptySlots()
+  const base = emptySlots()
   DAYS.forEach((day) => {
     const source = slots?.[day]
     if (source) {
@@ -75,137 +85,253 @@ function formatShortDate(date: Date) {
   return `${day}/${month}`
 }
 
+function formatShortHeaderDate(date: Date) {
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function getWeekDates(weekStart: Date) {
+  return DAYS.map((day, index) => ({ day, date: addDays(weekStart, index), iso: formatDateISO(addDays(weekStart, index)) }))
+}
+
+function timeToMinutes(time: string) {
+  const [hours = '0', minutes = '0'] = time.split(':')
+  return Number(hours) * 60 + Number(minutes)
+}
+
+function minutesToTime(total: number) {
+  const hours = Math.floor(total / 60)
+  const minutes = total % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function rangeCovers(range: TimeRange, start: number, end: number) {
+  return timeToMinutes(range.start) <= start && timeToMinutes(range.end) >= end
+}
+
+function getVisibleStarts(windowKey: string) {
+  const activeWindow = TIME_WINDOWS.find((item) => item.key === windowKey) || TIME_WINDOWS[0]
+  const starts: string[] = []
+  for (let cursor = activeWindow.start; cursor < activeWindow.end; cursor += 30) {
+    starts.push(minutesToTime(cursor))
+  }
+  return starts
+}
+
+function removeInterval(ranges: TimeRange[], start: number, end: number) {
+  const next: TimeRange[] = []
+  ranges.forEach((range) => {
+    const rangeStart = timeToMinutes(range.start)
+    const rangeEnd = timeToMinutes(range.end)
+
+    if (rangeEnd <= start || rangeStart >= end) {
+      next.push(range)
+      return
+    }
+
+    if (rangeStart < start) next.push({ start: range.start, end: minutesToTime(start) })
+    if (rangeEnd > end) next.push({ start: minutesToTime(end), end: range.end })
+  })
+  return next.filter((range) => timeToMinutes(range.end) > timeToMinutes(range.start))
+}
+
+function addInterval(ranges: TimeRange[], start: number, end: number) {
+  const all = [...ranges, { start: minutesToTime(start), end: minutesToTime(end) }]
+    .map(r => ({ ...r }))
+    .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start))
+
+  const merged: TimeRange[] = []
+  all.forEach((range) => {
+    if (merged.length === 0) {
+      merged.push(range)
+      return
+    }
+    const last = merged[merged.length - 1]
+    const lastEnd = timeToMinutes(last.end)
+    const currentStart = timeToMinutes(range.start)
+
+    if (currentStart <= lastEnd) {
+      const currentEnd = timeToMinutes(range.end)
+      if (currentEnd > lastEnd) {
+        last.end = range.end
+      }
+    } else {
+      merged.push(range)
+    }
+  })
+  return merged
+}
+
 export function AvailabilityPage() {
   const { teacherId } = useAuthStore()
   const { t } = useLanguageStore()
+
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
-  const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(getEmptySlots())
+  const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [dbSlots, setDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
   const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
+  const [saving, setSaving] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
+
+  // Filtering states (similar to Admin view)
+  const [tempTimeWindow, setTempTimeWindow] = useState<string>('24h')
+  const [tempDuration, setTempDuration] = useState<25 | 50>(25)
+  const [timeWindow, setTimeWindow] = useState<string>('24h')
+  const [duration, setDuration] = useState<25 | 50>(25)
+
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
-
   const weekStartISO = formatDateISO(weekStart)
+  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
+  const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
 
+  // Fetch teacher's availability for the selected week
   useEffect(() => {
     if (!teacherId) {
       setLoading(false)
       return
     }
-    setLoading(true)
-    getDoc(doc(db, 'teacherAvailability', teacherId)).then((snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as TeacherAvailability
-        setAvailability(data)
-        
-        const weekOverride = data.weekOverrides?.[weekStartISO]
-        const loadedSlots = weekOverride?.slots || data.slots
-        if (loadedSlots) {
-          setSlots(cloneSlots(loadedSlots))
-          setDbSlots(cloneSlots(loadedSlots))
+
+    async function loadAvailability() {
+      setLoading(true)
+      try {
+        const snap = await getDoc(doc(db, 'teacherAvailability', teacherId as string))
+        if (snap.exists()) {
+          const data = { id: snap.id, ...snap.data() } as TeacherAvailability
+          setAvailability(data)
+          
+          const weekOverride = data.weekOverrides?.[weekStartISO]
+          const loadedSlots = weekOverride?.slots || data.slots
+          if (loadedSlots) {
+            setSlots(cloneSlots(loadedSlots))
+            setDbSlots(cloneSlots(loadedSlots))
+          } else {
+            setSlots(emptySlots())
+            setDbSlots(null)
+          }
+          setNote(weekOverride?.note || data.note || '')
+          if (data.updatedAt) setLastUpdated(data.updatedAt)
+        } else {
+          setAvailability(null)
+          setSlots(emptySlots())
+          setDbSlots(null)
+          setNote('')
         }
-        if (data.note) setNote(data.note)
-        if (data.updatedAt) setLastUpdated(data.updatedAt)
-      } else {
-        setSlots(getEmptySlots())
-        setDbSlots(null)
+      } catch (error) {
+        console.error('Error loading teacher availability:', error)
+        toast.error('Không tải được lịch rảnh của bạn')
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
-    }).catch(err => {
-      console.error(err)
-      setLoading(false)
-    })
+    }
+
+    loadAvailability()
   }, [teacherId, weekStartISO])
 
-  const toggleDay = (day: DayOfWeek) => {
-    const wasAvailableInDb = dbSlots?.[day]?.available
-    if (wasAvailableInDb && slots[day].available) {
-      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
-      return
+  // Fetch booking requests to mark RESERVED cells
+  useEffect(() => {
+    if (!teacherId) return
+
+    async function loadBookingRequests() {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'bookingRequests'),
+            where('teacherId', '==', teacherId)
+          )
+        )
+        const items = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+        setBookingRequests(items)
+      } catch (error) {
+        console.error('Error loading bookings for teacher:', error)
+      }
     }
-    setSlots((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        available: !prev[day].available,
-        timeRanges: !prev[day].available ? [{ start: '08:00', end: '12:00' }] : [],
-      },
-    }))
+
+    loadBookingRequests()
+  }, [teacherId])
+
+  const handleApplyFilters = () => {
+    setTimeWindow(tempTimeWindow)
+    setDuration(tempDuration)
   }
 
-  const addTimeRange = (day: DayOfWeek) => {
-    setSlots((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        timeRanges: [...prev[day].timeRanges, { start: '13:00', end: '17:00' }],
-      },
-    }))
+  // Toggles cell slot availability status
+  const isCellOpen = (day: DayOfWeek, start: string) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + duration
+    return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
-  const removeTimeRange = (day: DayOfWeek, index: number) => {
-    const rangeToRemove = slots[day].timeRanges[index]
-    const wasInDb = dbSlots?.[day]?.timeRanges.some(
-      (r) => r.start === rangeToRemove.start && r.end === rangeToRemove.end
-    )
-    if (wasInDb) {
-      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
-      return
+  const isCellOpenInDb = (day: DayOfWeek, start: string) => {
+    if (!dbSlots) return false
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + duration
+    return dbSlots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+  }
+
+  const isCellReserved = (dateISO: string, time: string) => {
+    const startMinute = timeToMinutes(time)
+    const endMinute = startMinute + duration
+
+    return bookingRequests.some((req) => {
+      if (req.requestedDate !== dateISO) return false
+      if (req.status !== 'confirmed' && req.status !== 'pending') return false
+
+      const reqStart = timeToMinutes(req.requestedStart)
+      const reqEnd = timeToMinutes(req.requestedEnd)
+
+      return Math.max(startMinute, reqStart) < Math.min(endMinute, reqEnd)
+    })
+  }
+
+  const toggleCell = (day: DayOfWeek, start: string) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + duration
+    const isOpen = slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+
+    if (isOpen) {
+      // Locking mechanism: if the cell was already OPEN in the DB, they cannot remove it
+      if (isCellOpenInDb(day, start)) {
+        toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
+        return
+      }
     }
-    setSlots((prev) => {
-      const newRanges = prev[day].timeRanges.filter((_, i) => i !== index)
+
+    setSlots((current) => {
+      const dayRanges = current[day].timeRanges
+      const timeRanges = isOpen
+        ? removeInterval(dayRanges, startMinute, endMinute)
+        : addInterval(dayRanges, startMinute, endMinute)
+
       return {
-        ...prev,
+        ...current,
         [day]: {
-          ...prev[day],
-          timeRanges: newRanges,
-          available: newRanges.length > 0,
+          available: timeRanges.length > 0,
+          timeRanges,
         },
       }
     })
   }
 
-  const updateTimeRange = (day: DayOfWeek, index: number, field: keyof TimeRange, value: string) => {
-    const rangeToUpdate = slots[day].timeRanges[index]
-    const wasInDb = dbSlots?.[day]?.timeRanges.some(
-      (r) => r.start === rangeToUpdate.start && r.end === rangeToUpdate.end
-    )
-    if (wasInDb) {
-      toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
-      return
-    }
-    setSlots((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        timeRanges: prev[day].timeRanges.map((tr, i) =>
-          i === index ? { ...tr, [field]: value } : tr
-        ),
-      },
-    }))
-  }
-
-  const handleSave = async () => {
+  // Saves current slots as the new default for current week and all future weeks
+  const handleSaveCurrentAndFuture = async () => {
     if (!teacherId) return
     setSaving(true)
     try {
-      // Retain past overrides, clear current and future overrides to let the new general slots apply
       const retainedOverrides = Object.fromEntries(
         Object.entries(availability?.weekOverrides || {}).filter(([week]) => week < weekStartISO)
       )
 
-      await setDoc(doc(db, 'teacherAvailability', teacherId), {
+      await setDoc(doc(db, 'teacherAvailability', teacherId as string), {
         teacherId,
-        slots, // Save as general default availability
+        slots,
         note,
         weekOverrides: retainedOverrides,
         updatedAt: serverTimestamp(),
       }, { merge: true })
 
-      const snap = await getDoc(doc(db, 'teacherAvailability', teacherId))
+      const snap = await getDoc(doc(db, 'teacherAvailability', teacherId as string))
       if (snap.exists()) {
         const data = snap.data() as TeacherAvailability
         setAvailability(data)
@@ -221,19 +347,15 @@ export function AvailabilityPage() {
     } catch (e) {
       console.error(e)
       toast.error(t('avail.save_fail'))
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
-  if (loading) return <LoadingSpinner />
-
-  const dayLabels: Record<DayOfWeek, string> = {
-    mon: t('avail.mon'), tue: t('avail.tue'), wed: t('avail.wed'), thu: t('avail.thu'),
-    fri: t('avail.fri'), sat: t('avail.sat'), sun: t('avail.sun'),
-  }
+  if (loading && !availability) return <LoadingSpinner />
 
   return (
-    <div className="space-y-6 pt-2 lg:pt-6 max-w-4xl mx-auto">
+    <div className="space-y-6 pt-2 lg:pt-6 max-w-6xl mx-auto">
       {/* Hero Banner */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-[#3BB8EB] via-[#45c6f5] to-[#2b8fb8] p-6 lg:p-8 text-white shadow-lg">
         <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4" />
@@ -255,14 +377,60 @@ export function AvailabilityPage() {
         )}
       </div>
 
-      {/* Week Selector Banner */}
+      {/* Filter / Navigation Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div>
-          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Tuần đăng ký lịch dạy</span>
-          <span className="text-sm font-extrabold text-slate-800">
-            Từ {formatShortDate(weekStart)} đến {formatShortDate(addDays(weekStart, 6))}
-          </span>
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Dropdown select time window */}
+          <div className="relative">
+            <select
+              value={tempTimeWindow}
+              onChange={(e) => setTempTimeWindow(e.target.value)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold outline-none focus:border-sky-400 min-w-[140px] appearance-none pr-8 cursor-pointer"
+            >
+              {TIME_WINDOWS.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">▼</div>
+          </div>
+
+          {/* Radio buttons for duration */}
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+              <input
+                type="radio"
+                name="duration"
+                checked={tempDuration === 25}
+                onChange={() => setTempDuration(25)}
+                className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
+              />
+              25 phút
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+              <input
+                type="radio"
+                name="duration"
+                checked={tempDuration === 50}
+                onChange={() => setTempDuration(50)}
+                className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
+              />
+              50 phút
+            </label>
+          </div>
+
+          {/* View Button */}
+          <button
+            type="button"
+            onClick={handleApplyFilters}
+            className="h-10 px-6 rounded-lg bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-bold text-sm transition shadow-sm"
+          >
+            Xem
+          </button>
         </div>
+
+        {/* Quick week controls */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
             Tuần trước
@@ -287,163 +455,86 @@ export function AvailabilityPage() {
         </div>
       </div>
 
-      {/* Weekly Grid - Desktop */}
-      <div className="hidden lg:grid grid-cols-7 gap-3">
-        {DAYS.map((day) => {
-          const slot = slots[day]
-          const isOn = slot.available
-          return (
-            <div
-              key={day}
-              className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${
-                isOn
-                  ? 'border-emerald-300 bg-emerald-50/50 shadow-sm'
-                  : 'border-slate-200 bg-white'
-              }`}
-            >
-              {/* Day Header / Toggle */}
-              <button
-                onClick={() => toggleDay(day)}
-                className={`w-full p-3 text-center transition-all duration-200 ${
-                  isOn
-                    ? 'bg-emerald-100'
-                    : 'bg-slate-50 hover:bg-slate-100'
-                }`}
-              >
-                <p className={`text-sm font-bold ${isOn ? 'text-emerald-700' : 'text-slate-400'}`}>
-                  {dayLabels[day]}
-                </p>
-                <span className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  isOn
-                    ? 'bg-emerald-200 text-emerald-800'
-                    : 'bg-slate-200 text-slate-500'
-                }`}>
-                  {isOn ? t('avail.available') : t('avail.unavailable')}
-                </span>
-              </button>
-
-              {/* Time Ranges */}
-              {isOn && (
-                <div className="p-2.5 space-y-2">
-                  {slot.timeRanges.map((tr, i) => (
-                    <div key={i} className="relative bg-white rounded-lg border border-emerald-200 p-2">
-                      <button
-                        onClick={() => removeTimeRange(day, i)}
-                        aria-label={`${t('avail.remove_time')} ${dayLabels[day]} #${i + 1}`}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center hover:bg-rose-200 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                      <div className="space-y-1.5">
-                        <select
-                          value={tr.start}
-                          onChange={(e) => updateTimeRange(day, i, 'start', e.target.value)}
-                          aria-label={`${t('avail.start')} - ${dayLabels[day]} #${i + 1}`}
-                          className="w-full text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        >
-                          {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        <div className="text-center text-[10px] text-slate-400">↓</div>
-                        <select
-                          value={tr.end}
-                          onChange={(e) => updateTimeRange(day, i, 'end', e.target.value)}
-                          aria-label={`${t('avail.end')} - ${dayLabels[day]} #${i + 1}`}
-                          className="w-full text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        >
-                          {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => addTimeRange(day)}
-                    className="w-full text-[10px] text-emerald-600 hover:text-emerald-800 font-semibold py-1 rounded hover:bg-emerald-50 transition-colors"
-                  >
-                    {t('avail.add_time')}
-                  </button>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Weekly Grid - Mobile (stacked) */}
-      <div className="lg:hidden space-y-3">
-        {DAYS.map((day) => {
-          const slot = slots[day]
-          const isOn = slot.available
-          return (
-            <Card key={day} className={`overflow-hidden transition-all duration-300 ${isOn ? '!border-emerald-300 !bg-emerald-50/30' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
-                    isOn ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    {dayLabels[day]}
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    isOn ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    {isOn ? t('avail.available') : t('avail.unavailable')}
-                  </span>
-                </div>
+      {/* Grid schedule table */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[800px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-200">
+              {/* Angle cell for week navigation (previous week) */}
+              <th className="p-2 text-center border-r border-slate-200 w-24">
                 <button
-                  onClick={() => toggleDay(day)}
-                  aria-label={`${dayLabels[day]} - ${isOn ? t('avail.available') : t('avail.unavailable')}`}
-                  className={`relative w-12 h-6 rounded-full transition-all duration-300 ${
-                    isOn ? 'bg-emerald-400' : 'bg-slate-300'
-                  }`}
+                  type="button"
+                  onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
+                  title="Tuần trước"
                 >
-                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all duration-300 ${
-                    isOn ? 'left-[26px]' : 'left-0.5'
-                  }`} />
+                  <ChevronLeft className="h-4 w-4 mx-auto" />
                 </button>
-              </div>
+              </th>
+              {/* Day headers */}
+              {weekDates.map(({ day, date }) => (
+                <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 min-w-[90px]">
+                  <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS_VI[day]}</div>
+                </th>
+              ))}
+              {/* Navigation column header (next week) */}
+              <th className="p-2 text-center w-12">
+                <button
+                  type="button"
+                  onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
+                  title="Tuần sau"
+                >
+                  <ChevronRight className="h-4 w-4 mx-auto" />
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {visibleStarts.map((start) => (
+              <tr key={start} className="hover:bg-slate-50/50 transition">
+                {/* Time column header */}
+                <td className="p-3 text-center font-bold text-slate-600 border-r border-slate-200 align-middle">
+                  {start}~
+                </td>
+                {/* Day cells */}
+                {weekDates.map(({ day, iso }) => {
+                  const reserved = isCellReserved(iso, start)
+                  const open = isCellOpen(day, start)
 
-              {isOn && (
-                <div className="mt-3 space-y-2 pt-3 border-t border-emerald-200/50">
-                  {slot.timeRanges.map((tr, i) => (
-                    <div key={i} className="flex items-center gap-2 bg-white rounded-lg border border-emerald-200 p-2.5">
-                      <Clock className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      <select
-                        value={tr.start}
-                        onChange={(e) => updateTimeRange(day, i, 'start', e.target.value)}
-                        aria-label={`${t('avail.start')} - ${dayLabels[day]} #${i + 1}`}
-                        className="flex-1 text-sm px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                      >
-                        {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <span className="text-xs text-slate-400">→</span>
-                      <select
-                        value={tr.end}
-                        onChange={(e) => updateTimeRange(day, i, 'end', e.target.value)}
-                        aria-label={`${t('avail.end')} - ${dayLabels[day]} #${i + 1}`}
-                        className="flex-1 text-sm px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                      >
-                        {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <button
-                        onClick={() => removeTimeRange(day, i)}
-                        aria-label={`${t('avail.remove_time')} ${dayLabels[day]} #${i + 1}`}
-                        className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => addTimeRange(day)}
-                    className="w-full flex items-center justify-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-semibold py-2 rounded-lg hover:bg-emerald-50 transition-colors border border-dashed border-emerald-300"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    {t('avail.add_time')}
-                  </button>
-                </div>
-              )}
-            </Card>
-          )
-        })}
+                  return (
+                    <td key={day} className="p-2 border-r border-slate-200 align-middle text-center min-h-[50px]">
+                      {reserved ? (
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block py-2 select-none">
+                          ĐÃ XẾP LỚP
+                        </span>
+                      ) : open ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleCell(day, start)}
+                          className="w-full py-2 px-1 rounded-lg bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-extrabold text-[10px] uppercase tracking-wider transition shadow-sm"
+                        >
+                          OPEN
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => toggleCell(day, start)}
+                          className="w-full py-2 text-slate-300 hover:text-[#3BB8EB] font-black text-sm transition flex items-center justify-center"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  )
+                })}
+                {/* Empty cell to align with next week header */}
+                <td className="p-2"></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Note */}
@@ -466,7 +557,7 @@ export function AvailabilityPage() {
           onClick={() => setShowConfirmModal(true)}
           className="!bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5] !shadow-lg !shadow-[#3BB8EB]/30 !rounded-xl !py-3.5"
         >
-          <Save className="w-4 h-4" />
+          <Save className="w-4 h-4 mr-2" />
           Lưu lịch dạy trống tương lai
         </Button>
       </div>
@@ -480,7 +571,7 @@ export function AvailabilityPage() {
           footer={
             <div className="flex gap-3 justify-end w-full">
               <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>Hủy</Button>
-              <Button onClick={handleSave} loading={saving} className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white">
+              <Button onClick={handleSaveCurrentAndFuture} loading={saving} className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white">
                 Tôi đã cân nhắc lịch và đồng ý
               </Button>
             </div>
