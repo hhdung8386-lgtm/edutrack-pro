@@ -1003,7 +1003,7 @@ export function BookingSchedulesPage() {
                   </th>
                   {/* Day headers */}
                   {weekDates.map(({ day, date }) => (
-                    <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 min-w-[90px]">
+                    <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 w-[12%] max-w-[12%] min-w-[90px]">
                       <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
                       <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS[day]}</div>
                     </th>
@@ -1023,9 +1023,9 @@ export function BookingSchedulesPage() {
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {visibleStarts.map((start) => (
-                  <tr key={start} className="hover:bg-slate-50/20 transition">
+                  <tr key={start} className="h-12 hover:bg-slate-50/20 transition">
                     {/* Time column header */}
-                    <td className="p-3 text-center font-bold text-slate-500 border-r border-slate-200 align-middle bg-slate-50/50">
+                    <td className="p-2 border-r border-slate-200 font-bold text-xs text-slate-500 text-center select-none bg-slate-50/50">
                       {start}
                     </td>
                     {/* Day cells */}
@@ -1048,15 +1048,18 @@ export function BookingSchedulesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleCellClick(day, iso, start)}
-                                  className={`w-full py-2 px-1 rounded-xl border transition shadow-sm text-center block ${
+                                  className={`w-full py-1.5 px-0.5 rounded-xl border transition shadow-sm text-center block ${
                                     isBookingSelected
                                       ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-500 text-rose-900'
                                       : 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border border-amber-200/50'
                                   }`}
                                 >
-                                  <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-1">
+                                  <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-0.5">
                                     <span>{booking.studentCode}</span>
                                     {isBookingSelected && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black leading-none flex-shrink-0">HỦY</span>}
+                                  </div>
+                                  <div className="text-[9px] text-amber-800/80 font-bold truncate leading-tight mt-0.5 max-w-full px-1 block" title={booking.studentName}>
+                                    {booking.studentName}
                                   </div>
                                 </button>
                               )

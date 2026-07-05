@@ -240,6 +240,18 @@ export function BookingSchedulesPage() {
   const handleCellClick = (booking: BookingRequest) => {
     setSelectedBooking(booking)
     setShowDetailModal(true)
+    
+    // Instantly refetch the student details to guarantee the latest curriculumLink
+    getDoc(doc(db, 'students', booking.studentId)).then((sSnap) => {
+      if (sSnap.exists()) {
+        setStudents((prev) => ({
+          ...prev,
+          [sSnap.id]: { id: sSnap.id, ...sSnap.data() } as Student,
+        }))
+      }
+    }).catch((err) => {
+      console.error('Error updating student on click:', err)
+    })
   }
 
   // Handle Attendance status triggers (prefilling books/minutes)
@@ -460,7 +472,7 @@ export function BookingSchedulesPage() {
                   </button>
                 </th>
                 {weekDates.map(({ day, date }) => (
-                  <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 min-w-[90px]">
+                  <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 w-[12%] max-w-[12%] min-w-[90px]">
                     <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
                     <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS_EN[day]}</div>
                   </th>
@@ -479,7 +491,7 @@ export function BookingSchedulesPage() {
             <tbody className="divide-y divide-slate-200">
               {visibleStarts.map((start) => (
                 <tr key={start} className="hover:bg-slate-50/20 transition">
-                  <td className="p-3 text-center font-bold text-slate-500 border-r border-slate-200 align-middle bg-slate-50/50">
+                  <td className="p-2 border-r border-slate-200 font-bold text-xs text-slate-500 text-center select-none bg-slate-50/50">
                     {start}
                   </td>
                   {weekDates.map(({ day, iso }) => {
@@ -492,15 +504,20 @@ export function BookingSchedulesPage() {
                           <button
                             type="button"
                             onClick={() => handleCellClick(booking)}
-                            className={`w-full py-2 px-1 rounded-xl text-center block transition shadow-sm ${
+                            className={`w-full py-1.5 px-0.5 rounded-xl text-center block transition shadow-sm ${
                               booking.lessonId
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                                 : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/50'
                             }`}
                           >
-                            <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-1">
+                            <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-0.5">
                               {booking.lessonId && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
                               <span>{booking.studentCode}</span>
+                            </div>
+                            <div className={`text-[9px] font-bold truncate leading-tight mt-0.5 max-w-full px-1 block ${
+                              booking.lessonId ? 'text-emerald-700/80' : 'text-amber-800/80'
+                            }`} title={booking.studentName}>
+                              {booking.studentName}
                             </div>
                           </button>
                         ) : open ? (
