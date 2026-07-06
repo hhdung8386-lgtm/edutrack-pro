@@ -370,15 +370,15 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               {/* Stats row */}
               <div className="grid grid-cols-4 divide-x divide-white/15">
                 {[
-                  { label: 'Tổng buổi', val: totalSessions25, mins: pTotalMin, color: 'text-white' },
-                  { label: 'Đã học', val: usedSessions25, mins: pUsedMin, color: 'text-sky-200' },
-                  { label: 'Giữ chỗ', val: heldSessions25, mins: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
-                  { label: 'Khả dụng', val: availableSessions25, mins: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
+                  { label: 'Tổng số phút', val: pTotalMin, color: 'text-white' },
+                  { label: 'Đã học', val: pUsedMin, color: 'text-sky-200' },
+                  { label: 'Giữ chỗ', val: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
+                  { label: 'Khả dụng', val: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
                 ].map((s) => (
                   <div key={s.label} className="px-3 first:pl-0 last:pr-0">
                     <p className={`text-[32px] font-bold leading-none tracking-tight ${s.color}`}>{s.val}</p>
-                    <p className="text-[11px] text-sky-100/80 mt-1 tracking-wide">{s.label}</p>
-                    <p className="text-[11px] text-sky-200/60 mt-0.5 font-medium">{s.mins} phút</p>
+                    <p className="text-[11px] text-sky-100/80 mt-2 tracking-wide font-medium">{s.label}</p>
+                    <p className="text-[10px] text-sky-200/50 mt-0.5 uppercase tracking-wider font-semibold">phút</p>
                   </div>
                 ))}
               </div>
@@ -491,24 +491,20 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
                   <div className="grid grid-cols-4 gap-1 text-center bg-slate-50/70 rounded-xl p-2.5 text-[10px]">
                     <div>
-                      <p className="font-bold text-slate-700">{totalSess25}</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Tổng buổi</p>
-                      <p className="text-[8px] text-slate-400 mt-1">{sub.totalMinutes}p</p>
+                      <p className="font-bold text-slate-700">{sub.totalMinutes}p</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">Tổng thời gian</p>
                     </div>
                     <div>
-                      <p className="font-bold text-indigo-500">{usedSess25}</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Đã học</p>
-                      <p className="text-[8px] text-indigo-400 mt-1">{sub.usedMinutes}p</p>
+                      <p className="font-bold text-indigo-500">{sub.usedMinutes}p</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">Đã học</p>
                     </div>
                     <div>
-                      <p className="font-bold text-amber-600">{bookedSess25}</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Đã đặt</p>
-                      <p className="text-[8px] text-amber-500 mt-1">{bookedMins}p</p>
+                      <p className="font-bold text-amber-600">{bookedMins}p</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">Đã đặt</p>
                     </div>
                     <div>
-                      <p className={`font-bold ${availSess25 <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{availSess25}</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-0.5">Khả dụng</p>
-                      <p className="text-[8px] text-slate-400 mt-1">{availMins}p</p>
+                      <p className={`font-bold ${availMins <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{availMins}p</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">Khả dụng</p>
                     </div>
                   </div>
                   {sub.curriculumLink && (
