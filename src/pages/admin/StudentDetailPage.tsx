@@ -216,6 +216,112 @@ export function StudentDetailPage() {
     }
   }
 
+  const handleSuspendStudent = async () => {
+    if (!id || !student) return
+    if (!window.confirm(`Bạn có chắc chắn muốn bảo lưu học viên ${student.name} không? Hệ thống sẽ tự động hủy tất cả lịch học trong tương lai của học viên này và hoàn trả lại số phút về tài khoản.`)) return
+    
+    setActioning(true)
+    try {
+      const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+      
+      // Fetch all confirmed/pending bookings of this student
+      const q = query(
+        collection(db, 'bookingRequests'),
+        where('studentId', '==', id),
+        where('status', 'in', ['confirmed', 'pending'])
+      )
+      const snap = await getDocs(q)
+      const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      
+      // Filter future bookings
+      const futureBookings = bookings.filter(b => b.requestedDate && b.requestedDate >= todayISO)
+      const totalMinutesToRefund = futureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', id)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
+        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+
+        // Update student status & refund minutes
+        tx.update(studentRef, {
+          status: 'reserved',
+          reservedMinutes: nextHeld,
+          heldMinutes: nextHeld,
+          updatedAt: serverTimestamp(),
+        })
+
+        // Update future bookings status to released
+        for (const booking of futureBookings) {
+          const requestRef = doc(db, 'bookingRequests', booking.id)
+          tx.update(requestRef, {
+            status: 'released',
+            releasedAt: serverTimestamp(),
+            releasedBy: user?.uid ?? 'admin',
+          })
+        }
+
+        // Add admin log
+        tx.set(doc(collection(db, 'adminLogs')), {
+          adminId: user?.uid ?? 'admin',
+          action: 'SUSPEND_STUDENT',
+          targetType: 'student',
+          targetId: id,
+          changes: {
+            studentName: studentData.name,
+            refundedBookingCount: futureBookings.length,
+            refundedBookingIds: futureBookings.map(b => b.id),
+            refundedMinutes: totalMinutesToRefund,
+            heldMinutesAfter: nextHeld,
+          },
+          createdAt: serverTimestamp(),
+        })
+      })
+
+      toast.success(`Học viên ${student.name} đã được chuyển sang trạng thái bảo lưu. Đã tự động hủy ${futureBookings.length} ca học trong tương lai và hoàn trả ${totalMinutesToRefund} phút.`)
+    } catch (err) {
+      console.error('Suspend student failed:', err)
+      toast.error('Gặp lỗi khi bảo lưu học viên')
+    } finally {
+      setActioning(false)
+    }
+  }
+
+  const handleReactivateStudent = async () => {
+    if (!id || !student) return
+    if (!window.confirm(`Kích hoạt lại học viên ${student.name}?`)) return
+    
+    setActioning(true)
+    try {
+      await updateDoc(doc(db, 'students', id), {
+        status: 'active',
+        updatedAt: serverTimestamp(),
+      })
+
+      // Add admin log
+      await addDoc(collection(db, 'adminLogs'), {
+        adminId: user?.uid ?? 'admin',
+        action: 'REACTIVATE_STUDENT',
+        targetType: 'student',
+        targetId: id,
+        changes: {
+          studentName: student.name,
+        },
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success(`Đã kích hoạt lại học viên ${student.name} thành công.`)
+    } catch (err) {
+      console.error('Reactivate student failed:', err)
+      toast.error('Gặp lỗi khi kích hoạt học viên')
+    } finally {
+      setActioning(false)
+    }
+  }
+
   const handleRecalcSalary = async () => {
     if (!recalcLesson) return
     if (recalcLesson.payrollPaid) {
@@ -1037,11 +1143,44 @@ export function StudentDetailPage() {
                   </a>
                 </div>
               )}
+              {student.textbookURL && (
+                <div className="col-span-2 mt-1 flex items-center gap-1">
+                  <span className="text-slate-500">Link sách học viên: </span>
+                  <a
+                    href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#3BB8EB] hover:text-[#2da8db] underline font-medium inline-flex items-center gap-1"
+                  >
+                    Xem sách học viên
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
             <Button size="sm" variant="primary" onClick={() => setShowAddSessions(true)}>+ Thêm buổi</Button>
+            {student.status === 'reserved' ? (
+              <Button
+                size="sm"
+                loading={actioning}
+                onClick={handleReactivateStudent}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              >
+                Kích hoạt lại
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                loading={actioning}
+                onClick={handleSuspendStudent}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
+              >
+                Bảo lưu
+              </Button>
+            )}
           </div>
         </div>
       </Card>

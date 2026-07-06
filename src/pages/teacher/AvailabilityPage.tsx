@@ -3,13 +3,14 @@ import { doc, getDoc, getDocs, setDoc, collection, query, where, serverTimestamp
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability, BookingRequest } from '@/types'
+import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability, BookingRequest, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
+import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS_VI: Record<DayOfWeek, string> = {
@@ -168,6 +169,8 @@ export function AvailabilityPage() {
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [dbSlots, setDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
+  const [localDbSlots, setLocalDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
+  const [teacher, setTeacher] = useState<Teacher | null>(null)
   const [note, setNote] = useState('')
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -185,6 +188,16 @@ export function AvailabilityPage() {
   const weekStartISO = formatDateISO(weekStart)
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
+
+  // Fetch teacher profile for timezone settings
+  useEffect(() => {
+    if (!teacherId) return
+    getDoc(doc(db, 'teachers', teacherId)).then((snap) => {
+      if (snap.exists()) {
+        setTeacher({ id: snap.id, ...snap.data() } as Teacher)
+      }
+    }).catch(err => console.error('Error loading teacher profile:', err))
+  }, [teacherId])
 
   // Fetch teacher's availability for the selected week
   useEffect(() => {
@@ -204,11 +217,15 @@ export function AvailabilityPage() {
           const weekOverride = data.weekOverrides?.[weekStartISO]
           const loadedSlots = weekOverride?.slots || data.slots
           if (loadedSlots) {
-            setSlots(cloneSlots(loadedSlots))
+            const offsetVal = teacher?.timezoneOffset ?? 7
+            const translated = translateVnSlotsToTeacher(loadedSlots, offsetVal)
+            setSlots(translated)
+            setLocalDbSlots(translated)
             setDbSlots(cloneSlots(loadedSlots))
           } else {
             setSlots(emptySlots())
             setDbSlots(null)
+            setLocalDbSlots(null)
           }
           setNote(weekOverride?.note || data.note || '')
           if (data.updatedAt) setLastUpdated(data.updatedAt)
@@ -216,6 +233,7 @@ export function AvailabilityPage() {
           setAvailability(null)
           setSlots(emptySlots())
           setDbSlots(null)
+          setLocalDbSlots(null)
           setNote('')
         }
       } catch (error) {
@@ -227,7 +245,7 @@ export function AvailabilityPage() {
     }
 
     loadAvailability()
-  }, [teacherId, weekStartISO])
+  }, [teacherId, weekStartISO, teacher])
 
   // Fetch booking requests to mark RESERVED cells
   useEffect(() => {
@@ -251,6 +269,30 @@ export function AvailabilityPage() {
     loadBookingRequests()
   }, [teacherId])
 
+  const localBookings = useMemo(() => {
+    const offset = teacher?.timezoneOffset ?? 7
+    if (offset === 7) return bookingRequests
+    
+    return bookingRequests.map((req) => {
+      const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
+      const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
+      
+      const [yr, mo, dy] = localStart.dateISO.split('-').map(Number)
+      const dObj = new Date(yr, mo - 1, dy)
+      const dayIdx = dObj.getDay()
+      const daysMap: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+      const localDay = daysMap[dayIdx]
+
+      return {
+        ...req,
+        requestedDate: localStart.dateISO,
+        requestedStart: localStart.timeStr,
+        requestedEnd: localEnd.timeStr,
+        requestedDay: localDay,
+      }
+    })
+  }, [bookingRequests, teacher?.timezoneOffset])
+
   const handleApplyFilters = () => {
     setTimeWindow(tempTimeWindow)
     setDuration(tempDuration)
@@ -264,17 +306,17 @@ export function AvailabilityPage() {
   }
 
   const isCellOpenInDb = (day: DayOfWeek, start: string) => {
-    if (!dbSlots) return false
+    if (!localDbSlots) return false
     const startMinute = timeToMinutes(start)
     const endMinute = startMinute + duration
-    return dbSlots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
+    return localDbSlots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
   const isCellReserved = (dateISO: string, time: string) => {
     const startMinute = timeToMinutes(time)
     const endMinute = startMinute + duration
 
-    return bookingRequests.some((req) => {
+    return localBookings.some((req) => {
       if (req.requestedDate !== dateISO) return false
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
 
@@ -323,9 +365,12 @@ export function AvailabilityPage() {
         Object.entries(availability?.weekOverrides || {}).filter(([week]) => week < weekStartISO)
       )
 
+      const offset = teacher?.timezoneOffset ?? 7
+      const vnSlots = translateTeacherSlotsToVn(slots, offset)
+
       await setDoc(doc(db, 'teacherAvailability', teacherId as string), {
         teacherId,
-        slots,
+        slots: vnSlots,
         note,
         weekOverrides: retainedOverrides,
         updatedAt: serverTimestamp(),
@@ -339,7 +384,9 @@ export function AvailabilityPage() {
         
         const weekOverride = data.weekOverrides?.[weekStartISO]
         const loadedSlots = weekOverride?.slots || data.slots
-        setSlots(cloneSlots(loadedSlots))
+        const translated = translateVnSlotsToTeacher(loadedSlots, offset)
+        setSlots(translated)
+        setLocalDbSlots(translated)
         setDbSlots(cloneSlots(loadedSlots))
       }
       toast.success(t('avail.saved'))

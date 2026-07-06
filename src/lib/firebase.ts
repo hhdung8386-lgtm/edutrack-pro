@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { initializeFirestore, collection, getDocs, query, where } from 'firebase/firestore'
+import { getStorage } from 'firebase/storage'
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -19,6 +20,8 @@ export const secondaryAuth = getAuth(secondaryApp)
 export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true,
 })
+export const storage = getStorage(app)
+
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 function randomCode(len: number): string {

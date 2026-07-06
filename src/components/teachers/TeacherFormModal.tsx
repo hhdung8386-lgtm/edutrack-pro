@@ -36,6 +36,7 @@ const schema = z.object({
   name: z.string().optional().default(''),
   level: z.coerce.number().min(0.5).max(3),
   bio: z.string().optional(),
+  country: z.string().optional().default('VN'),
 })
 
 type FormData = z.infer<typeof schema>
@@ -98,7 +99,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       name: teacher.name,
       level: teacher.level,
       bio: teacher.bio,
-    } : { level: 1.0 },
+      country: teacher.country || 'VN',
+    } : { level: 1.0, country: 'VN' },
   })
 
   useEffect(() => {
@@ -213,6 +215,16 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   }
 
   const onSubmit = async (data: FormData) => {
+    const countryMap: Record<string, number> = {
+      VN: 7,
+      PH: 8,
+      JP: 9,
+      KR: 9,
+      US_EST: -5,
+      US_PST: -8,
+    }
+    const timezoneOffset = countryMap[data.country || 'VN'] ?? 7
+
     try {
       const finalName = data.name?.trim() || ''
 
@@ -256,6 +268,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           name: finalName || teacher.name,
           level: data.level,
           bio: data.bio || '',
+          country: data.country || 'VN',
+          timezoneOffset,
           subjectIds: selectedSubjects,
           subjectNames,
           branchId: selectedBranchId || '',
@@ -316,6 +330,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           name: finalName || 'Giáo viên mới',
           level: data.level,
           bio: data.bio || '',
+          country: data.country || 'VN',
+          timezoneOffset,
           subjectIds: selectedSubjects,
           subjectNames,
           branchId: selectedBranchId || '',
@@ -365,12 +381,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               const nameInput = formEl?.querySelector<HTMLInputElement>('input[name="name"]')
               const levelInput = formEl?.querySelector<HTMLInputElement>('input[name="level"]')
               const bioInput = formEl?.querySelector<HTMLTextAreaElement>('textarea[name="bio"]')
+              const countrySelect = formEl?.querySelector<HTMLSelectElement>('select[name="country"]')
               
               const nameVal = nameInput?.value || ''
               const levelVal = parseFloat(levelInput?.value || '1')
               const bioVal = bioInput?.value || ''
+              const countryVal = countrySelect?.value || 'VN'
               
-              await onSubmit({ name: nameVal, level: levelVal, bio: bioVal })
+              await onSubmit({ name: nameVal, level: levelVal, bio: bioVal, country: countryVal })
             }}
           >
             {isEdit ? 'Lưu thay đổi' : 'Tạo giáo viên'}
@@ -457,6 +475,22 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             }
           })()}
         />
+
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Quốc gia & Múi giờ</label>
+          <select
+            name="country"
+            defaultValue={teacher?.country || 'VN'}
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="VN">Việt Nam (GMT+7)</option>
+            <option value="PH">Philippines (GMT+8)</option>
+            <option value="JP">Nhật Bản / Japan (GMT+9)</option>
+            <option value="KR">Hàn Quốc / Korea (GMT+9)</option>
+            <option value="US_EST">Mỹ / USA (EST - GMT-5)</option>
+            <option value="US_PST">Mỹ / USA (PST - GMT-8)</option>
+          </select>
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Chi nhánh</label>

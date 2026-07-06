@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher, Lesson } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
-import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap } from 'lucide-react'
+import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe } from 'lucide-react'
 
 export function ProfilePage() {
   const { teacherId } = useAuthStore()
@@ -17,6 +17,7 @@ export function ProfilePage() {
   const [teacher, setTeacher] = useState<Teacher | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
+  const [updatingTimezone, setUpdatingTimezone] = useState(false)
 
   useEffect(() => {
     if (!teacherId) return
@@ -38,6 +39,37 @@ export function ProfilePage() {
       )
     })
   }, [teacherId])
+
+  const handleTimezoneChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const countryCode = e.target.value
+    if (!teacherId) return
+    
+    const countryMap: Record<string, number> = {
+      VN: 7,
+      PH: 8,
+      JP: 9,
+      KR: 9,
+      US_EST: -5,
+      US_PST: -8,
+    }
+    const offset = countryMap[countryCode] ?? 7
+
+    setUpdatingTimezone(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        country: countryCode,
+        timezoneOffset: offset,
+      })
+      
+      setTeacher(prev => prev ? { ...prev, country: countryCode, timezoneOffset: offset } : null)
+      toast.success('Đã cập nhật quốc gia & múi giờ thành công!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Có lỗi xảy ra khi cập nhật múi giờ')
+    } finally {
+      setUpdatingTimezone(false)
+    }
+  }
 
   if (loading) return <LoadingSpinner />
   if (!teacher) return <p className="text-slate-500 text-center py-20">{t('profile.not_found')}</p>
@@ -120,6 +152,33 @@ export function ProfilePage() {
             <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wide">{t('profile.income')}</p>
           </Card>
         </div>
+
+        {/* Lựa chọn Quốc gia & Múi giờ */}
+        <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
+            <Globe className="w-4 h-4 text-[#3BB8EB]" />
+            Quốc gia & Múi giờ (Country & Timezone)
+          </h3>
+          <div className="space-y-3">
+            <label className="block text-xs font-semibold text-slate-500 uppercase">Chọn quốc gia của bạn / Select your country</label>
+            <select
+              value={teacher.country || 'VN'}
+              onChange={handleTimezoneChange}
+              disabled={updatingTimezone}
+              className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
+            >
+              <option value="VN">Việt Nam (GMT+7)</option>
+              <option value="PH">Philippines (GMT+8)</option>
+              <option value="JP">Nhật Bản / Japan (GMT+9)</option>
+              <option value="KR">Hàn Quốc / Korea (GMT+9)</option>
+              <option value="US_EST">Mỹ / USA (EST - GMT-5)</option>
+              <option value="US_PST">Mỹ / USA (PST - GMT-8)</option>
+            </select>
+            <p className="text-[11px] text-slate-400 leading-normal">
+              * Hệ thống sẽ tự động đồng bộ hóa toàn bộ lịch trống (OPEN) và lịch học trên thời khóa biểu theo đúng múi giờ quốc gia bạn chọn.
+            </p>
+          </div>
+        </Card>
 
         <div className="mt-8 bg-sky-50 border border-sky-100 rounded-2xl p-5 flex items-start gap-4">
           <div className="w-10 h-10 bg-sky-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">

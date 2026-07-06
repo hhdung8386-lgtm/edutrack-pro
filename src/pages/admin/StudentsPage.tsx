@@ -106,7 +106,7 @@ export function StudentsPage() {
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.code.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = statusFilter === 'all' || s.status === statusFilter
+    const matchStatus = statusFilter === 'all' ? s.status !== 'reserved' : s.status === statusFilter
     const matchBranch = branchFilter === 'all' || s.branchId === branchFilter
     return matchSearch && matchStatus && matchBranch
   })
@@ -164,7 +164,7 @@ export function StudentsPage() {
             </select>
           </label>
           <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
-            {['all', 'active', 'inactive', 'expired'].map((s) => (
+            {['all', 'active', 'inactive', 'expired', 'reserved'].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
@@ -174,7 +174,7 @@ export function StudentsPage() {
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                 }`}
               >
-                {s === 'all' ? 'Tất cả' : s === 'active' ? 'Đang học' : s === 'inactive' ? 'Tạm dừng' : 'Hết buổi'}
+                {s === 'all' ? 'Tất cả' : s === 'active' ? 'Đang học' : s === 'inactive' ? 'Tạm dừng' : s === 'expired' ? 'Hết buổi' : 'Bảo lưu'}
               </button>
             ))}
           </div>

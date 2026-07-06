@@ -55,7 +55,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     }
 
     checkRequirements()
-  }, [requireContractAccepted, role, teacherId])
+  }, [requireContractAccepted, role, teacherId, location.pathname])
 
   if (!initialized || loading || (requireContractAccepted && checkingRequirements)) {
     return (

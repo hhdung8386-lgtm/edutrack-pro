@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, Lesson, BookingRequest } from '@/types'
-import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon } from 'lucide-react'
+import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
 import { NotificationDrawer } from '@/components/shared/NotificationDrawer'
@@ -409,6 +409,32 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                 className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center gap-1.5 flex-shrink-0 animate-pulse"
               >
                 Vào học ngay
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </section>
+        )}
+
+        {/* Textbook/Book Link Card */}
+        {student.textbookURL && (
+          <section className="animate-slide-up [animation-delay:55ms]">
+            <div className="bg-gradient-to-r from-sky-50 to-sky-100/50 border border-sky-200/60 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-sky-100">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-[#3BB8EB]" />
+                  Giáo trình / Sách học viên
+                </h3>
+                <p className="text-xs text-slate-500 leading-normal">
+                  Bấm vào đây để mở và xem sách học tập trực tuyến của học viên.
+                </p>
+              </div>
+              <a
+                href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200 hover:shadow-sky-300 transition-all flex items-center gap-1.5 flex-shrink-0"
+              >
+                Xem sách học
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>

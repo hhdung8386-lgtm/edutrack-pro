@@ -17,6 +17,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { formatVND, getToday, MINUTE_PRESETS } from '@/lib/constants'
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
+import { uploadLessonImage } from '@/lib/imageUploader'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -76,6 +77,11 @@ export function AttendancePage() {
         setNotFound(true)
       } else {
         const s = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
+        if (s.status === 'reserved') {
+          toast.error('Học viên này đang trong thời gian bảo lưu, không thể điểm danh!')
+          setSearching(false)
+          return
+        }
         setStudent(s)
 
         const subjects = s.subjects && s.subjects.length > 0
@@ -117,28 +123,31 @@ export function AttendancePage() {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    if (images.length + files.length > 5) {
-      toast.warning(t('attendance.max_images'))
+    if (images.length + files.length > 20) {
+      toast.warning('Tối đa 20 hình ảnh minh chứng')
       return
     }
 
+    if (!teacherId) return
+
     for (const file of files) {
-      const canvas = document.createElement('canvas')
-      const img = document.createElement('img')
-      const url = URL.createObjectURL(file)
-      img.src = url
+      const localPreviewUrl = URL.createObjectURL(file)
+      
+      // Thêm ảnh vào state dạng đang tải lên
+      setImages((prev) => [...prev, { url: localPreviewUrl, storageURL: '', uploading: true }])
 
-      await new Promise((resolve) => { img.onload = resolve })
-      const MAX = 800
-      let { width, height } = img
-      if (width > MAX) { height = (height * MAX) / width; width = MAX }
-      if (height > MAX) { width = (width * MAX) / height; height = MAX }
-      canvas.width = width; canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-
-      const preview = canvas.toDataURL('image/jpeg', 0.6)
-      setImages((prev) => [...prev, { url: preview, storageURL: preview, uploading: false }])
-      URL.revokeObjectURL(url)
+      // Upload ngầm lên Firebase Storage
+      uploadLessonImage(teacherId, file).then((downloadURL) => {
+        setImages((prev) =>
+          prev.map((item) =>
+            item.url === localPreviewUrl ? { ...item, storageURL: downloadURL, uploading: false } : item
+          )
+        )
+      }).catch((err) => {
+        console.error(err)
+        toast.error('Không thể upload ảnh, vui lòng thử lại')
+        setImages((prev) => prev.filter((item) => item.url !== localPreviewUrl))
+      })
     }
   }
 
@@ -365,6 +374,19 @@ export function AttendancePage() {
                       </a>
                     </div>
                   )}
+                  {student.textbookURL && (
+                    <div className="mt-2.5">
+                      <a
+                        href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 text-[#3BB8EB] hover:text-[#2da8db] hover:bg-sky-100 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        Mở sách học viên
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className={`text-3xl font-bold ${
@@ -492,7 +514,7 @@ export function AttendancePage() {
 
               {/* Images */}
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">{t('attendance.images')} ({images.length}/5)</label>
+                <label className="block text-sm font-medium text-slate-600 mb-2">{t('attendance.images')} ({images.length}/20)</label>
                 <div className="flex gap-2 flex-wrap">
                   {images.map((img, i) => (
                     <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden">
@@ -511,7 +533,7 @@ export function AttendancePage() {
                       )}
                     </div>
                   ))}
-                  {images.length < 5 && (
+                  {images.length < 20 && (
                     <label className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:border-[#3BB8EB] transition-colors">
                       <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} aria-label="Upload images" />
                       <Upload className="w-5 h-5 text-slate-400" />

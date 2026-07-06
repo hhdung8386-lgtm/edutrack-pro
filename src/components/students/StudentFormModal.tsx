@@ -23,6 +23,7 @@ const schema = z.object({
   parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
   branchId: z.string().optional(),
   classroomURL: z.string().optional().or(z.literal('')),
+  textbookURL: z.string().optional().or(z.literal('')),
 })
 
 type FormData = z.infer<typeof schema>
@@ -55,8 +56,9 @@ export function StudentFormModal({ student, onClose }: Props) {
           parentPhone: student.parentPhone,
           branchId: student.branchId || '',
           classroomURL: student.classroomURL || '',
+          textbookURL: student.textbookURL || '',
         }
-      : { code: '', branchId: '', classroomURL: '' },
+      : { code: '', branchId: '', classroomURL: '', textbookURL: '' },
   })
 
   useEffect(() => {
@@ -100,6 +102,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           branchId: data.branchId || '',
           branchName: branch?.name || '',
           classroomURL: data.classroomURL || '',
+          textbookURL: data.textbookURL || '',
           updatedAt: serverTimestamp(),
         })
         toast.success('Đã cập nhật học viên')
@@ -123,6 +126,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           status: 'inactive',
           subjects: [],
           classroomURL: data.classroomURL || '',
+          textbookURL: data.textbookURL || '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -180,6 +184,12 @@ export function StudentFormModal({ student, onClose }: Props) {
           placeholder="https://zoom.us/j/... hoặc link MS Teams, Meet"
           error={errors.classroomURL?.message}
           {...register('classroomURL')}
+        />
+        <Input
+          label="Link sách học viên"
+          placeholder="Link đến giáo trình học tập của học viên"
+          error={errors.textbookURL?.message}
+          {...register('textbookURL')}
         />
         {!isEdit && (
           <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm leading-6 text-slate-600">

@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare } from 'lucide-react'
 import { db } from '@/lib/firebase'
-import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson } from '@/types'
+import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
+import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
+import { uploadLessonImage } from '@/lib/imageUploader'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -135,6 +137,7 @@ export function BookingSchedulesPage() {
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [students, setStudents] = useState<Record<string, Student>>({})
   const [loading, setLoading] = useState(true)
+  const [teacher, setTeacher] = useState<Teacher | null>(null)
 
   // Modals
   const [showDetailModal, setShowDetailModal] = useState(false)
@@ -153,6 +156,16 @@ export function BookingSchedulesPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
 
+  // Load teacher profile for timezone settings
+  useEffect(() => {
+    if (!teacherId) return
+    getDoc(doc(db, 'teachers', teacherId)).then((snap) => {
+      if (snap.exists()) {
+        setTeacher({ id: snap.id, ...snap.data() } as Teacher)
+      }
+    }).catch(err => console.error('Error loading teacher profile:', err))
+  }, [teacherId])
+
   // Load teacher availability
   useEffect(() => {
     const currentTeacherId = teacherId
@@ -167,9 +180,7 @@ export function BookingSchedulesPage() {
         const snap = await getDoc(doc(db, 'teacherAvailability', tId))
         if (snap.exists()) {
           const data = { id: snap.id, ...snap.data() } as TeacherAvailability
-          const weekOverride = data.weekOverrides?.[weekStartISO]
           setAvailability(data)
-          setSlots(cloneSlots(weekOverride?.slots || data.slots))
         }
       } catch (error) {
         console.error('Error loading availability:', error)
@@ -179,7 +190,42 @@ export function BookingSchedulesPage() {
     }
 
     loadAvailability(currentTeacherId)
-  }, [teacherId, weekStartISO])
+  }, [teacherId])
+
+  // Update slots state when availability or teacher timezone changes
+  useEffect(() => {
+    if (!availability) return
+    const offset = teacher?.timezoneOffset ?? 7
+    const weekOverride = availability.weekOverrides?.[weekStartISO]
+    setSlots(translateVnSlotsToTeacher(weekOverride?.slots || availability.slots, offset))
+  }, [availability, teacher, weekStartISO])
+
+  const localBookings = useMemo(() => {
+    const offset = teacher?.timezoneOffset ?? 7
+    if (offset === 7) return bookingRequests
+    
+    return bookingRequests.map((req) => {
+      const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
+      const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
+      
+      const [yr, mo, dy] = localStart.dateISO.split('-').map(Number)
+      const dObj = new Date(yr, mo - 1, dy)
+      const dayIdx = dObj.getDay()
+      const daysMap: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+      const localDay = daysMap[dayIdx]
+
+      return {
+        ...req,
+        originalVnDate: req.requestedDate,
+        originalVnStart: req.requestedStart,
+        originalVnEnd: req.requestedEnd,
+        requestedDate: localStart.dateISO,
+        requestedStart: localStart.timeStr,
+        requestedEnd: localEnd.timeStr,
+        requestedDay: localDay,
+      }
+    })
+  }, [bookingRequests, teacher?.timezoneOffset])
 
   // Load booked booking requests in real-time
   useEffect(() => {
@@ -226,7 +272,7 @@ export function BookingSchedulesPage() {
   const findBookingForCell = (dateISO: string, time: string) => {
     const cellStart = timeToMinutes(time)
     const cellEnd = cellStart + 30
-    return bookingRequests.find((req) => {
+    return localBookings.find((req) => {
       if (req.requestedDate !== dateISO) return false
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
 
@@ -266,31 +312,34 @@ export function BookingSchedulesPage() {
     }
   }
 
-  // Handle image selections and base64 compression/mock-upload
+  // Handle image selections and background Firebase Storage upload
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    if (images.length + files.length > 5) {
-      toast.warning('Tối đa 5 hình ảnh minh chứng')
+    if (images.length + files.length > 20) {
+      toast.warning('Tối đa 20 hình ảnh minh chứng')
       return
     }
 
+    if (!teacherId) return
+
     for (const file of files) {
-      const canvas = document.createElement('canvas')
-      const img = document.createElement('img')
-      const url = URL.createObjectURL(file)
-      img.src = url
+      const localPreviewUrl = URL.createObjectURL(file)
+      
+      // Thêm ảnh vào state dạng đang tải lên (loading)
+      setImages((prev) => [...prev, { url: localPreviewUrl, storageURL: '', uploading: true }])
 
-      await new Promise((resolve) => { img.onload = resolve })
-      const MAX = 800
-      let { width, height } = img
-      if (width > MAX) { height = (height * MAX) / width; width = MAX }
-      if (height > MAX) { width = (width * MAX) / height; height = MAX }
-      canvas.width = width; canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-
-      const preview = canvas.toDataURL('image/jpeg', 0.6)
-      setImages((prev) => [...prev, { url: preview, storageURL: preview, uploading: false }])
-      URL.revokeObjectURL(url)
+      // Upload ngầm lên Firebase Storage
+      uploadLessonImage(teacherId, file).then((downloadURL) => {
+        setImages((prev) =>
+          prev.map((item) =>
+            item.url === localPreviewUrl ? { ...item, storageURL: downloadURL, uploading: false } : item
+          )
+        )
+      }).catch((err) => {
+        console.error(err)
+        toast.error('Không thể upload ảnh, vui lòng thử lại')
+        setImages((prev) => prev.filter((item) => item.url !== localPreviewUrl))
+      })
     }
   }
 
@@ -301,17 +350,21 @@ export function BookingSchedulesPage() {
   // Submit attendance from calendar booking slot
   const submitAttendance = async () => {
     if (!selectedBooking || !teacherId) return
-    const bookTitle = book.trim()
-    if (!bookTitle) {
+    const isPresent = attendanceStatus === 'present'
+    const bookTitle = isPresent ? book.trim() : 'Học viên vắng'
+
+    if (isPresent && !bookTitle) {
       toast.warning('Vui lòng nhập sách học/tài liệu buổi dạy')
       return
     }
 
     // Word count validation (< 20 words)
-    const words = bookTitle.split(/\s+/).filter(Boolean).length
-    if (words > 20) {
-      toast.warning('Tên sách học không được vượt quá 20 từ!')
-      return
+    if (isPresent) {
+      const words = bookTitle.split(/\s+/).filter(Boolean).length
+      if (words > 20) {
+        toast.warning('Tên sách học không được vượt quá 20 từ!')
+        return
+      }
     }
 
     setSubmittingAttendance(true)
@@ -549,12 +602,22 @@ export function BookingSchedulesPage() {
           title="Thông tin lớp học"
           footer={
             <div className="flex gap-3 justify-end w-full">
-              {!selectedBooking.lessonId && (
-                <Button variant="primary" onClick={() => setShowAttendanceModal(true)} className="flex items-center gap-1.5">
-                  <PenSquare className="w-4 h-4" />
-                  Điểm danh ngay
-                </Button>
-              )}
+              {!selectedBooking.lessonId && (() => {
+                const student = students[selectedBooking.studentId]
+                if (student?.status === 'reserved') {
+                  return (
+                    <div className="text-xs text-rose-600 font-bold self-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5">
+                      Học viên đang bảo lưu
+                    </div>
+                  )
+                }
+                return (
+                  <Button variant="primary" onClick={() => setShowAttendanceModal(true)} className="flex items-center gap-1.5">
+                    <PenSquare className="w-4 h-4" />
+                    Điểm danh ngay
+                  </Button>
+                )
+              })()}
               <Button variant="ghost" onClick={() => {
                 setShowDetailModal(false)
                 setSelectedBooking(null)
@@ -634,6 +697,23 @@ export function BookingSchedulesPage() {
                           className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
                           Xem giáo trình
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                    {student?.textbookURL && (
+                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 font-semibold block">Link sách học viên:</span>
+                          <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
+                        </div>
+                        <a
+                          href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                        >
+                          Mở sách học viên
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -742,16 +822,23 @@ export function BookingSchedulesPage() {
                 {images.map((img, idx) => (
                   <div key={idx} className="relative aspect-square border border-slate-200 rounded-lg overflow-hidden">
                     <img src={img.url} alt="upload" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx)}
-                      className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-0.5"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {img.uploading && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                    {!img.uploading && (
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
-                {images.length < 5 && (
+                {images.length < 20 && (
                   <label className="border border-dashed border-slate-300 hover:border-indigo-400 rounded-lg aspect-square flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
                     <Upload className="w-5 h-5 text-slate-400" />
                     <span className="text-[10px] text-slate-400 mt-1">Tải ảnh</span>
@@ -765,7 +852,7 @@ export function BookingSchedulesPage() {
                   </label>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400">Chụp màn hình buổi học trực tuyến hoặc bảng viết (tối đa 5 ảnh).</p>
+              <p className="text-[11px] text-slate-400">Chụp màn hình buổi học trực tuyến hoặc bảng viết (tối đa 20 ảnh).</p>
             </div>
           </div>
         </Modal>

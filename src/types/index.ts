@@ -39,9 +39,10 @@ export interface Student {
   remainingMinutes?: number
   reservedMinutes?: number
   heldMinutes?: number
-  status: 'active' | 'inactive' | 'expired'
+  status: 'active' | 'inactive' | 'expired' | 'reserved'
   subjects?: StudentSubject[]
   classroomURL?: string
+  textbookURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -61,6 +62,8 @@ export interface Teacher {
   status: 'active' | 'inactive'
   teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
+  country?: string
+  timezoneOffset?: number
   // Interview fields
   yob?: number
   livingArea?: string

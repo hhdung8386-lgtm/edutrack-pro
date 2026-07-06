@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search, User, BookOpen, Link, Check, AlertTriangle, Trash2, ExternalLink } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search, User, BookOpen, Link, Check, AlertTriangle, Trash2, ExternalLink, X } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange, Student, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -94,6 +94,32 @@ function getWeekDates(weekStart: Date) {
   return DAYS.map((day, index) => ({ day, date: addDays(weekStart, index), iso: formatDateISO(addDays(weekStart, index)) }))
 }
 
+function checkStudentOverlap(
+  studentBookings: BookingRequest[],
+  dateISO: string,
+  startTime: string,
+  endTime: string,
+  ignoreBookingId?: string
+): BookingRequest | null {
+  const startMins = timeToMinutes(startTime)
+  const endMins = timeToMinutes(endTime)
+  
+  for (const b of studentBookings) {
+    if (b.id === ignoreBookingId) continue
+    if (b.requestedDate !== dateISO) continue
+    
+    const bStart = timeToMinutes(b.requestedStart)
+    const bEnd = timeToMinutes(b.requestedEnd)
+    
+    // Check overlap
+    if (startMins < bEnd && bStart < endMins) {
+      return b
+    }
+  }
+  
+  return null
+}
+
 function timeToMinutes(time: string) {
   const [hours = '0', minutes = '0'] = time.split(':')
   return Number(hours) * 60 + Number(minutes)
@@ -173,6 +199,8 @@ export function BookingSchedulesPage() {
   const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
   const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
+  const [studentFutureBookings, setStudentFutureBookings] = useState<BookingRequest[]>([])
+  const [cancellingAll, setCancellingAll] = useState(false)
 
   // Release booking state
   const [releasing, setReleasing] = useState(false)
@@ -293,6 +321,35 @@ export function BookingSchedulesPage() {
       console.error('Error loading student booking requests:', error)
     })
   }, [selectedStudent])
+
+  // Fetch all future booking requests for selected student when detail modal opens
+  useEffect(() => {
+    if (!selectedBooking?.studentId) {
+      setStudentFutureBookings([])
+      return
+    }
+    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('studentId', '==', selectedBooking.studentId),
+      where('status', 'in', ['confirmed', 'pending']),
+      where('requestedDate', '>=', todayISO)
+    )
+    getDocs(q).then((snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      docs.sort((a, b) => {
+        const dateA = a.requestedDate || ''
+        const dateB = b.requestedDate || ''
+        if (dateA !== dateB) {
+          return dateA.localeCompare(dateB)
+        }
+        return (a.requestedStart || '').localeCompare(b.requestedStart || '')
+      })
+      setStudentFutureBookings(docs)
+    }).catch(err => {
+      console.error('Error loading student future bookings:', err)
+    })
+  }, [selectedBooking])
 
   const filteredTeachers = teachers.filter((teacher) => {
     // 1. Text search filter
@@ -438,15 +495,51 @@ export function BookingSchedulesPage() {
       return
     }
 
+    const totalRequired = selectedSlots.length * duration
     const bookedMinutesForSubject = selectedStudentBookings
       .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
       .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
     const availableSubjectMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSubject)
-    const totalRequired = selectedSlots.length * duration
-
     if (!isRecurring && availableSubjectMinutes < totalRequired) {
       toast.error('Học viên không đủ phút khả dụng cho môn học này để xếp lịch!')
       return
+    }
+
+    const fund = getStudentMinuteFund(selectedStudent)
+
+    // Check overlap client-side before starting transaction to avoid double booking
+    for (const slot of selectedSlots) {
+      const startMin = timeToMinutes(slot.time)
+      const endMin = startMin + duration
+      const endStr = minutesToTime(endMin)
+
+      if (isRecurring) {
+        // For recurring, check future offset weeks
+        const maxSessions = Math.floor(Math.min(fund.available, availableSubjectMinutes) / duration)
+        let sessionsScheduled = 0
+        let weekIndex = 0
+        while (sessionsScheduled < maxSessions) {
+          for (const sSlot of selectedSlots) {
+            if (sessionsScheduled >= maxSessions) break
+            const slotDate = addDays(new Date(sSlot.dateISO), weekIndex * 7)
+            const slotDateISO = formatDateISO(slotDate)
+            
+            const overlap = checkStudentOverlap(selectedStudentBookings, slotDateISO, sSlot.time, endStr)
+            if (overlap) {
+              toast.error(`Trùng lịch học viên! Khung giờ ${sSlot.time} - ${endStr} ngày ${slotDateISO} đã được xếp cho giáo viên ${overlap.teacherName}. Không thể xếp đè!`)
+              return
+            }
+            sessionsScheduled++
+          }
+          weekIndex++
+        }
+      } else {
+        const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
+        if (overlap) {
+          toast.error(`Trùng lịch học viên! Khung giờ ${slot.time} - ${endStr} ngày ${slot.dateISO} đã được xếp cho giáo viên ${overlap.teacherName}. Không thể xếp đè!`)
+          return
+        }
+      }
     }
 
     setScheduling(true)
@@ -760,6 +853,88 @@ export function BookingSchedulesPage() {
       toast.error('Nhả lịch thất bại')
     } finally {
       setReleasing(false)
+    }
+  }
+
+  const handleCancelBookingById = async (bookingId: string) => {
+    const booking = studentFutureBookings.find(b => b.id === bookingId)
+    if (!booking) return
+    if (!window.confirm(`Bạn có chắc chắn muốn hủy ca học ngày ${booking.requestedDate} (${booking.requestedStart} - ${booking.requestedEnd}) không? Số phút sẽ được hoàn trả.`)) return
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', booking.studentId)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
+        const nextHeld = Math.max(0, currentHeld - (booking.requestedMinutes || 0))
+
+        tx.update(studentRef, {
+          reservedMinutes: nextHeld,
+          heldMinutes: nextHeld,
+          updatedAt: serverTimestamp(),
+        })
+
+        tx.update(doc(db, 'bookingRequests', booking.id), {
+          status: 'released',
+          releasedAt: serverTimestamp(),
+          releasedBy: user?.uid ?? 'admin',
+        })
+      })
+
+      setStudentFutureBookings(prev => prev.filter(b => b.id !== bookingId))
+      toast.success('Hủy ca học thành công!')
+    } catch (err) {
+      console.error('Cancel booking failed:', err)
+      toast.error('Gặp lỗi khi hủy ca học')
+    }
+  }
+
+  const handleCancelAllStudentBookings = async () => {
+    if (studentFutureBookings.length === 0) return
+    const studentName = selectedBooking?.studentName || 'học viên'
+    if (!window.confirm(`⚠️ BẠN CÓ CHẮC CHẮN muốn hủy TOÀN BỘ ${studentFutureBookings.length} ca học trong tương lai của học viên ${studentName} không? Toàn bộ số phút của các ca này sẽ được hoàn trả.`)) return
+
+    setCancellingAll(true)
+    try {
+      const totalMinutesToRefund = studentFutureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+      const studentId = selectedBooking!.studentId
+
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', studentId)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
+        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+
+        tx.update(studentRef, {
+          reservedMinutes: nextHeld,
+          heldMinutes: nextHeld,
+          updatedAt: serverTimestamp(),
+        })
+
+        for (const booking of studentFutureBookings) {
+          tx.update(doc(db, 'bookingRequests', booking.id), {
+            status: 'released',
+            releasedAt: serverTimestamp(),
+            releasedBy: user?.uid ?? 'admin',
+          })
+        }
+      })
+
+      setStudentFutureBookings([])
+      toast.success(`Đã hủy toàn bộ ${studentFutureBookings.length} ca học của học viên và hoàn trả ${totalMinutesToRefund} phút.`)
+      setShowDetailModal(false)
+      setSelectedBooking(null)
+    } catch (err) {
+      console.error('Cancel all bookings failed:', err)
+      toast.error('Gặp lỗi khi hủy toàn bộ ca học')
+    } finally {
+      setCancellingAll(false)
     }
   }
 
@@ -1372,9 +1547,69 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
+                    {st?.textbookURL && (
+                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 font-semibold block">Link sách học viên:</span>
+                          <p className="text-[11px] text-slate-400 truncate">{st.textbookURL}</p>
+                        </div>
+                        <a
+                          href={st.textbookURL.startsWith('http') ? st.textbookURL : `https://${st.textbookURL}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-[#3BB8EB] text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-sky-200/50"
+                        >
+                          Mở sách học viên
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
                   </>
                 )
               })()}
+            </div>
+
+            {/* Future bookings chip list */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase text-slate-400">Ca học tương lai ({studentFutureBookings.length})</p>
+                {studentFutureBookings.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={cancellingAll}
+                    onClick={handleCancelAllStudentBookings}
+                    className="h-7 text-[10px] px-2 py-1 font-extrabold uppercase tracking-wider"
+                  >
+                    Hủy tất cả ca học
+                  </Button>
+                )}
+              </div>
+              
+              {studentFutureBookings.length === 0 ? (
+                <p className="text-xs text-slate-400 font-medium italic">Không có ca học nào trong tương lai.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                  {studentFutureBookings.map((b) => (
+                    <div
+                      key={b.id}
+                      className="group flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100/70 transition-all font-medium"
+                    >
+                      <span className="text-[11px]">
+                        <strong>Thứ {b.requestedDay === 'sun' ? 'Nhật' : b.requestedDay === 'mon' ? '2' : b.requestedDay === 'tue' ? '3' : b.requestedDay === 'wed' ? '4' : b.requestedDay === 'thu' ? '5' : b.requestedDay === 'fri' ? '6' : '7'} ({b.requestedDate})</strong>: {b.requestedStart}-{b.requestedEnd} ({b.teacherName})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelBookingById(b.id)}
+                        className="text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50 p-0.5 transition-colors"
+                        title="Hủy ca học này"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </Modal>

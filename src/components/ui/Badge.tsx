@@ -60,6 +60,7 @@ export function StatusBadge({ status }: { status: string }) {
     active: { variant: 'success', label: 'Đang học' },
     inactive: { variant: 'slate', label: 'Tạm dừng' },
     expired: { variant: 'danger', label: 'Hết buổi' },
+    reserved: { variant: 'warning', label: 'Bảo lưu' },
   }
 
   const config = map[status] || { variant: 'default', label: status }
