@@ -168,6 +168,7 @@ export function AvailabilityPage() {
   const { t } = useLanguageStore()
   const [searchParams] = useSearchParams()
   const isSetupRequired = searchParams.get('setupRequired') === 'true'
+  const [showSetupAnnouncement, setShowSetupAnnouncement] = useState(isSetupRequired)
 
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
@@ -406,6 +407,36 @@ export function AvailabilityPage() {
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-6xl mx-auto">
+      {showSetupAnnouncement && (
+        <Modal
+          open={showSetupAnnouncement}
+          onClose={() => setShowSetupAnnouncement(false)}
+          title="THÔNG BÁO"
+          footer={
+            <div className="flex justify-end">
+              <Button variant="primary" onClick={() => setShowSetupAnnouncement(false)}>
+                Đã hiểu
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4 text-sm text-slate-600 leading-relaxed py-2">
+            <p className="font-semibold text-slate-800">
+              Hiện tại một số giáo viên tạm thời không thể điểm danh do chưa cập nhật lịch rảnh trên Platform.
+            </p>
+            <p>
+              Giáo viên vui lòng cập nhật lịch rảnh. Sau khi cập nhật thành công, hệ thống sẽ tự động mở lại quyền điểm danh.
+            </p>
+            <p className="font-medium text-slate-800">
+              Xin cảm ơn các thầy cô đã phối hợp!
+            </p>
+            <p className="text-right font-bold text-indigo-600 mt-4">
+              123English
+            </p>
+          </div>
+        </Modal>
+      )}
+
       {isSetupRequired && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800 shadow-sm animate-pulse">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
