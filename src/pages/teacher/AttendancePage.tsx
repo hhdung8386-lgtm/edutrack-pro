@@ -387,6 +387,12 @@ export function AttendancePage() {
                       </a>
                     </div>
                   )}
+                  {selectedPkg?.timetableNote && (
+                    <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200/50 rounded-xl">
+                      <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Note timetable học viên:</span>
+                      <p className="text-xs text-slate-700 font-medium mt-1 whitespace-pre-wrap">{selectedPkg.timetableNote}</p>
+                    </div>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className={`text-3xl font-bold ${

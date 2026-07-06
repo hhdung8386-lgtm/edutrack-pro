@@ -15,6 +15,7 @@ const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
   totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
   curriculumLink: z.string().optional(),
+  timetableNote: z.string().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -47,11 +48,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           subjectId: editingPkg.subjectId,
           totalMinutes: editingPkg.totalMinutes,
           curriculumLink: editingPkg.curriculumLink || '',
+          timetableNote: editingPkg.timetableNote || '',
         }
       : {
           subjectId: '',
           totalMinutes: 500,
           curriculumLink: '',
+          timetableNote: '',
         },
   })
 
@@ -179,7 +182,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                   createdAt: dateString,
                   totalSessions: newSessions
                 }],
-                curriculumLink: data.curriculumLink || ''
+                curriculumLink: data.curriculumLink || '',
+                timetableNote: data.timetableNote || ''
               })
             } else {
               const newTotalMinutes = data.totalMinutes
@@ -195,12 +199,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 totalMinutes: newTotalMinutes,
                 remainingMinutes: newTotalMinutes,
                 batches: [{
-                  id: '1',
-                  createdAt: dateString,
-                  totalSessions: calculatedTotalSessions
-                }],
-                curriculumLink: data.curriculumLink || ''
-              }
+                   id: '1',
+                   createdAt: dateString,
+                   totalSessions: calculatedTotalSessions
+                 }],
+                 curriculumLink: data.curriculumLink || '',
+                 timetableNote: data.timetableNote || ''
+               }
             }
           } else {
             const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
@@ -217,7 +222,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               totalMinutes: newTotalMinutes,
               remainingMinutes: newRemainingMinutes,
               batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
-              curriculumLink: data.curriculumLink || ''
+              curriculumLink: data.curriculumLink || '',
+              timetableNote: data.timetableNote || ''
             }
           }
         }
@@ -246,7 +252,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             createdAt: dateString,
             totalSessions: calculatedTotalSessions
           }],
-          curriculumLink: data.curriculumLink || ''
+          curriculumLink: data.curriculumLink || '',
+          timetableNote: data.timetableNote || ''
         }
 
         updatedSubjects.push(newPkg)
@@ -393,6 +400,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           placeholder="Nhập link giáo trình (không bắt buộc)"
           error={errors.curriculumLink?.message}
           {...register('curriculumLink')}
+        />
+
+        <Input
+          label="Note chung trên timetable"
+          placeholder="Nhập ghi chú chung hiển thị trên timetable (không bắt buộc)"
+          error={errors.timetableNote?.message}
+          {...register('timetableNote')}
         />
       </form>
     </Modal>

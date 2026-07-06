@@ -1562,6 +1562,14 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
+                    {subjectPkg?.timetableNote && (
+                      <div className="mt-2 pt-3 border-t border-slate-100">
+                        <span className="text-xs text-slate-500 font-semibold block">Note timetable học viên:</span>
+                        <p className="text-xs text-slate-700 font-medium mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
+                          {subjectPkg.timetableNote}
+                        </p>
+                      </div>
+                    )}
                     {st?.textbookURL && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">

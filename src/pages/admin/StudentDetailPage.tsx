@@ -1431,6 +1431,12 @@ export function StudentDetailPage() {
                         </a>
                       </div>
                     )}
+                    {pkg.timetableNote && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">Note timetable:</span>
+                        <span className="text-slate-600 font-medium truncate max-w-[250px]" title={pkg.timetableNote}>{pkg.timetableNote}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
