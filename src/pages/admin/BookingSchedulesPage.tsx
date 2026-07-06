@@ -443,6 +443,23 @@ export function BookingSchedulesPage() {
 
     if (!isCellOpen(day, time)) return
 
+    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+    if (dateISO < todayISO) {
+      toast.warning('Không thể chọn khung giờ của ngày đã qua!')
+      return
+    }
+
+    if (dateISO === todayISO) {
+      const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
+      const currentHour = now.getUTCHours()
+      const currentMinute = now.getUTCMinutes()
+      const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
+      if (time < currentMinutesStr) {
+        toast.warning('Không thể chọn khung giờ đã qua trong hôm nay!')
+        return
+      }
+    }
+
     const slot: SelectedSlot = { day, dateISO, time }
 
     if (multiSelectMode) {
@@ -510,8 +527,26 @@ export function BookingSchedulesPage() {
       .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
     const fund = getStudentMinuteFund(selectedStudent, computedHeldMinutes)
 
+    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+
     // Check overlap client-side before starting transaction to avoid double booking
     for (const slot of selectedSlots) {
+      if (slot.dateISO < todayISO) {
+        toast.error(`Không thể xếp lịch cho ngày đã qua (${slot.dateISO})!`)
+        return
+      }
+
+      if (slot.dateISO === todayISO) {
+        const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
+        const currentHour = now.getUTCHours()
+        const currentMinute = now.getUTCMinutes()
+        const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
+        if (slot.time < currentMinutesStr) {
+          toast.error(`Không thể xếp lịch cho giờ đã qua trong hôm nay (${slot.time})!`)
+          return
+        }
+      }
+
       const startMin = timeToMinutes(slot.time)
       const endMin = startMin + duration
       const endStr = minutesToTime(endMin)

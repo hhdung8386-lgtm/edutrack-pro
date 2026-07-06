@@ -175,6 +175,11 @@ export function BookingRequestsPage() {
         const requestNow = requestSnap.data() as BookingRequest
         if (requestNow.status !== 'pending') throw new Error('REQUEST_ALREADY_PROCESSED')
 
+        const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+        if (requestNow.requestedDate && requestNow.requestedDate < todayISO) {
+          throw new Error('PAST_DATE_NOT_ALLOWED')
+        }
+
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
         const minutes = Number(requestNow.requestedMinutes) || 0
@@ -220,6 +225,7 @@ export function BookingRequestsPage() {
       const message = error?.message
       if (message === 'NOT_ENOUGH_MINUTES') toast.error('Quỹ phút khả dụng không đủ để giữ chỗ')
       else if (message === 'REQUEST_ALREADY_PROCESSED') toast.warning('Yêu cầu này đã được xử lý trước đó')
+      else if (message === 'PAST_DATE_NOT_ALLOWED') toast.error('Không thể xác nhận yêu cầu xếp lớp cho ngày đã qua!')
       else toast.error('Xác nhận yêu cầu thất bại')
     } finally {
       setActioning(false)
