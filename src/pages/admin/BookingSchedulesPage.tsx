@@ -144,12 +144,12 @@ function rangeCovers(range: TimeRange, start: number, end: number) {
   return timeToMinutes(range.start) <= start && timeToMinutes(range.end) >= end
 }
 
-function getStudentMinuteFund(student: Student) {
+function getStudentMinuteFund(student: Student, customHeldMinutes?: number) {
   const minutesPerSession = student.minutesPerSession || 50
   const total = student.totalMinutes ?? student.totalSessions * minutesPerSession
   const used = student.usedMinutes ?? student.usedSessions * minutesPerSession
   const remaining = student.remainingMinutes ?? Math.max(0, total - used)
-  const held = student.reservedMinutes ?? student.heldMinutes ?? 0
+  const held = customHeldMinutes !== undefined ? customHeldMinutes : (student.reservedMinutes ?? student.heldMinutes ?? 0)
   const available = Math.max(0, remaining - held)
 
   return { total, used, remaining, held, available }
@@ -505,7 +505,10 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const fund = getStudentMinuteFund(selectedStudent)
+    const computedHeldMinutes = selectedStudentBookings
+      .filter((b) => !b.lessonId)
+      .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+    const fund = getStudentMinuteFund(selectedStudent, computedHeldMinutes)
 
     // Check overlap client-side before starting transaction to avoid double booking
     for (const slot of selectedSlots) {
@@ -547,19 +550,31 @@ export function BookingSchedulesPage() {
       const studentId = selectedStudent.id
       let totalScheduled = 0
 
+      // Query latest student bookings first to calculate actual held minutes
+      const bookingsSnap = await getDocs(
+        query(
+          collection(db, 'bookingRequests'),
+          where('studentId', '==', studentId),
+          where('status', 'in', ['confirmed', 'pending'])
+        )
+      )
+      const studentBookingsList = bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      const latestHeldMinutes = studentBookingsList
+        .filter((b) => !b.lessonId)
+        .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const studentSnap = await tx.get(studentRef)
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
-        const fund = getStudentMinuteFund(currentStudent)
+        const fund = getStudentMinuteFund(currentStudent, latestHeldMinutes)
 
         const subInDb = currentStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
         if (!subInDb) throw new Error('SUBJECT_NOT_FOUND')
 
-        // Calculate subject-specific booked minutes
-        const bookedMinutesForSubject = selectedStudentBookings
+        const bookedMinutesForSubject = studentBookingsList
           .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
           .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
         const availableSubjectMinutes = Math.max(0, subInDb.remainingMinutes - bookedMinutesForSubject)

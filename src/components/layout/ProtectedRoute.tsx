@@ -32,7 +32,10 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         const contractSnapshot = await getDocs(contractQ)
         const hasAccepted = contractSnapshot.docs.some(docSnap => {
           const data = docSnap.data()
-          return data.status === 'agreed' || data.type === 'terms_of_service'
+          return data.type === 'terms_of_service' || 
+                 data.status === 'agreed' || 
+                 data.status === 'pending' || 
+                 data.status === 'approved'
         })
         setHasAcceptedContract(hasAccepted)
 
@@ -41,7 +44,9 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
           const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
           if (availDoc.exists()) {
             const data = availDoc.data()
-            const hasSlots = data.slots && Object.values(data.slots).some((day: any) => day.available === true)
+            const hasSlots = data.slots && (
+              Object.values(data.slots).some((day: any) => day.available === true || (day.timeRanges && day.timeRanges.length > 0))
+            )
             setHasRegisteredAvailability(!!hasSlots)
           } else {
             setHasRegisteredAvailability(false)
