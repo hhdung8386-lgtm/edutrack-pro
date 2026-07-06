@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ReactNode, useEffect, useState } from 'react'
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
 interface ProtectedRouteProps {
@@ -39,17 +39,19 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         })
         setHasAcceptedContract(hasAccepted)
 
-        // 2. Check if availability is registered
+        // 2. Check if availability is registered or if teacher has bookings
         if (hasAccepted) {
-          const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
-          if (availDoc.exists()) {
-            const data = availDoc.data()
-            const hasSlots = data.slots && (
-              Object.values(data.slots).some((day: any) => day.available === true || (day.timeRanges && day.timeRanges.length > 0))
-            )
-            setHasRegisteredAvailability(!!hasSlots)
+          const bookingsQ = query(
+            collection(db, 'bookingRequests'),
+            where('teacherId', '==', teacherId),
+            limit(1)
+          )
+          const bookingsSnapshot = await getDocs(bookingsQ)
+          if (!bookingsSnapshot.empty) {
+            setHasRegisteredAvailability(true)
           } else {
-            setHasRegisteredAvailability(false)
+            const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
+            setHasRegisteredAvailability(availDoc.exists())
           }
         }
       } catch (err) {
