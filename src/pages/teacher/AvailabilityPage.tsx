@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { doc, getDoc, getDocs, setDoc, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
@@ -165,6 +166,8 @@ function addInterval(ranges: TimeRange[], start: number, end: number) {
 export function AvailabilityPage() {
   const { teacherId } = useAuthStore()
   const { t } = useLanguageStore()
+  const [searchParams] = useSearchParams()
+  const isSetupRequired = searchParams.get('setupRequired') === 'true'
 
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
@@ -403,6 +406,18 @@ export function AvailabilityPage() {
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-6xl mx-auto">
+      {isSetupRequired && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800 shadow-sm animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-bold text-sm">Yêu cầu thiết lập lịch trống ban đầu</h4>
+            <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+              Bạn đang được chuyển hướng đến đây vì tài khoản chưa có lịch trống rảnh dạy. Vui lòng chọn các khung giờ rảnh của bạn trên bảng và nhấn <strong>"Lưu lịch dạy trống tương lai"</strong> ở cuối trang để hoàn tất thiết lập tài khoản và mở khóa các tính năng khác (như Điểm danh, Lịch dạy).
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Hero Banner */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-[#3BB8EB] via-[#45c6f5] to-[#2b8fb8] p-6 lg:p-8 text-white shadow-lg">
         <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4" />

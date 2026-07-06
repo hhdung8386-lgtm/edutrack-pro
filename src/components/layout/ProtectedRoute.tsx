@@ -129,7 +129,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
   // Check if teacher needs to register availability slots (after contract accepted)
   if (requireContractAccepted && role === 'teacher' && hasAcceptedContract && !hasRegisteredAvailability) {
     if (location.pathname !== '/teacher/availability') {
-      return <Navigate to="/teacher/availability" replace />
+      return <Navigate to="/teacher/availability?setupRequired=true" replace />
     }
   }
 
