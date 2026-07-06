@@ -25,6 +25,37 @@ export function formatVND(amount: number): string {
   }).format(amount)
 }
 
+export function formatMoney(amount: number, currency: string = 'VND'): string {
+  const curr = (currency || 'VND').toUpperCase()
+  if (curr === 'USD') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount)
+  }
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function formatPricePerMinute(price: number, currency: string = 'VND'): string {
+  const curr = (currency || 'VND').toUpperCase()
+  if (curr === 'USD') {
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(price)
+    return `$${formatted}/phút`
+  }
+  return `${price.toLocaleString('vi-VN')}đ/phút`
+}
+
+
 export function formatVNDCompact(amount: number): string {
   if (amount >= 1_000_000) {
     return (amount / 1_000_000).toFixed(1) + 'M'

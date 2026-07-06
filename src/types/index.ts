@@ -20,6 +20,7 @@ export interface StudentSubject {
   batches?: TopUpBatch[]
   curriculumLink?: string
   timetableNote?: string
+  currency?: string
 }
 
 export interface Student {
@@ -98,9 +99,16 @@ export interface Teacher {
 export interface TeacherCertificate {
   category: 'foreign_language' | 'pedagogical' | 'other'
   title: string
+  description?: string
   score: string
   fileURL?: string
+  verified?: boolean
+  verifiedBy?: string
+  verifiedAt?: Timestamp
+  voided?: boolean
+  voidedBy?: string
   status: 'approved' | 'pending'
+  createdAt?: Timestamp
 }
 
 export interface Subject {
@@ -109,6 +117,7 @@ export interface Subject {
   pricePerMinute: number
   status: 'active' | 'inactive'
   createdAt: Timestamp
+  currency?: string
 }
 
 export interface Lesson {
@@ -136,11 +145,14 @@ export interface Lesson {
   minutesAfterApproval?: number
   teacherLevel?: number
   pricePerMinute?: number
-  salary: number
-  createdAt: Timestamp
+  salary?: number
+  teacherRate?: number
   approvedAt?: Timestamp
   approvedBy?: string
   bookingRequestId?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  currency?: string
 }
 
 export interface Payroll {
@@ -159,6 +171,7 @@ export interface Payroll {
   voidedAt?: Timestamp
   voidedBy?: string
   createdAt: Timestamp
+  currency?: string
 }
 
 export interface BookingRequest {
@@ -192,6 +205,7 @@ export interface BookingRequest {
   releasedAt?: Timestamp
   releasedBy?: string
   lessonId?: string
+  currency?: string
 }
 
 export interface AdminLog {

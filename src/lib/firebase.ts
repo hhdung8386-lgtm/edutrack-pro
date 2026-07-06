@@ -75,9 +75,14 @@ export async function generateUniqueCode(type: 'student' | 'teacher'): Promise<s
 export function calculateSalary(
   minutes: number,
   pricePerMinute: number,
-  level: number
+  level: number,
+  currency: string = 'VND'
 ): number {
-  return Math.round(minutes * pricePerMinute * level)
+  const amount = minutes * pricePerMinute * level
+  if (currency.toUpperCase() === 'USD') {
+    return Math.round(amount * 100) / 100
+  }
+  return Math.round(amount)
 }
 
 export default app

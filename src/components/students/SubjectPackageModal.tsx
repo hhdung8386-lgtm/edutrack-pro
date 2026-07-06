@@ -177,6 +177,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 usedMinutes: 0,
                 remainingMinutes: prevPkg.remainingMinutes,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                currency: selectedSubjectObj.currency || 'VND',
                 batches: [{
                   id: '1',
                   createdAt: dateString,
@@ -193,6 +194,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 subjectId: selectedSubjectObj.id,
                 subjectName: selectedSubjectObj.name,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                currency: selectedSubjectObj.currency || 'VND',
                 totalSessions: calculatedTotalSessions,
                 remainingSessions: calculatedTotalSessions,
                 minutesPerSession: minutesPerSession,
@@ -203,9 +205,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                    createdAt: dateString,
                    totalSessions: calculatedTotalSessions
                  }],
-                 curriculumLink: data.curriculumLink || '',
-                 timetableNote: data.timetableNote || ''
-               }
+                  curriculumLink: data.curriculumLink || '',
+                  timetableNote: data.timetableNote || ''
+                }
             }
           } else {
             const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
@@ -247,6 +249,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           usedMinutes: 0,
           remainingMinutes: data.totalMinutes,
           pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+          currency: selectedSubjectObj.currency || 'VND',
           batches: [{
             id: '1',
             createdAt: dateString,
@@ -323,7 +326,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             >
               <span className={selectedSubject ? 'font-medium' : 'text-slate-500'}>
                 {selectedSubject
-                  ? `${selectedSubject.name} (${selectedSubject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút)`
+                  ? selectedSubject.currency === 'USD'
+                    ? `${selectedSubject.name} ($${selectedSubject.pricePerMinute}/phút)`
+                    : `${selectedSubject.name} (${selectedSubject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút)`
                   : editingPkg?.subjectName || '-- Chọn môn học --'}
               </span>
               <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${subjectMenuOpen ? 'rotate-180' : ''}`} />
@@ -359,7 +364,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                     >
                       <span>
                         <span className="block font-medium text-slate-800">{subject.name}</span>
-                        <span className="text-xs text-slate-500">{subject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút</span>
+                        <span className="text-xs text-slate-500">
+                          {subject.currency === 'USD'
+                            ? `$${subject.pricePerMinute}/phút`
+                            : `${subject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút`}
+                        </span>
                       </span>
                       {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
                     </button>

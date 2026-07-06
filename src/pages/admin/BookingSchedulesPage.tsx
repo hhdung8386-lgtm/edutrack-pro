@@ -444,20 +444,21 @@ export function BookingSchedulesPage() {
     if (!isCellOpen(day, time)) return
 
     const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+    let isPast = false
     if (dateISO < todayISO) {
-      toast.warning('Không thể chọn khung giờ của ngày đã qua!')
-      return
-    }
-
-    if (dateISO === todayISO) {
+      isPast = true
+    } else if (dateISO === todayISO) {
       const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
       const currentHour = now.getUTCHours()
       const currentMinute = now.getUTCMinutes()
       const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
       if (time < currentMinutesStr) {
-        toast.warning('Không thể chọn khung giờ đã qua trong hôm nay!')
-        return
+        isPast = true
       }
+    }
+
+    if (isPast) {
+      toast.info('Bạn đã chọn khung giờ đã qua. Khung giờ này chỉ được xếp nếu chọn Lịch định kỳ (bắt đầu từ tuần sau).')
     }
 
     const slot: SelectedSlot = { day, dateISO, time }
@@ -528,25 +529,24 @@ export function BookingSchedulesPage() {
     const fund = getStudentMinuteFund(selectedStudent, computedHeldMinutes)
 
     const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
+    const currentHour = now.getUTCHours()
+    const currentMinute = now.getUTCMinutes()
+    const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
 
-    // Check overlap client-side before starting transaction to avoid double booking
-    for (const slot of selectedSlots) {
-      if (slot.dateISO < todayISO) {
-        toast.error(`Không thể xếp lịch cho ngày đã qua (${slot.dateISO})!`)
-        return
-      }
-
-      if (slot.dateISO === todayISO) {
-        const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
-        const currentHour = now.getUTCHours()
-        const currentMinute = now.getUTCMinutes()
-        const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
-        if (slot.time < currentMinutesStr) {
-          toast.error(`Không thể xếp lịch cho giờ đã qua trong hôm nay (${slot.time})!`)
+    // 1. If not recurring, block past slots completely
+    if (!isRecurring) {
+      for (const slot of selectedSlots) {
+        const isPast = slot.dateISO < todayISO || (slot.dateISO === todayISO && slot.time < currentMinutesStr)
+        if (isPast) {
+          toast.error(`Không thể xếp lịch ca học đơn lẻ trong quá khứ (${slot.dateISO} ${slot.time})!`)
           return
         }
       }
+    }
 
+    // Check overlap client-side before starting transaction to avoid double booking
+    for (const slot of selectedSlots) {
       const startMin = timeToMinutes(slot.time)
       const endMin = startMin + duration
       const endStr = minutesToTime(endMin)
@@ -562,6 +562,14 @@ export function BookingSchedulesPage() {
             const slotDate = addDays(new Date(sSlot.dateISO), weekIndex * 7)
             const slotDateISO = formatDateISO(slotDate)
             
+            // Skip past slots in the first week
+            if (weekIndex === 0) {
+              const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && sSlot.time < currentMinutesStr)
+              if (isPast) {
+                continue
+              }
+            }
+
             const overlap = checkStudentOverlap(selectedStudentBookings, slotDateISO, sSlot.time, endStr)
             if (overlap) {
               toast.error(`Trùng lịch học viên! Khung giờ ${sSlot.time} - ${endStr} ngày ${slotDateISO} đã được xếp cho giáo viên ${overlap.teacherName}. Không thể xếp đè!`)
@@ -668,6 +676,14 @@ export function BookingSchedulesPage() {
               const slotDate = addDays(new Date(slot.dateISO), weekIndex * 7)
               const slotDateISO = formatDateISO(slotDate)
               const slotWeekStart = formatDateISO(getMonday(slotDate))
+
+              // Skip past slots in the first week (weekIndex === 0)
+              if (weekIndex === 0) {
+                const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && slot.time < currentMinutesStr)
+                if (isPast) {
+                  continue
+                }
+              }
 
               const startMin = timeToMinutes(slot.time)
               const endMin = startMin + duration

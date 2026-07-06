@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 
 function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
   const safeUsedMinutes = Math.max(0, usedMinutes)
@@ -855,7 +856,8 @@ export function StudentDetailPage() {
           }
 
           const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel)
+          const currency = chosenSubjectPkg.currency || 'VND'
+          const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel, currency)
           const month = reApprovingLesson.date.slice(0, 7)
 
           // Initialize subjects array for backward compatibility if needed
@@ -873,6 +875,7 @@ export function StudentDetailPage() {
                   usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
                   remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
                   pricePerMinute: reApprovingLesson.pricePerMinute || 0,
+                  currency: reApprovingLesson.currency || 'VND',
                 }]
               : []
 
@@ -918,6 +921,7 @@ export function StudentDetailPage() {
             salary,
             teacherLevel,
             pricePerMinute,
+            currency,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
@@ -1415,7 +1419,7 @@ export function StudentDetailPage() {
                   </div>
                   <div className="flex flex-col gap-1 mt-1 text-[11px]">
                     <p className="text-slate-400">
-                      Đơn giá gói: {pkg.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                      Đơn giá gói: {formatPricePerMinute(pkg.pricePerMinute ?? 0, pkg.currency)}
                     </p>
                     {pkg.curriculumLink && (
                       <div className="flex items-center gap-1">
@@ -1676,7 +1680,7 @@ export function StudentDetailPage() {
                           )}
                           {activeSubjects.map((subject) => (
                             <option key={subject.subjectId} value={subject.subjectId}>
-                              {subject.subjectName} · {subject.pricePerMinute.toLocaleString('vi-VN')}đ/phút
+                              {subject.subjectName} · {formatPricePerMinute(subject.pricePerMinute, subject.currency)}
                             </option>
                           ))}
                         </select>
@@ -1692,11 +1696,11 @@ export function StudentDetailPage() {
                             return (
                               <div>
                                 <span className={drift ? 'text-amber-600 font-medium' : ''}>
-                                  {lesson.salary.toLocaleString('vi-VN')}đ
+                                  {formatMoney(lesson.salary, lesson.currency)}
                                 </span>
                                 {drift && (
                                   <div className="text-[11px] text-amber-600 mt-0.5 font-normal">
-                                    Giá hiện tại: {exp.salary.toLocaleString('vi-VN')}đ
+                                    Giá hiện tại: {formatMoney(exp.salary, lesson.currency)}
                                   </div>
                                 )}
                               </div>
@@ -1795,7 +1799,7 @@ export function StudentDetailPage() {
             <div className="flex justify-between">
               <span className="text-slate-600">Void lương giáo viên</span>
               <span className="text-rose-600 font-semibold">
-                − {(reversingLesson.salary || 0).toLocaleString('vi-VN')}đ
+                − {formatMoney(reversingLesson.salary || 0, reversingLesson.currency)}
               </span>
             </div>
             <div className="flex justify-between border-t border-rose-200 pt-1.5 mt-1.5">
@@ -1830,13 +1834,13 @@ export function StudentDetailPage() {
               <div className="flex justify-between">
                 <span className="text-slate-600">Giá/phút khi duyệt</span>
                 <span className="text-slate-700 font-medium tabular-nums">
-                  {(recalcLesson.lesson.pricePerMinute ?? 0).toLocaleString('vi-VN')}đ
+                  {formatMoney(recalcLesson.lesson.pricePerMinute ?? 0, recalcLesson.lesson.currency)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Giá/phút hiện tại</span>
                 <span className="text-amber-700 font-semibold tabular-nums">
-                  {recalcLesson.newPrice.toLocaleString('vi-VN')}đ
+                  {formatMoney(recalcLesson.newPrice, recalcLesson.lesson.currency)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1850,7 +1854,7 @@ export function StudentDetailPage() {
               <div className="flex justify-between border-t border-amber-200 pt-1.5 mt-1.5">
                 <span className="text-slate-700 font-medium">Lương cũ → mới</span>
                 <span className="text-emerald-600 font-bold tabular-nums">
-                  {(recalcLesson.lesson.salary ?? 0).toLocaleString('vi-VN')}đ → {recalcLesson.newSalary.toLocaleString('vi-VN')}đ
+                  {formatMoney(recalcLesson.lesson.salary ?? 0, recalcLesson.lesson.currency)} → {formatMoney(recalcLesson.newSalary, recalcLesson.lesson.currency)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 pt-1">
@@ -1884,7 +1888,7 @@ export function StudentDetailPage() {
                   const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                   return (
                     <option key={sub.subjectId} value={sub.subjectId}>
-                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {sub.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
                     </option>
                   )
                 })}
@@ -1903,7 +1907,7 @@ export function StudentDetailPage() {
                     const chosen = activeSubjects.find(s => s.subjectId === reApproveSubjectId)
                     const price = chosen?.pricePerMinute ?? 0
                     const teacherLevel = reApprovingLesson.teacherLevel ?? 1
-                    return '+ ' + calculateSalary(reApprovingLesson.minutes, price, teacherLevel).toLocaleString('vi-VN') + 'đ'
+                    return '+ ' + formatMoney(calculateSalary(reApprovingLesson.minutes, price, teacherLevel, chosen?.currency || 'VND'), chosen?.currency || 'VND')
                   })()}
                 </span>
               </div>

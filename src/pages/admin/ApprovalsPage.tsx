@@ -16,7 +16,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatVND } from '@/lib/constants'
+import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle } from 'lucide-react'
 
 const TABS = [
@@ -220,8 +220,9 @@ export function ApprovalsPage() {
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
+          const currency = chosenSubjectPkg.currency || 'VND'
           const lessonMinutes = Number(approvingLesson.minutes) || 0
-          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel)
+          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (approvingLesson.date || '').slice(0, 7)
 
           // Initialize subjects array for backward compatibility if needed
@@ -239,6 +240,7 @@ export function ApprovalsPage() {
                   usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
                   remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
                   pricePerMinute: pricePerMinute,
+                  currency: chosenSubjectPkg.currency || 'VND',
                 }]
               : []
 
@@ -287,6 +289,7 @@ export function ApprovalsPage() {
             salary,
             teacherLevel,
             pricePerMinute,
+            currency,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
@@ -661,7 +664,7 @@ export function ApprovalsPage() {
                     const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                     return (
                       <option key={sub.subjectId} value={sub.subjectId}>
-                        {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {sub.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                        {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
                       </option>
                     )
                   })
@@ -684,8 +687,9 @@ export function ApprovalsPage() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Lương giáo viên (tính theo môn chọn)</span>
                     <span className="text-emerald-500 font-semibold">
-                      +{formatVND(
-                        calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1)
+                      +{formatMoney(
+                        calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1, chosen.currency || 'VND'),
+                        chosen.currency || 'VND'
                       )}
                     </span>
                   </div>

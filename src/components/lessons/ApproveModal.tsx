@@ -4,7 +4,7 @@ import { db, calculateSalary } from '@/lib/firebase'
 import { Lesson, Student, StudentSubject } from '@/types'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { formatVND } from '@/lib/constants'
+import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 
 interface ApproveModalProps {
@@ -101,7 +101,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          const salary = calculateSalary(lesson.minutes, pricePerMinute, teacherLevel)
+          const currency = chosenSubjectPkg.currency || 'VND'
+          const salary = calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
           const month = lesson.date.slice(0, 7)
 
           // Initialize subjects array for backward compatibility if needed
@@ -119,6 +120,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                   usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
                   remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
                   pricePerMinute: pricePerMinute,
+                  currency: chosenSubjectPkg.currency || 'VND',
                 }]
               : []
 
@@ -167,12 +169,14 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             salary,
             teacherLevel,
             pricePerMinute,
+            currency,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
             minutesAfterApproval: newSubRemainingMinutes,
+            updatedAt: serverTimestamp(),
           })
 
           tx.update(studentRef, {
@@ -310,7 +314,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                 const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                 return (
                   <option key={sub.subjectId} value={sub.subjectId}>
-                    {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {sub.pricePerMinute?.toLocaleString('vi-VN')}đ/phút
+                    {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
                   </option>
                 )
               })}
@@ -333,7 +337,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               <div className="flex justify-between">
                 <span className="text-slate-500">Lương giáo viên (tính theo môn chọn)</span>
                 <span className="text-emerald-500 font-semibold">
-                  + {formatVND(calculateSalary(lesson.minutes, chosen.pricePerMinute || 0, lesson.teacherLevel ?? 1))}
+                  + {formatMoney(calculateSalary(lesson.minutes, chosen.pricePerMinute || 0, lesson.teacherLevel ?? 1, chosen.currency || 'VND'), chosen.currency || 'VND')}
                 </span>
               </div>
             </div>

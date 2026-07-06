@@ -234,6 +234,7 @@ export function AttendancePage() {
         minutesAfterApproval: currentRemainingMinutes,
         teacherLevel: teacher.level ?? 1,
         pricePerMinute: subject?.pricePerMinute ?? 0,
+        currency: subject?.currency || 'VND',
         salary: 0,
         createdAt: serverTimestamp(),
       })

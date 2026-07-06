@@ -61,14 +61,22 @@ export function formatVietnameseNumberInput(val: number): string {
 
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
+  currency: z.enum(['VND', 'USD']),
   pricePerMinute: z.any().transform((val) => {
     if (typeof val === 'number') return val;
     if (typeof val === 'string') return parseVietnameseNumber(val);
     return Number(val);
-  }).refine((val) => !isNaN(val) && val >= 100, {
-    message: 'Giá tối thiểu 100đ/phút',
   }),
   status: z.enum(['active', 'inactive']),
+}).refine((data) => {
+  const price = data.pricePerMinute;
+  if (data.currency === 'USD') {
+    return !isNaN(price) && price > 0;
+  }
+  return !isNaN(price) && price >= 100;
+}, {
+  message: 'Đơn giá không hợp lệ (VND tối thiểu 100đ, USD tối thiểu > 0)',
+  path: ['pricePerMinute']
 })
 type FormData = z.infer<typeof schema>
 
@@ -78,9 +86,10 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     resolver: zodResolver(schema) as any,
     defaultValues: (subject ? {
       name: subject.name,
-      pricePerMinute: formatVietnameseNumberInput(subject.pricePerMinute),
+      currency: subject.currency || 'VND',
+      pricePerMinute: subject.currency === 'USD' ? String(subject.pricePerMinute) : formatVietnameseNumberInput(subject.pricePerMinute),
       status: subject.status,
-    } : { status: 'active', pricePerMinute: '2.500' }) as any,
+    } : { status: 'active', currency: 'VND', pricePerMinute: '2.500' }) as any,
   })
 
   const rawPrice = watch('pricePerMinute')
@@ -94,6 +103,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         
         // 2. Sync to related students, lessons, and payrolls in parallel
         const newRate = data.pricePerMinute;
+        const newCurrency = data.currency || 'VND';
         
         // Query students, lessons and teachers in parallel
         const [studentsSnap, lessonsSnap, teachersSnap] = await Promise.all([
@@ -105,12 +115,22 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
         // Update students in parallel
-        const studentUpdates = studentsSnap.docs.map(studentDoc => 
-          updateDoc(doc(db, 'students', studentDoc.id), {
+        const studentUpdates = studentsSnap.docs.map(studentDoc => {
+          const studentData = studentDoc.data();
+          const updatedSubjectsArray = (studentData.subjects || []).map((sub: any) => {
+            if (sub.subjectId === subject.id) {
+              return { ...sub, pricePerMinute: newRate, currency: newCurrency }
+            }
+            return sub;
+          });
+
+          return updateDoc(doc(db, 'students', studentDoc.id), {
             pricePerMinute: newRate,
+            currency: newCurrency,
+            subjects: updatedSubjectsArray,
             updatedAt: serverTimestamp(),
-          })
-        );
+          });
+        });
         
         // Update lessons in parallel, and fetch their payrolls in parallel
         const lessonUpdates: Promise<any>[] = [];
@@ -121,7 +141,6 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         lessonsSnap.docs.forEach(lessonDoc => {
           const lessonId = lessonDoc.id;
           const lesson = lessonDoc.data();
-
 
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
@@ -134,6 +153,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             updateDoc(doc(db, 'lessons', lessonId), {
               pricePerMinute: newRate,
               salary: newSalary,
+              currency: newCurrency,
               updatedAt: serverTimestamp(),
             })
           );
@@ -163,6 +183,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                 updateDoc(doc(db, 'payroll', pDoc.id), {
                   amount: newSalary,
                   pricePerMinute: newRate,
+                  currency: newCurrency,
                   recalculatedAt: serverTimestamp(),
                 })
               );
@@ -202,10 +223,22 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     >
       <form id="subject-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
         <Input label="Tên môn học *" placeholder="Tiếng Anh" error={errors.name?.message} {...register('name')} />
+        
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1.5">Loại tiền tệ</label>
+          <select
+            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            {...register('currency')}
+          >
+            <option value="VND">VND (đ)</option>
+            <option value="USD">USD ($)</option>
+          </select>
+        </div>
+
         <Input
-          label="Giá mỗi phút (VND) *"
+          label={`Giá mỗi phút (${watch('currency') || 'VND'}) *`}
           type="text"
-          placeholder="2500"
+          placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
           error={errors.pricePerMinute?.message}
           {...register('pricePerMinute')}
         />
@@ -214,12 +247,17 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         {price > 0 && (
           <div className="bg-white rounded-xl p-4 space-y-1.5 text-xs text-slate-500">
             <p className="font-medium text-slate-600 mb-2">Ví dụ lương:</p>
-            {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => (
-              <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
-                <span>{ex.min} phút × {price.toLocaleString('vi-VN')}đ × ×{ex.level}</span>
-                <span className="text-emerald-400 font-medium">= {(ex.min * price * ex.level).toLocaleString('vi-VN')}đ</span>
-              </div>
-            ))}
+            {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => {
+              const currency = watch('currency') || 'VND'
+              const formattedPrice = currency === 'USD' ? `$${price}` : `${price.toLocaleString('vi-VN')}đ`
+              const formattedSalary = currency === 'USD' ? `$${(ex.min * price * ex.level).toFixed(2)}` : `${(ex.min * price * ex.level).toLocaleString('vi-VN')}đ`
+              return (
+                <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
+                  <span>{ex.min} phút × {formattedPrice} × ×{ex.level}</span>
+                  <span className="text-emerald-400 font-medium">= {formattedSalary}</span>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -350,7 +388,7 @@ export function SubjectsPage() {
                   <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
                   <td className="px-5 py-4">
                     <span className="text-emerald-400 font-semibold">
-                      {subject.pricePerMinute.toLocaleString('vi-VN')}đ
+                      {subject.currency === 'USD' ? `$${subject.pricePerMinute}` : `${subject.pricePerMinute.toLocaleString('vi-VN')}đ`}
                     </span>
                     <span className="text-slate-500 text-xs"> / phút</span>
                   </td>
