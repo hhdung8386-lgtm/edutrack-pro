@@ -11,7 +11,7 @@ import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown } from 'lucide-react'
+import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -1527,110 +1527,24 @@ export function StudentDetailPage() {
         </div>
       </div>
 
-      {/* Lịch học đã đặt (Tương lai) */}
-      <Card padding="none" className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Lịch học đã đặt (Tương lai)</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Danh sách các ca học học viên đã đặt chỗ. Hủy lịch sẽ tự động hoàn phút.</p>
-          </div>
-          {selectedBookingIds.length > 0 && (
-            <Button
-              variant="danger"
-              size="sm"
-              loading={cancellingSpecific}
-              onClick={() => {
-                const targets = futureBookings.filter((b: BookingRequest) => selectedBookingIds.includes(b.id))
-                handleCancelSpecificBookings(targets)
-              }}
-              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
-            >
-              <Trash2 className="w-4 h-4" />
-              Hủy {selectedBookingIds.length} ca đã chọn
-            </Button>
-          )}
+      {/* Lịch học đã đặt (Tương lai) Link Card */}
+      <Card className="bg-slate-50 border border-slate-200/60 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+            <Calendar className="w-5 h-5 text-indigo-500" />
+            Lịch học đã đặt (Tương lai)
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Học viên này hiện có <strong>{futureBookings.length} ca học</strong> đã được giữ chỗ trong tương lai.
+          </p>
         </div>
-
-        {futureBookings.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-sm">Học viên chưa đặt lịch học nào trong tương lai.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold">
-                  <th className="p-3 w-12 text-center">
-                    <input
-                      type="checkbox"
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                      checked={futureBookings.length > 0 && selectedBookingIds.length === futureBookings.length}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedBookingIds(futureBookings.map((b: BookingRequest) => b.id))
-                        } else {
-                          setSelectedBookingIds([])
-                        }
-                      }}
-                    />
-                  </th>
-                  <th className="p-3">Thời gian</th>
-                  <th className="p-3">Môn học</th>
-                  <th className="p-3">Giáo viên</th>
-                  <th className="p-3">Số phút</th>
-                  <th className="p-3 text-center">Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {futureBookings.map((booking: BookingRequest) => {
-                  const isChecked = selectedBookingIds.includes(booking.id)
-                  const dayLabels: Record<string, string> = {
-                    mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật'
-                  }
-                  const dayStr = dayLabels[booking.requestedDay || ''] || ''
-                  
-                  return (
-                    <tr key={booking.id} className="border-b border-slate-100 hover:bg-slate-50/50 text-slate-700 transition-colors">
-                      <td className="p-3 text-center">
-                        <input
-                          type="checkbox"
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedBookingIds(prev => [...prev, booking.id])
-                            } else {
-                              setSelectedBookingIds(prev => prev.filter(id => id !== booking.id))
-                            }
-                          }}
-                        />
-                      </td>
-                      <td className="p-3 font-medium">
-                        <span className="font-semibold text-slate-900">{dayStr} ({booking.requestedDate})</span>
-                        <span className="text-slate-400 mx-1.5">·</span>
-                        <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg text-xs font-bold font-mono">
-                          {booking.requestedStart} - {booking.requestedEnd}
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-600">{booking.subjectName}</td>
-                      <td className="p-3 text-slate-600 font-medium">{booking.teacherName || 'Chưa phân công'}</td>
-                      <td className="p-3 font-mono text-slate-500">{booking.requestedMinutes} phút</td>
-                      <td className="p-3 text-center">
-                        <button
-                          type="button"
-                          disabled={cancellingSpecific}
-                          onClick={() => handleCancelSpecificBookings([booking])}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
-                          title="Hủy ca này"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <Button
+          variant="outline"
+          onClick={() => navigate(`/admin/future-bookings?studentId=${id}`)}
+          className="text-xs font-bold border-indigo-200 hover:border-indigo-500 text-indigo-600 hover:text-indigo-700 bg-white shadow-sm flex items-center gap-1 flex-shrink-0"
+        >
+          Xem & Quản lý lịch đặt ➔
+        </Button>
       </Card>
 
       {/* Lesson history */}

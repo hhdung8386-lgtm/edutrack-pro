@@ -30,6 +30,7 @@ const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => (
 const ContractsPage = lazy(() => import('@/pages/admin/ContractsPage').then(m => ({ default: m.ContractsPage })))
 const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPage'))
 const NotificationsPage = lazy(() => import('@/pages/admin/NotificationsPage').then(m => ({ default: m.NotificationsPage })))
+const FutureBookingsPage = lazy(() => import('@/pages/admin/FutureBookingsPage').then(m => ({ default: m.FutureBookingsPage })))
 
 // Lazy loaded Teacher Pages
 const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPage').then(m => ({ default: m.TeacherContractPage })))
@@ -117,6 +118,7 @@ function App() {
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
+            <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="bookings" element={<BookingRequestsPage />} />

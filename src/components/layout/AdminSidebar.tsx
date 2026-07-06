@@ -16,6 +16,7 @@ const navItems = [
   { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
   { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
   { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
+  { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
   { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
   { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },

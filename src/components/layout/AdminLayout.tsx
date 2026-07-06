@@ -17,6 +17,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/teachers': 'Giáo viên',
   '/admin/teacher-availability': 'Lịch giáo viên',
   '/admin/booking-schedules': 'Lịch xếp lớp',
+  '/admin/future-bookings': 'Lịch học đã đặt',
   '/admin/bookings': 'Yêu cầu giáo viên',
   '/admin/subjects': 'Môn học',
   '/admin/evaluations': 'Đánh giá học viên',
@@ -94,7 +95,7 @@ export function AdminLayout() {
       </div>
 
       {/* Unified Top Header Bar */}
-      <header className={`fixed top-0 right-0 left-0 lg:left-auto ${isSidebarCollapsed ? 'lg:left-20' : 'lg:left-64'} h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 z-40 transition-all duration-300`}>
+      <header className={`fixed top-0 right-0 left-0 ${isSidebarCollapsed ? 'lg:left-20' : 'lg:left-64'} h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 z-40 transition-all duration-300`}>
         <div className="flex items-center gap-2">
           <span className="font-extrabold text-slate-800 text-sm hidden lg:inline-block">{pageTitle}</span>
           <div className="flex items-center gap-2 lg:hidden">
