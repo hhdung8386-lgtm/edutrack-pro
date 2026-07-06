@@ -104,7 +104,8 @@ service cloud.firestore {
                     && request.resource.data.requestedMinutes in [25, 50, 75, 100]
                     );
       allow read: if true;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
+      allow delete: if isAdmin();
     }
 
     // Contracts collection

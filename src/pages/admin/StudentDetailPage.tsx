@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingRequest } from '@/types'
@@ -92,6 +92,8 @@ export function StudentDetailPage() {
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
   const [actioning, setActioning] = useState(false)
+  const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
+  const [cancellingSpecific, setCancellingSpecific] = useState(false)
 
   // State variables for subject package management
   const [editingSubjectId, setEditingSubjectId] = useState<string | undefined>(undefined)
@@ -213,6 +215,109 @@ export function StudentDetailPage() {
       toast.error('Không thể kiểm tra payroll')
     } finally {
       setRecalcOpening(false)
+    }
+  }
+
+  const futureBookings = useMemo(() => {
+    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const list = bookingRequests.filter((b: BookingRequest) => b.requestedDate && b.requestedDate >= todayISO && !b.lessonId)
+    return [...list].sort((a: BookingRequest, b: BookingRequest) => {
+      const dateA = a.requestedDate || ''
+      const dateB = b.requestedDate || ''
+      if (dateA !== dateB) return dateA.localeCompare(dateB)
+      return (a.requestedStart || '').localeCompare(b.requestedStart || '')
+    })
+  }, [bookingRequests])
+
+  const handleCancelSpecificBookings = async (targetBookings: BookingRequest[]) => {
+    if (targetBookings.length === 0 || !student || !id) return
+    
+    const confirmMessage = targetBookings.length === 1
+      ? `Hủy ca học ngày ${targetBookings[0].requestedDate} lúc ${targetBookings[0].requestedStart}?`
+      : `Bạn có chắc chắn muốn hủy ${targetBookings.length} ca học đã chọn và hoàn lại số phút?`
+      
+    if (!window.confirm(confirmMessage)) return
+    
+    setCancellingSpecific(true)
+    try {
+      const totalMinutesToRefund = targetBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+      
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', id)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
+        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+
+        const nextSubjects = (studentData.subjects || []).map((sub) => {
+          const refundForSub = targetBookings
+            .filter(b => b.subjectId === sub.subjectId)
+            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+          
+          if (refundForSub > 0) {
+            const nextRem = (sub.remainingMinutes || 0) + refundForSub
+            return {
+              ...sub,
+              remainingMinutes: nextRem,
+              remainingSessions: Math.floor(nextRem / 25)
+            }
+          }
+          return sub
+        })
+
+        let nextRemainingSessions = studentData.remainingSessions
+        let nextRemainingMinutes = studentData.remainingMinutes
+        const refundForPrimary = targetBookings
+          .filter(b => b.subjectId === studentData.subjectId)
+          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+          
+        if (refundForPrimary > 0 && typeof studentData.remainingMinutes === 'number') {
+          nextRemainingMinutes = (studentData.remainingMinutes || 0) + refundForPrimary
+          nextRemainingSessions = Math.floor(nextRemainingMinutes / 25)
+        }
+
+        tx.update(studentRef, {
+          reservedMinutes: nextHeld,
+          heldMinutes: nextHeld,
+          subjects: nextSubjects,
+          remainingMinutes: nextRemainingMinutes,
+          remainingSessions: nextRemainingSessions,
+          updatedAt: serverTimestamp(),
+        })
+
+        for (const booking of targetBookings) {
+          const requestRef = doc(db, 'bookingRequests', booking.id)
+          tx.update(requestRef, {
+            status: 'released',
+            releasedAt: serverTimestamp(),
+            releasedBy: user?.uid ?? 'admin',
+          })
+        }
+
+        tx.set(doc(collection(db, 'adminLogs')), {
+          adminId: user?.uid ?? 'admin',
+          action: 'CANCEL_SPECIFIC_BOOKINGS',
+          targetType: 'student',
+          targetId: id,
+          changes: {
+            studentName: studentData.name,
+            cancelledCount: targetBookings.length,
+            cancelledIds: targetBookings.map(b => b.id),
+            refundedMinutes: totalMinutesToRefund,
+          },
+          createdAt: serverTimestamp(),
+        })
+      })
+
+      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả ${totalMinutesToRefund} phút về quỹ học viên.`)
+      setSelectedBookingIds([])
+    } catch (err) {
+      console.error('Cancel specific bookings failed:', err)
+      toast.error('Gặp lỗi khi hủy các ca học đã chọn')
+    } finally {
+      setCancellingSpecific(false)
     }
   }
 
@@ -1421,6 +1526,112 @@ export function StudentDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Lịch học đã đặt (Tương lai) */}
+      <Card padding="none" className="overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Lịch học đã đặt (Tương lai)</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Danh sách các ca học học viên đã đặt chỗ. Hủy lịch sẽ tự động hoàn phút.</p>
+          </div>
+          {selectedBookingIds.length > 0 && (
+            <Button
+              variant="danger"
+              size="sm"
+              loading={cancellingSpecific}
+              onClick={() => {
+                const targets = futureBookings.filter((b: BookingRequest) => selectedBookingIds.includes(b.id))
+                handleCancelSpecificBookings(targets)
+              }}
+              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              Hủy {selectedBookingIds.length} ca đã chọn
+            </Button>
+          )}
+        </div>
+
+        {futureBookings.length === 0 ? (
+          <div className="py-10 text-center text-slate-400 text-sm">Học viên chưa đặt lịch học nào trong tương lai.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold">
+                  <th className="p-3 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                      checked={futureBookings.length > 0 && selectedBookingIds.length === futureBookings.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBookingIds(futureBookings.map((b: BookingRequest) => b.id))
+                        } else {
+                          setSelectedBookingIds([])
+                        }
+                      }}
+                    />
+                  </th>
+                  <th className="p-3">Thời gian</th>
+                  <th className="p-3">Môn học</th>
+                  <th className="p-3">Giáo viên</th>
+                  <th className="p-3">Số phút</th>
+                  <th className="p-3 text-center">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {futureBookings.map((booking: BookingRequest) => {
+                  const isChecked = selectedBookingIds.includes(booking.id)
+                  const dayLabels: Record<string, string> = {
+                    mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật'
+                  }
+                  const dayStr = dayLabels[booking.requestedDay || ''] || ''
+                  
+                  return (
+                    <tr key={booking.id} className="border-b border-slate-100 hover:bg-slate-50/50 text-slate-700 transition-colors">
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedBookingIds(prev => [...prev, booking.id])
+                            } else {
+                              setSelectedBookingIds(prev => prev.filter(id => id !== booking.id))
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="p-3 font-medium">
+                        <span className="font-semibold text-slate-900">{dayStr} ({booking.requestedDate})</span>
+                        <span className="text-slate-400 mx-1.5">·</span>
+                        <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg text-xs font-bold font-mono">
+                          {booking.requestedStart} - {booking.requestedEnd}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-600">{booking.subjectName}</td>
+                      <td className="p-3 text-slate-600 font-medium">{booking.teacherName || 'Chưa phân công'}</td>
+                      <td className="p-3 font-mono text-slate-500">{booking.requestedMinutes} phút</td>
+                      <td className="p-3 text-center">
+                        <button
+                          type="button"
+                          disabled={cancellingSpecific}
+                          onClick={() => handleCancelSpecificBookings([booking])}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Hủy ca này"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Lesson history */}
       <Card padding="none">
