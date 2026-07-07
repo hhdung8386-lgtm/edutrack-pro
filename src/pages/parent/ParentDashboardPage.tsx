@@ -521,6 +521,14 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                       </a>
                     </div>
                   )}
+                  {sub.timetableNote && (
+                    <div className="mt-2 pt-2 border-t border-slate-100/50">
+                      <span className="text-[11px] font-semibold text-slate-500 block mb-1">Ghi chú lịch học:</span>
+                      <p className="text-[11px] text-slate-700 font-medium whitespace-pre-wrap leading-normal bg-amber-50/50 border border-amber-100/70 p-2.5 rounded-xl">
+                        {sub.timetableNote}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -836,23 +844,36 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
               {(() => {
                 const roomLink = selectedParentBooking.classroomURL || student.classroomURL
-                return roomLink ? (
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Phòng học trực tuyến</span>
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5">{roomLink}</p>
-                    </div>
-                    <a
-                      href={roomLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 flex-shrink-0 animate-pulse"
-                    >
-                      Vào phòng học
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                ) : null
+                const subjectPkg = student.subjects?.find((s) => s.subjectId === selectedParentBooking.subjectId)
+                return (
+                  <>
+                    {roomLink && (
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Phòng học trực tuyến</span>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">{roomLink}</p>
+                        </div>
+                        <a
+                          href={roomLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 flex-shrink-0 animate-pulse"
+                        >
+                          Vào phòng học
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                    {subjectPkg?.timetableNote && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Ghi chú lịch học</span>
+                        <p className="text-xs text-slate-750 font-semibold leading-normal bg-amber-50/50 border border-amber-100/70 p-2.5 rounded-xl whitespace-pre-wrap">
+                          {subjectPkg.timetableNote}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )
               })()}
             </div>
           </div>
