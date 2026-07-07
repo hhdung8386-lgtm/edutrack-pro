@@ -71,6 +71,11 @@ function formatDateISO(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+function parseDateISO(dateISO: string): Date {
+  const [year, month, day] = dateISO.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 function getMonday(date: Date) {
   const copy = new Date(date)
   copy.setHours(0, 0, 0, 0)
@@ -559,7 +564,7 @@ export function BookingSchedulesPage() {
         while (sessionsScheduled < maxSessions) {
           for (const sSlot of selectedSlots) {
             if (sessionsScheduled >= maxSessions) break
-            const slotDate = addDays(new Date(sSlot.dateISO), weekIndex * 7)
+            const slotDate = addDays(parseDateISO(sSlot.dateISO), weekIndex * 7)
             const slotDateISO = formatDateISO(slotDate)
             
             // Skip past slots in the first week
@@ -673,7 +678,7 @@ export function BookingSchedulesPage() {
               if (sessionsScheduled >= maxSessions) break
 
               // Calculate date for the slot in the current week offset
-              const slotDate = addDays(new Date(slot.dateISO), weekIndex * 7)
+              const slotDate = addDays(parseDateISO(slot.dateISO), weekIndex * 7)
               const slotDateISO = formatDateISO(slotDate)
               const slotWeekStart = formatDateISO(getMonday(slotDate))
 
