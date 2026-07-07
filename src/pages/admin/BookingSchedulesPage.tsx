@@ -1426,6 +1426,10 @@ export function BookingSchedulesPage() {
 
                   const totalRequired = selectedSlots.length * duration
                   const isEnough = availableForSubject >= totalRequired
+                  const subjectFutureBookings = selectedStudentBookings
+                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+                    .sort((a, b) => (a.requestedDate || '').localeCompare(b.requestedDate || ''))
+
                   return (
                     <div className="flex items-center justify-between text-xs border-t border-slate-200/50 pt-2 flex-wrap gap-2">
                       <div>
@@ -1447,9 +1451,22 @@ export function BookingSchedulesPage() {
                             <span>Học viên không đủ phút khả dụng để xếp lịch!</span>
                           </div>
                           {bookedMinutesForSubject > 0 && (
-                            <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
-                              * Đã có {bookedMinutesForSubject} phút ({Math.floor(bookedMinutesForSubject / 25)} buổi) được đặt lịch trong tương lai. Vui lòng hủy các ca tương lai này hoặc nạp thêm buổi học.
-                            </p>
+                            <>
+                              <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
+                                * Đã có {bookedMinutesForSubject} phút ({Math.floor(bookedMinutesForSubject / 25)} buổi) được đặt lịch trong tương lai. Vui lòng hủy các ca tương lai này hoặc nạp thêm buổi học.
+                              </p>
+                              {subjectFutureBookings.length > 0 && (
+                                <div className="mt-2 text-[10px] pl-5 space-y-1 text-slate-500 max-h-[120px] overflow-y-auto border-t border-rose-100 pt-1.5 font-semibold">
+                                  <p className="text-rose-500 font-bold">Danh sách ca tương lai đã đặt ({subjectFutureBookings.length}):</p>
+                                  {subjectFutureBookings.map((b, idx) => (
+                                    <div key={b.id || idx} className="flex justify-between pr-2">
+                                      <span>{idx + 1}. {DAY_LABELS[b.requestedDay as DayOfWeek] || b.requestedDay} ({b.requestedDate})</span>
+                                      <span>{b.requestedStart} - {b.requestedEnd}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       )}
@@ -1468,11 +1485,19 @@ export function BookingSchedulesPage() {
                       onChange={(e) => setSelectedSubjectId(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
                     >
-                      {studentSubjects.map((sub) => (
-                        <option key={sub.subjectId} value={sub.subjectId}>
-                          {sub.subjectName} (Còn {sub.remainingSessions} buổi / {sub.remainingMinutes} phút)
-                        </option>
-                      ))}
+                      {studentSubjects.map((sub) => {
+                        const bookedMinutesForSub = selectedStudentBookings
+                          .filter((b) => b.subjectId === sub.subjectId && !b.lessonId)
+                          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+                        const availMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSub)
+                        const availSessions = Math.floor(availMinutes / (sub.minutesPerSession || 25))
+                        const bookedSessions = Math.floor(bookedMinutesForSub / (sub.minutesPerSession || 25))
+                        return (
+                          <option key={sub.subjectId} value={sub.subjectId}>
+                            {sub.subjectName} (Còn {availSessions}b / {availMinutes}m khả dụng - Đã đặt {bookedSessions}b)
+                          </option>
+                        )
+                      })}
                     </select>
                   )}
                 </div>
