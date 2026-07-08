@@ -79,6 +79,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'profile.this_month': { vi: 'Thống kê tháng này', en: 'This month stats' },
   'profile.lessons_taught': { vi: 'Buổi đã dạy', en: 'Lessons taught' },
   'profile.income': { vi: 'Thu nhập', en: 'Income' },
+  'profile.username': { vi: 'Tên đăng nhập', en: 'Username' },
   'profile.need_help': { vi: 'Cần hỗ trợ từ Admin?', en: 'Need help from Admin?' },
   'profile.contact_admin': { vi: 'Mọi thay đổi về thông tin cá nhân vui lòng liên hệ Admin qua Zalo hoặc Hotline để được cập nhật.', en: 'For any profile changes, please contact Admin via Zalo or Hotline.' },
 

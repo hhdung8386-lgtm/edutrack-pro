@@ -105,8 +105,9 @@ export function ProfilePage() {
               </div>
 
               <h2 className="text-2xl font-bold text-slate-900">{teacher.name}</h2>
-              <div className="flex items-center gap-2 mt-1.5 justify-center">
-                <span className="font-mono text-sm font-semibold text-[#3BB8EB] bg-sky-50 px-3 py-1 rounded-lg border border-sky-100">{teacher.code}</span>
+              <div className="flex flex-col items-center gap-1 mt-2.5 justify-center">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('profile.username')}</p>
+                <span className="font-mono text-sm font-extrabold text-indigo-650 bg-indigo-50/50 px-3.5 py-1 rounded-lg border border-indigo-150">{teacher.code}</span>
               </div>
 
               {(teacher.subjectNames?.length ?? 0) > 0 && (

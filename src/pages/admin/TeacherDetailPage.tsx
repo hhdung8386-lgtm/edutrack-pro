@@ -809,6 +809,10 @@ export function TeacherDetailPage() {
                   <span className="text-slate-500">Level: </span>
                   <span className="text-slate-800 font-semibold">×{teacher.level}</span>
                 </div>
+                <div>
+                  <span className="text-slate-500">Tên đăng nhập: </span>
+                  <span className="text-indigo-600 font-bold font-mono">{teacher.code}</span>
+                </div>
                 {teacher.bio && (
                   <div className="sm:col-span-2">
                     <span className="text-slate-500">Giới thiệu: </span>

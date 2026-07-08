@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
+import { generateUniqueEnglishName } from '@/lib/nameGenerator'
 import { Teacher, Subject, TeacherCertificate } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -126,7 +127,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   useEffect(() => {
     if (!isEdit && !generatedCode) {
-      generateUniqueCode('teacher')
+      generateUniqueEnglishName()
         .then((code) => {
           setGeneratedCode(code)
           setNewUsername(code)
@@ -289,7 +290,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         let code = generatedCode || newUsername
         if (!code) {
           try {
-            code = await generateUniqueCode('teacher')
+            code = await generateUniqueEnglishName()
           } catch (err: any) {
             toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
             return

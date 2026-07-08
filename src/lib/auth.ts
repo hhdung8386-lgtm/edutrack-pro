@@ -22,17 +22,28 @@ export async function signInTeacher(teacherCode: string, password: string) {
     throw new Error('Mật khẩu không đúng')
   }
 
-  const normalizedCode = teacherCode.toUpperCase()
-  const teacherQuery = query(collection(db, 'teachers'), where('code', '==', normalizedCode))
-  const teacherSnapshot = await getDocs(teacherQuery)
+  const exact = teacherCode.trim()
+  const capitalized = exact.charAt(0).toUpperCase() + exact.slice(1).toLowerCase()
+  const upper = exact.toUpperCase()
+  const searchCodes = Array.from(new Set([exact, capitalized, upper]))
 
-  if (teacherSnapshot.empty) {
+  let teacherDoc: any = null
+  for (const c of searchCodes) {
+    const q = query(collection(db, 'teachers'), where('code', '==', c))
+    const snap = await getDocs(q)
+    if (!snap.empty) {
+      teacherDoc = snap.docs[0]
+      break
+    }
+  }
+
+  if (!teacherDoc) {
     throw new Error('Mã giáo viên không tồn tại')
   }
 
-  const teacherDoc = teacherSnapshot.docs[0]
   const teacherId = teacherDoc.id
-  const fallbackEmail = `${normalizedCode}@edutrackpro.app`
+  const matchedCode = teacherDoc.data().code
+  const fallbackEmail = `${matchedCode}@edutrackpro.app`
 
   const userQuery = query(
     collection(db, 'users'),
@@ -56,7 +67,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
         await setDoc(userDocRef, {
           uid: credential.user.uid,
           email,
-          username: normalizedCode,
+          username: matchedCode,
           role: 'teacher',
           teacherId,
           createdAt: serverTimestamp(),
@@ -96,7 +107,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
           await setDoc(doc(db, 'users', created.user.uid), {
             uid: created.user.uid,
             email,
-            username: normalizedCode,
+            username: matchedCode,
             role: 'teacher',
             teacherId,
             createdAt: serverTimestamp(),
@@ -141,7 +152,9 @@ export async function resetTeacherPassword(teacherId: string) {
 
     const teacherDocSnap = await getDoc(doc(db, 'teachers', teacherId))
     const teacherCode = teacherDocSnap.exists() ? teacherDocSnap.data().code : ''
-    const fallbackEmail = `${teacherCode.toUpperCase()}@edutrackpro.app`
+    const fallbackEmail = teacherCode.toLowerCase().startsWith('gv')
+      ? `${teacherCode.toUpperCase()}@edutrackpro.app`
+      : `${teacherCode}@edutrackpro.app`
 
     if (!userSnapshot.empty) {
       const userDoc = userSnapshot.docs[0]
