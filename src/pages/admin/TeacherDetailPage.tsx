@@ -187,22 +187,31 @@ export function TeacherDetailPage() {
       const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       const newRate = newSubject.pricePerMinute || 0
 
-      const lessonUpdates: Promise<any>[] = [];
-      const payrollQueries: Promise<any>[] = [];
-      const lessonNewSalaries: Record<string, number> = {};
-      const lessonRates: Record<string, number> = {};
+      // Fetch all payrolls first to check paid status
+      const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
+        getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonDoc.id)))
+      )
+      
+      const payrollSnaps = await Promise.all(payrollQueries)
 
-      lessonsSnap.docs.forEach(lessonDoc => {
+      const lessonUpdates: Promise<any>[] = []
+      const payrollUpdates: Promise<any>[] = []
+
+      lessonsSnap.docs.forEach((lessonDoc, index) => {
         const lessonId = lessonDoc.id
         const lesson = lessonDoc.data()
-        const lessonRate = newRate
+        const payrollSnap = payrollSnaps[index]
+        
+        const isPaid = payrollSnap.docs.some((pDoc: any) => pDoc.data().paid === true)
+        if (isPaid) {
+          // Protect paid lessons from rate change propagation
+          return
+        }
 
+        const lessonRate = newRate
         const minutes = Number(lesson.minutes) || 0
         const teacherLevel = Number(lesson.teacherLevel) || 1
         const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, lessonRate, teacherLevel) : 0
-
-        lessonNewSalaries[lessonId] = newSalary
-        lessonRates[lessonId] = lessonRate
 
         lessonUpdates.push(
           updateDoc(doc(db, 'lessons', lessonId), {
@@ -224,22 +233,6 @@ export function TeacherDetailPage() {
           )
         }
 
-        payrollQueries.push(
-          getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
-        )
-      })
-
-      const [, ...payrollSnaps] = await Promise.all([
-        Promise.all(lessonUpdates),
-        ...payrollQueries
-      ])
-
-      const payrollUpdates: Promise<any>[] = []
-      payrollSnaps.forEach((payrollSnap, index) => {
-        const lessonId = lessonsSnap.docs[index].id
-        const newSalary = lessonNewSalaries[lessonId]
-        const lessonRate = lessonRates[lessonId]
-
         payrollSnap.docs.forEach((pDoc: any) => {
           const payroll = pDoc.data()
           if (!payroll.paid && !payroll.voided) {
@@ -254,9 +247,10 @@ export function TeacherDetailPage() {
         })
       })
 
-      if (payrollUpdates.length > 0) {
-        await Promise.all(payrollUpdates)
-      }
+      await Promise.all([
+        Promise.all(lessonUpdates),
+        Promise.all(payrollUpdates),
+      ])
 
       toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
       setEditingStudentId(null)

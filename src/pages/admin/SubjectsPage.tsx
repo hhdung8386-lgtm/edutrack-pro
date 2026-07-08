@@ -132,22 +132,32 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           });
         });
         
-        // Update lessons in parallel, and fetch their payrolls in parallel
-        const lessonUpdates: Promise<any>[] = [];
-        const payrollQueries: Promise<any>[] = [];
-        const lessonNewSalaries: Record<string, number> = {};
-        const queriedLessonIds: string[] = [];
+        // Fetch all payrolls first in parallel to check paid status
+        const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
+          getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonDoc.id)))
+        );
         
-        lessonsSnap.docs.forEach(lessonDoc => {
+        const [payrollSnaps] = await Promise.all([
+          Promise.all(payrollQueries)
+        ]);
+        
+        const lessonUpdates: Promise<any>[] = [];
+        const payrollUpdates: Promise<any>[] = [];
+        
+        lessonsSnap.docs.forEach((lessonDoc, index) => {
           const lessonId = lessonDoc.id;
           const lesson = lessonDoc.data();
+          const payrollSnap = payrollSnaps[index];
+          
+          const isPaid = payrollSnap.docs.some((pDoc: any) => pDoc.data().paid === true);
+          if (isPaid) {
+            // Protect paid lessons: do not update their rate or salary
+            return;
+          }
 
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
           const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0;
-          
-          lessonNewSalaries[lessonId] = newSalary;
-          queriedLessonIds.push(lessonId);
           
           lessonUpdates.push(
             updateDoc(doc(db, 'lessons', lessonId), {
@@ -157,24 +167,6 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
               updatedAt: serverTimestamp(),
             })
           );
-          
-          payrollQueries.push(
-            getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
-          );
-        });
-        
-        // Await all student updates, lesson updates, and payroll queries in parallel
-        const [, , ...payrollSnaps] = await Promise.all([
-          Promise.all(studentUpdates),
-          Promise.all(lessonUpdates),
-          ...payrollQueries
-        ]);
-        
-        // Update corresponding unpaid payrolls in parallel
-        const payrollUpdates: Promise<any>[] = [];
-        payrollSnaps.forEach((payrollSnap, index) => {
-          const lessonId = queriedLessonIds[index];
-          const newSalary = lessonNewSalaries[lessonId];
           
           payrollSnap.docs.forEach((pDoc: any) => {
             const payroll = pDoc.data();
@@ -191,9 +183,12 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           });
         });
         
-        if (payrollUpdates.length > 0) {
-          await Promise.all(payrollUpdates);
-        }
+        // Execute all student updates, lesson updates, and unpaid payroll updates in parallel
+        await Promise.all([
+          Promise.all(studentUpdates),
+          Promise.all(lessonUpdates),
+          Promise.all(payrollUpdates)
+        ]);
         
         toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
       } else {

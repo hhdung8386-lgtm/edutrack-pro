@@ -704,6 +704,13 @@ export function StudentDetailPage() {
       const payrollSnap = await getDocs(
         query(collection(db, 'payroll'), where('lessonId', '==', reversingLesson.id)),
       )
+      
+      const payrollPaid = payrollSnap.docs.some((d) => d.data().paid === true)
+      if (payrollPaid) {
+        toast.warning('Lương buổi này đã thanh toán, không thể huỷ duyệt')
+        return
+      }
+
       const payrollIds = payrollSnap.docs.map((d) => d.id)
 
       await runTransaction(db, async (tx) => {
