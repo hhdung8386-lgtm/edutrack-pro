@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, Lesson, BookingRequest } from '@/types'
-import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon, BookOpen } from 'lucide-react'
+import { Search, ArrowLeft, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Calendar, Info, Clock, User as UserIcon, BookOpen, Globe } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
 import { NotificationDrawer } from '@/components/shared/NotificationDrawer'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useLanguageStore } from '@/stores/languageStore'
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
@@ -36,6 +37,7 @@ export function ParentDashboardPage() {
   const [error, setError] = useState('')
   const [result, setResult] = useState<{ student: Student; lessons: Lesson[]; bookings: BookingRequest[] } | null>(null)
   const [autoLoading, setAutoLoading] = useState(true)
+  const { lang, setLang, t } = useLanguageStore()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -95,7 +97,7 @@ export function ParentDashboardPage() {
       <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-sky-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#3BB8EB] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">Đang tải...</p>
+          <p className="text-slate-500 text-sm">{lang === 'vi' ? 'Đang tải...' : 'Loading...'}</p>
         </div>
       </div>
     )
@@ -110,12 +112,24 @@ export function ParentDashboardPage() {
 
       {/* Header */}
       <nav className="relative z-20 bg-white/80 backdrop-blur-md border-b border-sky-100">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate('/login')} className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-100" aria-label="Quay lại">
-            <ArrowLeft className="w-5 h-5" />
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/login')} className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-100" aria-label="Quay lại">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <Logo className="scale-[0.6] origin-left" />
+            <span className="text-[10px] text-slate-400 border-l border-slate-200 pl-2.5 ml-0.5">
+              {lang === 'vi' ? 'Cổng Phụ huynh' : 'Parent Portal'}
+            </span>
+          </div>
+          <button
+            onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
+            className="p-2 text-slate-500 hover:text-slate-800 transition-colors rounded-lg hover:bg-slate-100 flex items-center gap-1 text-[11px] font-bold"
+            title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span className="uppercase">{lang}</span>
           </button>
-          <Logo className="scale-[0.6] origin-left" />
-          <span className="text-[10px] text-slate-400 border-l border-slate-200 pl-2.5 ml-0.5">Cổng Phụ huynh</span>
         </div>
       </nav>
 
@@ -124,44 +138,62 @@ export function ParentDashboardPage() {
           <div className="w-20 h-20 bg-gradient-to-br from-[#3BB8EB] to-[#2196F3] rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-sky-200/50 rotate-3 hover:rotate-0 transition-transform text-4xl">
             📚
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 mb-2">Xin chào, Phụ huynh!</h2>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 mb-2">
+            {lang === 'vi' ? 'Xin chào, Phụ huynh!' : 'Welcome, Parents!'}
+          </h2>
           <p className="text-slate-500 text-sm max-w-xs mx-auto leading-relaxed">
-            Nhập mã học viên và SĐT để xem bài tập, nhận xét từ giáo viên
+            {lang === 'vi' ? 'Nhập mã học viên và SĐT để xem bài tập, nhận xét từ giáo viên' : 'Enter student code to view homework & teacher feedback'}
           </p>
         </div>
 
         <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xl shadow-slate-200/30 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Mã học sinh *</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              {lang === 'vi' ? 'Mã học sinh *' : 'Student Code *'}
+            </label>
             <input
               type="text" value={studentCode} onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()} placeholder="VD: HS8X2K91"
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()} placeholder={lang === 'vi' ? 'VD: HS8X2K91' : 'E.g. HS8X2K91'}
               className="w-full rounded-xl bg-[#FFE500]/5 border-2 border-[#FFE500]/30 text-slate-900 placeholder-slate-400 px-4 py-3.5 text-lg font-mono font-bold tracking-widest uppercase text-center focus:outline-none focus:ring-2 focus:ring-[#3BB8EB]/40 focus:border-[#3BB8EB] transition-all"
               autoCapitalize="characters" autoCorrect="off"
             />
           </div>
 
           {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-600 font-medium">{error}</div>
+            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-600 font-medium">
+              {error === 'Vui lòng nhập Mã học sinh'
+                ? (lang === 'vi' ? 'Vui lòng nhập Mã học sinh' : 'Please enter the Student Code')
+                : error === 'Không tìm thấy học sinh với mã này'
+                ? (lang === 'vi' ? 'Không tìm thấy học sinh với mã này' : 'No student found with this code')
+                : error === 'Có lỗi xảy ra, vui lòng thử lại'
+                ? (lang === 'vi' ? 'Có lỗi xảy ra, vui lòng thử lại' : 'An error occurred, please try again')
+                : error
+              }
+            </div>
           )}
 
           <button onClick={() => handleLogin()} disabled={searching}
             className="w-full py-3.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-bold rounded-xl shadow-lg shadow-sky-200/50 hover:shadow-sky-300/50 hover:-translate-y-0.5 transition-all duration-300 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
             {searching
               ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : <><Search className="w-4 h-4" /> XEM THÔNG TIN HỌC TẬP</>}
+              : <><Search className="w-4 h-4" /> {lang === 'vi' ? 'XEM THÔNG TIN HỌC TẬP' : 'VIEW LEARNING INFO'}</>}
           </button>
 
-          <p className="text-[11px] text-slate-400 text-center">🔒 Phiên đăng nhập được lưu 30 ngày</p>
+          <p className="text-[11px] text-slate-400 text-center">
+            🔒 {lang === 'vi' ? 'Phiên đăng nhập được lưu 30 ngày' : 'Login session saved for 30 days'}
+          </p>
         </div>
 
-        <p className="text-xs text-slate-400 text-center mt-6">Mã học sinh được cung cấp bởi trung tâm khi đăng ký</p>
+        <p className="text-xs text-slate-400 text-center mt-6">
+          {lang === 'vi' ? 'Mã học sinh được cung cấp bởi trung tâm khi đăng ký' : 'Student code is provided by the center upon registration'}
+        </p>
       </main>
     </div>
   )
 }
 
 function ParentView({ student, lessons, bookings, onBack }: { student: Student; lessons: Lesson[]; bookings: BookingRequest[]; onBack: () => void }) {
+  const { lang, setLang, t } = useLanguageStore()
   const [viewImage, setViewImage] = useState<string | null>(null)
   const [selectedParentBooking, setSelectedParentBooking] = useState<BookingRequest | null>(null)
   const [weekStart, setWeekStart] = useState(() => {
@@ -274,7 +306,11 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
     }
     const monthly = Object.entries(buckets).map(([k, v]) => {
       const [y, m] = k.split('-')
-      return { name: `T${parseInt(m)}/${y.slice(2)}`, buoi: v.count, phut: v.minutes }
+      return {
+        name: lang === 'vi' ? `T${parseInt(m)}/${y.slice(2)}` : `M${parseInt(m)}/${y.slice(2)}`,
+        buoi: v.count,
+        phut: v.minutes
+      }
     })
 
     // Duration distribution
@@ -285,7 +321,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
       durBuckets[m] = (durBuckets[m] || 0) + 1
     }
     const duration = Object.entries(durBuckets)
-      .map(([m, c]) => ({ name: `${m} phút`, value: c, mins: parseInt(m) }))
+      .map(([m, c]) => ({ name: `${m} ${lang === 'vi' ? 'phút' : 'min'}`, value: c, mins: parseInt(m) }))
       .sort((a, b) => a.mins - b.mins)
 
     // Insights
@@ -297,10 +333,10 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
       return diff <= 30 && diff >= 0
     })
     const consistencyHint =
-      last30Days.length >= 8 ? 'Học rất đều' :
-      last30Days.length >= 4 ? 'Học đều đặn' :
-      last30Days.length >= 1 ? 'Học chưa đều' :
-      'Chưa học gần đây'
+      last30Days.length >= 8 ? (lang === 'vi' ? 'Học rất đều' : 'Very consistent') :
+      last30Days.length >= 4 ? (lang === 'vi' ? 'Học đều đặn' : 'Consistent') :
+      last30Days.length >= 1 ? (lang === 'vi' ? 'Học chưa đều' : 'Inconsistent') :
+      (lang === 'vi' ? 'Chưa học gần đây' : 'No recent classes')
 
     return {
       monthlyData: monthly,
@@ -312,7 +348,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         consistency: consistencyHint,
       },
     }
-  }, [lessons])
+  }, [lessons, lang])
 
   const PIE_COLORS = ['#3BB8EB', '#FFD600', '#10B981', '#F59E0B']
 
@@ -324,7 +360,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           <button
             onClick={onBack}
             className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-100"
-            aria-label="Đăng xuất"
+            aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -337,6 +373,14 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
+              className="p-2 text-slate-500 hover:text-slate-800 transition-colors rounded-lg hover:bg-slate-100 flex items-center gap-1 text-[11px] font-bold"
+              title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+            >
+              <Globe className="w-3.5 h-3.5 text-slate-400" />
+              <span className="uppercase">{lang}</span>
+            </button>
             {/* Notification bell drawer */}
             <NotificationDrawer targetType="students" targetId={student.id} />
             <Logo className="scale-[0.55] origin-right opacity-80" />
@@ -353,10 +397,10 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
             <div className="relative z-10">
               <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200/80 font-medium mb-1">
-                Tiến độ học tập
+                {lang === 'vi' ? 'Tiến độ học tập' : 'Learning Progress'}
               </p>
               <h2 className="text-[28px] font-bold leading-none mb-6 tracking-tight">
-                {usedPct}<span className="text-sky-200/80 text-xl font-medium">% hoàn thành</span>
+                {usedPct}<span className="text-sky-200/80 text-xl font-medium">% {lang === 'vi' ? 'hoàn thành' : 'completed'}</span>
               </h2>
 
               {/* Progress bar */}
@@ -370,15 +414,17 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               {/* Stats row */}
               <div className="grid grid-cols-4 divide-x divide-white/15">
                 {[
-                  { label: 'Tổng số phút', val: pTotalMin, color: 'text-white' },
-                  { label: 'Đã học', val: pUsedMin, color: 'text-sky-200' },
-                  { label: 'Giữ chỗ', val: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
-                  { label: 'Khả dụng', val: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
+                  { label: lang === 'vi' ? 'Tổng số phút' : 'Total minutes', val: pTotalMin, color: 'text-white' },
+                  { label: lang === 'vi' ? 'Đã học' : 'Completed', val: pUsedMin, color: 'text-sky-200' },
+                  { label: lang === 'vi' ? 'Giữ chỗ' : 'Booked', val: pHeldMin, color: pHeldMin > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
+                  { label: lang === 'vi' ? 'Khả dụng' : 'Available', val: pAvailableMin, color: pAvailableMin <= 0 ? 'text-rose-200' : 'text-emerald-300' },
                 ].map((s) => (
                   <div key={s.label} className="px-3 first:pl-0 last:pr-0">
                     <p className={`text-[32px] font-bold leading-none tracking-tight ${s.color}`}>{s.val}</p>
                     <p className="text-[11px] text-sky-100/80 mt-2 tracking-wide font-medium">{s.label}</p>
-                    <p className="text-[10px] text-sky-200/50 mt-0.5 uppercase tracking-wider font-semibold">phút</p>
+                    <p className="text-[10px] text-sky-200/50 mt-0.5 uppercase tracking-wider font-semibold">
+                      {lang === 'vi' ? 'phút' : 'min'}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -396,10 +442,10 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
-                  Phòng học trực tuyến
+                  {lang === 'vi' ? 'Phòng học trực tuyến' : 'Online Classroom'}
                 </h3>
                 <p className="text-xs text-slate-500 leading-normal">
-                  Bấm vào đây để tham gia lớp học trực tuyến cùng giáo viên.
+                  {lang === 'vi' ? 'Bấm vào đây để tham gia lớp học trực tuyến cùng giáo viên.' : 'Click here to join the online classroom with the teacher.'}
                 </p>
               </div>
               <a
@@ -408,7 +454,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                 rel="noopener noreferrer"
                 className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center gap-1.5 flex-shrink-0 animate-pulse"
               >
-                Vào học ngay
+                {lang === 'vi' ? 'Vào học ngay' : 'Join Class Now'}
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -422,10 +468,10 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4 text-[#3BB8EB]" />
-                  Giáo trình / Sách học viên
+                  {lang === 'vi' ? 'Giáo trình / Sách học viên' : 'Curriculum / Textbook'}
                 </h3>
                 <p className="text-xs text-slate-500 leading-normal">
-                  Bấm vào đây để mở và xem sách học tập trực tuyến của học viên.
+                  {lang === 'vi' ? 'Bấm vào đây để mở và xem sách học tập trực tuyến của học viên.' : 'Click here to open and view the online textbook for the student.'}
                 </p>
               </div>
               <a
@@ -434,7 +480,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                 rel="noopener noreferrer"
                 className="px-4 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200 hover:shadow-sky-300 transition-all flex items-center gap-1.5 flex-shrink-0"
               >
-                Xem sách học
+                {lang === 'vi' ? 'Xem sách học' : 'View Textbook'}
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -443,7 +489,9 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
         {/* Subject Packages Section */}
         <section className="space-y-4 animate-slide-up [animation-delay:60ms]">
-          <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight px-1">Gói học phí các môn</h3>
+          <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight px-1">
+            {lang === 'vi' ? 'Gói học phí các môn' : 'Subject Tuition Packages'}
+          </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {(student.subjects && student.subjects.length > 0
               ? student.subjects
@@ -492,38 +540,50 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                   <div className="grid grid-cols-4 gap-1 text-center bg-slate-50/70 rounded-xl p-2.5 text-[10px]">
                     <div>
                       <p className="font-bold text-slate-700">{sub.totalMinutes}p</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-1">Tổng thời gian</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">
+                        {lang === 'vi' ? 'Tổng thời gian' : 'Total time'}
+                      </p>
                     </div>
                     <div>
                       <p className="font-bold text-indigo-500">{sub.usedMinutes}p</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-1">Đã học</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">
+                        {lang === 'vi' ? 'Đã học' : 'Completed'}
+                      </p>
                     </div>
                     <div>
                       <p className="font-bold text-amber-600">{bookedMins}p</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-1">Đã đặt</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">
+                        {lang === 'vi' ? 'Đã đặt' : 'Booked'}
+                      </p>
                     </div>
                     <div>
                       <p className={`font-bold ${availMins <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{availMins}p</p>
-                      <p className="text-[9px] text-slate-500 leading-none mt-1">Khả dụng</p>
+                      <p className="text-[9px] text-slate-500 leading-none mt-1">
+                        {lang === 'vi' ? 'Khả dụng' : 'Available'}
+                      </p>
                     </div>
                   </div>
                   {sub.curriculumLink && (
                     <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 justify-between">
-                      <span className="text-[11px] font-semibold text-slate-500">Giáo trình:</span>
+                      <span className="text-[11px] font-semibold text-slate-500">
+                        {lang === 'vi' ? 'Giáo trình:' : 'Curriculum:'}
+                      </span>
                       <a
                         href={sub.curriculumLink.startsWith('http') ? sub.curriculumLink : `https://${sub.curriculumLink}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-0.5"
                       >
-                        Xem giáo trình
+                        {lang === 'vi' ? 'Xem giáo trình' : 'View Curriculum'}
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
                   )}
                   {sub.timetableNote && (
                     <div className="mt-2 pt-2 border-t border-slate-100/50">
-                      <span className="text-[11px] font-semibold text-slate-500 block mb-1">Ghi chú lịch học:</span>
+                      <span className="text-[11px] font-semibold text-slate-500 block mb-1">
+                        {lang === 'vi' ? 'Ghi chú lịch học:' : 'Timetable note:'}
+                      </span>
                       <p className="text-[11px] text-slate-700 font-medium whitespace-pre-wrap leading-normal bg-amber-50/50 border border-amber-100/70 p-2.5 rounded-xl">
                         {sub.timetableNote}
                       </p>
@@ -538,16 +598,22 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         {/* Quick insights row */}
         <section className="grid grid-cols-2 gap-3 animate-slide-up [animation-delay:80ms]">
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">Buổi 30 ngày qua</p>
+            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+              {lang === 'vi' ? 'Buổi 30 ngày qua' : 'Sessions last 30 days'}
+            </p>
             <p className="text-2xl font-bold text-slate-900 mt-1.5 tracking-tight">{insights.last30Count}</p>
             <p className="text-[11px] text-slate-500 mt-0.5 font-medium">{insights.consistency}</p>
           </div>
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">Thời lượng TB</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1.5 tracking-tight">
-              {insights.avgMin} <span className="text-sm font-medium text-slate-500">phút/buổi</span>
+            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+              {lang === 'vi' ? 'Thời lượng TB' : 'Avg Duration'}
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5 font-medium">Tổng {insights.totalMin} phút đã học</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1.5 tracking-tight">
+              {insights.avgMin} <span className="text-sm font-medium text-slate-500">{lang === 'vi' ? 'phút/buổi' : 'min/session'}</span>
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+              {lang === 'vi' ? `Tổng ${insights.totalMin} phút đã học` : `Total ${insights.totalMin} min completed`}
+            </p>
           </div>
         </section>
 
@@ -569,14 +635,14 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-indigo-500" />
-                  Thời khóa biểu tuần
+                  {lang === 'vi' ? 'Thời khóa biểu tuần' : 'Weekly Timetable'}
                 </h3>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setWeekStart(prev => getMonday(addDays(prev, -7)))}
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                    title="Tuần trước"
+                    title={lang === 'vi' ? 'Tuần trước' : 'Prev Week'}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -585,13 +651,13 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                     onClick={() => setWeekStart(getMonday(new Date()))}
                     className="px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"
                   >
-                    Tuần này
+                    {lang === 'vi' ? 'Tuần này' : 'This Week'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setWeekStart(prev => getMonday(addDays(prev, 7)))}
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                    title="Tuần sau"
+                    title={lang === 'vi' ? 'Tuần sau' : 'Next Week'}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -601,9 +667,11 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               {weekBookings.length === 0 ? (
                 <div className="bg-white border border-slate-200/70 rounded-2xl text-center py-10 px-4">
                   <Info className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-slate-500 text-xs font-semibold">Không có lịch học trong tuần này</p>
+                  <p className="text-slate-500 text-xs font-semibold">
+                    {lang === 'vi' ? 'Không có lịch học trong tuần này' : 'No classes scheduled this week'}
+                  </p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Tuần {weekDates[0].date.getDate()}/{weekDates[0].date.getMonth() + 1} - {weekDates[6].date.getDate()}/{weekDates[6].date.getMonth() + 1}
+                    {lang === 'vi' ? 'Tuần' : 'Week of'} {weekDates[0].date.getDate()}/{weekDates[0].date.getMonth() + 1} - {weekDates[6].date.getDate()}/{weekDates[6].date.getMonth() + 1}
                   </p>
                 </div>
               ) : (
@@ -611,14 +679,25 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                   <table className="w-full min-w-[500px] border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-slate-100">
-                        <th className="p-2 text-center text-slate-400 font-bold w-14 border-r border-slate-100">Giờ</th>
+                        <th className="p-2 text-center text-slate-400 font-bold w-14 border-r border-slate-100">
+                          {lang === 'vi' ? 'Giờ' : 'Time'}
+                        </th>
                         {weekDates.map(({ day, date }) => {
                           const isToday = date.toDateString() === new Date().toDateString()
+                          const dayNamesLookup: Record<string, { vi: string; en: string }> = {
+                            mon: { vi: 'T2', en: 'Mon' },
+                            tue: { vi: 'T3', en: 'Tue' },
+                            wed: { vi: 'T4', en: 'Wed' },
+                            thu: { vi: 'T5', en: 'Thu' },
+                            fri: { vi: 'T6', en: 'Fri' },
+                            sat: { vi: 'T7', en: 'Sat' },
+                            sun: { vi: 'CN', en: 'Sun' },
+                          }
                           return (
                             <th key={day} className={`p-2 text-center font-extrabold border-r border-slate-100 min-w-[65px] ${isToday ? 'bg-indigo-50/40 text-indigo-600' : 'text-slate-600'}`}>
                               <div>{date.getDate()}/{date.getMonth() + 1}</div>
                               <div className="text-[8px] uppercase tracking-wide opacity-75 mt-0.5">
-                                {day === 'sun' ? 'CN' : `T${day === 'mon' ? '2' : day === 'tue' ? '3' : day === 'wed' ? '4' : day === 'thu' ? '5' : day === 'fri' ? '6' : '7'}`}
+                                {dayNamesLookup[day]?.[lang] || day}
                               </div>
                             </th>
                           )
@@ -673,14 +752,22 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         {/* Homework & Comments */}
         <section className="space-y-3 animate-slide-up [animation-delay:240ms]">
           <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">Bài tập & Nhận xét</h3>
-            <span className="text-[11px] text-slate-400 font-medium">{homeworkLessons.length} buổi</span>
+            <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">
+              {lang === 'vi' ? 'Bài tập & Nhận xét' : 'Homework & Feedback'}
+            </h3>
+            <span className="text-[11px] text-slate-400 font-medium">
+              {homeworkLessons.length} {lang === 'vi' ? 'buổi' : 'sessions'}
+            </span>
           </div>
 
           {homeworkLessons.length === 0 ? (
             <div className="bg-white border border-dashed border-slate-200 rounded-2xl text-center py-14">
-              <p className="text-slate-500 text-sm font-medium">Chưa có nhận xét nào</p>
-              <p className="text-xs text-slate-400 mt-1">Sẽ hiển thị sau mỗi buổi học được duyệt</p>
+              <p className="text-slate-500 text-sm font-medium">
+                {lang === 'vi' ? 'Chưa có nhận xét nào' : 'No feedback yet'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {lang === 'vi' ? 'Sẽ hiển thị sau mỗi buổi học được duyệt' : 'Will be displayed after each approved session'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -700,14 +787,14 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                       </p>
                     </div>
                     <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full tabular-nums">
-                      {lesson.minutes} phút
+                      {lesson.minutes} {lang === 'vi' ? 'phút' : 'min'}
                     </span>
                   </header>
 
                   {lesson.comment && (
                     <div className="mb-4">
                       <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-[0.15em] mb-2">
-                        Nhận xét
+                        {lang === 'vi' ? 'Nhận xét' : 'Feedback'}
                       </p>
                       <div className="relative pl-4">
                         <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-emerald-400 rounded-full" />
@@ -719,7 +806,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                   {lesson.homework && (
                     <div className="mb-4">
                       <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-[0.15em] mb-2">
-                        Bài tập về nhà
+                        {lang === 'vi' ? 'Bài tập về nhà' : 'Homework'}
                       </p>
                       <div className="relative pl-4">
                         <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-amber-400 rounded-full" />
@@ -731,7 +818,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                   {lesson.imageURLs?.length > 0 && (
                     <div>
                       <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.15em] mb-2">
-                        Hình ảnh
+                        {lang === 'vi' ? 'Hình ảnh' : 'Images'}
                       </p>
                       <div className="flex gap-2 flex-wrap">
                         {lesson.imageURLs.map((url, idx) => (
@@ -755,12 +842,16 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         {/* Timeline */}
         <section className="space-y-3 animate-slide-up [animation-delay:320ms]">
           <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">Lịch sử buổi học</h3>
-            <span className="text-[11px] text-slate-400 font-medium">{lessons.length} buổi</span>
+            <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">
+              {lang === 'vi' ? 'Lịch sử buổi học' : 'Lesson History'}
+            </h3>
+            <span className="text-[11px] text-slate-400 font-medium">
+              {lessons.length} {lang === 'vi' ? 'buổi' : 'sessions'}
+            </span>
           </div>
           {lessons.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-8 bg-white border border-dashed border-slate-200 rounded-2xl">
-              Chưa có buổi học nào
+              {lang === 'vi' ? 'Chưa có buổi học nào' : 'No sessions recorded'}
             </p>
           ) : (
             <div className="bg-white border border-slate-200/70 rounded-2xl divide-y divide-slate-100 overflow-hidden">
@@ -773,7 +864,9 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                     {lesson.date}
                   </span>
                   <span className="text-slate-700 flex-1 truncate font-medium">{lesson.teacherName}</span>
-                  <span className="text-slate-400 text-xs shrink-0 tabular-nums">{lesson.minutes} phút</span>
+                  <span className="text-slate-400 text-xs shrink-0 tabular-nums">
+                    {lesson.minutes} {lang === 'vi' ? 'phút' : 'min'}
+                  </span>
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full shrink-0" />
                 </div>
               ))}
@@ -791,7 +884,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           <button
             className="absolute top-5 right-5 p-2.5 bg-white/15 hover:bg-white/25 backdrop-blur-md rounded-xl text-white transition-colors"
             onClick={() => setViewImage(null)}
-            aria-label="Đóng"
+            aria-label={lang === 'vi' ? 'Đóng' : 'Close'}
           >
             <X className="w-5 h-5" />
           </button>
@@ -808,19 +901,27 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         <Modal
           open
           onClose={() => setSelectedParentBooking(null)}
-          title="Chi tiết lịch học"
+          title={lang === 'vi' ? 'Chi tiết lịch học' : 'Class Session Details'}
           footer={
             <div className="flex justify-end">
-              <Button variant="ghost" onClick={() => setSelectedParentBooking(null)}>Đóng</Button>
+              <Button variant="ghost" onClick={() => setSelectedParentBooking(null)}>
+                {lang === 'vi' ? 'Đóng' : 'Close'}
+              </Button>
             </div>
           }
         >
           <div className="space-y-4">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-2">
-              <p className="text-[10px] font-bold uppercase text-indigo-700 tracking-wider">Thời gian học</p>
+              <p className="text-[10px] font-bold uppercase text-indigo-700 tracking-wider">
+                {lang === 'vi' ? 'Thời gian học' : 'Class Time'}
+              </p>
               <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-indigo-500" />
-                Thứ {selectedParentBooking.requestedDay === 'sun' ? 'Nhật' : selectedParentBooking.requestedDay === 'mon' ? '2' : selectedParentBooking.requestedDay === 'tue' ? '3' : selectedParentBooking.requestedDay === 'wed' ? '4' : selectedParentBooking.requestedDay === 'thu' ? '5' : selectedParentBooking.requestedDay === 'fri' ? '6' : '7'}
+                {lang === 'vi' ? 'Thứ ' : ''}
+                {lang === 'vi'
+                  ? (selectedParentBooking.requestedDay === 'sun' ? 'Nhật' : selectedParentBooking.requestedDay === 'mon' ? '2' : selectedParentBooking.requestedDay === 'tue' ? '3' : selectedParentBooking.requestedDay === 'wed' ? '4' : selectedParentBooking.requestedDay === 'thu' ? '5' : selectedParentBooking.requestedDay === 'fri' ? '6' : '7')
+                  : (selectedParentBooking.requestedDay === 'sun' ? 'Sunday' : selectedParentBooking.requestedDay === 'mon' ? 'Monday' : selectedParentBooking.requestedDay === 'tue' ? 'Tuesday' : selectedParentBooking.requestedDay === 'wed' ? 'Wednesday' : selectedParentBooking.requestedDay === 'thu' ? 'Thursday' : selectedParentBooking.requestedDay === 'fri' ? 'Friday' : 'Saturday')
+                }
                 {` (${selectedParentBooking.requestedDate})`} · {selectedParentBooking.requestedStart} - {selectedParentBooking.requestedEnd}
               </p>
             </div>
@@ -829,7 +930,9 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               <div className="flex items-start gap-2.5">
                 <UserIcon className="w-4 h-4 text-slate-400 mt-0.5" />
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">Giáo viên</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">
+                    {lang === 'vi' ? 'Giáo viên' : 'Teacher'}
+                  </span>
                   <span className="text-sm font-bold text-slate-800 block mt-1">{selectedParentBooking.teacherName}</span>
                 </div>
               </div>
@@ -837,7 +940,9 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               <div className="flex items-start gap-2.5 pt-3 border-t border-slate-100">
                 <Info className="w-4 h-4 text-slate-400 mt-0.5" />
                 <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">Môn học</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">
+                    {lang === 'vi' ? 'Môn học' : 'Subject'}
+                  </span>
                   <span className="text-sm font-bold text-indigo-600 block mt-1">{selectedParentBooking.subjectName}</span>
                 </div>
               </div>
@@ -850,7 +955,9 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                     {roomLink && (
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Phòng học trực tuyến</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            {lang === 'vi' ? 'Phòng học trực tuyến' : 'Online Classroom'}
+                          </span>
                           <p className="text-[11px] text-slate-400 truncate mt-0.5">{roomLink}</p>
                         </div>
                         <a
@@ -859,14 +966,16 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                           rel="noopener noreferrer"
                           className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 flex-shrink-0 animate-pulse"
                         >
-                          Vào phòng học
+                          {lang === 'vi' ? 'Vào phòng học' : 'Join Classroom'}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
                     )}
                     {subjectPkg?.timetableNote && (
                       <div className="pt-3 border-t border-slate-100">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Ghi chú lịch học</span>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
+                          {lang === 'vi' ? 'Ghi chú lịch học' : 'Timetable Note'}
+                        </span>
                         <p className="text-xs text-slate-750 font-semibold leading-normal bg-amber-50/50 border border-amber-100/70 p-2.5 rounded-xl whitespace-pre-wrap">
                           {subjectPkg.timetableNote}
                         </p>

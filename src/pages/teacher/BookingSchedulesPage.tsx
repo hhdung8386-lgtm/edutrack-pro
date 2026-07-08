@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { uploadLessonImage } from '@/lib/imageUploader'
+import { useLanguageStore } from '@/stores/languageStore'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -129,6 +130,7 @@ interface ImageUpload {
 
 export function BookingSchedulesPage() {
   const { teacherId } = useAuthStore()
+  const { lang, t } = useLanguageStore()
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
@@ -453,7 +455,7 @@ export function BookingSchedulesPage() {
       setAttendanceStatus('present')
     } catch (error) {
       console.error('Submit calendar attendance failed:', error)
-      toast.error('Điểm danh thất bại, vui lòng thử lại!')
+      toast.error(t('attendance.submit_fail'))
     } finally {
       setSubmittingAttendance(false)
     }
@@ -469,8 +471,8 @@ export function BookingSchedulesPage() {
               <CalendarClock className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-black">Lịch dạy của tôi (My Schedules)</h1>
-              <p className="mt-1 text-sm text-sky-100">Bảng theo dõi ca học, mở rộng chi tiết phòng học và điểm danh nhanh chóng.</p>
+              <h1 className="text-2xl font-black">{t('sched.title')}</h1>
+              <p className="mt-1 text-sm text-sky-100">{t('sched.subtitle')}</p>
             </div>
           </div>
         </div>
@@ -486,7 +488,7 @@ export function BookingSchedulesPage() {
           >
             {TIME_WINDOWS.map((item) => (
               <option key={item.key} value={item.key}>
-                Ca: {item.label}
+                {t('sched.shift')}: {item.label}
               </option>
             ))}
           </select>
@@ -496,13 +498,13 @@ export function BookingSchedulesPage() {
         {/* Quick week controls */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
-            Tuần trước
+            {t('sched.prev_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
-            Tuần này
+            {t('sched.this_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
-            Tuần sau
+            {t('sched.next_week')}
           </Button>
         </div>
       </div>
@@ -510,7 +512,7 @@ export function BookingSchedulesPage() {
       {/* Grid schedule table */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="py-20 text-center font-bold text-slate-500 text-sm">Đang tải lịch biểu dạy...</div>
+          <div className="py-20 text-center font-bold text-slate-500 text-sm">{t('sched.loading')}</div>
         ) : (
           <table className="w-full min-w-[750px] border-collapse text-sm">
             <thead>
@@ -599,7 +601,7 @@ export function BookingSchedulesPage() {
             setShowDetailModal(false)
             setSelectedBooking(null)
           }}
-          title="Thông tin lớp học"
+          title={t('sched.info')}
           footer={
             <div className="flex gap-3 justify-end w-full">
               {!selectedBooking.lessonId && (() => {
@@ -607,14 +609,14 @@ export function BookingSchedulesPage() {
                 if (student?.status === 'reserved') {
                   return (
                     <div className="text-xs text-rose-600 font-bold self-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5">
-                      Học viên đang bảo lưu
+                      {lang === 'vi' ? 'Học viên đang bảo lưu' : 'Student is on leave'}
                     </div>
                   )
                 }
                 return (
                   <Button variant="primary" onClick={() => setShowAttendanceModal(true)} className="flex items-center gap-1.5">
                     <PenSquare className="w-4 h-4" />
-                    Điểm danh ngay
+                    {t('sched.attendance_btn')}
                   </Button>
                 )
               })()}
@@ -622,22 +624,28 @@ export function BookingSchedulesPage() {
                 setShowDetailModal(false)
                 setSelectedBooking(null)
               }}>
-                Đóng
+                {t('sched.close')}
               </Button>
             </div>
           }
         >
           <div className="space-y-4">
             <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-4 space-y-2">
-              <p className="text-xs font-semibold uppercase text-sky-700">Ca học</p>
+              <p className="text-xs font-semibold uppercase text-sky-700">{t('sched.class_slot')}</p>
               <p className="text-sm font-bold text-slate-800">
-                Thứ {selectedBooking.requestedDay === 'sun' ? 'Nhật' : selectedBooking.requestedDay === 'mon' ? '2' : selectedBooking.requestedDay === 'tue' ? '3' : selectedBooking.requestedDay === 'wed' ? '4' : selectedBooking.requestedDay === 'thu' ? '5' : selectedBooking.requestedDay === 'fri' ? '6' : '7'}
-                {` (${selectedBooking.requestedDate})`} · Từ {selectedBooking.requestedStart} đến {selectedBooking.requestedEnd} ({selectedBooking.requestedMinutes} phút)
+                {lang === 'vi' ? 'Thứ ' : ''}
+                {lang === 'vi'
+                  ? (selectedBooking.requestedDay === 'sun' ? 'Nhật' : selectedBooking.requestedDay === 'mon' ? '2' : selectedBooking.requestedDay === 'tue' ? '3' : selectedBooking.requestedDay === 'wed' ? '4' : selectedBooking.requestedDay === 'thu' ? '5' : selectedBooking.requestedDay === 'fri' ? '6' : '7')
+                  : (selectedBooking.requestedDay === 'sun' ? 'Sunday' : selectedBooking.requestedDay === 'mon' ? 'Monday' : selectedBooking.requestedDay === 'tue' ? 'Tuesday' : selectedBooking.requestedDay === 'wed' ? 'Wednesday' : selectedBooking.requestedDay === 'thu' ? 'Thursday' : selectedBooking.requestedDay === 'fri' ? 'Friday' : 'Saturday')
+                }
+                {` (${selectedBooking.requestedDate})`} · {lang === 'vi' ? 'Từ' : 'From'} {selectedBooking.requestedStart} {lang === 'vi' ? 'đến' : 'to'} {selectedBooking.requestedEnd} ({selectedBooking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})
               </p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase text-slate-400">Học sinh & môn học</p>
+              <p className="text-xs font-semibold uppercase text-slate-400">
+                {t('sched.student_subject')}
+              </p>
               <div>
                 <h3 className="font-bold text-slate-900 text-base">{selectedBooking.studentName}</h3>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedBooking.studentCode}</p>
@@ -645,15 +653,15 @@ export function BookingSchedulesPage() {
 
               <div className="grid grid-cols-2 gap-4 text-xs mt-2 border-t border-slate-100 pt-3">
                 <div>
-                  <span className="text-slate-500 font-semibold">Môn học: </span>
+                  <span className="text-slate-500 font-semibold">{t('sched.subject')} </span>
                   <span className="text-slate-800 font-bold">{selectedBooking.subjectName || '—'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 font-semibold">Điểm danh: </span>
+                  <span className="text-slate-500 font-semibold">{t('sched.attendance')} </span>
                   <span className={`px-2 py-0.5 rounded-full font-bold ${
                     selectedBooking.lessonId ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                   }`}>
-                    {selectedBooking.lessonId ? 'Đã hoàn thành' : 'Chưa điểm danh'}
+                    {selectedBooking.lessonId ? t('sched.completed') : t('sched.not_checked')}
                   </span>
                 </div>
               </div>
@@ -670,7 +678,7 @@ export function BookingSchedulesPage() {
                     {roomLink && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">
-                          <span className="text-xs text-slate-500 font-semibold block">Phòng học trực tuyến:</span>
+                          <span className="text-xs text-slate-500 font-semibold block">{t('sched.online_class')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{roomLink}</p>
                         </div>
                         <a
@@ -679,7 +687,7 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          Mở lớp học
+                          {t('sched.open_class')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -687,7 +695,7 @@ export function BookingSchedulesPage() {
                     {curriculumLink && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">
-                          <span className="text-xs text-slate-500 font-semibold block">Giáo trình môn học:</span>
+                          <span className="text-xs text-slate-500 font-semibold block">{t('sched.curriculum')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{curriculumLink}</p>
                         </div>
                         <a
@@ -696,15 +704,15 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          Xem giáo trình
+                          {t('sched.view_curriculum')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
                     )}
                     {subjectPkg?.timetableNote && (
                       <div className="mt-2 pt-3 border-t border-slate-100">
-                        <span className="text-xs text-slate-500 font-semibold block">Note timetable học viên:</span>
-                        <p className="text-xs text-slate-700 font-medium mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
+                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.timetable_note')}</span>
+                        <p className="text-xs text-slate-775 font-semibold mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
                           {subjectPkg.timetableNote}
                         </p>
                       </div>
@@ -712,7 +720,7 @@ export function BookingSchedulesPage() {
                     {student?.textbookURL && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">
-                          <span className="text-xs text-slate-500 font-semibold block">Link sách học viên:</span>
+                          <span className="text-xs text-slate-500 font-semibold block">{t('sched.textbook_link')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
                         </div>
                         <a
@@ -721,7 +729,7 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          Mở sách học viên
+                          {t('sched.open_textbook')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -739,12 +747,12 @@ export function BookingSchedulesPage() {
         <Modal
           open
           onClose={() => setShowAttendanceModal(false)}
-          title={`Điểm danh: ${selectedBooking.studentName}`}
+          title={`${t('sched.attendance_for')} ${selectedBooking.studentName}`}
           footer={
             <div className="flex gap-3 justify-end">
-              <Button variant="ghost" onClick={() => setShowAttendanceModal(false)}>Hủy</Button>
+              <Button variant="ghost" onClick={() => setShowAttendanceModal(false)}>{t('sched.cancel')}</Button>
               <Button variant="primary" loading={submittingAttendance} onClick={submitAttendance}>
-                Gửi điểm danh
+                {t('attendance.submit')}
               </Button>
             </div>
           }
@@ -752,23 +760,23 @@ export function BookingSchedulesPage() {
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
               <div>
-                <span className="text-xs text-slate-500 font-semibold block">Môn học:</span>
+                <span className="text-xs text-slate-500 font-semibold block">{t('attendance.subject')}:</span>
                 <span className="text-sm font-bold text-slate-800">{selectedBooking.subjectName}</span>
               </div>
               <div>
-                <span className="text-xs text-slate-500 font-semibold block">Thời lượng:</span>
-                <span className="text-sm font-bold text-slate-800">{selectedBooking.requestedMinutes} phút</span>
+                <span className="text-xs text-slate-500 font-semibold block">{t('sched.duration')}</span>
+                <span className="text-sm font-bold text-slate-800">{selectedBooking.requestedMinutes} {t('attendance.minutes')}</span>
               </div>
             </div>
 
             {/* Attendance Status Selector */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Trạng thái điểm danh *</label>
+              <label className="block text-sm font-bold text-slate-700">{t('sched.status_label')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { key: 'present', label: 'Đi học đủ' },
-                  { key: 'with_permission', label: 'Vắng có phép (0p)' },
-                  { key: 'without_permission', label: 'Vắng không phép (25p)' }
+                  { key: 'present', label: t('sched.status_present') },
+                  { key: 'with_permission', label: t('sched.status_excused') },
+                  { key: 'without_permission', label: t('sched.status_unexcused') }
                 ].map((item) => (
                   <button
                     key={item.key}
@@ -788,12 +796,12 @@ export function BookingSchedulesPage() {
 
             {/* Book/Materials input */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Sách học / Giáo trình / Tài liệu *</label>
+              <label className="block text-sm font-bold text-slate-700">{t('sched.book_label')}</label>
               <input
                 type="text"
                 value={book}
                 onChange={(e) => setBook(e.target.value)}
-                placeholder="VD: Let's Go 1 - Unit 2 Lesson 1 (Tối đa 20 từ)"
+                placeholder={t('sched.book_ph')}
                 disabled={attendanceStatus !== 'present'}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
               />
@@ -801,31 +809,31 @@ export function BookingSchedulesPage() {
 
             {/* Comments */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Nhận xét buổi dạy</label>
+              <label className="block text-sm font-bold text-slate-700">{t('attendance.comment')}</label>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={3}
-                placeholder="Nhận xét tinh thần, sự tập trung và mức độ hiểu bài của học viên..."
+                placeholder={t('sched.comment_ph')}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
               />
             </div>
 
             {/* Homework */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Bài tập về nhà</label>
+              <label className="block text-sm font-bold text-slate-700">{t('attendance.homework')}</label>
               <textarea
                 value={homework}
                 onChange={(e) => setHomework(e.target.value)}
                 rows={2}
-                placeholder="Nhiệm vụ về nhà cho học viên..."
+                placeholder={t('sched.homework_ph')}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
               />
             </div>
 
             {/* Evidence image uploads */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Hình ảnh minh chứng lớp học</label>
+              <label className="block text-sm font-bold text-slate-700">{t('sched.proof_images')}</label>
               <div className="grid grid-cols-5 gap-2">
                 {images.map((img, idx) => (
                   <div key={idx} className="relative aspect-square border border-slate-200 rounded-lg overflow-hidden">
@@ -849,7 +857,7 @@ export function BookingSchedulesPage() {
                 {images.length < 20 && (
                   <label className="border border-dashed border-slate-300 hover:border-indigo-400 rounded-lg aspect-square flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition">
                     <Upload className="w-5 h-5 text-slate-400" />
-                    <span className="text-[10px] text-slate-400 mt-1">Tải ảnh</span>
+                    <span className="text-[10px] text-slate-400 mt-1">{t('sched.upload_image')}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -860,7 +868,7 @@ export function BookingSchedulesPage() {
                   </label>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400">Chụp màn hình buổi học trực tuyến hoặc bảng viết (tối đa 20 ảnh).</p>
+              <p className="text-[11px] text-slate-400">{t('sched.proof_desc')}</p>
             </div>
           </div>
         </Modal>
