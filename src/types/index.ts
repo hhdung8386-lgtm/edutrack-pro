@@ -62,6 +62,7 @@ export interface Teacher {
   bio: string
   photoURL: string
   status: 'active' | 'inactive'
+  gender?: 'male' | 'female'
   teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
   country?: string

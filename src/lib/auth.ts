@@ -3,7 +3,7 @@ import {
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore'
 import { auth, db, secondaryAuth } from './firebase'
 
 const TEACHER_FIXED_PASSWORD = '1234560'
@@ -104,6 +104,14 @@ export async function signInTeacher(teacherCode: string, password: string) {
         try {
           const created = await createUserWithEmailAndPassword(secondaryAuth, email, TEACHER_FIXED_PASSWORD)
           await secondaryAuth.signOut()
+          // Delete old user document if it has a different uid/document id to prevent duplicates
+          if (existingUserDoc && existingUserDoc.id !== created.user.uid) {
+            try {
+              await deleteDoc(existingUserDoc.ref)
+            } catch (delErr) {
+              console.warn('Failed to delete old user doc:', delErr)
+            }
+          }
           await setDoc(doc(db, 'users', created.user.uid), {
             uid: created.user.uid,
             email,

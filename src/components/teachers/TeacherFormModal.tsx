@@ -53,9 +53,35 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   // Auth fields for creating new teacher account
   const [newUsername, setNewUsername] = useState('')
+  const [gender, setGender] = useState<'male' | 'female'>(teacher?.gender || 'female')
   const [subjectSearch, setSubjectSearch] = useState('')
   const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false)
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
+
+  const regenerateNickname = async (targetGender?: 'male' | 'female') => {
+    try {
+      const g = targetGender || gender
+      const newName = await generateUniqueEnglishName(g)
+      setGeneratedCode(newName)
+      setNewUsername(newName)
+      toast.success(`Sinh tên ${g === 'male' ? 'Nam' : 'Nữ'}: ${newName}`)
+    } catch (err) {
+      toast.error('Không thể sinh tên tiếng Anh mới')
+    }
+  }
+
+  const handleGenderChange = async (val: 'male' | 'female') => {
+    setGender(val)
+    if (!isEdit) {
+      try {
+        const newName = await generateUniqueEnglishName(val)
+        setGeneratedCode(newName)
+        setNewUsername(newName)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  }
 
 
 
@@ -126,8 +152,17 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   }, [isEdit])
 
   useEffect(() => {
+    if (isEdit && teacher) {
+      setNewUsername(teacher.code || '')
+      if (teacher.gender) {
+        setGender(teacher.gender)
+      }
+    }
+  }, [isEdit, teacher])
+
+  useEffect(() => {
     if (!isEdit && !generatedCode) {
-      generateUniqueEnglishName()
+      generateUniqueEnglishName(gender)
         .then((code) => {
           setGeneratedCode(code)
           setNewUsername(code)
@@ -137,7 +172,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           toast.error('Không thể sinh mã tài khoản giáo viên')
         })
     }
-  }, [isEdit, generatedCode])
+  }, [isEdit, generatedCode, gender])
 
 
 
@@ -265,12 +300,42 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         let photoURL = teacher.photoURL
         if (photoFile) photoURL = await uploadPhoto(teacher.id, photoFile)
 
+        // If nickname changed, verify uniqueness
+        if (newUsername && newUsername !== teacher.code) {
+          const checkQuery = query(collection(db, 'teachers'), where('code', '==', newUsername))
+          const checkSnap = await getDocs(checkQuery)
+          if (!checkSnap.empty) {
+            toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi giáo viên khác!`)
+            return
+          }
+          const studentCheckQuery = query(collection(db, 'students'), where('code', '==', newUsername))
+          const studentCheckSnap = await getDocs(studentCheckQuery)
+          if (!studentCheckSnap.empty) {
+            toast.error(`Tên tài khoản "${newUsername}" đã được học viên sử dụng!`)
+            return
+          }
+
+          // Update users collection document to sync login
+          const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
+          const userSnap = await getDocs(userQuery)
+          if (!userSnap.empty) {
+            const userDoc = userSnap.docs[0]
+            const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
+            await updateDoc(userDoc.ref, {
+              username: newUsername,
+              email: finalEmail
+            })
+          }
+        }
+
         await updateDoc(doc(db, 'teachers', teacher.id), {
+          code: newUsername || teacher.code,
           name: finalName || teacher.name,
           level: data.level,
           bio: data.bio || '',
           country: data.country || 'VN',
           timezoneOffset,
+          gender: gender,
           subjectIds: selectedSubjects,
           subjectNames,
           branchId: selectedBranchId || '',
@@ -290,7 +355,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         let code = generatedCode || newUsername
         if (!code) {
           try {
-            code = await generateUniqueEnglishName()
+            code = await generateUniqueEnglishName(gender)
           } catch (err: any) {
             toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
             return
@@ -333,6 +398,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           bio: data.bio || '',
           country: data.country || 'VN',
           timezoneOffset,
+          gender: gender,
           subjectIds: selectedSubjects,
           subjectNames,
           branchId: selectedBranchId || '',
@@ -399,41 +465,85 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     >
       <form id="teacher-form" className="space-y-4">
 
-        {/* Account creation section - only for new teachers */}
-        {!isEdit && (
-          <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
-            <h4 className="font-medium text-indigo-900 flex items-center gap-2">
-              Tạo tài khoản giáo viên <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Bắt buộc</span>
-            </h4>
+        {/* Account & Gender section */}
+        <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
+          <h4 className="font-semibold text-indigo-900 text-sm flex items-center gap-2">
+            Tài khoản đăng nhập & Giới tính
+          </h4>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Gender Field */}
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Tên tài khoản *</label>
-              <input
-                id="field-username"
-                type="text"
-                required
-                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.username ? 'border-red-500' : 'border-slate-300'}`}
-                placeholder="Ví dụ: giasu1"
-                value={newUsername}
-                onChange={e => {
-                  setNewUsername(e.target.value)
-                  if (localErrors.username) setLocalErrors(prev => ({ ...prev, username: '' }))
-                }}
-              />
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Giới tính</label>
+              <div className="flex items-center gap-4 mt-2">
+                <label className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer font-medium">
+                  <input
+                    type="radio"
+                    name="gender"
+                    checked={gender === 'female'}
+                    onChange={() => handleGenderChange('female')}
+                    className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  />
+                  Nữ
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer font-medium">
+                  <input
+                    type="radio"
+                    name="gender"
+                    checked={gender === 'male'}
+                    onChange={() => handleGenderChange('male')}
+                    className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  />
+                  Nam
+                </label>
+              </div>
+            </div>
+
+            {/* Username/Nickname Field */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Tên tài khoản (Mã) *</label>
+              <div className="flex gap-2">
+                <input
+                  id="field-username"
+                  type="text"
+                  required
+                  className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${localErrors.username ? 'border-red-500' : 'border-slate-300'}`}
+                  placeholder="Ví dụ: giasu1"
+                  value={newUsername}
+                  onChange={e => {
+                    setNewUsername(e.target.value.replace(/\s+/g, ''))
+                    if (localErrors.username) setLocalErrors(prev => ({ ...prev, username: '' }))
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => regenerateNickname()}
+                  className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                  title="Sinh tên ngẫu nhiên theo giới tính"
+                >
+                  🔄 Sinh tên
+                </button>
+              </div>
               {localErrors.username ? (
                 <p className="text-[10px] text-red-500 mt-1">{localErrors.username}</p>
               ) : (
-                <p className="text-[10px] text-slate-400 mt-1">Giáo viên đăng nhập bằng tên này</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {isEdit 
+                    ? '⚠️ Thay đổi tên này sẽ đổi tài khoản đăng nhập của giáo viên!'
+                    : 'Giáo viên dùng tên này để đăng nhập vào hệ thống.'}
+                </p>
               )}
             </div>
+          </div>
 
+          {!isEdit && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-xs text-blue-700 font-medium">
                 ℹ️ <strong>Mật khẩu cố định:</strong> Tất cả giáo viên sẽ dùng mật khẩu <strong>1234560</strong>
               </p>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Photo upload */}
         <div className="flex items-center gap-4">
