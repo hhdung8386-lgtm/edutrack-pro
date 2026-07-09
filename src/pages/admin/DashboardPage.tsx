@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, limit, getDocs, getCountFromServer, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, limit, getDocs, getCountFromServer, doc, setDoc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -79,7 +79,40 @@ export function DashboardPage() {
         console.error('Failed to auto-provision managers:', err)
       }
     }
+
+    async function cleanupOldImages() {
+      const lastCleanup = localStorage.getItem('last_image_cleanup_date')
+      const todayStr = new Date().toISOString().split('T')[0]
+      if (lastCleanup === todayStr) return
+
+      try {
+        const threshold = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        const q = query(
+          collection(db, 'lessons'),
+          where('date', '<', threshold)
+        )
+        const snap = await getDocs(q)
+        const docsToClean = snap.docs.filter(d => {
+          const data = d.data()
+          return data.imageURLs && data.imageURLs.length > 0
+        })
+
+        if (docsToClean.length > 0) {
+          console.log(`Cleaning old evidence images for ${docsToClean.length} lessons...`)
+          await Promise.all(docsToClean.map(d => 
+            updateDoc(doc(db, 'lessons', d.id), {
+              imageURLs: [] // Clear evidence images to save document space
+            })
+          ))
+        }
+        localStorage.setItem('last_image_cleanup_date', todayStr)
+      } catch (err) {
+        console.error('Failed to cleanup old lesson images:', err)
+      }
+    }
+
     provisionManagers()
+    cleanupOldImages()
   }, [])
 
   useEffect(() => {

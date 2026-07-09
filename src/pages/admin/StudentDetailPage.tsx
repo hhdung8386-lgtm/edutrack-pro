@@ -117,10 +117,11 @@ export function StudentDetailPage() {
 
   // Live rates per (subjectId, teacherId) for drift detection / recalc
   const [liveRates, setLiveRates] = useState<{
-    subjectPrice: Record<string, number>
+    subjectPrice: Record<string, any>
     teacherLevel: Record<string, number>
     teacherUid: Record<string, string>
-  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {} })
+    teacherCountry: Record<string, string>
+  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {}, teacherCountry: {} })
   const [recalcLesson, setRecalcLesson] = useState<{
     lesson: Lesson
     newPrice: number
@@ -172,29 +173,46 @@ export function StudentDetailPage() {
     const teacherIds = Array.from(new Set(lessons.map(l => l.teacherId).filter(Boolean)))
     let cancelled = false
     Promise.all([
-      Promise.all(subjectIds.map(sid => getDoc(doc(db, 'subjects', sid)).then(s => [sid, s.data()?.pricePerMinute ?? 0] as const))),
+      Promise.all(subjectIds.map(sid => getDoc(doc(db, 'subjects', sid)).then(s => {
+        const data = s.data()
+        return [sid, {
+          pricePerMinute: data?.pricePerMinute ?? 0,
+          pricePerMinuteVN: data?.pricePerMinuteVN ?? data?.pricePerMinute ?? 0,
+          pricePerMinutePH: data?.pricePerMinutePH ?? data?.pricePerMinute ?? 0,
+          pricePerMinuteNative: data?.pricePerMinuteNative ?? data?.pricePerMinute ?? 0,
+        }] as const
+      }))),
       Promise.all(teacherIds.map(tid => getDoc(doc(db, 'teachers', tid)).then(t => {
         const data = t.data()
-        return [tid, data?.level ?? 1, data?.uid ?? ''] as const
+        return [tid, data?.level ?? 1, data?.uid ?? '', data?.country ?? 'VN'] as const
       }))),
     ]).then(([subjs, tchrs]) => {
       if (cancelled) return
-      const subjectPrice: Record<string, number> = {}
-      subjs.forEach(([k, v]) => { subjectPrice[k] = v as number })
+      const subjectPrice: Record<string, any> = {}
+      subjs.forEach(([k, v]) => { subjectPrice[k] = v })
       const teacherLevel: Record<string, number> = {}
       const teacherUid: Record<string, string> = {}
-      tchrs.forEach(([k, lv, uid]) => {
+      const teacherCountry: Record<string, string> = {}
+      tchrs.forEach(([k, lv, uid, country]) => {
         teacherLevel[k] = lv as number
         teacherUid[k] = uid as string
+        teacherCountry[k] = country as string
       })
-      setLiveRates({ subjectPrice, teacherLevel, teacherUid })
+      setLiveRates({ subjectPrice, teacherLevel, teacherUid, teacherCountry })
     })
     return () => { cancelled = true }
   }, [lessons.length, student?.subjectId])
 
   // Helper: compute current expected salary from live rates
   const expectedSalary = (lesson: Lesson) => {
-    const price = liveRates.subjectPrice[lesson.subjectId] ?? lesson.pricePerMinute ?? 0
+    const country = liveRates.teacherCountry[lesson.teacherId] ?? 'VN'
+    const rates = liveRates.subjectPrice[lesson.subjectId]
+    let price = lesson.pricePerMinute ?? 0
+    if (rates) {
+      if (country === 'VN') price = rates.pricePerMinuteVN || rates.pricePerMinute || 0
+      else if (country === 'PH') price = rates.pricePerMinutePH || rates.pricePerMinute || 0
+      else price = rates.pricePerMinuteNative || rates.pricePerMinute || 0
+    }
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
     return { price, level, salary: calculateSalary(lesson.minutes, price, level) }
   }
@@ -487,7 +505,7 @@ export function StudentDetailPage() {
   const pendingLessons = lessons.filter((l) => l.status === 'pending')
   const rejectedLessons = lessons.filter((l) => l.status === 'rejected')
 
-  const storedSubjects = student.subjects && student.subjects.length > 0
+  const storedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
     ? student.subjects
     : student.subjectId
       ? [{
@@ -500,7 +518,7 @@ export function StudentDetailPage() {
           totalMinutes: student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50)),
           usedMinutes: student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50)),
           remainingMinutes: student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50)),
-          pricePerMinute: liveRates.subjectPrice[student.subjectId] || 0,
+          pricePerMinute: liveRates.subjectPrice[student.subjectId]?.pricePerMinute || 0,
         }]
       : []
 
@@ -856,13 +874,20 @@ export function StudentDetailPage() {
           const studentSnap = await tx.get(studentRef)
           const s = studentSnap.data()!
 
-          let teacherLevel: number = reApprovingLesson.teacherLevel ?? 1
-          if (reApprovingLesson.teacherLevel == null) {
-            const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
-            teacherLevel = tSnap.data()?.level ?? 1
+          const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
+          const tData = tSnap.data()
+          const teacherLevel = (reApprovingLesson.teacherLevel ?? tData?.level ?? 1) || 1
+          const teacherCountry = tData?.country || 'VN'
+
+          let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
+          if (teacherCountry === 'VN') {
+            pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
+          } else if (teacherCountry === 'PH') {
+            pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0
+          } else {
+            pricePerMinute = chosenSubjectPkg.pricePerMinuteNative || chosenSubjectPkg.pricePerMinute || 0
           }
 
-          const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
           const currency = chosenSubjectPkg.currency || 'VND'
           const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel, currency)
           const month = reApprovingLesson.date.slice(0, 7)
@@ -881,8 +906,11 @@ export function StudentDetailPage() {
                   totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
                   usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
                   remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
-                  pricePerMinute: reApprovingLesson.pricePerMinute || 0,
-                  currency: reApprovingLesson.currency || 'VND',
+                  pricePerMinute: pricePerMinute,
+                  pricePerMinuteVN: chosenSubjectPkg.pricePerMinuteVN || pricePerMinute,
+                  pricePerMinutePH: chosenSubjectPkg.pricePerMinutePH || pricePerMinute,
+                  pricePerMinuteNative: chosenSubjectPkg.pricePerMinuteNative || pricePerMinute,
+                  currency: chosenSubjectPkg.currency || 'VND',
                 }]
               : []
 

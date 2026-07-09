@@ -17,6 +17,9 @@ export interface StudentSubject {
   usedMinutes: number
   remainingMinutes: number
   pricePerMinute: number
+  pricePerMinuteVN?: number
+  pricePerMinutePH?: number
+  pricePerMinuteNative?: number
   batches?: TopUpBatch[]
   curriculumLink?: string
   timetableNote?: string
@@ -94,6 +97,9 @@ export interface Teacher {
   languagesTaught?: string[]
   academicSubjectsTaught?: string[]
   certificates?: TeacherCertificate[]
+  bankName?: string
+  bankAccountNo?: string
+  bankAccountName?: string
   createdAt: Timestamp
 }
 
@@ -116,6 +122,9 @@ export interface Subject {
   id: string
   name: string
   pricePerMinute: number
+  pricePerMinuteVN?: number
+  pricePerMinutePH?: number
+  pricePerMinuteNative?: number
   status: 'active' | 'inactive'
   createdAt: Timestamp
   currency?: string

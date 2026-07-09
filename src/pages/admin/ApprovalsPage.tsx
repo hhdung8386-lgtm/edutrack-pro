@@ -72,11 +72,14 @@ export function ApprovalsPage() {
             : []
 
         const resolvedSubjects = await Promise.all(subjects.map(async (sub) => {
-          if (sub.pricePerMinute > 0) return sub
           const subjSnap = await getDoc(doc(db, 'subjects', sub.subjectId))
+          const data = subjSnap.exists() ? subjSnap.data() : null
           return {
             ...sub,
-            pricePerMinute: subjSnap.exists() ? (subjSnap.data()?.pricePerMinute ?? 0) : 0
+            pricePerMinute: data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
+            pricePerMinuteVN: data?.pricePerMinuteVN ?? sub.pricePerMinuteVN ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
+            pricePerMinutePH: data?.pricePerMinutePH ?? sub.pricePerMinutePH ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
+            pricePerMinuteNative: data?.pricePerMinuteNative ?? sub.pricePerMinuteNative ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
           }
         }))
 
@@ -219,7 +222,16 @@ export function ApprovalsPage() {
           const teacherData = teacherSnap.data()
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
-          const pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
+          const teacherCountry = teacherData?.country || 'VN'
+          let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
+          if (teacherCountry === 'VN') {
+            pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
+          } else if (teacherCountry === 'PH') {
+            pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0
+          } else {
+            pricePerMinute = chosenSubjectPkg.pricePerMinuteNative || chosenSubjectPkg.pricePerMinute || 0
+          }
+
           const currency = chosenSubjectPkg.currency || 'VND'
           const lessonMinutes = Number(approvingLesson.minutes) || 0
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
@@ -240,6 +252,9 @@ export function ApprovalsPage() {
                   usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
                   remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
                   pricePerMinute: pricePerMinute,
+                  pricePerMinuteVN: chosenSubjectPkg.pricePerMinuteVN || pricePerMinute,
+                  pricePerMinutePH: chosenSubjectPkg.pricePerMinutePH || pricePerMinute,
+                  pricePerMinuteNative: chosenSubjectPkg.pricePerMinuteNative || pricePerMinute,
                   currency: chosenSubjectPkg.currency || 'VND',
                 }]
               : []

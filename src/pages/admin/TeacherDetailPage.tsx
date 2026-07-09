@@ -809,7 +809,7 @@ export function TeacherDetailPage() {
                   <span className="text-slate-500">Level: </span>
                   <span className="text-slate-800 font-semibold">×{teacher.level}</span>
                 </div>
-                <div>
+                 <div>
                   <span className="text-slate-500">Tên đăng nhập: </span>
                   <span className="text-indigo-600 font-bold font-mono">{teacher.code}</span>
                 </div>
@@ -817,6 +817,23 @@ export function TeacherDetailPage() {
                   <div className="sm:col-span-2">
                     <span className="text-slate-500">Giới thiệu: </span>
                     <span className="text-slate-600 italic">{teacher.bio}</span>
+                  </div>
+                )}
+                {teacher.bankAccountNo && (
+                  <div className="sm:col-span-2 bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <Wallet className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Thông tin thanh toán / Bank Account</span>
+                      <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                        <span className="text-emerald-700 font-bold font-mono text-sm">{teacher.bankAccountNo}</span>
+                        <span className="text-slate-350">·</span>
+                        <span className="text-slate-700 font-bold text-xs uppercase">{teacher.bankName}</span>
+                        <span className="text-slate-350">·</span>
+                        <span className="text-slate-700 font-semibold text-xs uppercase">{teacher.bankAccountName}</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

@@ -59,24 +59,30 @@ export function formatVietnameseNumberInput(val: number): string {
   return integerPart;
 }
 
+const priceTransform = z.any().transform((val) => {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseVietnameseNumber(val);
+  return Number(val);
+});
+
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   currency: z.enum(['VND', 'USD']),
-  pricePerMinute: z.any().transform((val) => {
-    if (typeof val === 'number') return val;
-    if (typeof val === 'string') return parseVietnameseNumber(val);
-    return Number(val);
-  }),
+  pricePerMinuteVN: priceTransform,
+  pricePerMinutePH: priceTransform,
+  pricePerMinuteNative: priceTransform,
   status: z.enum(['active', 'inactive']),
 }).refine((data) => {
-  const price = data.pricePerMinute;
+  const vn = data.pricePerMinuteVN;
+  const ph = data.pricePerMinutePH;
+  const nat = data.pricePerMinuteNative;
   if (data.currency === 'USD') {
-    return !isNaN(price) && price > 0;
+    return !isNaN(vn) && vn > 0 && !isNaN(ph) && ph > 0 && !isNaN(nat) && nat > 0;
   }
-  return !isNaN(price) && price >= 100;
+  return !isNaN(vn) && vn >= 100 && !isNaN(ph) && ph >= 100 && !isNaN(nat) && nat >= 100;
 }, {
-  message: 'Đơn giá không hợp lệ (VND tối thiểu 100đ, USD tối thiểu > 0)',
-  path: ['pricePerMinute']
+  message: 'Các đơn giá không hợp lệ (VND tối thiểu 100đ, USD tối thiểu > 0)',
+  path: ['pricePerMinuteVN']
 })
 type FormData = z.infer<typeof schema>
 
@@ -87,22 +93,37 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     defaultValues: (subject ? {
       name: subject.name,
       currency: subject.currency || 'VND',
-      pricePerMinute: subject.currency === 'USD' ? String(subject.pricePerMinute) : formatVietnameseNumberInput(subject.pricePerMinute),
+      pricePerMinuteVN: subject.currency === 'USD' ? String(subject.pricePerMinuteVN ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinuteVN ?? subject.pricePerMinute ?? 2500),
+      pricePerMinutePH: subject.currency === 'USD' ? String(subject.pricePerMinutePH ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinutePH ?? subject.pricePerMinute ?? 2500),
+      pricePerMinuteNative: subject.currency === 'USD' ? String(subject.pricePerMinuteNative ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinuteNative ?? subject.pricePerMinute ?? 2500),
       status: subject.status,
-    } : { status: 'active', currency: 'VND', pricePerMinute: '2.500' }) as any,
+    } : {
+      status: 'active',
+      currency: 'VND',
+      pricePerMinuteVN: '2.500',
+      pricePerMinutePH: '2.500',
+      pricePerMinuteNative: '2.500'
+    }) as any,
   })
 
-  const rawPrice = watch('pricePerMinute')
-  const price = typeof rawPrice === 'number' ? rawPrice : parseVietnameseNumber(rawPrice || '')
+  const rawPriceVN = watch('pricePerMinuteVN')
+  const priceVN = typeof rawPriceVN === 'number' ? rawPriceVN : parseVietnameseNumber(rawPriceVN || '')
 
   const onSubmit = async (data: FormData) => {
     try {
       if (isEdit && subject) {
         // 1. Update the subject itself
-        await updateDoc(doc(db, 'subjects', subject.id), { ...data, updatedAt: serverTimestamp() })
+        const updatePayload = {
+          ...data,
+          pricePerMinute: data.pricePerMinuteVN,
+          updatedAt: serverTimestamp()
+        }
+        await updateDoc(doc(db, 'subjects', subject.id), updatePayload)
         
         // 2. Sync to related students, lessons, and payrolls in parallel
-        const newRate = data.pricePerMinute;
+        const newRateVN = data.pricePerMinuteVN;
+        const newRatePH = data.pricePerMinutePH;
+        const newRateNative = data.pricePerMinuteNative;
         const newCurrency = data.currency || 'VND';
         
         // Query students, lessons and teachers in parallel
@@ -112,20 +133,31 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           getDocs(collection(db, 'teachers'))
         ]);
         
-        const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }))
+        const teachersMap = new Map(teachers.map(t => [t.id, t]))
 
         // Update students in parallel
         const studentUpdates = studentsSnap.docs.map(studentDoc => {
           const studentData = studentDoc.data();
           const updatedSubjectsArray = (studentData.subjects || []).map((sub: any) => {
             if (sub.subjectId === subject.id) {
-              return { ...sub, pricePerMinute: newRate, currency: newCurrency }
+              return { 
+                ...sub, 
+                pricePerMinute: newRateVN,
+                pricePerMinuteVN: newRateVN,
+                pricePerMinutePH: newRatePH,
+                pricePerMinuteNative: newRateNative,
+                currency: newCurrency 
+              }
             }
             return sub;
           });
 
           return updateDoc(doc(db, 'students', studentDoc.id), {
-            pricePerMinute: newRate,
+            pricePerMinute: newRateVN,
+            pricePerMinuteVN: newRateVN,
+            pricePerMinutePH: newRatePH,
+            pricePerMinuteNative: newRateNative,
             currency: newCurrency,
             subjects: updatedSubjectsArray,
             updatedAt: serverTimestamp(),
@@ -146,7 +178,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         
         lessonsSnap.docs.forEach((lessonDoc, index) => {
           const lessonId = lessonDoc.id;
-          const lesson = lessonDoc.data();
+          const lesson = lessonDoc.data() as any;
           const payrollSnap = payrollSnaps[index];
           
           const isPaid = payrollSnap.docs.some((pDoc: any) => pDoc.data().paid === true);
@@ -155,13 +187,21 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             return;
           }
 
+          const teacher = teachersMap.get(lesson.teacherId);
+          const teacherCountry = teacher?.country || 'VN';
+
+          let rate = newRateVN;
+          if (teacherCountry === 'VN') rate = newRateVN;
+          else if (teacherCountry === 'PH') rate = newRatePH;
+          else rate = newRateNative;
+
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
-          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, newRate, teacherLevel) : 0;
+          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel) : 0;
           
           lessonUpdates.push(
             updateDoc(doc(db, 'lessons', lessonId), {
-              pricePerMinute: newRate,
+              pricePerMinute: rate,
               salary: newSalary,
               currency: newCurrency,
               updatedAt: serverTimestamp(),
@@ -174,7 +214,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
               payrollUpdates.push(
                 updateDoc(doc(db, 'payroll', pDoc.id), {
                   amount: newSalary,
-                  pricePerMinute: newRate,
+                  pricePerMinute: rate,
                   currency: newCurrency,
                   recalculatedAt: serverTimestamp(),
                 })
@@ -192,7 +232,12 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         
         toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
       } else {
-        await addDoc(collection(db, 'subjects'), { ...data, createdAt: serverTimestamp() })
+        const addPayload = {
+          ...data,
+          pricePerMinute: data.pricePerMinuteVN,
+          createdAt: serverTimestamp()
+        }
+        await addDoc(collection(db, 'subjects'), addPayload)
         toast.success('Đã thêm môn học')
       }
       onClose()
@@ -230,26 +275,42 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           </select>
         </div>
 
-        <Input
-          label={`Giá mỗi phút (${watch('currency') || 'VND'}) *`}
-          type="text"
-          placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
-          error={errors.pricePerMinute?.message}
-          {...register('pricePerMinute')}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input
+            label={`Giá GV Việt Nam (${watch('currency') || 'VND'}) *`}
+            type="text"
+            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
+            error={errors.pricePerMinuteVN?.message}
+            {...register('pricePerMinuteVN')}
+          />
+          <Input
+            label={`Giá GV Philippines (${watch('currency') || 'VND'}) *`}
+            type="text"
+            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
+            error={errors.pricePerMinutePH?.message}
+            {...register('pricePerMinutePH')}
+          />
+          <Input
+            label={`Giá GV Bản xứ / Khác (${watch('currency') || 'VND'}) *`}
+            type="text"
+            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
+            error={errors.pricePerMinuteNative?.message}
+            {...register('pricePerMinuteNative')}
+          />
+        </div>
 
         {/* Salary preview */}
-        {price > 0 && (
-          <div className="bg-white rounded-xl p-4 space-y-1.5 text-xs text-slate-500">
-            <p className="font-medium text-slate-600 mb-2">Ví dụ lương:</p>
+        {priceVN > 0 && (
+          <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 text-xs text-slate-500 border border-slate-200/50">
+            <p className="font-semibold text-slate-700 mb-2">Ví dụ lương (Giáo viên VN):</p>
             {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => {
               const currency = watch('currency') || 'VND'
-              const formattedPrice = currency === 'USD' ? `$${price}` : `${price.toLocaleString('vi-VN')}đ`
-              const formattedSalary = currency === 'USD' ? `$${(ex.min * price * ex.level).toFixed(2)}` : `${(ex.min * price * ex.level).toLocaleString('vi-VN')}đ`
+              const formattedPrice = currency === 'USD' ? `$${priceVN}` : `${priceVN.toLocaleString('vi-VN')}đ`
+              const formattedSalary = currency === 'USD' ? `$${(ex.min * priceVN * ex.level).toFixed(2)}` : `${(ex.min * priceVN * ex.level).toLocaleString('vi-VN')}đ`
               return (
                 <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
                   <span>{ex.min} phút × {formattedPrice} × ×{ex.level}</span>
-                  <span className="text-emerald-400 font-medium">= {formattedSalary}</span>
+                  <span className="text-emerald-600 font-bold">= {formattedSalary}</span>
                 </div>
               )
             })}
@@ -382,10 +443,32 @@ export function SubjectsPage() {
                 <tr key={subject.id} className="hover:bg-slate-100/20 transition-colors">
                   <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
                   <td className="px-5 py-4">
-                    <span className="text-emerald-400 font-semibold">
-                      {subject.currency === 'USD' ? `$${subject.pricePerMinute}` : `${subject.pricePerMinute.toLocaleString('vi-VN')}đ`}
-                    </span>
-                    <span className="text-slate-500 text-xs"> / phút</span>
+                    <div className="space-y-1 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-medium">VN: </span>
+                        <span className="text-emerald-600 font-semibold">
+                          {subject.currency === 'USD' 
+                            ? `$${subject.pricePerMinuteVN ?? subject.pricePerMinute}` 
+                            : `${(subject.pricePerMinuteVN ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-medium">PH: </span>
+                        <span className="text-emerald-600 font-semibold">
+                          {subject.currency === 'USD' 
+                            ? `$${subject.pricePerMinutePH ?? subject.pricePerMinute}` 
+                            : `${(subject.pricePerMinutePH ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-medium">Bản xứ/Khác: </span>
+                        <span className="text-emerald-600 font-semibold">
+                          {subject.currency === 'USD' 
+                            ? `$${subject.pricePerMinuteNative ?? subject.pricePerMinute}` 
+                            : `${(subject.pricePerMinuteNative ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={subject.status} /></td>
                   <td className="px-5 py-4">

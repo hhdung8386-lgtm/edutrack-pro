@@ -18,6 +18,43 @@ export function ProfilePage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
   const [updatingTimezone, setUpdatingTimezone] = useState(false)
+  const [bankName, setBankName] = useState('')
+  const [bankAccountNo, setBankAccountNo] = useState('')
+  const [bankAccountName, setBankAccountName] = useState('')
+  const [savingBank, setSavingBank] = useState(false)
+
+  // Sync state when teacher data loads
+  useEffect(() => {
+    if (teacher) {
+      setBankName(teacher.bankName || '')
+      setBankAccountNo(teacher.bankAccountNo || '')
+      setBankAccountName(teacher.bankAccountName || '')
+    }
+  }, [teacher])
+
+  const handleSaveBank = async () => {
+    if (!teacherId) return
+    setSavingBank(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        bankName,
+        bankAccountNo: bankAccountNo.replace(/\s+/g, ''),
+        bankAccountName: bankAccountName.toUpperCase()
+      })
+      setTeacher(prev => prev ? { 
+        ...prev, 
+        bankName, 
+        bankAccountNo: bankAccountNo.replace(/\s+/g, ''), 
+        bankAccountName: bankAccountName.toUpperCase() 
+      } : null)
+      toast.success('Đã cập nhật thông tin tài khoản ngân hàng!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể cập nhật thông tin ngân hàng')
+    } finally {
+      setSavingBank(false)
+    }
+  }
 
   useEffect(() => {
     if (!teacherId) return
@@ -178,6 +215,54 @@ export function ProfilePage() {
             <p className="text-[11px] text-slate-400 leading-normal">
               * Hệ thống sẽ tự động đồng bộ hóa toàn bộ lịch trống (OPEN) và lịch học trên thời khóa biểu theo đúng múi giờ quốc gia bạn chọn.
             </p>
+          </div>
+        </Card>
+
+        {/* Thông tin tài khoản ngân hàng */}
+        <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
+            <Wallet className="w-4 h-4 text-emerald-600" />
+            Thông tin thanh toán (Bank Account)
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tên ngân hàng / Bank Name</label>
+              <input
+                type="text"
+                value={bankName}
+                onChange={e => setBankName(e.target.value)}
+                placeholder="Ví dụ: Vietcombank, Techcombank..."
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Số tài khoản / Account Number</label>
+              <input
+                type="text"
+                value={bankAccountNo}
+                onChange={e => setBankAccountNo(e.target.value.replace(/\s+/g, ''))}
+                placeholder="Nhập số tài khoản ngân hàng"
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tên chủ tài khoản / Account Holder Name</label>
+              <input
+                type="text"
+                value={bankAccountName}
+                onChange={e => setBankAccountName(e.target.value.toUpperCase())}
+                placeholder="Ví dụ: NGUYEN VAN A"
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
+              />
+            </div>
+            <Button
+              type="button"
+              loading={savingBank}
+              onClick={handleSaveBank}
+              className="w-full rounded-xl bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold py-2.5 shadow-md shadow-sky-200/50"
+            >
+              Lưu thông tin thanh toán
+            </Button>
           </div>
         </Card>
 
