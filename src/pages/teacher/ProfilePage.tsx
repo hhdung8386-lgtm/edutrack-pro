@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
-import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe } from 'lucide-react'
+import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, X, Trash2, Link, Play } from 'lucide-react'
+import { TeacherCertificate } from '@/types'
 
 export function ProfilePage() {
   const { teacherId } = useAuthStore()
@@ -23,12 +24,20 @@ export function ProfilePage() {
   const [bankAccountName, setBankAccountName] = useState('')
   const [savingBank, setSavingBank] = useState(false)
 
+  // YouTube and Certificates States
+  const [youtubeLink, setYoutubeLink] = useState('')
+  const [savingYoutube, setSavingYoutube] = useState(false)
+  const [certificates, setCertificates] = useState<TeacherCertificate[]>([])
+  const [savingCerts, setSavingCerts] = useState(false)
+
   // Sync state when teacher data loads
   useEffect(() => {
     if (teacher) {
       setBankName(teacher.bankName || '')
       setBankAccountNo(teacher.bankAccountNo || '')
       setBankAccountName(teacher.bankAccountName || '')
+      setYoutubeLink(teacher.youtubeLink || '')
+      setCertificates(teacher.certificates || [])
     }
   }, [teacher])
 
@@ -53,6 +62,40 @@ export function ProfilePage() {
       toast.error('Không thể cập nhật thông tin ngân hàng')
     } finally {
       setSavingBank(false)
+    }
+  }
+
+  const handleSaveYoutube = async () => {
+    if (!teacherId) return
+    setSavingYoutube(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        youtubeLink: youtubeLink.trim()
+      })
+      setTeacher(prev => prev ? { ...prev, youtubeLink: youtubeLink.trim() } : null)
+      toast.success('Đã cập nhật link giới thiệu Youtube!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể cập nhật link Youtube')
+    } finally {
+      setSavingYoutube(false)
+    }
+  }
+
+  const handleSaveCerts = async () => {
+    if (!teacherId) return
+    setSavingCerts(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        certificates
+      })
+      setTeacher(prev => prev ? { ...prev, certificates } : null)
+      toast.success('Đã lưu danh sách bằng cấp/chứng chỉ thành công!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể lưu bằng cấp/chứng chỉ')
+    } finally {
+      setSavingCerts(false)
     }
   }
 
@@ -262,6 +305,172 @@ export function ProfilePage() {
               className="w-full rounded-xl bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold py-2.5 shadow-md shadow-sky-200/50"
             >
               Lưu thông tin thanh toán
+            </Button>
+          </div>
+        </Card>
+
+        {/* Link YouTube */}
+        <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
+            <Play className="w-4 h-4 text-red-500 fill-red-500" />
+            Link giới thiệu Youtube (YouTube Link)
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">YouTube Video URL</label>
+              <input
+                type="text"
+                value={youtubeLink}
+                onChange={e => setYoutubeLink(e.target.value)}
+                placeholder="Ví dụ: https://www.youtube.com/watch?v=..."
+                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
+              />
+            </div>
+            <Button
+              type="button"
+              loading={savingYoutube}
+              onClick={handleSaveYoutube}
+              className="w-full rounded-xl bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold py-2.5 shadow-md shadow-sky-200/50"
+            >
+              Lưu link Youtube
+            </Button>
+          </div>
+        </Card>
+
+        {/* Bằng cấp & Chứng chỉ */}
+        <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              <GraduationCap className="w-4 h-4 text-indigo-600" />
+              Bằng cấp & Chứng chỉ (Certificates)
+            </h3>
+            <span className="text-xs text-slate-500 font-medium">Tổng số: {certificates.length}</span>
+          </div>
+
+          <div className="space-y-4">
+            {certificates.map((cert, index) => (
+              <div key={index} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 space-y-3 relative">
+                <button
+                  type="button"
+                  onClick={() => setCertificates(prev => prev.filter((_, idx) => idx !== index))}
+                  className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 transition-colors"
+                  title="Xóa bằng cấp"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Loại bằng cấp *</label>
+                    <select
+                      value={cert.category}
+                      onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as any } : c))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-700"
+                    >
+                      <option value="foreign_language">Ngoại ngữ (IELTS/TOEIC...)</option>
+                      <option value="pedagogical">Nghiệp vụ sư phạm</option>
+                      <option value="other">Khác</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Trạng thái duyệt</label>
+                    <span className={`inline-block mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      cert.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
+                      cert.status === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {cert.status === 'approved' ? 'Đã duyệt' : cert.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên bằng / Chứng chỉ *</label>
+                    <input
+                      type="text"
+                      placeholder="VD: IELTS Academic"
+                      value={cert.title}
+                      onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, title: e.target.value } : c))}
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Điểm số / Xếp loại *</label>
+                    <input
+                      type="text"
+                      placeholder="VD: 8.0 / Giỏi"
+                      value={cert.score}
+                      onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, score: e.target.value } : c))}
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  {cert.fileURL ? (
+                    <div className="flex items-center gap-3">
+                      <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">Xem ảnh bằng</a>
+                      <button
+                        type="button"
+                        onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
+                        className="text-xs text-rose-500 hover:text-rose-600 font-bold hover:underline"
+                      >
+                        Xóa ảnh
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold text-indigo-650 cursor-pointer transition-all">
+                      <Upload className="w-3.5 h-3.5" />
+                      Tải ảnh lên (Image only)
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            const reader = new FileReader()
+                            reader.readAsDataURL(file)
+                            reader.onload = (ev) => {
+                              const img = new window.Image()
+                              img.src = ev.target?.result as string
+                              img.onload = () => {
+                                const canvas = document.createElement('canvas')
+                                const MAX = 600
+                                let { width, height } = img
+                                if (width > MAX) { height = (height * MAX) / width; width = MAX }
+                                if (height > MAX) { width = (width * MAX) / height; height = MAX }
+                                canvas.width = width
+                                canvas.height = height
+                                canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+                                const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+                                setCertificates(prev => prev.map((c, idx) => idx === index ? { ...c, fileURL: dataUrl, status: 'pending' } : c))
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => setCertificates(prev => [...prev, { category: 'foreign_language', title: '', score: '', fileURL: '', status: 'pending' }])}
+              className="w-full py-2 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-bold text-indigo-650 hover:text-indigo-800 transition-colors"
+            >
+              + Thêm bằng cấp/chứng chỉ
+            </button>
+
+            <Button
+              type="button"
+              loading={savingCerts}
+              onClick={handleSaveCerts}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 shadow-md shadow-indigo-200/50"
+            >
+              Lưu danh sách bằng cấp
             </Button>
           </div>
         </Card>

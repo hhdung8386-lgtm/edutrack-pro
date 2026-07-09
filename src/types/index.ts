@@ -110,6 +110,7 @@ export interface Teacher {
   bankName?: string
   bankAccountNo?: string
   bankAccountName?: string
+  youtubeLink?: string
   createdAt: Timestamp
 }
 
@@ -124,7 +125,7 @@ export interface TeacherCertificate {
   verifiedAt?: Timestamp
   voided?: boolean
   voidedBy?: string
-  status: 'approved' | 'pending'
+  status: 'approved' | 'pending' | 'rejected'
   createdAt?: Timestamp
 }
 
