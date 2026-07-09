@@ -159,7 +159,7 @@ const isSystemCode = (code?: string) => {
 }
 
 const getTeacherDisplayName = (teacher: { name: string; code?: string }) => {
-  return isSystemCode(teacher.code) ? teacher.name : (teacher.code || teacher.name)
+  return teacher.code || teacher.name
 }
 
 function getInitials(name: string) {
@@ -334,7 +334,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
     return (
       <img
         src={teacher.photoURL}
-        alt={`Ảnh giáo viên ${getTeacherDisplayName(teacher)}`}
+        alt={`Ảnh giáo viên ${getTeacherDisplayName(teacher)}${isSystemCode(teacher.code) ? ` (${teacher.name})` : ''}`}
         className="h-full w-full object-cover"
         loading="lazy"
       />
@@ -343,7 +343,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
 
   return (
     <div className="flex h-full w-full items-center justify-center bg-[#fff8df] text-2xl font-black text-[#d69a00]">
-      {getInitials(getTeacherDisplayName(teacher))}
+      {getInitials(teacher.name)}
     </div>
   )
 }
@@ -504,7 +504,14 @@ function TeacherCard({
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
                 {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
-              <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{getTeacherDisplayName(teacher)}</h3>
+              <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">
+                <div className="truncate">{getTeacherDisplayName(teacher)}</div>
+                {isSystemCode(teacher.code) && (
+                  <div className="text-[11px] font-bold text-slate-400 mt-0.5 leading-tight">
+                    Tên thật: {teacher.name}
+                  </div>
+                )}
+              </h3>
             </div>
             <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">
               <Star className="h-3.5 w-3.5 fill-current" />
@@ -737,7 +744,14 @@ function TeacherBookingPage({
           </span>
           <span className="min-w-0">
             <span className="block text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Trở về danh sách</span>
-            <span className="block truncate text-xl font-black text-slate-950">{getTeacherDisplayName(teacher)}</span>
+            <span className="block text-xl font-black text-slate-950 leading-tight">
+              <span className="block truncate">{getTeacherDisplayName(teacher)}</span>
+              {isSystemCode(teacher.code) && (
+                <span className="block text-xs font-bold text-slate-400 mt-0.5">
+                  Tên thật: {teacher.name}
+                </span>
+              )}
+            </span>
           </span>
         </button>
         <button
@@ -912,7 +926,14 @@ function TeacherBookingPage({
                             </div>
                             <div>
                               <p className="text-sm font-black text-[#c34d3f]">{selectedSchedule.dateISO} {selectedSchedule.start}-{selectedSchedule.end} ({duration}mins)</p>
-                              <p className="text-sm font-semibold text-slate-500">{getTeacherDisplayName(teacher)}</p>
+                              <p className="text-sm font-semibold text-slate-500">
+                                {getTeacherDisplayName(teacher)}
+                                {isSystemCode(teacher.code) && (
+                                  <span className="text-xs text-slate-400 font-medium ml-1.5">
+                                    (Tên thật: {teacher.name})
+                                  </span>
+                                )}
+                              </p>
                             </div>
                           </div>
                         </div>
