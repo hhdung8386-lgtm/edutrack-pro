@@ -51,6 +51,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               pricePerMinuteVN: data?.pricePerMinuteVN ?? sub.pricePerMinuteVN ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
               pricePerMinutePH: data?.pricePerMinutePH ?? sub.pricePerMinutePH ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
               pricePerMinuteNative: data?.pricePerMinuteNative ?? sub.pricePerMinuteNative ?? data?.pricePerMinute ?? sub.pricePerMinute ?? 0,
+              otherCountriesPrices: data?.otherCountriesPrices ?? sub.otherCountriesPrices ?? {},
+              countryPrices: data?.countryPrices ?? sub.countryPrices ?? null,
             }
           }))
 
@@ -105,7 +107,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           const teacherCountry = teacherData?.country || 'VN'
           let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
+          if (chosenSubjectPkg.countryPrices) {
+            const rateObj = chosenSubjectPkg.countryPrices[teacherCountry] || chosenSubjectPkg.countryPrices['VN']
+            pricePerMinute = rateObj?.price || chosenSubjectPkg.pricePerMinute || 0
+          } else if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
             pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
           } else if (teacherCountry === 'VN') {
             pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0

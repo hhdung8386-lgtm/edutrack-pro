@@ -210,7 +210,10 @@ export function StudentDetailPage() {
     const rates = liveRates.subjectPrice[lesson.subjectId]
     let price = lesson.pricePerMinute ?? 0
     if (rates) {
-      if (rates.otherCountriesPrices && rates.otherCountriesPrices[country] !== undefined) {
+      if (rates.countryPrices) {
+        const rateObj = rates.countryPrices[country] || rates.countryPrices['VN']
+        price = rateObj?.price || rates.pricePerMinute || 0
+      } else if (rates.otherCountriesPrices && rates.otherCountriesPrices[country] !== undefined) {
         price = rates.otherCountriesPrices[country]
       } else if (country === 'VN') {
         price = rates.pricePerMinuteVN || rates.pricePerMinute || 0
@@ -887,7 +890,10 @@ export function StudentDetailPage() {
           const teacherCountry = tData?.country || 'VN'
 
           let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
+          if (chosenSubjectPkg.countryPrices) {
+            const rateObj = chosenSubjectPkg.countryPrices[teacherCountry] || chosenSubjectPkg.countryPrices['VN']
+            pricePerMinute = rateObj?.price || chosenSubjectPkg.pricePerMinute || 0
+          } else if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
             pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
           } else if (teacherCountry === 'VN') {
             pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0

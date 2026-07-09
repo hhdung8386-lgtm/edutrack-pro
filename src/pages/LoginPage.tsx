@@ -192,11 +192,11 @@ export function LoginPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col font-sans overflow-hidden">
+    <div className="min-h-screen lg:h-screen flex flex-col font-sans lg:overflow-hidden bg-[#F8FAFC]">
       <PublicNav />
 
       {/* Main Content - two column layout */}
-      <main className="flex-1 grid lg:grid-cols-2 min-h-0">
+      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-2 lg:min-h-0">
         {/* Left Side: Layered hero - text on top, image below */}
         <div className="relative hidden lg:flex flex-col justify-between overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f9fb 0%, #eef1f5 100%)' }}>
           {/* Image at bottom-right, z-index: 1 */}
@@ -255,7 +255,7 @@ export function LoginPage() {
         </div>
 
         {/* Mobile hero - shown only on small screens */}
-        <div className="lg:hidden px-4 pt-4">
+        <div className="lg:hidden px-6 pt-6 pb-2 bg-white">
           <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1E293B] leading-[1.1] tracking-tight">
             {t('landing.hero_title1')} <span className="text-[#FFC107]">{t('landing.hero_title2')}</span>
           </h1>
@@ -263,7 +263,7 @@ export function LoginPage() {
         </div>
 
         {/* Right Side: Cards */}
-        <div className="bg-[#F8FAFC] flex flex-col justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 space-y-4 overflow-y-auto">
+        <div className="bg-[#F8FAFC] flex flex-col lg:justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 lg:py-12 space-y-4 lg:overflow-y-auto">
           {/* Card: Tra cứu */}
           <div className="bg-white rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/60 relative overflow-hidden">
             <div className="absolute top-5 right-5 flex gap-1">

@@ -6,6 +6,12 @@ export interface TopUpBatch {
   totalSessions: number
 }
 
+export interface CountryPriceInfo {
+  price: number
+  currency: string
+  isDefault?: boolean
+}
+
 export interface StudentSubject {
   subjectId: string
   subjectName: string
@@ -26,6 +32,7 @@ export interface StudentSubject {
   timetableNote?: string
   studentRequests?: string[]
   otherCountriesPrices?: Record<string, number>
+  countryPrices?: Record<string, CountryPriceInfo>
   currency?: string
 }
 
@@ -129,6 +136,7 @@ export interface Subject {
   pricePerMinutePH?: number
   pricePerMinuteNative?: number
   otherCountriesPrices?: Record<string, number>
+  countryPrices?: Record<string, CountryPriceInfo>
   status: 'active' | 'inactive'
   createdAt: Timestamp
   currency?: string

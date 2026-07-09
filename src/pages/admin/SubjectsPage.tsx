@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { BookOpen, Plus, Pencil, Search, Trash2 } from 'lucide-react'
+import { BookOpen, Plus, Pencil, Search, Trash2, Globe, Info, Lock } from 'lucide-react'
 
 export function parseVietnameseNumber(str: string): number {
   if (!str) return 0;
@@ -67,70 +67,86 @@ const priceTransform = z.any().transform((val) => {
 
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
-  currency: z.enum(['VND', 'USD']),
-  pricePerMinuteVN: priceTransform,
-  pricePerMinutePH: priceTransform,
-  pricePerMinuteNative: priceTransform,
   status: z.enum(['active', 'inactive']),
-}).refine((data) => {
-  const vn = data.pricePerMinuteVN;
-  const ph = data.pricePerMinutePH;
-  const nat = data.pricePerMinuteNative;
-  if (data.currency === 'USD') {
-    return !isNaN(vn) && vn > 0 && !isNaN(ph) && ph > 0 && !isNaN(nat) && nat > 0;
-  }
-  return !isNaN(vn) && vn >= 100 && !isNaN(ph) && ph >= 100 && !isNaN(nat) && nat >= 100;
-}, {
-  message: 'Các đơn giá không hợp lệ (VND tối thiểu 100đ, USD tối thiểu > 0)',
-  path: ['pricePerMinuteVN']
 })
 type FormData = z.infer<typeof schema>
 
+export const COUNTRY_CURRENCY_MAP: Record<string, { name: string; currency: string; symbol: string; flag: string }> = {
+  VN: { name: 'Việt Nam', currency: 'VND', symbol: 'đ', flag: '🇻🇳' },
+  PH: { name: 'Philippines', currency: 'PHP', symbol: '₱', flag: '🇵🇭' },
+  US: { name: 'Hoa Kỳ', currency: 'USD', symbol: '$', flag: '🇺🇸' },
+  JP: { name: 'Nhật Bản', currency: 'JPY', symbol: '¥', flag: '🇯🇵' },
+  KR: { name: 'Hàn Quốc', currency: 'KRW', symbol: '₩', flag: '🇰🇷' },
+  UK: { name: 'Anh', currency: 'GBP', symbol: '£', flag: '🇬🇧' },
+  CA: { name: 'Canada', currency: 'CAD', symbol: 'C$', flag: '🇨🇦' },
+  AU: { name: 'Úc', currency: 'AUD', symbol: 'A$', flag: '🇦🇺' },
+}
+
 function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => void }) {
   const isEdit = !!subject
-  const [otherPrices, setOtherPrices] = useState<Record<string, number>>(subject?.otherCountriesPrices || {})
-  const [selectedCountry, setSelectedCountry] = useState('JP')
-  const [newPriceForCountry, setNewPriceForCountry] = useState('')
+  const [countryPrices, setCountryPrices] = useState<Record<string, { price: number; currency: string; isDefault?: boolean }>>(() => {
+    if (subject?.countryPrices) return subject.countryPrices;
+    const initial: Record<string, { price: number; currency: string; isDefault?: boolean }> = {
+      VN: { price: subject?.pricePerMinuteVN ?? subject?.pricePerMinute ?? 2500, currency: subject?.currency || 'VND', isDefault: true }
+    };
+    if (subject?.pricePerMinutePH) {
+      initial.PH = { price: subject.pricePerMinutePH, currency: 'PHP' };
+    }
+    if (subject?.otherCountriesPrices) {
+      Object.entries(subject.otherCountriesPrices).forEach(([code, val]) => {
+        initial[code] = { price: val, currency: COUNTRY_CURRENCY_MAP[code]?.currency || 'USD' };
+      });
+    }
+    return initial;
+  });
 
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const [selectedCountry, setSelectedCountry] = useState('PH')
+  const [priceInput, setPriceInput] = useState('')
+  const [editingCountry, setEditingCountry] = useState<string | null>(null)
+
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: (subject ? {
-      name: subject.name,
-      currency: subject.currency || 'VND',
-      pricePerMinuteVN: subject.currency === 'USD' ? String(subject.pricePerMinuteVN ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinuteVN ?? subject.pricePerMinute ?? 2500),
-      pricePerMinutePH: subject.currency === 'USD' ? String(subject.pricePerMinutePH ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinutePH ?? subject.pricePerMinute ?? 2500),
-      pricePerMinuteNative: subject.currency === 'USD' ? String(subject.pricePerMinuteNative ?? subject.pricePerMinute ?? 2.5) : formatVietnameseNumberInput(subject.pricePerMinuteNative ?? subject.pricePerMinute ?? 2500),
-      status: subject.status,
-    } : {
-      status: 'active',
-      currency: 'VND',
-      pricePerMinuteVN: '2.500',
-      pricePerMinutePH: '2.500',
-      pricePerMinuteNative: '2.500'
-    }) as any,
+    defaultValues: {
+      name: subject?.name || '',
+      status: subject?.status || 'active',
+    },
   })
-
-  const rawPriceVN = watch('pricePerMinuteVN')
-  const priceVN = typeof rawPriceVN === 'number' ? rawPriceVN : parseVietnameseNumber(rawPriceVN || '')
 
   const onSubmit = async (data: FormData) => {
     try {
+      if (!countryPrices.VN) {
+        toast.error('Vui lòng thiết lập đơn giá mặc định cho Việt Nam')
+        return
+      }
+
+      const newRateVN = countryPrices.VN.price;
+      const newRatePH = countryPrices.PH?.price || newRateVN;
+      const newRateNative = countryPrices.US?.price || newRateVN;
+      const newCurrency = countryPrices.VN.currency || 'VND';
+
+      const other: Record<string, number> = {}
+      Object.entries(countryPrices).forEach(([c, i]) => {
+        if (c !== 'VN' && c !== 'PH') {
+          other[c] = i.price
+        }
+      })
+
       if (isEdit && subject) {
         // 1. Update the subject itself
         const updatePayload = {
           ...data,
-          pricePerMinute: data.pricePerMinuteVN,
-          otherCountriesPrices: otherPrices,
+          pricePerMinute: newRateVN,
+          pricePerMinuteVN: newRateVN,
+          pricePerMinutePH: newRatePH,
+          pricePerMinuteNative: newRateNative,
+          otherCountriesPrices: other,
+          countryPrices,
+          currency: newCurrency,
           updatedAt: serverTimestamp()
         }
         await updateDoc(doc(db, 'subjects', subject.id), updatePayload)
         
         // 2. Sync to related students, lessons, and payrolls in parallel
-        const newRateVN = data.pricePerMinuteVN;
-        const newRatePH = data.pricePerMinutePH;
-        const newRateNative = data.pricePerMinuteNative;
-        const newCurrency = data.currency || 'VND';
-        
         // Query ALL students to sync denormalized subjects array properly
         const [studentsSnap, lessonsSnap, teachersSnap] = await Promise.all([
           getDocs(collection(db, 'students')),
@@ -156,7 +172,8 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                 pricePerMinuteVN: newRateVN,
                 pricePerMinutePH: newRatePH,
                 pricePerMinuteNative: newRateNative,
-                otherCountriesPrices: otherPrices,
+                otherCountriesPrices: other,
+                countryPrices,
                 currency: newCurrency 
               }
             }
@@ -174,7 +191,8 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             updateObj.pricePerMinuteVN = newRateVN;
             updateObj.pricePerMinutePH = newRatePH;
             updateObj.pricePerMinuteNative = newRateNative;
-            updateObj.otherCountriesPrices = otherPrices;
+            updateObj.otherCountriesPrices = other;
+            updateObj.countryPrices = countryPrices;
             updateObj.currency = newCurrency;
           }
 
@@ -208,26 +226,23 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           const teacherCountry = teacher?.country || 'VN';
 
           let rate = newRateVN;
-          if (otherPrices && otherPrices[teacherCountry] !== undefined) {
-            rate = otherPrices[teacherCountry];
-          } else if (teacherCountry === 'VN') {
-            rate = newRateVN;
-          } else if (teacherCountry === 'PH') {
-            rate = newRatePH;
-          } else {
-            rate = newRateNative;
+          let cur = newCurrency;
+          const rateObj = countryPrices[teacherCountry] || countryPrices['VN'];
+          if (rateObj) {
+            rate = rateObj.price;
+            cur = rateObj.currency;
           }
 
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
-          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel, newCurrency) : 0;
+          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel, cur) : 0;
           
           lessonUpdates.push(
             updateDoc(doc(db, 'lessons', lessonId), {
               subjectName: data.name, // Sync the name change!
               pricePerMinute: rate,
               salary: newSalary,
-              currency: newCurrency,
+              currency: cur,
               updatedAt: serverTimestamp(),
             })
           );
@@ -246,7 +261,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                 updateDoc(doc(db, 'payroll', pDoc.id), {
                   amount: newSalary,
                   pricePerMinute: rate,
-                  currency: newCurrency,
+                  currency: cur,
                   recalculatedAt: serverTimestamp(),
                 })
               );
@@ -265,8 +280,13 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
       } else {
         const addPayload = {
           ...data,
-          pricePerMinute: data.pricePerMinuteVN,
-          otherCountriesPrices: otherPrices,
+          pricePerMinute: newRateVN,
+          pricePerMinuteVN: newRateVN,
+          pricePerMinutePH: newRatePH,
+          pricePerMinuteNative: newRateNative,
+          otherCountriesPrices: other,
+          countryPrices,
+          currency: newCurrency,
           createdAt: serverTimestamp()
         }
         await addDoc(collection(db, 'subjects'), addPayload)
@@ -293,162 +313,186 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         </div>
       }
     >
-      <form id="subject-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+      <form id="subject-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-6">
         <Input label="Tên môn học *" placeholder="Tiếng Anh" error={errors.name?.message} {...register('name')} />
         
-        <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1.5">Loại tiền tệ</label>
-          <select
-            className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            {...register('currency')}
-          >
-            <option value="VND">VND (đ)</option>
-            <option value="USD">USD ($)</option>
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input
-            label={`Giá GV Việt Nam (${watch('currency') || 'VND'}) *`}
-            type="text"
-            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
-            error={errors.pricePerMinuteVN?.message}
-            {...register('pricePerMinuteVN')}
-          />
-          <Input
-            label={`Giá GV Philippines (${watch('currency') || 'VND'}) *`}
-            type="text"
-            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
-            error={errors.pricePerMinutePH?.message}
-            {...register('pricePerMinutePH')}
-          />
-          <Input
-            label={`Giá GV Bản xứ / Khác (${watch('currency') || 'VND'}) *`}
-            type="text"
-            placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
-            error={errors.pricePerMinuteNative?.message}
-            {...register('pricePerMinuteNative')}
-          />
-        </div>
-
-        {/* Salary preview */}
-        {priceVN > 0 && (
-          <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 text-xs text-slate-500 border border-slate-200/50">
-            <p className="font-semibold text-slate-700 mb-2">Ví dụ lương (Giáo viên VN):</p>
-            {[{ min: 25, level: 1.0 }, { min: 50, level: 1.2 }, { min: 50, level: 1.5 }].map((ex) => {
-              const currency = watch('currency') || 'VND'
-              const formattedPrice = currency === 'USD' ? `$${priceVN}` : `${priceVN.toLocaleString('vi-VN')}đ`
-              const formattedSalary = currency === 'USD' ? `$${(ex.min * priceVN * ex.level).toFixed(2)}` : `${(ex.min * priceVN * ex.level).toLocaleString('vi-VN')}đ`
-              return (
-                <div key={`${ex.min}-${ex.level}`} className="flex justify-between">
-                  <span>{ex.min} phút × {formattedPrice} × ×{ex.level}</span>
-                  <span className="text-emerald-600 font-bold">= {formattedSalary}</span>
-                </div>
-              )
-            })}
+        {/* Giá giáo viên theo quốc gia & tiền tệ */}
+        <div className="border border-slate-200 rounded-2xl p-5 space-y-4 bg-slate-50/50">
+          <div className="flex items-start gap-2">
+            <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+              <Globe className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-800">Giá giáo viên theo quốc gia & tiền tệ</p>
+              <p className="text-xs text-slate-500 mt-0.5">Mỗi quốc gia sẽ có tiền tệ và đơn giá riêng.</p>
+            </div>
           </div>
-        )}
 
-        {/* rates for other countries */}
-        <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-white shadow-sm">
-          <p className="text-sm font-bold text-slate-700">Giá theo các quốc gia khác</p>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1 min-w-0">
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Chọn quốc gia</label>
+          {/* Form to add/edit country price */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end bg-white border border-slate-150 rounded-xl p-4 shadow-sm">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">Chọn quốc gia</label>
               <select
                 value={selectedCountry}
+                disabled={editingCountry !== null}
                 onChange={(e) => setSelectedCountry(e.target.value)}
-                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-sm min-h-[38px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-slate-50 border border-slate-200 text-slate-900 px-3 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="JP">Nhật Bản / Japan</option>
-                <option value="KR">Hàn Quốc / Korea</option>
-                <option value="US_EST">Mỹ / USA (EST)</option>
-                <option value="US_PST">Mỹ / USA (PST)</option>
-                <option value="US">Mỹ / USA (Chung)</option>
-                <option value="UK">Anh / UK</option>
-                <option value="CA">Canada</option>
-                <option value="AU">Úc / Australia</option>
+                {Object.entries(COUNTRY_CURRENCY_MAP).map(([code, info]) => (
+                  <option key={code} value={code}>
+                    {info.flag} {info.name}
+                  </option>
+                ))}
               </select>
             </div>
-            <div className="w-[140px]">
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Giá mỗi phút</label>
-              <input
-                type="text"
-                placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
-                value={newPriceForCountry}
-                onChange={(e) => setNewPriceForCountry(e.target.value)}
-                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-sm min-h-[38px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const parsed = (watch('currency') || 'VND') === 'USD' ? Number(newPriceForCountry) : parseVietnameseNumber(newPriceForCountry)
-                if (isNaN(parsed) || parsed <= 0) {
-                  toast.error('Vui lòng nhập đơn giá hợp lệ')
-                  return
-                }
-                setOtherPrices((prev) => ({
-                  ...prev,
-                  [selectedCountry]: parsed,
-                }))
-                setNewPriceForCountry('')
-                toast.success('Đã thêm mức giá cho quốc gia ' + selectedCountry)
-              }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[38px]"
-            >
-              Thêm
-            </button>
-          </div>
-
-          {/* List of configured other country rates */}
-          {Object.keys(otherPrices).length > 0 && (
-            <div className="space-y-1.5 pt-2 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-500">Mức giá đã thiết lập:</p>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(otherPrices).map(([code, val]) => {
-                  const countryLabels: Record<string, string> = {
-                    JP: 'Nhật Bản (JP)',
-                    KR: 'Hàn Quốc (KR)',
-                    US_EST: 'Mỹ EST (US_EST)',
-                    US_PST: 'Mỹ PST (US_PST)',
-                    US: 'Mỹ (US)',
-                    UK: 'Anh (UK)',
-                    CA: 'Canada (CA)',
-                    AU: 'Úc (AU)',
-                  }
-                  return (
-                    <div key={code} className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs">
-                      <span className="font-bold text-slate-700">{countryLabels[code] || code}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-indigo-600">
-                          {(watch('currency') || 'VND') === 'USD' ? `$${val}` : `${val.toLocaleString('vi-VN')}đ`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOtherPrices((prev) => {
-                              const next = { ...prev }
-                              delete next[code]
-                              return next
-                            })
-                            toast.success('Đã xoá mức giá nước ' + code)
-                          }}
-                          className="text-rose-500 hover:text-rose-700 font-bold ml-1.5"
-                        >
-                          Xoá
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">Tiền tệ</label>
+              <div className="w-full rounded-lg bg-slate-100 border border-slate-200 text-slate-500 px-3 py-2.5 text-sm min-h-[42px] flex items-center justify-between">
+                <span>
+                  {COUNTRY_CURRENCY_MAP[selectedCountry]?.currency} ({COUNTRY_CURRENCY_MAP[selectedCountry]?.symbol})
+                </span>
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
               </div>
             </div>
-          )}
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">Giá mỗi phút *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={priceInput}
+                    onChange={(e) => setPriceInput(e.target.value)}
+                    placeholder={COUNTRY_CURRENCY_MAP[selectedCountry]?.currency === 'USD' ? '0.12' : '2.500'}
+                    className="w-full rounded-lg bg-white border border-slate-200 text-slate-900 pl-3 pr-12 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">/ phút</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const currency = COUNTRY_CURRENCY_MAP[selectedCountry].currency
+                  const parsed = currency === 'USD' ? parseFloat(priceInput) : parseVietnameseNumber(priceInput)
+                  if (isNaN(parsed) || parsed <= 0) {
+                    toast.error('Vui lòng nhập đơn giá hợp lệ')
+                    return
+                  }
+                  
+                  setCountryPrices((prev) => ({
+                    ...prev,
+                    [selectedCountry]: {
+                      price: parsed,
+                      currency,
+                      isDefault: selectedCountry === 'VN'
+                    }
+                  }))
+                  setPriceInput('')
+                  setEditingCountry(null)
+                  toast.success(editingCountry ? 'Đã cập nhật đơn giá!' : 'Đã thêm đơn giá mới!')
+                }}
+                className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[42px] shrink-0 flex items-center justify-center gap-1"
+              >
+                {editingCountry ? 'Lưu' : <><Plus className="w-4 h-4" /> Thêm</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Table display */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-150 flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                Danh sách quốc gia đã thêm ({Object.keys(countryPrices).length})
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-150 uppercase tracking-wider">
+                    <th className="px-4 py-3">Quốc gia</th>
+                    <th className="px-4 py-3">Tiền tệ</th>
+                    <th className="px-4 py-3">Giá mỗi phút</th>
+                    <th className="px-4 py-3 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {Object.entries(countryPrices).map(([code, info]) => {
+                    const countryInfo = COUNTRY_CURRENCY_MAP[code]
+                    if (!countryInfo) return null
+                    const formattedPrice = info.currency === 'USD' 
+                      ? `$${info.price}` 
+                      : info.currency === 'PHP'
+                        ? `₱${info.price}`
+                        : info.currency === 'JPY'
+                          ? `¥${info.price}`
+                          : `${info.price?.toLocaleString('vi-VN')} đ`
+
+                    return (
+                      <tr key={code} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3 flex items-center gap-2">
+                          <span className="text-base select-none">{countryInfo.flag}</span>
+                          <span className="font-bold text-slate-800">{countryInfo.name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-600">{info.currency} ({countryInfo.symbol})</span>
+                            {info.isDefault && (
+                              <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[9px]">
+                                Mặc định
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-900 font-bold">
+                          {formattedPrice}/phút
+                        </td>
+                        <td className="px-4 py-3 text-right space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCountry(code)
+                              setSelectedCountry(code)
+                              setPriceInput(info.currency === 'USD' ? String(info.price) : formatVietnameseNumberInput(info.price))
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 p-1 rounded hover:bg-indigo-50 transition"
+                          >
+                            <Pencil className="w-3.5 h-3.5 inline-block" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={code === 'VN'}
+                            onClick={() => {
+                              setCountryPrices((prev) => {
+                                const next = { ...prev }
+                                delete next[code]
+                                return next
+                              })
+                              toast.success('Đã xoá mức giá của ' + countryInfo.name)
+                            }}
+                            className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 inline-block" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Info Banner */}
+          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3.5 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+            <div className="text-[11px] text-blue-800 leading-relaxed font-medium">
+              <p className="font-bold">Giá được tính theo đơn vị tiền tệ của từng quốc gia.</p>
+              <p className="mt-0.5 text-blue-600/90">Ví dụ: Giáo viên Philippines: ₱6/phút, Giáo viên Mỹ: $0.12/phút,...</p>
+            </div>
+          </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1.5">Trạng thái</label>
+          <label className="block text-sm font-medium text-slate-650 mb-1.5">Trạng thái</label>
           <select
             className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
             {...register('status')}
@@ -573,31 +617,48 @@ export function SubjectsPage() {
                 <tr key={subject.id} className="hover:bg-slate-100/20 transition-colors">
                   <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
                   <td className="px-5 py-4">
-                    <div className="space-y-1 text-xs">
-                      <div>
-                        <span className="text-slate-400 font-medium">VN: </span>
-                        <span className="text-emerald-600 font-semibold">
-                          {subject.currency === 'USD' 
-                            ? `$${subject.pricePerMinuteVN ?? subject.pricePerMinute}` 
-                            : `${(subject.pricePerMinuteVN ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 font-medium">PH: </span>
-                        <span className="text-emerald-600 font-semibold">
-                          {subject.currency === 'USD' 
-                            ? `$${subject.pricePerMinutePH ?? subject.pricePerMinute}` 
-                            : `${(subject.pricePerMinutePH ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 font-medium">Bản xứ/Khác: </span>
-                        <span className="text-emerald-600 font-semibold">
-                          {subject.currency === 'USD' 
-                            ? `$${subject.pricePerMinuteNative ?? subject.pricePerMinute}` 
-                            : `${(subject.pricePerMinuteNative ?? subject.pricePerMinute).toLocaleString('vi-VN')}đ`}
-                        </span>
-                      </div>
+                    <div className="flex flex-wrap gap-1.5 max-w-[320px]">
+                      {subject.countryPrices ? (
+                        Object.entries(subject.countryPrices).map(([code, info]) => {
+                          const formattedPrice = info.currency === 'USD' 
+                            ? `$${info.price}` 
+                            : info.currency === 'PHP'
+                              ? `₱${info.price}`
+                              : info.currency === 'JPY'
+                                ? `¥${info.price}`
+                                : `${info.price?.toLocaleString('vi-VN')}đ`
+                          return (
+                            <span key={code} className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                              <span>{COUNTRY_CURRENCY_MAP[code]?.flag}</span>
+                              <span className="font-bold text-slate-800">{code}:</span>
+                              <span className="text-emerald-650 font-bold">{formattedPrice}</span>
+                            </span>
+                          )
+                        })
+                      ) : (
+                        <>
+                          <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            <span>🇻🇳</span>
+                            <span className="font-bold text-slate-800">VN:</span>
+                            <span className="text-emerald-650 font-bold">
+                              {subject.currency === 'USD' 
+                                ? `$${subject.pricePerMinuteVN ?? subject.pricePerMinute}` 
+                                : `${(subject.pricePerMinuteVN ?? subject.pricePerMinute ?? 2500).toLocaleString('vi-VN')}đ`}
+                            </span>
+                          </span>
+                          {(subject.pricePerMinutePH ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                              <span>🇵🇭</span>
+                              <span className="font-bold text-slate-800">PH:</span>
+                              <span className="text-emerald-650 font-bold">
+                                {subject.currency === 'USD' 
+                                  ? `$${subject.pricePerMinutePH}` 
+                                  : `${(subject.pricePerMinutePH ?? 2500).toLocaleString('vi-VN')}đ`}
+                              </span>
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={subject.status} /></td>

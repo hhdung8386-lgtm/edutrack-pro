@@ -445,7 +445,10 @@ export function BookingSchedulesPage() {
         const teacherCountry = teacherData?.country || 'VN'
         const activeSub = studentData.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
         if (activeSub) {
-          if (activeSub.otherCountriesPrices && activeSub.otherCountriesPrices[teacherCountry] !== undefined) {
+          if (activeSub.countryPrices) {
+            const rateObj = activeSub.countryPrices[teacherCountry] || activeSub.countryPrices['VN']
+            pricePerMinute = rateObj?.price || activeSub.pricePerMinute || 0
+          } else if (activeSub.otherCountriesPrices && activeSub.otherCountriesPrices[teacherCountry] !== undefined) {
             pricePerMinute = activeSub.otherCountriesPrices[teacherCountry]
           } else if (teacherCountry === 'VN') {
             pricePerMinute = activeSub.pricePerMinuteVN || activeSub.pricePerMinute || 0
@@ -459,7 +462,10 @@ export function BookingSchedulesPage() {
           const subSnap = await getDoc(doc(db, 'subjects', selectedBooking.subjectId || ''))
           if (subSnap.exists()) {
             const subData = subSnap.data()
-            if (subData.otherCountriesPrices && subData.otherCountriesPrices[teacherCountry] !== undefined) {
+            if (subData.countryPrices) {
+              const rateObj = subData.countryPrices[teacherCountry] || subData.countryPrices['VN']
+              pricePerMinute = rateObj?.price || subData.pricePerMinute || 0
+            } else if (subData.otherCountriesPrices && subData.otherCountriesPrices[teacherCountry] !== undefined) {
               pricePerMinute = subData.otherCountriesPrices[teacherCountry]
             } else if (teacherCountry === 'VN') {
               pricePerMinute = subData.pricePerMinuteVN || subData.pricePerMinute || 0
