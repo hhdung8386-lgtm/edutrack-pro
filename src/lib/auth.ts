@@ -61,19 +61,23 @@ export async function signInTeacher(teacherCode: string, password: string) {
     try {
       const credential = await signInWithEmailAndPassword(auth, email, TEACHER_FIXED_PASSWORD)
       // Sign-in successful: ensure user doc is in sync with auth uid
-      const userDocRef = doc(db, 'users', credential.user.uid)
-      const userDocSnap = await getDoc(userDocRef)
-      if (!userDocSnap.exists()) {
-        await setDoc(userDocRef, {
-          uid: credential.user.uid,
-          email,
-          username: matchedCode,
-          role: 'teacher',
-          teacherId,
-          createdAt: serverTimestamp(),
-        })
-      } else if (existingUserDoc && existingUserDoc.data().email !== email) {
-        await updateDoc(existingUserDoc.ref, { email })
+      try {
+        const userDocRef = doc(db, 'users', credential.user.uid)
+        const userDocSnap = await getDoc(userDocRef)
+        if (!userDocSnap.exists()) {
+          await setDoc(userDocRef, {
+            uid: credential.user.uid,
+            email,
+            username: matchedCode,
+            role: 'teacher',
+            teacherId,
+            createdAt: serverTimestamp(),
+          })
+        } else if (existingUserDoc && existingUserDoc.data().email !== email) {
+          await updateDoc(existingUserDoc.ref, { email })
+        }
+      } catch (syncErr) {
+        console.warn('Failed to sync user doc on sign-in (expected if not admin):', syncErr)
       }
       return {
         user: credential.user,
@@ -112,14 +116,18 @@ export async function signInTeacher(teacherCode: string, password: string) {
               console.warn('Failed to delete old user doc:', delErr)
             }
           }
-          await setDoc(doc(db, 'users', created.user.uid), {
-            uid: created.user.uid,
-            email,
-            username: matchedCode,
-            role: 'teacher',
-            teacherId,
-            createdAt: serverTimestamp(),
-          })
+          try {
+            await setDoc(doc(db, 'users', created.user.uid), {
+              uid: created.user.uid,
+              email,
+              username: matchedCode,
+              role: 'teacher',
+              teacherId,
+              createdAt: serverTimestamp(),
+            })
+          } catch (syncErr) {
+            console.warn('Failed to sync user doc on fallback registration:', syncErr)
+          }
           const credential = await signInWithEmailAndPassword(auth, email, TEACHER_FIXED_PASSWORD)
           return {
             user: credential.user,

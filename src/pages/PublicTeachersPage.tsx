@@ -152,6 +152,16 @@ const FILTERS: Array<{ key: FilterKey; label: string; helper: string }> = [
   { key: 'all', label: 'Tất cả', helper: 'Danh sách đang tải' },
 ]
 
+const isSystemCode = (code?: string) => {
+  if (!code) return true
+  const c = code.toUpperCase().replace(/\s+/g, '')
+  return c.startsWith('GV') && /^[A-Z0-9]+$/.test(c)
+}
+
+const getTeacherDisplayName = (teacher: { name: string; code?: string }) => {
+  return isSystemCode(teacher.code) ? teacher.name : (teacher.code || teacher.name)
+}
+
 function getInitials(name: string) {
   const words = name
     .replace(/\([^)]*\)/g, ' ')
@@ -324,7 +334,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
     return (
       <img
         src={teacher.photoURL}
-        alt={`Ảnh giáo viên ${teacher.code || teacher.name}`}
+        alt={`Ảnh giáo viên ${getTeacherDisplayName(teacher)}`}
         className="h-full w-full object-cover"
         loading="lazy"
       />
@@ -333,7 +343,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
 
   return (
     <div className="flex h-full w-full items-center justify-center bg-[#fff8df] text-2xl font-black text-[#d69a00]">
-      {getInitials(teacher.code || teacher.name)}
+      {getInitials(getTeacherDisplayName(teacher))}
     </div>
   )
 }
@@ -494,7 +504,7 @@ function TeacherCard({
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
                 {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
-              <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{teacher.code || teacher.name}</h3>
+              <h3 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950">{getTeacherDisplayName(teacher)}</h3>
             </div>
             <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">
               <Star className="h-3.5 w-3.5 fill-current" />
@@ -727,7 +737,7 @@ function TeacherBookingPage({
           </span>
           <span className="min-w-0">
             <span className="block text-xs font-bold uppercase tracking-[0.18em] text-[#b18400]">Trở về danh sách</span>
-            <span className="block truncate text-xl font-black text-slate-950">{teacher.code || teacher.name}</span>
+            <span className="block truncate text-xl font-black text-slate-950">{getTeacherDisplayName(teacher)}</span>
           </span>
         </button>
         <button
@@ -902,7 +912,7 @@ function TeacherBookingPage({
                             </div>
                             <div>
                               <p className="text-sm font-black text-[#c34d3f]">{selectedSchedule.dateISO} {selectedSchedule.start}-{selectedSchedule.end} ({duration}mins)</p>
-                              <p className="text-sm font-semibold text-slate-500">{teacher.code || teacher.name}</p>
+                              <p className="text-sm font-semibold text-slate-500">{getTeacherDisplayName(teacher)}</p>
                             </div>
                           </div>
                         </div>
@@ -1016,7 +1026,7 @@ export function PublicTeachersPage() {
       setTeachers((prev) => {
         const merged = reset ? pageTeachers : [...prev, ...pageTeachers]
         const byId = new Map(merged.map((teacher) => [teacher.id, teacher]))
-        return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || (a.code || a.name).localeCompare(b.code || b.name, 'vi'))
+        return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || getTeacherDisplayName(a).localeCompare(getTeacherDisplayName(b), 'vi'))
       })
       setLastDoc(teacherSnap.docs[teacherSnap.docs.length - 1] || null)
       setHasMore(teacherSnap.docs.length === PAGE_SIZE)

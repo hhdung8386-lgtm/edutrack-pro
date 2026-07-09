@@ -13,6 +13,16 @@ import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/tim
 import { uploadLessonImage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
 
+const isAttendanceAllowed = (booking: BookingRequest) => {
+  if (!booking.requestedDate || !booking.requestedEnd) return false
+  const [year, month, day] = booking.requestedDate.split('-').map(Number)
+  const [hours, minutes] = booking.requestedEnd.split(':').map(Number)
+  const utcMs = Date.UTC(year, month - 1, day, hours, minutes)
+  const vnTimeMs = utcMs - 7 * 60 * 60 * 1000 // Convert Vietnam (GMT+7) local to UTC time
+  const allowedTimeMs = vnTimeMs + 5 * 60 * 1000 // 5 minutes after class ends
+  return new Date().getTime() >= allowedTimeMs
+}
+
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -245,7 +255,7 @@ export function BookingSchedulesPage() {
       const todayStr = getToday()
       const list = snap.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
-        .filter((b) => !b.lessonId && (b.requestedDate || '') <= todayStr)
+        .filter((b) => !b.lessonId && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
       
       // Sort oldest first
       list.sort((a, b) => {
@@ -736,11 +746,26 @@ export function BookingSchedulesPage() {
                     </div>
                   )
                 }
+                const allowed = isAttendanceAllowed(selectedBooking)
                 return (
-                  <Button variant="primary" onClick={() => setShowAttendanceModal(true)} className="flex items-center gap-1.5">
-                    <PenSquare className="w-4 h-4" />
-                    {t('sched.attendance_btn')}
-                  </Button>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Button 
+                      variant="primary" 
+                      onClick={() => setShowAttendanceModal(true)} 
+                      disabled={!allowed}
+                      className="flex items-center gap-1.5"
+                    >
+                      <PenSquare className="w-4 h-4" />
+                      {t('sched.attendance_btn')}
+                    </Button>
+                    {!allowed && (
+                      <span className="text-[10px] text-rose-500 font-bold max-w-[220px] text-right leading-tight">
+                        {lang === 'vi' 
+                          ? 'Chỉ được điểm danh sau khi buổi học kết thúc 5 phút' 
+                          : 'Only allowed 5 minutes after class ends'}
+                      </span>
+                    )}
+                  </div>
                 )
               })()}
               <Button variant="ghost" onClick={() => {

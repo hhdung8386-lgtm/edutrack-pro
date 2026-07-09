@@ -6,7 +6,7 @@ import {
   collection, addDoc, updateDoc, doc, getDocs, query,
   where, serverTimestamp, setDoc
 } from 'firebase/firestore'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
 import { generateUniqueEnglishName } from '@/lib/nameGenerator'
 import { Teacher, Subject, TeacherCertificate } from '@/types'
@@ -315,16 +315,59 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             return
           }
 
-          // Update users collection document to sync login
-          const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
-          const userSnap = await getDocs(userQuery)
-          if (!userSnap.empty) {
-            const userDoc = userSnap.docs[0]
-            const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
-            await updateDoc(userDoc.ref, {
+          // Update users collection document to sync login and provision new auth account
+          const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
+          const FIXED_PASSWORD = '1234560'
+          let finalUid: string | null = null
+
+          try {
+            const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
+            await secondaryAuth.signOut()
+            finalUid = credential.user.uid
+          } catch (err: any) {
+            if (err.code === 'auth/email-already-in-use') {
+              try {
+                const credential = await signInWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
+                await secondaryAuth.signOut()
+                finalUid = credential.user.uid
+              } catch (signInErr) {
+                console.error('Failed to sign in/get existing auth user:', signInErr)
+              }
+            } else {
+              console.error('Failed to provision new auth account:', err)
+            }
+          }
+
+          if (finalUid) {
+            // Write the new users document
+            await setDoc(doc(db, 'users', finalUid), {
+              uid: finalUid,
+              email: finalEmail,
               username: newUsername,
-              email: finalEmail
+              role: 'teacher',
+              teacherId: teacher.id,
+              createdAt: serverTimestamp(),
             })
+
+            // Mark old user documents as inactive to prevent duplicates
+            const oldUserQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
+            const oldUserSnap = await getDocs(oldUserQuery)
+            for (const oldDoc of oldUserSnap.docs) {
+              if (oldDoc.id !== finalUid) {
+                await updateDoc(oldDoc.ref, { role: 'inactive_teacher' })
+              }
+            }
+          } else {
+            // Fallback: if auth provisioning failed completely, try to update the first found user doc
+            const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
+            const userSnap = await getDocs(userQuery)
+            if (!userSnap.empty) {
+              const userDoc = userSnap.docs[0]
+              await updateDoc(userDoc.ref, {
+                username: newUsername,
+                email: finalEmail
+              })
+            }
           }
         }
 
