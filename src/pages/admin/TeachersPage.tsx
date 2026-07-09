@@ -101,6 +101,7 @@ export function TeachersPage() {
   const navigate = useNavigate()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
+  const [minutesMap, setMinutesMap] = useState<Record<string, number>>({})
   const [search, setSearch] = useState(() => sessionStorage.getItem('teachers_search') || '')
   const [gradeFilter, setGradeFilter] = useState<'' | TeacherGrade>(() => (sessionStorage.getItem('teachers_gradeFilter') as '' | TeacherGrade) || '')
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
@@ -172,6 +173,38 @@ export function TeachersPage() {
       unsub()
     }
   }, [limitVal])
+
+  useEffect(() => {
+    if (teachers.length === 0) return
+    let active = true
+
+    const teacherIds = teachers.map(t => t.id)
+    Promise.all(
+      teacherIds.map(tid => 
+        getDocs(
+          query(
+            collection(db, 'lessons'),
+            where('teacherId', '==', tid),
+            where('status', '==', 'approved')
+          )
+        ).then(snap => {
+          const totalMins = snap.docs.reduce((sum, d) => sum + (Number(d.data().minutes) || 0), 0)
+          return [tid, totalMins] as const
+        })
+      )
+    ).then(results => {
+      if (!active) return
+      const map: Record<string, number> = {}
+      results.forEach(([tid, mins]) => {
+        map[tid] = mins
+      })
+      setMinutesMap(map)
+    }).catch(err => {
+      console.error('Error fetching teacher approved minutes:', err)
+    })
+
+    return () => { active = false }
+  }, [teachers])
 
   useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
@@ -361,7 +394,7 @@ export function TeachersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-violet-600 font-semibold text-sm">
-                          {(Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) || 0).toLocaleString('vi-VN')}'
+                          {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'
                         </span>
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={teacher.status} /></td>
@@ -421,8 +454,8 @@ export function TeachersPage() {
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Level ×{teacher.level}
-                      {Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) > 0
-                        ? ` · ${Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes).toLocaleString('vi-VN')}'`
+                      {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0) > 0
+                        ? ` · ${(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'`
                         : ''}
                     </p>
                   </div>

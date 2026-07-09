@@ -212,6 +212,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             updatedAt: serverTimestamp(),
           })
 
+          const currentMins = Number(teacherData?.totalApprovedMinutes) || 0
+          tx.update(doc(db, 'teachers', lesson.teacherId), {
+            totalApprovedMinutes: currentMins + lesson.minutes
+          })
+
           const publicLessonRef = doc(db, 'publicLessons', lesson.id)
           tx.set(publicLessonRef, {
             id: lesson.id,

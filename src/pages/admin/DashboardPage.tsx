@@ -111,8 +111,35 @@ export function DashboardPage() {
       }
     }
 
+    async function updateTeacherMinutesInDb() {
+      if (localStorage.getItem('teacher_minutes_synced_v1')) return
+      try {
+        const teachersSnap = await getDocs(collection(db, 'teachers'))
+        const teachersList = teachersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        
+        for (const t of teachersList) {
+          const lessonsSnap = await getDocs(
+            query(
+              collection(db, 'lessons'),
+              where('teacherId', '==', t.id),
+              where('status', '==', 'approved')
+            )
+          )
+          const totalMins = lessonsSnap.docs.reduce((sum, d) => sum + (Number(d.data().minutes) || 0), 0)
+          await updateDoc(doc(db, 'teachers', t.id), {
+            totalApprovedMinutes: totalMins
+          })
+        }
+        localStorage.setItem('teacher_minutes_synced_v1', 'true')
+        console.log('Successfully synced all teacher minutes in the database!')
+      } catch (err) {
+        console.error('Failed to sync teacher minutes:', err)
+      }
+    }
+
     provisionManagers()
     cleanupOldImages()
+    updateTeacherMinutesInDb()
   }, [])
 
   useEffect(() => {

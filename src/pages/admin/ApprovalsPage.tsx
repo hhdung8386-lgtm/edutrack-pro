@@ -331,6 +331,11 @@ export function ApprovalsPage() {
             updatedAt: serverTimestamp(),
           })
 
+          const currentMins = Number(teacherData?.totalApprovedMinutes) || 0
+          tx.update(doc(db, 'teachers', approvingLesson.teacherId), {
+            totalApprovedMinutes: currentMins + lessonMinutes
+          })
+
           const publicLessonRef = doc(db, 'publicLessons', approvingLesson.id)
           tx.set(publicLessonRef, {
             id: approvingLesson.id,

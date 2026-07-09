@@ -227,6 +227,13 @@ export function PayrollPage() {
                 <div className="min-w-0">
                   <p className="font-medium text-slate-700 truncate">{teacher.name}</p>
                   <p className="text-xs text-slate-500">×{teacher.level} · {tp.length} buổi · {minutes} phút</p>
+                  {teacher.bankAccountNo ? (
+                    <p className="text-[11px] text-emerald-600 font-semibold mt-0.5 font-mono">
+                      STK: {teacher.bankAccountNo} - {teacher.bankName} ({teacher.bankAccountName})
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5 italic">Chưa cập nhật STK</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
