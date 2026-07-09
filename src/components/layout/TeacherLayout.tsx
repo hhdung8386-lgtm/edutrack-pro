@@ -17,6 +17,10 @@ export function TeacherLayout() {
   const { lang, setLang, t } = useLanguageStore()
   const navigate = useNavigate()
   const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean } | null>(null)
+  
+  // Real-time clock and timezone states
+  const [timezoneOffset, setTimezoneOffset] = useState<number>(7)
+  const [currentTime, setCurrentTime] = useState<Date>(new Date())
 
   const navItems = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
@@ -36,36 +40,53 @@ export function TeacherLayout() {
 
   const toggleLang = () => setLang(lang === 'vi' ? 'en' : 'vi')
 
+  // Clock tick interval
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const formatTime = () => {
+    const utcMs = currentTime.getTime() + currentTime.getTimezoneOffset() * 60 * 1000
+    const targetMs = utcMs + timezoneOffset * 60 * 60 * 1000
+    const d = new Date(targetMs)
+    
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const hh = String(d.getHours()).padStart(2, '0')
+    const min = String(d.getMinutes()).padStart(2, '0')
+    const ss = String(d.getSeconds()).padStart(2, '0')
+    
+    const sign = timezoneOffset >= 0 ? '+' : '-'
+    const absOffset = Math.abs(timezoneOffset)
+    const offsetHours = String(Math.floor(absOffset)).padStart(2, '0')
+    const offsetMins = String(Math.round((absOffset % 1) * 60)).padStart(2, '0')
+    
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss} (UTC${sign}${offsetHours}:${offsetMins})`
+  }
+
+  // Sync profile reminder and timezone offset in real time
   useEffect(() => {
     if (!teacherId) {
       setProfileReminder(null)
+      setTimezoneOffset(7)
       return
     }
 
-    let active = true
-    const currentTeacherId = teacherId
-
-    async function loadReminderState() {
-      try {
-        const teacherSnap = await getDoc(doc(db, 'teachers', currentTeacherId))
-
-        if (!active) return
-
-        const teacher = teacherSnap.exists() ? ({ id: teacherSnap.id, ...teacherSnap.data() } as Teacher) : null
-
-        const missingPhoto = !teacher?.photoURL
-
+    const unsub = onSnapshot(doc(db, 'teachers', teacherId), (snap) => {
+      if (snap.exists()) {
+        const teacherData = snap.data()
+        const offset = typeof teacherData.timezoneOffset === 'number' ? teacherData.timezoneOffset : 7
+        setTimezoneOffset(offset)
+        const missingPhoto = !teacherData.photoURL
         setProfileReminder(missingPhoto ? { missingPhoto } : null)
-      } catch (error) {
-        console.error('Error loading teacher profile reminder:', error)
       }
-    }
+    })
 
-    loadReminderState()
-
-    return () => {
-      active = false
-    }
+    return unsub
   }, [teacherId])
 
   // Real-time booking schedules notification listener
@@ -116,7 +137,10 @@ export function TeacherLayout() {
       <header className="hidden lg:flex fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 items-center px-6 z-30 gap-4 shadow-sm">
         <div className="flex items-center gap-3 flex-1">
           <Logo className="h-9 w-auto max-w-[145px]" />
-          <span className="text-xs font-bold text-[#3BB8EB] uppercase tracking-wider border-l border-slate-200 pl-3">{t('nav.teacher')}</span>
+          <span className="text-xs font-bold text-[#3BB8EB] uppercase tracking-wider border-l border-slate-200 pl-3 mr-1">{t('nav.teacher')}</span>
+          <span className="inline-block text-xs font-mono font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/50">
+            {formatTime()}
+          </span>
         </div>
 
         <nav className="flex items-center gap-1">
@@ -157,8 +181,11 @@ export function TeacherLayout() {
 
       {/* Mobile header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-slate-200 flex items-center px-4 z-40 shadow-sm gap-2">
-        <div className="flex items-center gap-2.5 flex-1">
-          <Logo className="h-8 w-auto max-w-[128px]" />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Logo className="h-8 w-auto max-w-[120px]" />
+          <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60 truncate">
+            {formatTime()}
+          </span>
         </div>
         {/* Notifications bell drawer */}
         <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
