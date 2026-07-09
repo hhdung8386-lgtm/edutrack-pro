@@ -224,7 +224,9 @@ export function ApprovalsPage() {
 
           const teacherCountry = teacherData?.country || 'VN'
           let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (teacherCountry === 'VN') {
+          if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
+            pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
+          } else if (teacherCountry === 'VN') {
             pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
           } else if (teacherCountry === 'PH') {
             pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0

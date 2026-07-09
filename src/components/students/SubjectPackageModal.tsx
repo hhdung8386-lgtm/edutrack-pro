@@ -15,10 +15,22 @@ const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
   totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
   curriculumLink: z.string().optional(),
+  supplementaryCurriculumLink: z.string().optional(),
   timetableNote: z.string().optional(),
+  studentRequests: z.array(z.string()).default([]),
 })
 
 type FormData = z.infer<typeof schema>
+
+const STUDENT_REQUESTS_OPTIONS = [
+  'Nói chậm hơn, to, rõ.',
+  'Sử dụng 100% tiếng Anh (chỉ giải thích bằng tiếng Việt khi cần)',
+  'Sửa phát âm, ngữ pháp khi nói.',
+  'Cho học viên nói nhiều, chủ động khơi gợi.',
+  'Giao nhiều bài tập về nhà.',
+  'Không giao bài tập về nhà.',
+  'Ôn lại bài cũ nhiều hơn.'
+]
 
 interface Props {
   student: Student
@@ -31,6 +43,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   const [loading, setLoading] = useState(false)
   const [subjectSearch, setSubjectSearch] = useState('')
   const [subjectMenuOpen, setSubjectMenuOpen] = useState(false)
+  const [selectedRequests, setSelectedRequests] = useState<string[]>([])
+  const soccerRequests = selectedRequests // Alias for cleanliness
   const isEdit = !!editingSubjectId
 
   // Extract current subjects already set up
@@ -41,6 +55,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     ? currentSubjects.find(s => s.subjectId === editingSubjectId)
     : null
 
+  useEffect(() => {
+    if (editingPkg) {
+      setSelectedRequests(editingPkg.studentRequests || [])
+    }
+  }, [editingPkg])
+
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: editingPkg
@@ -48,13 +68,17 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           subjectId: editingPkg.subjectId,
           totalMinutes: editingPkg.totalMinutes,
           curriculumLink: editingPkg.curriculumLink || '',
+          supplementaryCurriculumLink: editingPkg.supplementaryCurriculumLink || '',
           timetableNote: editingPkg.timetableNote || '',
+          studentRequests: editingPkg.studentRequests || [],
         }
       : {
           subjectId: '',
           totalMinutes: 500,
           curriculumLink: '',
+          supplementaryCurriculumLink: '',
           timetableNote: '',
+          studentRequests: [],
         },
   })
 
@@ -177,6 +201,10 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 usedMinutes: 0,
                 remainingMinutes: prevPkg.remainingMinutes,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
+                otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
                 currency: selectedSubjectObj.currency || 'VND',
                 batches: [{
                   id: '1',
@@ -184,7 +212,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                   totalSessions: newSessions
                 }],
                 curriculumLink: data.curriculumLink || '',
-                timetableNote: data.timetableNote || ''
+                supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                timetableNote: data.timetableNote || '',
+                studentRequests: selectedRequests
               })
             } else {
               const newTotalMinutes = data.totalMinutes
@@ -194,6 +224,10 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 subjectId: selectedSubjectObj.id,
                 subjectName: selectedSubjectObj.name,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
+                pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
+                otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
                 currency: selectedSubjectObj.currency || 'VND',
                 totalSessions: calculatedTotalSessions,
                 remainingSessions: calculatedTotalSessions,
@@ -205,9 +239,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                    createdAt: dateString,
                    totalSessions: calculatedTotalSessions
                  }],
-                  curriculumLink: data.curriculumLink || '',
-                  timetableNote: data.timetableNote || ''
-                }
+                curriculumLink: data.curriculumLink || '',
+                supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                timetableNote: data.timetableNote || '',
+                studentRequests: selectedRequests
+              }
             }
           } else {
             const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
@@ -225,7 +261,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               remainingMinutes: newRemainingMinutes,
               batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
               curriculumLink: data.curriculumLink || '',
-              timetableNote: data.timetableNote || ''
+              supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+              timetableNote: data.timetableNote || '',
+              studentRequests: selectedRequests
             }
           }
         }
@@ -249,6 +287,10 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           usedMinutes: 0,
           remainingMinutes: data.totalMinutes,
           pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
+          pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
+          pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
+          pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
+          otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
           currency: selectedSubjectObj.currency || 'VND',
           batches: [{
             id: '1',
@@ -256,7 +298,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             totalSessions: calculatedTotalSessions
           }],
           curriculumLink: data.curriculumLink || '',
-          timetableNote: data.timetableNote || ''
+          supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+          timetableNote: data.timetableNote || '',
+          studentRequests: selectedRequests
         }
 
         updatedSubjects.push(newPkg)
@@ -410,6 +454,40 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           error={errors.curriculumLink?.message}
           {...register('curriculumLink')}
         />
+
+        <Input
+          label="Link giáo trình bổ trợ"
+          placeholder="Nhập link giáo trình bổ trợ (không bắt buộc)"
+          error={errors.supplementaryCurriculumLink?.message}
+          {...register('supplementaryCurriculumLink')}
+        />
+
+        {/* Checkbox list of student requests */}
+        <div className="space-y-2 rounded-xl border border-slate-200 p-4 bg-slate-50/50">
+          <label className="block text-sm font-bold text-slate-700">Yêu cầu từ học viên (Tick chọn)</label>
+          <div className="space-y-2">
+            {STUDENT_REQUESTS_OPTIONS.map((reqOption) => {
+              const checked = selectedRequests.includes(reqOption)
+              return (
+                <label key={reqOption} className="flex items-start gap-2.5 text-sm text-slate-600 font-medium cursor-pointer hover:text-slate-900 select-none">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRequests((prev) => [...prev, reqOption])
+                      } else {
+                        setSelectedRequests((prev) => prev.filter((r) => r !== reqOption))
+                      }
+                    }}
+                    className="mt-1 rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>{reqOption}</span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
 
         <Input
           label="Note chung trên timetable"

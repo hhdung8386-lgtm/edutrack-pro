@@ -22,7 +22,10 @@ export interface StudentSubject {
   pricePerMinuteNative?: number
   batches?: TopUpBatch[]
   curriculumLink?: string
+  supplementaryCurriculumLink?: string
   timetableNote?: string
+  studentRequests?: string[]
+  otherCountriesPrices?: Record<string, number>
   currency?: string
 }
 
@@ -125,6 +128,7 @@ export interface Subject {
   pricePerMinuteVN?: number
   pricePerMinutePH?: number
   pricePerMinuteNative?: number
+  otherCountriesPrices?: Record<string, number>
   status: 'active' | 'inactive'
   createdAt: Timestamp
   currency?: string

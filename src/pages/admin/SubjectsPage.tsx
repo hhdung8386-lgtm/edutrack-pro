@@ -88,6 +88,10 @@ type FormData = z.infer<typeof schema>
 
 function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => void }) {
   const isEdit = !!subject
+  const [otherPrices, setOtherPrices] = useState<Record<string, number>>(subject?.otherCountriesPrices || {})
+  const [selectedCountry, setSelectedCountry] = useState('JP')
+  const [newPriceForCountry, setNewPriceForCountry] = useState('')
+
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: (subject ? {
@@ -116,6 +120,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const updatePayload = {
           ...data,
           pricePerMinute: data.pricePerMinuteVN,
+          otherCountriesPrices: otherPrices,
           updatedAt: serverTimestamp()
         }
         await updateDoc(doc(db, 'subjects', subject.id), updatePayload)
@@ -126,9 +131,9 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const newRateNative = data.pricePerMinuteNative;
         const newCurrency = data.currency || 'VND';
         
-        // Query students, lessons and teachers in parallel
+        // Query ALL students to sync denormalized subjects array properly
         const [studentsSnap, lessonsSnap, teachersSnap] = await Promise.all([
-          getDocs(query(collection(db, 'students'), where('subjectId', '==', subject.id))),
+          getDocs(collection(db, 'students')),
           getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subject.id))),
           getDocs(collection(db, 'teachers'))
         ]);
@@ -139,30 +144,42 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         // Update students in parallel
         const studentUpdates = studentsSnap.docs.map(studentDoc => {
           const studentData = studentDoc.data();
+          const hasSubject = (studentData.subjects || []).some((sub: any) => sub.subjectId === subject.id) || studentData.subjectId === subject.id;
+          if (!hasSubject) return null;
+
           const updatedSubjectsArray = (studentData.subjects || []).map((sub: any) => {
             if (sub.subjectId === subject.id) {
               return { 
                 ...sub, 
+                subjectName: data.name, // Sync the name change!
                 pricePerMinute: newRateVN,
                 pricePerMinuteVN: newRateVN,
                 pricePerMinutePH: newRatePH,
                 pricePerMinuteNative: newRateNative,
+                otherCountriesPrices: otherPrices,
                 currency: newCurrency 
               }
             }
             return sub;
           });
 
-          return updateDoc(doc(db, 'students', studentDoc.id), {
-            pricePerMinute: newRateVN,
-            pricePerMinuteVN: newRateVN,
-            pricePerMinutePH: newRatePH,
-            pricePerMinuteNative: newRateNative,
-            currency: newCurrency,
+          const updateObj: any = {
             subjects: updatedSubjectsArray,
             updatedAt: serverTimestamp(),
-          });
-        });
+          };
+
+          if (studentData.subjectId === subject.id) {
+            updateObj.subjectName = data.name; // Sync legacy name!
+            updateObj.pricePerMinute = newRateVN;
+            updateObj.pricePerMinuteVN = newRateVN;
+            updateObj.pricePerMinutePH = newRatePH;
+            updateObj.pricePerMinuteNative = newRateNative;
+            updateObj.otherCountriesPrices = otherPrices;
+            updateObj.currency = newCurrency;
+          }
+
+          return updateDoc(doc(db, 'students', studentDoc.id), updateObj);
+        }).filter(Boolean) as Promise<any>[];
         
         // Fetch all payrolls first in parallel to check paid status
         const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
@@ -191,21 +208,35 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           const teacherCountry = teacher?.country || 'VN';
 
           let rate = newRateVN;
-          if (teacherCountry === 'VN') rate = newRateVN;
-          else if (teacherCountry === 'PH') rate = newRatePH;
-          else rate = newRateNative;
+          if (otherPrices && otherPrices[teacherCountry] !== undefined) {
+            rate = otherPrices[teacherCountry];
+          } else if (teacherCountry === 'VN') {
+            rate = newRateVN;
+          } else if (teacherCountry === 'PH') {
+            rate = newRatePH;
+          } else {
+            rate = newRateNative;
+          }
 
           const minutes = Number(lesson.minutes) || 0;
           const teacherLevel = Number(lesson.teacherLevel) || 1;
-          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel) : 0;
+          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel, newCurrency) : 0;
           
           lessonUpdates.push(
             updateDoc(doc(db, 'lessons', lessonId), {
+              subjectName: data.name, // Sync the name change!
               pricePerMinute: rate,
               salary: newSalary,
               currency: newCurrency,
               updatedAt: serverTimestamp(),
             })
+          );
+
+          // Sync publicLessons if they exist
+          lessonUpdates.push(
+            updateDoc(doc(db, 'publicLessons', lessonId), {
+              subjectName: data.name,
+            }).catch(() => {/* Ignore error if doc does not exist */})
           );
           
           payrollSnap.docs.forEach((pDoc: any) => {
@@ -235,6 +266,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const addPayload = {
           ...data,
           pricePerMinute: data.pricePerMinuteVN,
+          otherCountriesPrices: otherPrices,
           createdAt: serverTimestamp()
         }
         await addDoc(collection(db, 'subjects'), addPayload)
@@ -316,6 +348,104 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             })}
           </div>
         )}
+
+        {/* rates for other countries */}
+        <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-white shadow-sm">
+          <p className="text-sm font-bold text-slate-700">Giá theo các quốc gia khác</p>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Chọn quốc gia</label>
+              <select
+                value={selectedCountry}
+                onChange={(e) => setSelectedCountry(e.target.value)}
+                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-sm min-h-[38px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="JP">Nhật Bản / Japan</option>
+                <option value="KR">Hàn Quốc / Korea</option>
+                <option value="US_EST">Mỹ / USA (EST)</option>
+                <option value="US_PST">Mỹ / USA (PST)</option>
+                <option value="US">Mỹ / USA (Chung)</option>
+                <option value="UK">Anh / UK</option>
+                <option value="CA">Canada</option>
+                <option value="AU">Úc / Australia</option>
+              </select>
+            </div>
+            <div className="w-[140px]">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Giá mỗi phút</label>
+              <input
+                type="text"
+                placeholder={(watch('currency') || 'VND') === 'USD' ? '0.15' : '2.500'}
+                value={newPriceForCountry}
+                onChange={(e) => setNewPriceForCountry(e.target.value)}
+                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-sm min-h-[38px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const parsed = (watch('currency') || 'VND') === 'USD' ? Number(newPriceForCountry) : parseVietnameseNumber(newPriceForCountry)
+                if (isNaN(parsed) || parsed <= 0) {
+                  toast.error('Vui lòng nhập đơn giá hợp lệ')
+                  return
+                }
+                setOtherPrices((prev) => ({
+                  ...prev,
+                  [selectedCountry]: parsed,
+                }))
+                setNewPriceForCountry('')
+                toast.success('Đã thêm mức giá cho quốc gia ' + selectedCountry)
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[38px]"
+            >
+              Thêm
+            </button>
+          </div>
+
+          {/* List of configured other country rates */}
+          {Object.keys(otherPrices).length > 0 && (
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <p className="text-xs font-semibold text-slate-500">Mức giá đã thiết lập:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(otherPrices).map(([code, val]) => {
+                  const countryLabels: Record<string, string> = {
+                    JP: 'Nhật Bản (JP)',
+                    KR: 'Hàn Quốc (KR)',
+                    US_EST: 'Mỹ EST (US_EST)',
+                    US_PST: 'Mỹ PST (US_PST)',
+                    US: 'Mỹ (US)',
+                    UK: 'Anh (UK)',
+                    CA: 'Canada (CA)',
+                    AU: 'Úc (AU)',
+                  }
+                  return (
+                    <div key={code} className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs">
+                      <span className="font-bold text-slate-700">{countryLabels[code] || code}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-indigo-600">
+                          {(watch('currency') || 'VND') === 'USD' ? `$${val}` : `${val.toLocaleString('vi-VN')}đ`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOtherPrices((prev) => {
+                              const next = { ...prev }
+                              delete next[code]
+                              return next
+                            })
+                            toast.success('Đã xoá mức giá nước ' + code)
+                          }}
+                          className="text-rose-500 hover:text-rose-700 font-bold ml-1.5"
+                        >
+                          Xoá
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Trạng thái</label>

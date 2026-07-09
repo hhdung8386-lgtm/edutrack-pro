@@ -180,6 +180,7 @@ export function StudentDetailPage() {
           pricePerMinuteVN: data?.pricePerMinuteVN ?? data?.pricePerMinute ?? 0,
           pricePerMinutePH: data?.pricePerMinutePH ?? data?.pricePerMinute ?? 0,
           pricePerMinuteNative: data?.pricePerMinuteNative ?? data?.pricePerMinute ?? 0,
+          otherCountriesPrices: data?.otherCountriesPrices || {},
         }] as const
       }))),
       Promise.all(teacherIds.map(tid => getDoc(doc(db, 'teachers', tid)).then(t => {
@@ -209,9 +210,15 @@ export function StudentDetailPage() {
     const rates = liveRates.subjectPrice[lesson.subjectId]
     let price = lesson.pricePerMinute ?? 0
     if (rates) {
-      if (country === 'VN') price = rates.pricePerMinuteVN || rates.pricePerMinute || 0
-      else if (country === 'PH') price = rates.pricePerMinutePH || rates.pricePerMinute || 0
-      else price = rates.pricePerMinuteNative || rates.pricePerMinute || 0
+      if (rates.otherCountriesPrices && rates.otherCountriesPrices[country] !== undefined) {
+        price = rates.otherCountriesPrices[country]
+      } else if (country === 'VN') {
+        price = rates.pricePerMinuteVN || rates.pricePerMinute || 0
+      } else if (country === 'PH') {
+        price = rates.pricePerMinutePH || rates.pricePerMinute || 0
+      } else {
+        price = rates.pricePerMinuteNative || rates.pricePerMinute || 0
+      }
     }
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
     return { price, level, salary: calculateSalary(lesson.minutes, price, level) }
@@ -880,7 +887,9 @@ export function StudentDetailPage() {
           const teacherCountry = tData?.country || 'VN'
 
           let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (teacherCountry === 'VN') {
+          if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
+            pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
+          } else if (teacherCountry === 'VN') {
             pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
           } else if (teacherCountry === 'PH') {
             pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0
@@ -1468,6 +1477,30 @@ export function StudentDetailPage() {
                           Link giáo trình
                           <ExternalLink className="w-3 h-3" />
                         </a>
+                      </div>
+                    )}
+                    {pkg.supplementaryCurriculumLink && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">Giáo trình bổ trợ:</span>
+                        <a
+                          href={pkg.supplementaryCurriculumLink.startsWith('http') ? pkg.supplementaryCurriculumLink : `https://${pkg.supplementaryCurriculumLink}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-600 hover:text-emerald-800 font-semibold inline-flex items-center gap-0.5"
+                        >
+                          Link giáo trình bổ trợ
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                    {pkg.studentRequests && pkg.studentRequests.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span className="text-slate-400 block w-full">Yêu cầu từ học viên:</span>
+                        {pkg.studentRequests.map((req, idx) => (
+                          <span key={idx} className="bg-rose-50 border border-rose-100 text-rose-600 text-[10px] px-2 py-0.5 rounded-md font-bold">
+                            {req}
+                          </span>
+                        ))}
                       </div>
                     )}
                     {pkg.timetableNote && (

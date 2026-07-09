@@ -229,6 +229,56 @@ export function BookingSchedulesPage() {
     })
   }, [bookingRequests, teacher?.timezoneOffset])
 
+  const [pendingAttendanceBookings, setPendingAttendanceBookings] = useState<BookingRequest[]>([])
+
+  // Load pending attendance bookings in real-time
+  useEffect(() => {
+    if (!teacherId) return
+
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', teacherId),
+      where('status', '==', 'confirmed')
+    )
+
+    const unsub = onSnapshot(q, (snap) => {
+      const todayStr = getToday()
+      const list = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+        .filter((b) => !b.lessonId && (b.requestedDate || '') <= todayStr)
+      
+      // Sort oldest first
+      list.sort((a, b) => {
+        if (a.requestedDate !== b.requestedDate) {
+          return (a.requestedDate || '').localeCompare(b.requestedDate || '')
+        }
+        return (a.requestedStart || '').localeCompare(b.requestedStart || '')
+      })
+
+      setPendingAttendanceBookings(list)
+
+      // Fetch student details if needed
+      const studentIdsToFetch = Array.from(new Set(list.map(b => b.studentId)))
+      if (studentIdsToFetch.length > 0) {
+        Promise.all(studentIdsToFetch.map(id => getDoc(doc(db, 'students', id)))).then(snaps => {
+          setStudents(prev => {
+            const next = { ...prev }
+            snaps.forEach(s => {
+              if (s.exists()) {
+                next[s.id] = { id: s.id, ...s.data() } as Student
+              }
+            })
+            return next
+          })
+        })
+      }
+    }, (error) => {
+      console.error('Error loading pending attendance bookings:', error)
+    })
+
+    return unsub
+  }, [teacherId])
+
   // Load booked booking requests in real-time
   useEffect(() => {
     if (!teacherId) return
@@ -392,14 +442,32 @@ export function BookingSchedulesPage() {
 
         // Load pricing snapshot from subject or student subject rates
         let pricePerMinute = 0
+        const teacherCountry = teacherData?.country || 'VN'
         const activeSub = studentData.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
         if (activeSub) {
-          pricePerMinute = activeSub.pricePerMinute || 0
+          if (activeSub.otherCountriesPrices && activeSub.otherCountriesPrices[teacherCountry] !== undefined) {
+            pricePerMinute = activeSub.otherCountriesPrices[teacherCountry]
+          } else if (teacherCountry === 'VN') {
+            pricePerMinute = activeSub.pricePerMinuteVN || activeSub.pricePerMinute || 0
+          } else if (teacherCountry === 'PH') {
+            pricePerMinute = activeSub.pricePerMinutePH || activeSub.pricePerMinute || 0
+          } else {
+            pricePerMinute = activeSub.pricePerMinuteNative || activeSub.pricePerMinute || 0
+          }
         } else {
           // fallback to main subject price
           const subSnap = await getDoc(doc(db, 'subjects', selectedBooking.subjectId || ''))
           if (subSnap.exists()) {
-            pricePerMinute = subSnap.data().pricePerMinute || 0
+            const subData = subSnap.data()
+            if (subData.otherCountriesPrices && subData.otherCountriesPrices[teacherCountry] !== undefined) {
+              pricePerMinute = subData.otherCountriesPrices[teacherCountry]
+            } else if (teacherCountry === 'VN') {
+              pricePerMinute = subData.pricePerMinuteVN || subData.pricePerMinute || 0
+            } else if (teacherCountry === 'PH') {
+              pricePerMinute = subData.pricePerMinutePH || subData.pricePerMinute || 0
+            } else {
+              pricePerMinute = subData.pricePerMinuteNative || subData.pricePerMinute || 0
+            }
           }
         }
 
@@ -508,6 +576,55 @@ export function BookingSchedulesPage() {
           </Button>
         </div>
       </div>
+
+      {/* Pending Attendance Sessions Notification List */}
+      {pendingAttendanceBookings.length > 0 && (
+        <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/50 p-5 shadow-sm space-y-3 animate-fade-in">
+          <div className="flex items-center gap-2 text-rose-700">
+            <AlertTriangle className="h-5 w-5 animate-pulse" />
+            <h2 className="text-base font-black">Bạn có {pendingAttendanceBookings.length} buổi học chưa điểm danh!</h2>
+          </div>
+          <p className="text-xs text-rose-600 leading-relaxed">
+            Dưới đây là các buổi học đã diễn ra nhưng bạn chưa thực hiện điểm danh. Vui lòng bấm vào nút <strong>"Điểm danh ngay"</strong> để bổ sung nhận xét, bài tập và tải ảnh điểm danh để đảm bảo tính lương chính xác.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
+            {pendingAttendanceBookings.map((booking) => {
+              return (
+                <div key={booking.id} className="bg-white border border-rose-100 rounded-xl p-3.5 flex items-center justify-between shadow-sm gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-sm text-slate-800">{booking.studentName}</span>
+                      <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">{booking.studentCode}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      Môn học: <span className="font-bold text-slate-700">{booking.subjectName}</span>
+                    </p>
+                    <p className="text-xs text-indigo-600 font-bold mt-0.5">
+                      📅 {booking.requestedDate} ({booking.requestedStart} - {booking.requestedEnd})
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedBooking(booking)
+                      setAttendanceStatus('present')
+                      setBook('')
+                      setComment('')
+                      setHomework('')
+                      setImages([])
+                      setShowAttendanceModal(true)
+                    }}
+                    className="flex-shrink-0 bg-rose-500 hover:bg-rose-600 border-rose-500 hover:border-rose-600 font-bold text-xs rounded-lg px-3 py-1.5"
+                  >
+                    Điểm danh ngay
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Grid schedule table */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
@@ -694,7 +811,7 @@ export function BookingSchedulesPage() {
                     )}
                     {curriculumLink && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <span className="text-xs text-slate-500 font-semibold block">{t('sched.curriculum')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{curriculumLink}</p>
                         </div>
@@ -709,17 +826,26 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
-                    {subjectPkg?.timetableNote && (
-                      <div className="mt-2 pt-3 border-t border-slate-100">
-                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.timetable_note')}</span>
-                        <p className="text-xs text-slate-775 font-semibold mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
-                          {subjectPkg.timetableNote}
-                        </p>
+                    {subjectPkg?.supplementaryCurriculumLink && (
+                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs text-slate-500 font-semibold block">Giáo trình bổ trợ</span>
+                          <p className="text-[11px] text-slate-400 truncate">{subjectPkg.supplementaryCurriculumLink}</p>
+                        </div>
+                        <a
+                          href={subjectPkg.supplementaryCurriculumLink.startsWith('http') ? subjectPkg.supplementaryCurriculumLink : `https://${subjectPkg.supplementaryCurriculumLink}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                        >
+                          Mở GT bổ trợ
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
                       </div>
                     )}
                     {student?.textbookURL && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <span className="text-xs text-slate-500 font-semibold block">{t('sched.textbook_link')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
                         </div>
@@ -732,6 +858,26 @@ export function BookingSchedulesPage() {
                           {t('sched.open_textbook')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
+                      </div>
+                    )}
+                    {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
+                      <div className="mt-2 pt-3 border-t border-slate-100">
+                        <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {subjectPkg.studentRequests.map((req, idx) => (
+                            <span key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-2.5 py-1 rounded-lg font-bold">
+                              {req}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {subjectPkg?.timetableNote && (
+                      <div className="mt-2 pt-3 border-t border-slate-100">
+                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.timetable_note')}</span>
+                        <p className="text-xs text-slate-700 font-semibold mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
+                          {subjectPkg.timetableNote}
+                        </p>
                       </div>
                     )}
                   </>
@@ -819,6 +965,23 @@ export function BookingSchedulesPage() {
                       </a>
                     </div>
                   )}
+                  {subjectPkg?.supplementaryCurriculumLink && (
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs text-slate-500 font-semibold block">Giáo trình bổ trợ</span>
+                        <p className="text-[11px] text-slate-400 truncate">{subjectPkg.supplementaryCurriculumLink}</p>
+                      </div>
+                      <a
+                        href={subjectPkg.supplementaryCurriculumLink.startsWith('http') ? subjectPkg.supplementaryCurriculumLink : `https://${subjectPkg.supplementaryCurriculumLink}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        Mở GT bổ trợ
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
                   {student?.textbookURL && (
                     <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
                       <div className="min-w-0 flex-1">
@@ -834,6 +997,18 @@ export function BookingSchedulesPage() {
                         {t('sched.open_textbook')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
+                    </div>
+                  )}
+                  {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
+                    <div className="py-2 border-t border-slate-100 last:border-0">
+                      <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {subjectPkg.studentRequests.map((req, idx) => (
+                          <span key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-2.5 py-1 rounded-lg font-bold">
+                            {req}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {subjectPkg?.timetableNote && (
