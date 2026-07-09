@@ -19,7 +19,6 @@ export function TeacherLayout() {
   const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean } | null>(null)
 
   const navItems = [
-    { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance' },
     { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability' },
     { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules' },
     { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations' },

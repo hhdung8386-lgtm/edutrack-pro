@@ -748,6 +748,7 @@ export function BookingSchedulesPage() {
           open
           onClose={() => setShowAttendanceModal(false)}
           title={`${t('sched.attendance_for')} ${selectedBooking.studentName}`}
+          size="lg"
           footer={
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" onClick={() => setShowAttendanceModal(false)}>{t('sched.cancel')}</Button>
@@ -758,7 +759,12 @@ export function BookingSchedulesPage() {
           }
         >
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+            {/* Student Code and Class Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <span className="text-xs text-slate-500 font-semibold block">{lang === 'vi' ? 'Mã học viên:' : 'Student Code:'}</span>
+                <span className="text-sm font-bold text-slate-800 font-mono">{selectedBooking.studentCode}</span>
+              </div>
               <div>
                 <span className="text-xs text-slate-500 font-semibold block">{t('attendance.subject')}:</span>
                 <span className="text-sm font-bold text-slate-800">{selectedBooking.subjectName}</span>
@@ -768,6 +774,79 @@ export function BookingSchedulesPage() {
                 <span className="text-sm font-bold text-slate-800">{selectedBooking.requestedMinutes} {t('attendance.minutes')}</span>
               </div>
             </div>
+
+            {/* Links and materials display inside Attendance Modal */}
+            {(() => {
+              const roomLink = students[selectedBooking.studentId]?.classroomURL || selectedBooking.note
+              const student = students[selectedBooking.studentId]
+              const subjectPkg = student?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
+              const curriculumLink = subjectPkg?.curriculumLink
+
+              return (
+                <div className="space-y-3 border border-slate-150 rounded-xl p-4 bg-white shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tài liệu & Lớp học / Links & Materials</p>
+                  {roomLink && (
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.online_class')}</span>
+                        <p className="text-[11px] text-slate-400 truncate">{roomLink}</p>
+                      </div>
+                      <a
+                        href={roomLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        {t('sched.open_class')}
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
+                  {curriculumLink && (
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.curriculum')}</span>
+                        <p className="text-[11px] text-slate-400 truncate">{curriculumLink}</p>
+                      </div>
+                      <a
+                        href={curriculumLink.startsWith('http') ? curriculumLink : `https://${curriculumLink}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        {t('sched.view_curriculum')}
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
+                  {student?.textbookURL && (
+                    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.textbook_link')}</span>
+                        <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
+                      </div>
+                      <a
+                        href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        {t('sched.open_textbook')}
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  )}
+                  {subjectPkg?.timetableNote && (
+                    <div className="pt-2 border-t border-slate-100 last:border-0">
+                      <span className="text-xs text-slate-500 font-semibold block">{t('sched.timetable_note')}</span>
+                      <p className="text-xs text-slate-700 font-semibold mt-1 bg-amber-50/70 border border-amber-200/50 p-2.5 rounded-xl whitespace-pre-wrap">
+                        {subjectPkg.timetableNote}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Attendance Status Selector */}
             <div className="space-y-1.5">
