@@ -614,7 +614,7 @@ export function BookingSchedulesPage() {
                 {weekDates.map(({ day, date }) => (
                   <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 w-[12%] max-w-[12%] min-w-[90px]">
                     <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
-                    <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS_EN[day]}</div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{lang === 'en' ? DAY_LABELS_EN[day] : DAY_LABELS[day]}</div>
                   </th>
                 ))}
                 <th className="p-2 text-center w-12">

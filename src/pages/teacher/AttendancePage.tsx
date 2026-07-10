@@ -44,7 +44,7 @@ type FormData = z.infer<typeof schema>
 
 export function AttendancePage() {
   const { user, teacherId } = useAuthStore()
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
   const [code, setCode] = useState('')
   const [student, setStudent] = useState<Student | null>(null)
   const [searching, setSearching] = useState(false)
@@ -56,6 +56,16 @@ export function AttendancePage() {
   const [teacherData, setTeacherData] = useState<{ name: string; code: string; subjectName?: string; level: number } | null>(null)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
+
+  const getErrorMessage = (errKey?: string) => {
+    if (!errKey) return undefined
+    if (lang === 'en') {
+      if (errKey === 'Vui lòng nhập sách học') return 'Please enter the book/material name'
+      if (errKey === 'Tên sách không được quá 20 từ') return 'Book/material name must not exceed 20 words'
+      if (errKey === 'Chỉ nhập tên sách, không gửi link/liên kết') return 'Enter only the book/material name, do not send links or URLs'
+    }
+    return errKey
+  }
 
   const today = getToday()
 
@@ -509,10 +519,10 @@ export function AttendancePage() {
               </div>
 
               <Input
-                label="Tên sách (Bắt buộc)"
-                placeholder="VD: Family and Friends 2"
-                hint="Chỉ viết tên sách, tối đa 20 từ (Không gửi link Drive/tài liệu)"
-                error={errors.book?.message}
+                label={t('attendance.book_label')}
+                placeholder={t('attendance.book_placeholder')}
+                hint={t('attendance.book_hint')}
+                error={getErrorMessage(errors.book?.message)}
                 {...register('book')}
               />
 

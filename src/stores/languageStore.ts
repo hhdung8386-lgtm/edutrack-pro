@@ -58,6 +58,9 @@ const translations: Record<string, Record<Lang, string>> = {
   'attendance.uploading': { vi: 'Đang tải ảnh, vui lòng chờ', en: 'Uploading images, please wait' },
   'attendance.teacher_info': { vi: 'Giáo viên', en: 'Teacher' },
   'attendance.level': { vi: 'Cấp', en: 'Level' },
+  'attendance.book_label': { vi: 'Tên sách (Bắt buộc)', en: 'Book/Material Name (Required)' },
+  'attendance.book_placeholder': { vi: 'VD: Family and Friends 2', en: 'E.g., Family and Friends 2' },
+  'attendance.book_hint': { vi: 'Chỉ viết tên sách, tối đa 20 từ (Không gửi link Drive/tài liệu)', en: 'Only write the book name, maximum 20 words (No Drive links or documents)' },
 
   // LessonHistoryPage
   'history.title': { vi: 'Lịch sử buổi dạy', en: 'Lesson history' },
@@ -82,6 +85,20 @@ const translations: Record<string, Record<Lang, string>> = {
   'profile.username': { vi: 'Tên đăng nhập', en: 'Username' },
   'profile.need_help': { vi: 'Cần hỗ trợ từ Admin?', en: 'Need help from Admin?' },
   'profile.contact_admin': { vi: 'Mọi thay đổi về thông tin cá nhân vui lòng liên hệ Admin qua Zalo hoặc Hotline để được cập nhật.', en: 'For any profile changes, please contact Admin via Zalo or Hotline.' },
+  'profile.approved': { vi: 'Đã duyệt', en: 'Approved' },
+  'profile.rejected': { vi: 'Từ chối', en: 'Rejected' },
+  'profile.pending': { vi: 'Chờ duyệt', en: 'Pending' },
+  'profile.delete_cert': { vi: 'Xóa bằng cấp', en: 'Delete certificate' },
+  'profile.cert_category': { vi: 'Loại bằng cấp *', en: 'Category *' },
+  'profile.cert_lang': { vi: 'Ngoại ngữ (IELTS/TOEIC...)', en: 'Foreign Language (IELTS/TOEIC...)' },
+  'profile.cert_pedagogical': { vi: 'Nghiệp vụ sư phạm', en: 'Pedagogical Certificate' },
+  'profile.cert_other': { vi: 'Khác', en: 'Other' },
+  'profile.cert_status': { vi: 'Trạng thái duyệt', en: 'Approval Status' },
+  'profile.cert_title': { vi: 'Tên bằng / Chứng chỉ *', en: 'Certificate Title *' },
+  'profile.cert_score': { vi: 'Điểm số / Xếp loại *', en: 'Score / Grade *' },
+  'profile.view_image': { vi: 'Xem ảnh bằng', en: 'View Image' },
+  'profile.delete_image': { vi: 'Xóa ảnh', en: 'Delete Image' },
+  'profile.upload_image': { vi: 'Tải ảnh lên (Image only)', en: 'Upload Image (Image only)' },
 
   // ContractPage
   'contract.title': { vi: 'Hợp đồng & Điều khoản', en: 'Contract & Terms' },

@@ -354,38 +354,38 @@ export function ProfilePage() {
                   type="button"
                   onClick={() => setCertificates(prev => prev.filter((_, idx) => idx !== index))}
                   className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 transition-colors"
-                  title="Xóa bằng cấp"
+                  title={t('profile.delete_cert')}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Loại bằng cấp *</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_category')}</label>
                     <select
                       value={cert.category}
                       onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as any } : c))}
                       className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-700"
                     >
-                      <option value="foreign_language">Ngoại ngữ (IELTS/TOEIC...)</option>
-                      <option value="pedagogical">Nghiệp vụ sư phạm</option>
-                      <option value="other">Khác</option>
+                      <option value="foreign_language">{t('profile.cert_lang')}</option>
+                      <option value="pedagogical">{t('profile.cert_pedagogical')}</option>
+                      <option value="other">{t('profile.cert_other')}</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Trạng thái duyệt</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_status')}</label>
                     <span className={`inline-block mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                       cert.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
                       cert.status === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
                     }`}>
-                      {cert.status === 'approved' ? 'Đã duyệt' : cert.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                      {cert.status === 'approved' ? t('profile.approved') : cert.status === 'rejected' ? t('profile.rejected') : t('profile.pending')}
                     </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tên bằng / Chứng chỉ *</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_title')}</label>
                     <input
                       type="text"
                       placeholder="VD: IELTS Academic"
@@ -395,7 +395,7 @@ export function ProfilePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Điểm số / Xếp loại *</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_score')}</label>
                     <input
                       type="text"
                       placeholder="VD: 8.0 / Giỏi"
@@ -409,19 +409,19 @@ export function ProfilePage() {
                 <div className="flex items-center gap-3 pt-2">
                   {cert.fileURL ? (
                     <div className="flex items-center gap-3">
-                      <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">Xem ảnh bằng</a>
+                      <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">{t('profile.view_image')}</a>
                       <button
                         type="button"
                         onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
                         className="text-xs text-rose-500 hover:text-rose-600 font-bold hover:underline"
                       >
-                        Xóa ảnh
+                        {t('profile.delete_image')}
                       </button>
                     </div>
                   ) : (
                     <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold text-indigo-650 cursor-pointer transition-all">
                       <Upload className="w-3.5 h-3.5" />
-                      Tải ảnh lên (Image only)
+                      {t('profile.upload_image')}
                       <input
                         type="file"
                         accept="image/*"
