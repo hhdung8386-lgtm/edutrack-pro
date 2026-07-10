@@ -593,54 +593,6 @@ export function BookingSchedulesPage() {
         </div>
       </div>
 
-      {/* Pending Attendance Sessions Notification List */}
-      {pendingAttendanceBookings.length > 0 && (
-        <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/50 p-5 shadow-sm space-y-3 animate-fade-in">
-          <div className="flex items-center gap-2 text-rose-700">
-            <AlertTriangle className="h-5 w-5 animate-pulse" />
-            <h2 className="text-base font-black">Bạn có {pendingAttendanceBookings.length} buổi học chưa điểm danh!</h2>
-          </div>
-          <p className="text-xs text-rose-600 leading-relaxed">
-            Dưới đây là các buổi học đã diễn ra nhưng bạn chưa thực hiện điểm danh. Vui lòng bấm vào nút <strong>"Điểm danh ngay"</strong> để bổ sung nhận xét, bài tập và tải ảnh điểm danh để đảm bảo tính lương chính xác.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
-            {pendingAttendanceBookings.map((booking) => {
-              return (
-                <div key={booking.id} className="bg-white border border-rose-100 rounded-xl p-3.5 flex items-center justify-between shadow-sm gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-slate-800">{booking.studentName}</span>
-                      <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md">{booking.studentCode}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 font-medium mt-1">
-                      Môn học: <span className="font-bold text-slate-700">{booking.subjectName}</span>
-                    </p>
-                    <p className="text-xs text-indigo-600 font-bold mt-0.5">
-                      📅 {booking.requestedDate} ({booking.requestedStart} - {booking.requestedEnd})
-                    </p>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedBooking(booking)
-                      setAttendanceStatus('present')
-                      setBook('')
-                      setComment('')
-                      setHomework('')
-                      setImages([])
-                      setShowAttendanceModal(true)
-                    }}
-                    className="flex-shrink-0 bg-rose-500 hover:bg-rose-600 border-rose-500 hover:border-rose-600 font-bold text-xs rounded-lg px-3 py-1.5"
-                  >
-                    Điểm danh ngay
-                  </Button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Grid schedule table */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
