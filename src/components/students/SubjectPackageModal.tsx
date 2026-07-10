@@ -94,6 +94,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
 
+  const subjectIdsKey = student.subjects?.map(s => s.subjectId).join(',') || ''
+
   useEffect(() => {
     // Fetch all active subjects
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active')))
@@ -108,7 +110,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         console.error(err)
         toast.error('Không thể tải danh sách môn học')
       })
-  }, [isEdit, currentSubjects])
+  }, [isEdit, editingSubjectId, student.id, subjectIdsKey])
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
@@ -205,7 +207,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
                 pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
                 otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-                countryPrices: selectedSubjectObj.countryPrices || undefined,
+                ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
                 currency: selectedSubjectObj.currency || 'VND',
                 batches: [{
                   id: '1',
@@ -229,7 +231,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
                 pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
                 otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-                countryPrices: selectedSubjectObj.countryPrices || undefined,
+                ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
                 currency: selectedSubjectObj.currency || 'VND',
                 totalSessions: calculatedTotalSessions,
                 remainingSessions: calculatedTotalSessions,
@@ -293,7 +295,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
           pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
           otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-          countryPrices: selectedSubjectObj.countryPrices || undefined,
+          ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
           currency: selectedSubjectObj.currency || 'VND',
           batches: [{
             id: '1',
