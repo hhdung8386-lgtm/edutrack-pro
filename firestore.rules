@@ -122,6 +122,12 @@ service cloud.firestore {
       allow write: if isAdmin() || isTeacher();
     }
 
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (isTeacher() && resource.data.targetType == 'teachers');
+      allow write: if isAdmin();
+    }
+
     // Catch-all deny
     match /{document=**} {
       allow read, write: if false;
