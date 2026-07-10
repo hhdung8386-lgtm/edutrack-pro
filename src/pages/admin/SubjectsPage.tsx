@@ -303,6 +303,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     <Modal
       open
       onClose={onClose}
+      size="lg"
       title={isEdit ? 'Chỉnh sửa môn học' : 'Thêm môn học'}
       footer={
         <div className="flex gap-3 justify-end">
@@ -329,7 +330,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           </div>
 
           {/* Form to add/edit country price */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end bg-white border border-slate-150 rounded-xl p-4 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-1.5">Chọn quốc gia</label>
               <select
@@ -354,20 +355,20 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                 <Lock className="w-3.5 h-3.5 text-slate-400" />
               </div>
             </div>
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <label className="block text-xs font-bold text-slate-500 mb-1.5">Giá mỗi phút *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={priceInput}
-                    onChange={(e) => setPriceInput(e.target.value)}
-                    placeholder={COUNTRY_CURRENCY_MAP[selectedCountry]?.currency === 'USD' ? '0.12' : '2.500'}
-                    className="w-full rounded-lg bg-white border border-slate-200 text-slate-900 pl-3 pr-12 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">/ phút</span>
-                </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">Giá mỗi phút *</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={priceInput}
+                  onChange={(e) => setPriceInput(e.target.value)}
+                  placeholder={COUNTRY_CURRENCY_MAP[selectedCountry]?.currency === 'USD' ? '0.12' : '2.500'}
+                  className="w-full rounded-lg bg-white border border-slate-200 text-slate-900 pl-3 pr-12 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">/ phút</span>
               </div>
+            </div>
+            <div>
               <button
                 type="button"
                 onClick={() => {
@@ -390,7 +391,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                   setEditingCountry(null)
                   toast.success(editingCountry ? 'Đã cập nhật đơn giá!' : 'Đã thêm đơn giá mới!')
                 }}
-                className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[42px] shrink-0 flex items-center justify-center gap-1"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[42px] flex items-center justify-center gap-1 shadow-sm shadow-indigo-100"
               >
                 {editingCountry ? 'Lưu' : <><Plus className="w-4 h-4" /> Thêm</>}
               </button>

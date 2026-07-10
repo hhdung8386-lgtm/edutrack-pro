@@ -184,6 +184,12 @@ export function BookingSchedulesPage() {
   const [filterTime, setFilterTime] = useState('17:00')
   const [allAvailabilities, setAllAvailabilities] = useState<Record<string, TeacherAvailability>>({})
 
+  // Smart filter states
+  const [filterGender, setFilterGender] = useState<'all' | 'male' | 'female'>('all')
+  const [filterIelts, setFilterIelts] = useState(false)
+  const [filterExp, setFilterExp] = useState(false)
+  const [filterYob, setFilterYob] = useState('')
+
   // Selection mode states
   const [multiSelectMode, setMultiSelectMode] = useState(false)
   const [selectedSlots, setSelectedSlots] = useState<SelectedSlot[]>([])
@@ -356,6 +362,13 @@ export function BookingSchedulesPage() {
     })
   }, [selectedBooking])
 
+  const uniqueYobs = useMemo(() => {
+    const years = teachers
+      .map((t) => t.yob)
+      .filter((y): y is number => typeof y === 'number' && y > 0)
+    return Array.from(new Set(years)).sort((a, b) => b - a)
+  }, [teachers])
+
   const filteredTeachers = teachers.filter((teacher) => {
     // 1. Text search filter
     const keyword = search.trim().toLowerCase()
@@ -363,7 +376,39 @@ export function BookingSchedulesPage() {
       return false
     }
 
-    // 2. Schedule availability filter
+    // 2. Gender filter
+    if (filterGender !== 'all') {
+      const g = teacher.gender?.toLowerCase()
+      if (g !== filterGender) return false
+    }
+
+    // 3. IELTS filter
+    if (filterIelts) {
+      const hasIeltsScore = !!teacher.ielts
+      const hasIeltsCert = teacher.certificates?.some(
+        (c) => c.title?.toLowerCase().includes('ielts')
+      )
+      if (!hasIeltsScore && !hasIeltsCert) {
+        return false
+      }
+    }
+
+    // 4. Experience > 1 year filter
+    if (filterExp) {
+      const years = typeof teacher.teachingYears === 'number' ? teacher.teachingYears : 0
+      if (years < 1) {
+        return false
+      }
+    }
+
+    // 5. Birth Year filter
+    if (filterYob) {
+      if (String(teacher.yob) !== filterYob) {
+        return false
+      }
+    }
+
+    // 6. Schedule availability filter
     if (filterDays.length > 0 && filterTime) {
       const avail = allAvailabilities[teacher.id]
       if (!avail) return false
@@ -1054,6 +1099,91 @@ export function BookingSchedulesPage() {
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
             />
           </label>
+
+          {/* Bộ lọc hồ sơ nâng cao */}
+          <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">Bộ lọc hồ sơ</span>
+              {(filterGender !== 'all' || filterIelts || filterExp || filterYob) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterGender('all');
+                    setFilterIelts(false);
+                    setFilterExp(false);
+                    setFilterYob('');
+                  }}
+                  className="text-xs text-indigo-650 hover:text-indigo-755 font-bold transition"
+                >
+                  Xóa lọc
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {/* Giới tính */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Giới tính</label>
+                <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold text-slate-600">
+                  {(['all', 'male', 'female'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setFilterGender(g)}
+                      className={`flex-1 py-1 rounded transition ${
+                        filterGender === g ? 'bg-white text-indigo-700 shadow-sm' : 'hover:text-slate-800'
+                      }`}
+                    >
+                      {g === 'all' ? 'Tất cả' : g === 'male' ? 'Nam' : 'Nữ'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Năm sinh */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Năm sinh</label>
+                <select
+                  value={filterYob}
+                  onChange={(e) => setFilterYob(e.target.value)}
+                  className="h-[27px] w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold outline-none focus:border-indigo-400 cursor-pointer"
+                >
+                  <option value="">Tất cả</option>
+                  {uniqueYobs.map((y) => (
+                    <option key={y} value={String(y)}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Checkable Chips */}
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => setFilterIelts(!filterIelts)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
+                  filterIelts
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                }`}
+              >
+                <span>🎓 IELTS Cert</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterExp(!filterExp)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
+                  filterExp
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                }`}
+              >
+                <span>💼 Kinh nghiệm &gt; 1 năm</span>
+              </button>
+            </div>
+          </div>
 
           {/* Lọc lịch rảnh */}
           <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
