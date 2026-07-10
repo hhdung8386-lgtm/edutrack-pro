@@ -23,6 +23,15 @@ const DAY_LABELS_VI: Record<DayOfWeek, string> = {
   sat: 'Thứ 7',
   sun: 'Chủ nhật',
 }
+const DAY_LABELS_EN: Record<DayOfWeek, string> = {
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+  sat: 'Sat',
+  sun: 'Sun',
+}
 
 const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }
 const TIME_WINDOWS = [
@@ -165,7 +174,7 @@ function addInterval(ranges: TimeRange[], start: number, end: number) {
 
 export function AvailabilityPage() {
   const { teacherId } = useAuthStore()
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
   const [searchParams] = useSearchParams()
   const isSetupRequired = searchParams.get('setupRequired') === 'true'
   const [showSetupAnnouncement, setShowSetupAnnouncement] = useState(isSetupRequired)
@@ -411,24 +420,24 @@ export function AvailabilityPage() {
         <Modal
           open={showSetupAnnouncement}
           onClose={() => setShowSetupAnnouncement(false)}
-          title="THÔNG BÁO"
+          title={t('avail.announcement_title')}
           footer={
             <div className="flex justify-end">
               <Button variant="primary" onClick={() => setShowSetupAnnouncement(false)}>
-                Đã hiểu
+                {t('avail.understand')}
               </Button>
             </div>
           }
         >
           <div className="space-y-4 text-sm text-slate-600 leading-relaxed py-2">
             <p className="font-semibold text-slate-800">
-              Hiện tại một số giáo viên tạm thời không thể điểm danh do chưa cập nhật lịch rảnh trên Platform.
+              {t('avail.announcement_p1')}
             </p>
             <p>
-              Giáo viên vui lòng cập nhật lịch rảnh. Sau khi cập nhật thành công, hệ thống sẽ tự động mở lại quyền điểm danh.
+              {t('avail.announcement_p2')}
             </p>
             <p className="font-medium text-slate-800">
-              Xin cảm ơn các thầy cô đã phối hợp!
+              {t('avail.announcement_p3')}
             </p>
             <p className="text-right font-bold text-indigo-600 mt-4">
               123English
@@ -441,9 +450,9 @@ export function AvailabilityPage() {
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-800 shadow-sm animate-pulse">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-bold text-sm">Yêu cầu thiết lập lịch trống ban đầu</h4>
+            <h4 className="font-bold text-sm">{t('avail.setup_required_title')}</h4>
             <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-              Bạn đang được chuyển hướng đến đây vì tài khoản chưa có lịch trống rảnh dạy. Vui lòng chọn các khung giờ rảnh của bạn trên bảng và nhấn <strong>"Lưu lịch dạy trống tương lai"</strong> ở cuối trang để hoàn tất thiết lập tài khoản và mở khóa các tính năng khác (như Điểm danh, Lịch dạy).
+              {t('avail.setup_required_desc')}
             </p>
           </div>
         </div>
@@ -465,7 +474,7 @@ export function AvailabilityPage() {
         {lastUpdated && (
           <div className="relative mt-4 flex items-center gap-1.5 text-xs text-white/70">
             <CheckCircle className="w-3.5 h-3.5" />
-            {t('avail.last_updated')} {lastUpdated.toDate().toLocaleString('vi-VN')}
+            {t('avail.last_updated')} {lastUpdated.toDate().toLocaleString(lang === 'en' ? 'en-US' : 'vi-VN')}
           </div>
         )}
       </div>
@@ -499,7 +508,7 @@ export function AvailabilityPage() {
                 onChange={() => setTempDuration(25)}
                 className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
               />
-              25 phút
+              {t('avail.25_min')}
             </label>
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
               <input
@@ -509,7 +518,7 @@ export function AvailabilityPage() {
                 onChange={() => setTempDuration(50)}
                 className="h-4 w-4 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
               />
-              50 phút
+              {t('avail.50_min')}
             </label>
           </div>
 
@@ -519,20 +528,20 @@ export function AvailabilityPage() {
             onClick={handleApplyFilters}
             className="h-10 px-6 rounded-lg bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-bold text-sm transition shadow-sm"
           >
-            Xem
+            {t('avail.view')}
           </button>
         </div>
 
         {/* Quick week controls */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
-            Tuần trước
+            {t('avail.prev_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
-            Tuần này
+            {t('avail.current_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
-            Tuần sau
+            {t('avail.next_week')}
           </Button>
         </div>
       </div>
@@ -541,9 +550,9 @@ export function AvailabilityPage() {
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 text-amber-800 text-xs leading-normal">
         <span className="text-lg">⚠️</span>
         <div>
-          <p className="font-bold text-sm text-amber-900">Cân nhắc kỹ lịch dạy trống trước khi lưu!</p>
+          <p className="font-bold text-sm text-amber-900">{t('avail.warning_title')}</p>
           <p className="mt-0.5 font-medium opacity-90">
-            Các khung giờ lịch dạy rảnh sau khi bấm lưu sẽ <strong className="underline">không thể tự chỉnh sửa hoặc hủy/xóa được</strong>. Muốn thay đổi, bạn phải liên hệ với quản lý. Hãy cân nhắc lịch!
+            {t('avail.warning_desc')}
           </p>
         </div>
       </div>
@@ -559,7 +568,7 @@ export function AvailabilityPage() {
                   type="button"
                   onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
                   className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
-                  title="Tuần trước"
+                  title={t('avail.prev_week')}
                 >
                   <ChevronLeft className="h-4 w-4 mx-auto" />
                 </button>
@@ -568,7 +577,9 @@ export function AvailabilityPage() {
               {weekDates.map(({ day, date }) => (
                 <th key={day} className="p-3 text-center border-r border-slate-200 font-semibold text-slate-700 min-w-[90px]">
                   <div className="text-sm font-black text-slate-800">{formatShortHeaderDate(date)}</div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{DAY_LABELS_VI[day]}</div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">
+                    {lang === 'en' ? DAY_LABELS_EN[day] : DAY_LABELS_VI[day]}
+                  </div>
                 </th>
               ))}
               {/* Navigation column header (next week) */}
@@ -577,7 +588,7 @@ export function AvailabilityPage() {
                   type="button"
                   onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}
                   className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
-                  title="Tuần sau"
+                  title={t('avail.next_week')}
                 >
                   <ChevronRight className="h-4 w-4 mx-auto" />
                 </button>
@@ -600,7 +611,7 @@ export function AvailabilityPage() {
                     <td key={day} className="p-2 border-r border-slate-200 align-middle text-center min-h-[50px]">
                       {reserved ? (
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block py-2 select-none">
-                          ĐÃ XẾP LỚP
+                          {t('avail.booked')}
                         </span>
                       ) : open ? (
                         <button
@@ -651,7 +662,7 @@ export function AvailabilityPage() {
           className="!bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5] !shadow-lg !shadow-[#3BB8EB]/30 !rounded-xl !py-3.5"
         >
           <Save className="w-4 h-4 mr-2" />
-          Lưu lịch dạy trống tương lai
+          {t('avail.save_future')}
         </Button>
       </div>
 
@@ -660,12 +671,12 @@ export function AvailabilityPage() {
         <Modal
           open
           onClose={() => setShowConfirmModal(false)}
-          title="Xác nhận lưu lịch dạy tương lai"
+          title={t('avail.confirm_title')}
           footer={
             <div className="flex gap-3 justify-end w-full">
-              <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>Hủy</Button>
+              <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>{t('avail.confirm_cancel')}</Button>
               <Button onClick={handleSaveCurrentAndFuture} loading={saving} className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white">
-                Tôi đã cân nhắc lịch và đồng ý
+                {t('avail.confirm_ok')}
               </Button>
             </div>
           }
@@ -674,9 +685,9 @@ export function AvailabilityPage() {
             <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <p className="font-extrabold text-slate-800 text-center text-base">Xác nhận lưu lịch dạy?</p>
+            <p className="font-extrabold text-slate-800 text-center text-base">{t('avail.confirm_body_title')}</p>
             <p className="text-center text-xs text-slate-500">
-              Lịch này sau khi lưu sẽ được áp dụng cho tuần đã chọn và <strong className="text-[#3BB8EB] font-bold">tất cả các tuần trong tương lai</strong>. Các khung giờ rảnh sau khi lưu sẽ <strong className="text-rose-600 font-bold">không thể tự chỉnh sửa hoặc tự xóa được</strong>. Muốn thay đổi, bạn phải liên hệ với quản lý.
+              {t('avail.confirm_body_desc')}
             </p>
           </div>
         </Modal>
