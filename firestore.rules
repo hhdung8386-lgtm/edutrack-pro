@@ -26,8 +26,8 @@ service cloud.firestore {
     // Users collection - auth metadata
     match /users/{uid} {
       allow read: if (resource != null && resource.data.role == 'teacher') || (isAuthenticated() && (request.auth.uid == uid || isAdmin()));
-      allow create, update: if isAdmin();
-      allow delete: if false; // Prevent deletion
+      allow create, update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid && (resource == null || resource.data.role == 'teacher') && request.resource.data.role == 'teacher');
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
     }
 
     // Students collection
