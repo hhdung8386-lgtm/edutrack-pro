@@ -70,16 +70,10 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     }
   }
 
-  const handleGenderChange = async (val: 'male' | 'female') => {
+  const handleGenderChange = (val: 'male' | 'female') => {
     setGender(val)
     if (!isEdit) {
-      try {
-        const newName = await generateUniqueEnglishName(val)
-        setGeneratedCode(newName)
-        setNewUsername(newName)
-      } catch (err) {
-        console.error(err)
-      }
+      regenerateNickname(val)
     }
   }
 
@@ -395,7 +389,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           return
         }
 
-        let code = generatedCode || newUsername
+        let code = newUsername
         if (!code) {
           try {
             code = await generateUniqueEnglishName(gender)
@@ -560,7 +554,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                 />
                 <button
                   type="button"
-                  onClick={() => regenerateNickname()}
+                  onClick={() => regenerateNickname(gender)}
                   className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
                   title="Sinh tên ngẫu nhiên theo giới tính"
                 >

@@ -9,109 +9,466 @@ import { toast } from '@/stores/toastStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { FileText, Download, ShieldCheck, Clock, MapPin, Laptop } from 'lucide-react'
 
-const TERMS_CONTENT = `ĐIỀU KHOẢN SỬ DỤNG (TERMS OF SERVICE)
+const TERMS_CONTENT = `123ENGLISH ONLINE TEACHING PLATFORM
+TERMS AND CONDITIONS FOR TUTORS
+Effective Date: July 09, 2026
 
-HỘ KINH DOANH GIA SƯ TOÀN NĂNG
-Mã số hộ kinh doanh: 8612642576-001
-Địa chỉ trụ sở: 78/20 Hoàng Văn Hợp, Phường An Lạc, Thành phố Hồ Chí Minh
-Người đại diện: Nguyễn Thu Trang
-Điện thoại: 090.696.6691
+These Terms and Conditions (“Terms”) govern the registration, access, and use of the 123English Online Teaching Platform by tutors, teachers, instructors, and other educational service providers (“Tutors”).
 
-Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng
+The 123English Online Teaching Platform (“123English” or the “Platform”) is operated and managed by:
+GIA SU TOAN NANG BUSINESS ESTABLISHMENT
+Tax Identification Number: 079196005873
+Registered Office Address: 78/20 Hoang Van Hop Street, An Lac Ward, Ho Chi Minh City, Vietnam
+Representative: Nguyen Thu Trang
+Telephone: 090.696.6691 – 039.399.8733
 
-Điều khoản sử dụng này quy định các quyền và nghĩa vụ giữa Hộ kinh doanh Gia sư Toàn Năng và người dùng khi truy cập, đăng ký tài khoản hoặc sử dụng hệ thống, nền tảng hoặc dịch vụ do Hộ kinh doanh cung cấp. Người dùng trong phạm vi điều khoản này bao gồm nhưng không giới hạn ở gia sư, học viên, nhân sự, cộng tác viên và các đối tác có liên quan.
+By registering for a Tutor account, accessing the Platform, accepting a class, providing tutoring or teaching services, or otherwise using any services provided through the 123English Online Teaching Platform, the Tutor confirms that they have read, understood, accepted, and agreed to comply with these Terms and Conditions.
 
-Việc người dùng thực hiện đăng ký tài khoản, truy cập hoặc sử dụng bất kỳ chức năng nào của hệ thống được hiểu là người dùng đã đọc, hiểu đầy đủ và đồng ý bị ràng buộc bởi toàn bộ nội dung của Điều khoản sử dụng này. Người dùng đồng ý rằng hành vi tích chọn xác nhận hoặc bất kỳ hình thức chấp thuận điện tử nào khác đều có giá trị pháp lý tương đương với việc ký kết văn bản bằng chữ ký tay theo quy định của pháp luật hiện hành.
+ARTICLE 1. PURPOSE AND SCOPE
+1.1. The 123English Online Teaching Platform is an educational technology platform that connects students and parents/guardians with Tutors for online teaching and learning services.
+1.2. Tutors may use the Platform to:
+Receive class assignments;
+Access student and class information;
+Manage teaching schedules;
+Provide one-on-one or small-group online lessons;
+Submit attendance records;
+Submit student learning reports and evaluations;
+Communicate with students, parents/guardians, and 123English personnel;
+Receive remuneration for completed teaching services; and
+Use other functions and services provided through the Platform.
+1.3. These Terms apply to all Tutors who register for an account, access the Platform, receive or accept classes, provide teaching services, or otherwise use the 123English Online Teaching Platform.
 
-Điều 2. Tài khoản người dùng và trách nhiệm quản lý
+ARTICLE 2. TUTOR ACCOUNT REGISTRATION
+2.1. To use the Platform as a Tutor, the Tutor may be required to create and maintain a Tutor account.
+2.2. The Tutor must provide accurate, complete, and up-to-date information, including but not limited to:
+Full name;
+Date of birth;
+Identification documents;
+Contact information;
+Educational qualifications;
+Teaching experience;
+Professional certificates;
+Language certificates;
+Banking or payment information; and
+Other information reasonably required by 123English.
+2.3. Tutors are responsible for ensuring that all information and documents submitted to 123English are truthful, accurate, complete, and valid.
+2.4. 123English reserves the right to request additional documents or information for identity verification, qualification verification, quality control, legal compliance, fraud prevention, or Platform security purposes.
+2.5. Tutors must not:
+Create accounts using false or misleading information;
+Submit false, forged, or fraudulent documents;
+Impersonate another person;
+Allow another person to access or use their Tutor account;
+Create multiple accounts for fraudulent or unauthorized purposes; or
+Use the Platform for any unlawful or unauthorized purpose.
+2.6. Tutors are responsible for maintaining the confidentiality and security of their account information and login credentials.
+2.7. Any activity conducted through a Tutor’s account may be considered activity performed by that Tutor unless sufficient evidence demonstrates unauthorized access.
 
-Người dùng có trách nhiệm cung cấp thông tin đăng ký chính xác, đầy đủ và cập nhật khi có thay đổi. Người dùng có nghĩa vụ bảo mật thông tin tài khoản, bao gồm tên đăng nhập, mật khẩu và các thông tin xác thực khác.
+ARTICLE 3. TUTOR ELIGIBILITY AND VERIFICATION
+3.1. 123English may establish qualification and eligibility requirements for Tutors depending on the subject, course, student level, teaching method, or specific requirements of each class.
+3.2. Tutors may be required to provide:
+Identification documents;
+Academic qualifications;
+Teaching certificates;
+Language certificates;
+Professional certificates;
+Teaching demonstration videos;
+Interview results;
+Background information; or
+Other documents or information reasonably requested by 123English.
+3.3. 123English reserves the right to verify any information and documents provided by Tutors.
+3.4. Providing false, misleading, forged, fraudulent, expired, or invalid documents may result in rejection of the Tutor’s application, temporary account suspension, permanent account termination, or other appropriate actions.
+3.5. Approval of a Tutor account does not guarantee that the Tutor will receive any minimum number of students, classes, teaching hours, assignments, or income.
 
-Mọi hoạt động phát sinh từ tài khoản của người dùng, bao gồm nhưng không giới hạn ở việc đăng nhập, tương tác, trao đổi thông tin, thực hiện giao dịch hoặc sử dụng các chức năng của hệ thống, đều được mặc định là do chính người dùng thực hiện. Người dùng không được viện dẫn việc bị lộ tài khoản, bị truy cập trái phép hoặc bất kỳ lý do tương tự nào để từ chối trách nhiệm đối với các hành vi phát sinh từ tài khoản của mình.
+ARTICLE 4. CLASS ASSIGNMENTS
+4.1. 123English may introduce, recommend, or assign classes to Tutors based on factors including, but not limited to:
+Tutor qualifications;
+Teaching experience;
+Subject expertise;
+Availability;
+Student requirements;
+Teaching performance;
+Tutor ratings;
+Platform activity;
+Class requirements; and
+Other relevant criteria determined by 123English.
+4.2. Tutors may be provided with relevant information regarding a class before accepting the assignment.
+4.3. The remuneration rate for each class or teaching assignment shall be communicated or agreed upon before the Tutor accepts the class.
+4.4. By accepting a class, the Tutor agrees to:
+Follow the confirmed teaching schedule;
+Provide the required teaching services;
+Comply with student learning requirements;
+Comply with these Terms and other applicable Platform policies; and
+Complete all related teaching, attendance, evaluation, and reporting responsibilities.
+4.5. Tutors must not transfer an assigned class or allow another person to teach the class without prior written approval from 123English.
+4.6. 123English does not guarantee any minimum number of class assignments, students, teaching hours, or income to Tutors.
 
-Điều 3. Nguyên tắc sử dụng hệ thống
+ARTICLE 5. TEACHING RESPONSIBILITIES
+5.1. Tutors must provide teaching services responsibly, professionally, and in accordance with the learning needs, proficiency levels, and learning objectives of students.
+5.2. Tutors are responsible for preparing:
+Lesson plans;
+Teaching content;
+Learning materials;
+Exercises;
+Student evaluations; and
+Other necessary teaching materials.
+5.3. Tutors must attend lessons at the agreed time and provide teaching services for the full scheduled duration.
+5.4. Tutors must maintain professional conduct, appropriate attire, proper teaching ethics, and respectful behavior toward:
+Students;
+Parents and guardians;
+Other Tutors;
+123English personnel; and
+Other Platform users.
+5.5. Tutors must not engage in:
+Harassment;
+Discrimination;
+Threatening behavior;
+Abusive conduct;
+Inappropriate communication;
+Sexual misconduct;
+Violence;
+Bullying; or
+Any behavior that may endanger students or other Platform users or damage the reputation and lawful interests of 123English.
+5.6. 123English reserves the right to monitor, review, and evaluate teaching quality and Tutor performance.
 
-Người dùng cam kết sử dụng hệ thống một cách trung thực, minh bạch và đúng mục đích. Người dùng không được phép thực hiện các hành vi nhằm lách, né hoặc làm sai lệch cơ chế vận hành của hệ thống.
-Cụ thể, người dùng không được trực tiếp hoặc gián tiếp liên hệ riêng với khách hàng được giới thiệu thông qua hệ thống nhằm thực hiện giao dịch ngoài nền tảng. Người dùng không được phép chuyển hướng khách hàng, thỏa thuận riêng, hoặc sử dụng thông tin có được từ hệ thống để phục vụ lợi ích cá nhân hoặc bên thứ ba mà không có sự chấp thuận bằng văn bản của Hộ kinh doanh.
+ARTICLE 6. ONLINE TEACHING REQUIREMENTS
+6.1. Tutors providing online lessons are responsible for maintaining appropriate:
+Computers or teaching devices;
+Stable internet connections;
+Cameras;
+Microphones;
+Audio quality;
+Video quality; and
+Professional teaching environments.
+6.2. Tutors must keep their cameras turned on during online lessons unless otherwise approved by 123English or prevented by circumstances beyond their reasonable control.
+6.3. Tutors must teach from an appropriate, quiet, safe, and professional environment.
+6.4. Tutors must not conduct lessons while:
+Driving;
+Traveling in unsafe conditions;
+Participating in unrelated activities;
+Using inappropriate locations; or
+Being in an environment that significantly affects teaching quality.
+6.5. Tutors are responsible for ensuring that their equipment and internet connections are properly tested before each lesson.
 
-Điều 4. Ghi nhận và giá trị của dữ liệu điện tử
+ARTICLE 7. ATTENDANCE, CANCELLATION, AND SCHEDULE CHANGES
+7.1. Tutors must attend classes according to the confirmed teaching schedule.
+7.2. If a Tutor needs to cancel or reschedule a lesson, the Tutor must notify 123English and the student at least two (02) hours in advance.
+7.3. If the Tutor provides late notice without a reasonable or force majeure reason, 123English may require the Tutor to provide one (01) replacement lesson without additional remuneration.
+7.4. Repeated lateness, cancellations, absences, or failure to attend classes may result in:
+Warnings;
+Reduced class assignments;
+Removal from assigned classes;
+Temporary account restrictions;
+Temporary account suspension; or
+Permanent termination of the Tutor account.
+7.5. If a Tutor wishes to stop teaching one or more assigned classes while continuing to use the Platform, the Tutor must provide 123English with at least fourteen (14) days’ prior written notice.
+7.6. If a Tutor wishes to stop using the Platform and terminate their collaboration with 123English, the Tutor must provide at least forty-five (45) days’ prior written notice and complete all required class handovers, student reports, documents, and related responsibilities.
 
-Người dùng đồng ý rằng toàn bộ dữ liệu được hệ thống ghi nhận trong quá trình sử dụng, bao gồm nhưng không giới hạn ở thời gian truy cập, địa chỉ IP, thiết bị sử dụng, lịch sử thao tác, nội dung trao đổi, dữ liệu hành vi và các thông tin liên quan khác, có thể được sử dụng làm bằng chứng hợp lệ trong quá trình xử lý khiếu nại hoặc tranh chấp.
+ARTICLE 8. STUDENT MANAGEMENT AND LEARNING REPORTS
+8.1. Tutors are responsible for monitoring student learning progress.
+8.2. Tutors may be required to submit:
+Attendance records;
+Learning reports;
+Student evaluations;
+Progress assessments;
+Homework records;
+Teaching notes; and
+Other educational information reasonably requested by 123English.
+8.3. Tutors must ensure that all reports, records, and information submitted through the Platform are truthful, accurate, complete, and up to date.
+8.4. Fraudulent or dishonest reporting of teaching hours, attendance, student performance, learning results, class activities, or other Platform information is strictly prohibited.
 
-Người dùng xác nhận từ bỏ quyền khiếu nại về tính hợp lệ, tính chính xác hoặc giá trị pháp lý của các dữ liệu điện tử này, trừ trường hợp có bằng chứng rõ ràng chứng minh sai sót từ phía hệ thống.
+ARTICLE 9. REMUNERATION AND PAYMENT
+9.1. Tutor remuneration may be calculated based on:
+Completed classes;
+Actual teaching hours;
+Specific class assignments;
+Courses;
+Projects; or
+Other remuneration methods communicated by 123English.
+9.2. The applicable remuneration rate shall be communicated to the Tutor before the Tutor accepts the relevant class or assignment.
+9.3. 123English shall generally process Tutor payments on the 10th day of each month unless another payment schedule has been agreed upon or announced.
+9.4. If the payment date falls on a public holiday, Tet holiday, or statutory non-working day, payment may be processed on the next working day.
+9.5. Tutors are responsible for providing accurate and valid payment information.
+9.6. Applicable taxes, including personal income tax withholding, may be deducted in accordance with applicable laws.
+9.7. 123English may review, investigate, temporarily suspend, or withhold disputed payments where there is reasonable evidence of fraud, incorrect teaching records, false attendance information, violation of these Terms, outstanding financial obligations, or other payment-related disputes.
+9.8. If a student has paid for a course or package of lessons but has not completed all lessons included in that course or package, and the student advances or is transferred to a higher level before completing the remaining lessons, the Tutor’s remuneration for all remaining lessons shall continue to be calculated at the remuneration rate originally applicable to the course or package purchased by the student.
+9.9. The Tutor acknowledges and agrees that any advancement in the student’s level, change in teaching content, increase in course difficulty, or transition to a higher-level curriculum shall not automatically result in an adjustment or increase in the Tutor’s remuneration for lessons already purchased or paid for by the student under the previous course or package.
+9.10. The remuneration rate applicable to the student’s new or higher level, if any, shall only apply after the student has completed all remaining lessons under the previous course or package and purchases, renews, or begins a new course or package at the new or higher level.
+9.11. By accepting and continuing to teach an assigned class through the Platform, the Tutor acknowledges and agrees to the remuneration calculation method set out in this Article.
 
-Điều 5. Các hành vi bị nghiêm cấm
+ARTICLE 10. STUDENT ABSENCE
+10.1. Tutors must attend confirmed classes on time.
+10.2. If a student fails to attend a confirmed lesson without providing the required notice, but the Tutor attends on time and remains available for the full required lesson duration, the Tutor may remain eligible for remuneration in accordance with the applicable 123English cancellation and payment policy.
 
-Người dùng không được thực hiện bất kỳ hành vi nào gây phương hại đến hoạt động của hệ thống hoặc quyền lợi hợp pháp của Hộ kinh doanh, bao gồm việc tiết lộ thông tin khách hàng, dữ liệu nội bộ, quy trình vận hành hoặc tài liệu chưa được công bố.
+ARTICLE 11. COMMUNICATION WITH STUDENTS AND PARENTS
+11.1. Tutors may communicate with students and parents/guardians only for legitimate educational and class-related purposes and through communication channels approved or authorized by 123English.
+11.2. Tutors must maintain professional, respectful, and appropriate communication at all times.
+11.3. Tutors must not use student or parent/guardian information for unauthorized commercial, personal, private, or other purposes unrelated to authorized teaching activities.
+11.4. Tutors must not request, encourage, persuade, or induce students or parents/guardians to leave the 123English Online Teaching Platform for the purpose of entering into private teaching, commercial, or other unauthorized arrangements.
+11.5. Tutors must not directly or indirectly request, ask for, collect, exchange, search for, attempt to obtain, or otherwise acquire the personal contact information or social media information of students or parents/guardians outside the 123English Online Teaching Platform unless expressly authorized in writing by 123English.
+11.6. Prohibited personal contact information and social media information include, but are not limited to:
+Personal telephone numbers;
+Personal email addresses;
+Facebook accounts;
+Messenger accounts;
+Zalo accounts;
+Instagram accounts;
+TikTok accounts;
+WhatsApp accounts;
+Telegram accounts;
+WeChat accounts;
+LINE accounts;
+Other social media accounts;
+Personal messaging accounts; and
+Any other information that may enable the Tutor to contact a student or parent/guardian outside the 123English Online Teaching Platform or communication channels officially authorized by 123English.
+11.7. Tutors must not ask students or parents/guardians to add, follow, connect with, message, or communicate with the Tutor through any personal social media account, messaging application, telephone number, email address, or other communication channel outside the 123English Online Teaching Platform.
+11.8. Tutors must not provide, offer, display, send, or otherwise disclose their own personal contact information or social media information to students or parents/guardians or encourage students or parents/guardians to search for or contact them outside the Platform.
+11.9. If a student or parent/guardian voluntarily provides personal contact information or social media information to a Tutor, the Tutor must not use such information for unauthorized communication, private tutoring, commercial purposes, solicitation, circumvention of the Platform, or any other purpose not approved by 123English.
+11.10. Any attempt to request, collect, exchange, provide, search for, obtain, or otherwise acquire personal contact information or social media information for the purpose of establishing communication with a student or parent/guardian outside the Platform may be considered a serious violation of these Terms, regardless of whether the Tutor successfully obtains such information, establishes contact, provides private tutoring services, collects any payment, or receives any financial or other benefit.
 
-Người dùng không được phép trao đổi, cung cấp hoặc chia sẻ thông tin liên hệ cá nhân nhằm mục đích thực hiện giao dịch ngoài hệ thống. Các hành vi gian lận tài chính, sử dụng trái phép dữ liệu, lôi kéo khách hàng ra khỏi nền tảng hoặc gây thiệt hại về tài chính, uy tín cho hệ thống đều bị xem là vi phạm nghiêm trọng.
+ARTICLE 12. PLATFORM NON-CIRCUMVENTION POLICY
+12.1. Students and parents/guardians introduced, managed, assigned, or connected through the 123English Online Teaching Platform are considered Platform connections.
+12.2. Tutors must not directly or indirectly:
+Provide unauthorized private tutoring to Platform students;
+Collect tuition fees or other payments directly from Platform students or parents/guardians;
+Enter into private teaching agreements with Platform students;
+Transfer Platform students to another individual, platform, business, or organization;
+Refer Platform students to third-party teaching services;
+Encourage students or parents/guardians to discontinue using 123English;
+Use student information to develop, operate, or support competing services;
+Contact students or parents/guardians for unauthorized commercial purposes; or
+Otherwise circumvent or attempt to circumvent the Platform.
+12.3. These restrictions apply during the Tutor’s use of the Platform and for six (06) months after the Tutor stops using the Platform.
+12.4. Exceptions may be permitted only with prior written approval from 123English.
 
-Điều 6. Quyền của Hộ kinh doanh
+ARTICLE 13. CONFIDENTIALITY
+13.1. Tutors must maintain the confidentiality of information relating to:
+Students;
+Parents and guardians;
+Tutors;
+Employees;
+Personnel;
+Partners;
+Customers;
+Business operations;
+Platform data;
+Teaching materials;
+Internal procedures;
+Technology;
+Marketing activities; and
+Other confidential or proprietary information belonging to or managed by 123English.
+13.2. Tutors must not copy, disclose, publish, distribute, sell, transfer, or unlawfully use confidential information.
+13.3. Tutors may use confidential information only to the extent reasonably necessary to provide authorized teaching services through the Platform.
+13.4. Confidentiality obligations shall continue after the Tutor stops using the Platform or terminates their collaboration with 123English.
 
-Hộ kinh doanh có quyền giám sát, kiểm tra và ghi nhận toàn bộ hoạt động của người dùng trên hệ thống nhằm đảm bảo tính an toàn và minh bạch.
+ARTICLE 14. INTELLECTUAL PROPERTY
+14.1. All intellectual property owned, developed, licensed, or lawfully used by 123English remains the property of 123English or the relevant rights holder.
+14.2. Intellectual property may include, but is not limited to:
+Logos;
+Trade names;
+Trademarks;
+Brand identities;
+Website content;
+Platform interfaces;
+Software;
+Source code;
+Databases;
+Teaching materials;
+Training materials;
+Examinations;
+Educational content;
+Images;
+Videos;
+Documents;
+Business methods; and
+Internal procedures.
+14.3. Tutors must not copy, reproduce, modify, distribute, publish, sell, transfer, license, commercially exploit, or unlawfully use 123English intellectual property without prior written permission.
 
-Trong trường hợp phát hiện dấu hiệu vi phạm hoặc rủi ro tiềm ẩn, Hộ kinh doanh có quyền tạm ngưng hoặc chấm dứt quyền truy cập của người dùng, tạm giữ hoặc từ chối thanh toán, thu hồi các quyền lợi liên quan mà không cần thông báo trước.
+ARTICLE 15. USE OF TUTOR INFORMATION AND CONTENT
+15.1. Tutors authorize 123English to collect, store, process, and use information reasonably necessary to:
+Operate the Platform;
+Verify Tutor identities and qualifications;
+Manage classes;
+Connect Tutors with students;
+Process payments;
+Provide customer support;
+Improve Platform services;
+Maintain Platform security;
+Prevent fraud;
+Resolve disputes; and
+Comply with applicable legal requirements.
+15.2. Subject to applicable laws and required consent, 123English may use Tutor information and content, including:
+Name;
+Professional profile;
+Qualifications;
+Teaching experience;
+Profile photographs;
+Voice;
+Teaching videos;
+Recorded lessons;
+Student feedback;
+Teaching performance information; and
+Other professional information
+for Platform operations, Tutor introduction, marketing, communication, recruitment, quality control, internal training, and other lawful business purposes.
 
-Hộ kinh doanh có quyền điều chỉnh, cập nhật hoặc thay đổi nội dung điều khoản sử dụng và các chính sách liên quan nhằm phù hợp với tình hình thực tế và quy định pháp luật.
+ARTICLE 16. PLATFORM MONITORING AND QUALITY CONTROL
+16.1. 123English may monitor Platform activities for:
+Quality control;
+Student safety;
+Fraud prevention;
+Dispute resolution;
+Technical support;
+Training;
+Platform security; and
+Compliance with these Terms.
+16.2. Subject to applicable laws, online lessons, communications, teaching activities, and Platform interactions may be recorded, stored, monitored, or reviewed.
+16.3. Tutors agree to reasonably cooperate with quality control reviews, investigations, and compliance procedures conducted by 123English.
 
-Điều 7. Trách nhiệm bồi thường
-Người dùng đồng ý chịu trách nhiệm bồi thường toàn bộ thiệt hại phát sinh do hành vi vi phạm của mình gây ra, bao gồm thiệt hại trực tiếp và gián tiếp như tổn thất doanh thu, chi phí vận hành, chi phí đào tạo, thiệt hại về uy tín và các cơ hội kinh doanh bị mất.
+ARTICLE 17. PROHIBITED ACTIVITIES
+Tutors must not:
+Provide false or misleading information;
+Submit forged or fraudulent documents;
+Commit payment fraud;
+Manipulate attendance records;
+Manipulate teaching records;
+Access another user’s account;
+Share Tutor accounts;
+Interfere with Platform operations;
+Attempt unauthorized access to Platform systems;
+Collect, scrape, or extract Platform data without authorization;
+Introduce viruses, malicious software, or harmful technology;
+Harass students or other Platform users;
+Violate student privacy;
+Steal, disclose, or misuse Platform information;
+Request, exchange, collect, search for, obtain, or provide personal contact information or social media information for unauthorized off-Platform communication;
+Circumvent or attempt to circumvent the Platform;
+Damage the reputation, business operations, or lawful interests of 123English;
+Use the Platform to promote unauthorized competing services; or
+Use the Platform for unlawful activities.
 
-Mức bồi thường có thể được xác định dựa trên giá trị thiệt hại thực tế hoặc theo mức ước tính hợp lý do Hộ kinh doanh đưa ra, trong đó có thể bao gồm mức bồi thường tối thiểu tương đương ba lần giá trị thiệt hại ước tính.
+ARTICLE 18. VIOLATIONS AND ENFORCEMENT
+18.1. If a Tutor violates these Terms, 123English may take appropriate action depending on the nature, circumstances, frequency, and severity of the violation.
+18.2. Actions may include:
+Warnings;
+Requests for corrective action;
+Temporary Platform restrictions;
+Reduced class assignments;
+Removal from assigned classes;
+Temporary account suspension;
+Permanent account termination;
+Payment review;
+Claims for damages; or
+Other measures permitted by applicable laws.
+18.3. Where applicable and legally enforceable, the following contractual penalties may apply:
+a. Unauthorized abandonment of an assigned class without the required notice:
+VND 1,000,000 per affected class.
+b. Unauthorized disclosure of confidential information:
+VND 5,000,000 per violation.
+c. Unauthorized copying, possession, distribution, transfer, or use of 123English intellectual property, educational materials, student data, customer data, or internal procedures:
+VND 5,000,000 per violation.
+d. Unauthorized use of the 123English trade name, logo, brand identity, or other brand assets:
+VND 5,000,000 per violation.
+e. Violations of teaching standards, camera requirements, reporting obligations, unauthorized class transfers, or other professional requirements:
+VND 500,000 per violation.
+f. Unauthorized private tutoring, direct collection of tuition fees, referral to third parties, or private collaboration with Platform students or parents/guardians:
+VND 10,000,000 per affected student.
+g. Soliciting or attempting to transfer 123English students, parents/guardians, or customers to another individual, platform, business, or organization:
+VND 10,000,000 per affected student or customer.
+h. Fraudulent reporting of teaching hours, attendance, learning outcomes, or other teaching-related information:
+VND 5,000,000 per violation.
+i. Requesting, asking for, collecting, exchanging, searching for, attempting to obtain, providing, or otherwise acquiring personal contact information, personal social media information, or other unauthorized communication information for the purpose of establishing contact between a Tutor and a student or parent/guardian outside the 123English Online Teaching Platform:
+VND 5,000,000 per violation.
+The penalty specified in Article 18.3(i) may apply regardless of whether the Tutor successfully obtains the information, establishes contact with the student or parent/guardian, provides private tutoring services, collects tuition fees, receives payment, or obtains any other financial or non-financial benefit.
+If such conduct is also related to unauthorized private tutoring, direct collection of tuition fees, solicitation of students, transfer of students to another individual or organization, or other attempts to circumvent the 123English Online Teaching Platform, 123English may apply other relevant penalties and enforcement measures under these Terms, subject to applicable laws.
+18.4. The application of contractual penalties does not exclude the right of 123English to claim compensation for actual damages in accordance with applicable laws.
+18.5. Multiple or repeated violations may be handled separately and cumulatively.
+18.6. Documents, Platform records, messages, emails, lawfully obtained audio or video recordings, electronic data, payment records, system logs, and confirmations from relevant parties may be used as evidence when reviewing or investigating violations.
 
-Điều 8. Bảo mật thông tin và quyền sở hữu
+ARTICLE 19. ACCOUNT SUSPENSION AND TERMINATION
+19.1. 123English may temporarily suspend, restrict, or permanently terminate a Tutor account if the Tutor:
+Violates these Terms;
+Provides fraudulent information;
+Creates risks to students;
+Commits serious professional misconduct;
+Violates confidentiality obligations;
+Circumvents the Platform;
+Misuses Platform data;
+Violates intellectual property rights;
+Commits fraud; or
+Engages in unlawful activities.
+19.2. In serious cases, 123English may immediately suspend or terminate an account without prior notice where reasonably necessary to protect students, parents/guardians, Platform users, 123English, Platform systems and security, or the lawful rights and interests of relevant parties.
+19.3. Termination or suspension of a Tutor account does not eliminate obligations relating to confidentiality, intellectual property, outstanding payments, financial obligations, damages, contractual penalties, dispute resolution, or other obligations that are intended to survive termination.
 
-Toàn bộ dữ liệu, nội dung, tài liệu, quy trình và hệ thống kỹ thuật thuộc quyền sở hữu hợp pháp của Hộ kinh doanh. Người dùng không được phép sao chép, phân phối, khai thác hoặc sử dụng các thông tin này ngoài phạm vi được cho phép.
+ARTICLE 20. INDEPENDENT TUTOR STATUS
+20.1. Tutors use the 123English Online Teaching Platform as independent educational service providers unless otherwise agreed in a separate written agreement.
+20.2. Nothing in these Terms shall automatically be interpreted as creating an employment relationship, partnership, joint venture, agency relationship, franchise relationship, or legal representation relationship between 123English and the Tutor.
+20.3. Tutors are responsible for complying with applicable legal, professional, and tax obligations relating to their teaching activities.
+20.4. Tutors independently determine whether to accept available class assignments, subject to their obligations after accepting a class.
 
-Nghĩa vụ bảo mật của người dùng có hiệu lực trong suốt thời gian sử dụng hệ thống và tiếp tục kéo dài ít nhất mười hai tháng kể từ thời điểm chấm dứt sử dụng hoặc chấm dứt hợp tác.
+ARTICLE 21. PLATFORM AVAILABILITY
+21.1. 123English aims to maintain stable and reliable Platform operations but does not guarantee uninterrupted, continuous, secure, or error-free access.
+21.2. Platform services may be temporarily unavailable due to:
+Maintenance;
+System updates;
+Technical failures;
+Internet failures;
+Cybersecurity incidents;
+Third-party service interruptions;
+Force majeure events; or
+Other circumstances beyond reasonable control.
+21.3. 123English may modify, update, suspend, replace, restrict, or discontinue certain Platform functions when reasonably necessary.
 
-Điều 9. Không cạnh tranh
+ARTICLE 22. LIMITATION OF LIABILITY
+22.1. To the extent permitted by applicable laws, 123English shall not be responsible for indirect, incidental, special, or consequential damages resulting from the Tutor’s use of or inability to use the Platform.
+22.2. Tutors are responsible for their own teaching equipment, internet access, teaching environment, account security, professional conduct, teaching services, and compliance with these Terms.
+22.3. 123English shall not be responsible for losses caused by inaccurate information, misconduct, negligence, fraud, or unauthorized activities of Tutors or other Platform users, except where liability is imposed on 123English by applicable laws.
+22.4. Nothing in these Terms excludes or limits any liability that cannot legally be excluded or limited under applicable laws.
 
-Trong thời gian sử dụng hệ thống và trong vòng mười hai tháng kể từ thời điểm chấm dứt, người dùng không được phép trực tiếp hoặc gián tiếp cung cấp dịch vụ cho khách hàng có được từ hệ thống hoặc sử dụng dữ liệu, kinh nghiệm và quy trình vận hành của hệ thống để phục vụ cho hoạt động cạnh tranh.
+ARTICLE 23. AMENDMENTS TO THESE TERMS
+23.1. 123English may update or amend these Terms from time to time to reflect:
+Changes in Platform operations;
+New Platform functions;
+Changes in services;
+Legal requirements;
+Security requirements;
+Business requirements; or
+Changes in Platform policies.
+23.2. Updated Terms may be published or communicated through:
+The Platform;
+The 123English website;
+Applications;
+Tutor accounts;
+Email;
+Electronic notifications; or
+Other appropriate communication channels.
+23.3. Tutors are responsible for reviewing updated Terms when notified.
+23.4. Continued use of the 123English Online Teaching Platform after updated Terms become effective constitutes acceptance of the updated Terms, to the extent permitted by applicable laws.
 
-Điều 10. Chấm dứt và hậu quả pháp lý
+ARTICLE 24. GOVERNING LAW AND DISPUTE RESOLUTION
+24.1. These Terms shall be governed by and interpreted in accordance with the laws of the Socialist Republic of Vietnam.
+24.2. Any dispute arising from or relating to these Terms or the use of the 123English Online Teaching Platform shall first be resolved through good-faith negotiation and mediation.
+24.3. If the parties are unable to resolve the dispute through negotiation or mediation, the dispute may be submitted to a competent People’s Court in Ho Chi Minh City, Vietnam.
 
-Hộ kinh doanh có quyền chấm dứt quyền sử dụng của người dùng ngay lập tức trong trường hợp phát hiện vi phạm hoặc có dấu hiệu gây thiệt hại. Việc chấm dứt không làm mất đi các nghĩa vụ còn tồn tại của người dùng, bao gồm nghĩa vụ bồi thường, bảo mật và các nghĩa vụ pháp lý khác.
+ARTICLE 25. EFFECTIVENESS AND ACCEPTANCE OF TERMS
+25.1. These Terms and Conditions become effective from the date published, displayed on the Platform, or otherwise notified by 123English.
+25.2. By performing any of the following actions:
+Creating a Tutor account;
+Registering to become a Tutor;
+Selecting or clicking “I Agree”;
+Accepting these Terms electronically;
+Accessing a Tutor account;
+Accepting a class;
+Providing teaching services through the Platform; or
+Continuing to access or use the 123English Online Teaching Platform,
+the Tutor confirms that they have read, understood, accepted, and agreed to comply with these Terms and Conditions.
+25.3. Electronic acceptance of these Terms shall constitute evidence of the Tutor’s agreement to these Terms to the extent permitted by applicable laws.
+25.4. If the Tutor does not agree with these Terms and Conditions, the Tutor must not register for, access, or use the 123English Online Teaching Platform.
 
-Điều 11. Giới hạn trách nhiệm
-
-Hộ kinh doanh không chịu trách nhiệm đối với các thiệt hại gián tiếp, mất lợi nhuận hoặc mất dữ liệu phát sinh từ việc sử dụng hệ thống, trừ trường hợp có lỗi trực tiếp từ phía hệ thống theo quy định pháp luật.
-
-Điều 12. Giải quyết tranh chấp
-
-Mọi tranh chấp phát sinh sẽ được ưu tiên giải quyết thông qua thương lượng và hòa giải. Trường hợp không đạt được thỏa thuận, tranh chấp sẽ được giải quyết tại Tòa án có thẩm quyền tại Thành phố Hồ Chí Minh.
-
-Điều 13. Hiệu lực và sửa đổi
-Điều khoản sử dụng này có hiệu lực kể từ thời điểm người dùng xác nhận đồng ý và có thể được sửa đổi, bổ sung bất kỳ lúc nào. Việc người dùng tiếp tục sử dụng hệ thống sau khi có thay đổi được hiểu là đã chấp nhận các nội dung cập nhật.
-
-CHÍNH SÁCH BẢO MẬT (PRIVACY POLICY)
-Điều 1. Nguyên tắc thu thập thông tin
-
-Hệ thống thu thập thông tin cá nhân và dữ liệu sử dụng của người dùng nhằm phục vụ cho hoạt động vận hành, cải thiện chất lượng dịch vụ và đảm bảo an toàn hệ thống. Các thông tin này có thể bao gồm thông tin định danh, thông tin liên hệ và dữ liệu phát sinh trong quá trình sử dụng.
-
-Điều 2. Mục đích sử dụng thông tin
-
-Thông tin thu thập được sử dụng cho mục đích quản lý tài khoản, cung cấp dịch vụ, xử lý giao dịch, nâng cao trải nghiệm người dùng, phát hiện và ngăn chặn hành vi gian lận, cũng như phục vụ cho việc giải quyết tranh chấp khi cần thiết.
-
-Điều 3. Lưu trữ và bảo mật
-
-Dữ liệu của người dùng được lưu trữ trên hệ thống và được bảo vệ bằng các biện pháp kỹ thuật và quản lý phù hợp nhằm hạn chế truy cập trái phép, mất mát hoặc rò rỉ thông tin.
-
-Điều 4. Chia sẻ thông tin
-
-Hộ kinh doanh cam kết không bán hoặc trao đổi dữ liệu người dùng cho bên thứ ba. Việc chia sẻ thông tin chỉ được thực hiện trong trường hợp có sự đồng ý của người dùng, theo yêu cầu của cơ quan nhà nước có thẩm quyền hoặc nhằm phục vụ cho hoạt động vận hành hợp pháp của hệ thống.
-
-Điều 5. Quyền của người dùng đối với dữ liệu
-
-Người dùng có quyền yêu cầu truy cập, chỉnh sửa hoặc xóa thông tin cá nhân của mình. Tuy nhiên, trong một số trường hợp cần thiết, hệ thống có thể tiếp tục lưu trữ dữ liệu nhằm phục vụ cho việc đối soát, giải quyết tranh chấp hoặc tuân thủ quy định pháp luật.
-
-Điều 6. Dữ liệu hành vi và theo dõi
-
-Người dùng đồng ý rằng hệ thống có thể ghi nhận và phân tích dữ liệu hành vi trong quá trình sử dụng nhằm phát hiện các hành vi vi phạm, đảm bảo an toàn và tối ưu hiệu suất hệ thống. Các dữ liệu này có thể được sử dụng làm căn cứ xử lý khi có tranh chấp.
-
-Điều 7. Hiệu lực
-
-Chính sách bảo mật này có thể được cập nhật, sửa đổi theo thời gian và có hiệu lực kể từ thời điểm được công bố. Việc người dùng tiếp tục sử dụng hệ thống sau khi có thay đổi được xem là đã chấp nhận các nội dung cập nhật.`;
+123ENGLISH ONLINE TEACHING PLATFORM
+Operated and Managed by: GIA SU TOAN NANG BUSINESS ESTABLISHMENT
+Tax Identification Number: 079196005873
+Registered Office Address: 78/20 Hoang Van Hop Street, An Lac Ward, Ho Chi Minh City, Vietnam
+Representative: Nguyen Thu Trang
+Telephone: 090.696.6691 – 039.399.8733`;
 
 export function TeacherContractPage() {
   const { teacherId } = useAuthStore()
@@ -145,7 +502,7 @@ export function TeacherContractPage() {
     const element = document.createElement("a");
     const file = new Blob([TERMS_CONTENT], {type: 'text/plain;charset=utf-8'});
     element.href = URL.createObjectURL(file);
-    element.download = "Dieu_Khoan_Su_Dung_Gia_Su_Toan_Nang.txt";
+    element.download = "123English_Tutor_Terms_and_Conditions.txt";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
