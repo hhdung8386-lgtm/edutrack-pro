@@ -66,12 +66,10 @@ export function FutureBookingsPage() {
 
   // Filter and sort bookings client-side
   const futureBookings = useMemo(() => {
-    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
-    
     const filtered = bookings.filter((b) => {
-      // 1. Must be future booking and not taught yet
-      const isFuture = b.requestedDate && b.requestedDate >= todayISO && !b.lessonId
-      if (!isFuture) return false
+      // 1. Must not be taught yet
+      const isUnattended = b.requestedDate && !b.lessonId
+      if (!isUnattended) return false
 
       // 2. Student filter
       const matchesStudent = selectedStudentId === 'all' || b.studentId === selectedStudentId

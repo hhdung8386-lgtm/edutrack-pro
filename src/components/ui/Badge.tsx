@@ -52,12 +52,12 @@ export function Badge({
   )
 }
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, type = 'student' }: { status: string; type?: 'student' | 'teacher' }) {
   const map: Record<string, { variant: BadgeProps['variant']; label: string; pulse?: boolean }> = {
     pending: { variant: 'warning', label: 'Chờ duyệt', pulse: true },
     approved: { variant: 'success', label: 'Đã duyệt' },
     rejected: { variant: 'danger', label: 'Từ chối' },
-    active: { variant: 'success', label: 'Đang học' },
+    active: { variant: 'success', label: type === 'teacher' ? 'Đang dạy' : 'Đang học' },
     inactive: { variant: 'slate', label: 'Tạm dừng' },
     expired: { variant: 'danger', label: 'Hết buổi' },
     reserved: { variant: 'warning', label: 'Bảo lưu' },

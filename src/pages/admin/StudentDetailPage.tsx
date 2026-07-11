@@ -248,8 +248,7 @@ export function StudentDetailPage() {
   }
 
   const futureBookings = useMemo(() => {
-    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const list = bookingRequests.filter((b: BookingRequest) => b.requestedDate && b.requestedDate >= todayISO && !b.lessonId)
+    const list = bookingRequests.filter((b: BookingRequest) => !b.lessonId)
     return [...list].sort((a: BookingRequest, b: BookingRequest) => {
       const dateA = a.requestedDate || ''
       const dateB = b.requestedDate || ''
@@ -1499,8 +1498,18 @@ export function StudentDetailPage() {
                         </a>
                       </div>
                     )}
+                    {pkg.focusSkills && pkg.focusSkills.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        <span className="text-slate-400 block w-full">Kỹ năng trọng tâm:</span>
+                        {pkg.focusSkills.map((skill, idx) => (
+                          <span key={idx} className="bg-indigo-50 border border-indigo-150 text-indigo-650 text-[10px] px-2 py-0.5 rounded-md font-bold">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {pkg.studentRequests && pkg.studentRequests.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
+                      <div className="mt-2 flex flex-wrap gap-1">
                         <span className="text-slate-400 block w-full">Yêu cầu từ học viên:</span>
                         {pkg.studentRequests.map((req, idx) => (
                           <span key={idx} className="bg-rose-50 border border-rose-100 text-rose-600 text-[10px] px-2 py-0.5 rounded-md font-bold">
@@ -1611,15 +1620,15 @@ export function StudentDetailPage() {
         </div>
       </div>
 
-      {/* Lịch học đã đặt (Tương lai) Link Card */}
+      {/* Lịch học đã đặt Link Card */}
       <Card className="bg-slate-50 border border-slate-200/60 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
             <Calendar className="w-5 h-5 text-indigo-500" />
-            Lịch học đã đặt (Tương lai)
+            Lịch học đã đặt
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Học viên này hiện có <strong>{futureBookings.length} ca học</strong> đã được giữ chỗ trong tương lai.
+            Học viên này hiện có <strong>{futureBookings.length} ca học</strong> đã được giữ chỗ (gồm lịch sắp học và lịch chưa điểm danh).
           </p>
         </div>
         <Button

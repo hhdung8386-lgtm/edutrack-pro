@@ -49,6 +49,26 @@ export function TeacherDetailPage() {
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
+  const [toggleLoading, setToggleLoading] = useState(false)
+
+  const handleToggleStatus = async () => {
+    if (!teacher) return
+    setToggleLoading(true)
+    try {
+      const nextStatus = teacher.status === 'active' ? 'inactive' : 'active'
+      await updateDoc(doc(db, 'teachers', teacher.id), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      })
+      setTeacher(prev => prev ? { ...prev, status: nextStatus } : null)
+      toast.success(nextStatus === 'inactive' ? 'Đã chuyển giáo viên sang tạm dừng dạy' : 'Đã kích hoạt lại giáo viên')
+    } catch (err) {
+      console.error(err)
+      toast.error('Cập nhật trạng thái thất bại')
+    } finally {
+      setToggleLoading(false)
+    }
+  }
 
   // Lesson history filters
   const [lessonSearch, setLessonSearch] = useState('')
@@ -792,7 +812,7 @@ export function TeacherDetailPage() {
                 <span className="font-mono text-lg font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
                   {teacher.code}
                 </span>
-                <StatusBadge status={teacher.status} />
+                 <StatusBadge status={teacher.status} type="teacher" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm mt-2">
                 <div>
@@ -839,7 +859,17 @@ export function TeacherDetailPage() {
               </div>
             </div>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={teacher.status === 'active' ? 'danger' : 'primary'}
+              loading={toggleLoading}
+              onClick={handleToggleStatus}
+            >
+              {teacher.status === 'active' ? 'Tạm dừng dạy' : 'Kích hoạt dạy'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
+          </div>
         </div>
       </Card>
 

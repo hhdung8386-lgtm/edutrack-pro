@@ -397,7 +397,7 @@ export function TeachersPage() {
                           {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'
                         </span>
                       </td>
-                      <td className="px-4 py-3"><StatusBadge status={teacher.status} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={teacher.status} type="teacher" /></td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button
@@ -439,7 +439,7 @@ export function TeachersPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-mono text-xs text-emerald-400">{teacher.code}</span>
-                      <StatusBadge status={teacher.status} />
+                      <StatusBadge status={teacher.status} type="teacher" />
                       {teacher.teacherGrade && (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${GRADE_STYLES[teacher.teacherGrade].badge}`}>
                           Cấp {teacher.teacherGrade}

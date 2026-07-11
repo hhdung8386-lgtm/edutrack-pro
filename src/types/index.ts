@@ -34,6 +34,7 @@ export interface StudentSubject {
   otherCountriesPrices?: Record<string, number>
   countryPrices?: Record<string, CountryPriceInfo>
   currency?: string
+  focusSkills?: string[]
 }
 
 export interface Student {

@@ -18,6 +18,7 @@ const schema = z.object({
   supplementaryCurriculumLink: z.string().optional(),
   timetableNote: z.string().optional(),
   studentRequests: z.array(z.string()).default([]),
+  focusSkills: z.array(z.string()).default([]),
 })
 
 type FormData = z.infer<typeof schema>
@@ -32,6 +33,14 @@ const STUDENT_REQUESTS_OPTIONS = [
   'Ôn lại bài cũ nhiều hơn.'
 ]
 
+const FOCUS_SKILLS_OPTIONS = [
+  'Nghe',
+  'Nói',
+  'Đọc',
+  'Viết',
+  'Ngữ Pháp'
+]
+
 interface Props {
   student: Student
   editingSubjectId?: string // If present, edit mode; otherwise, add mode
@@ -44,6 +53,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   const [subjectSearch, setSubjectSearch] = useState('')
   const [subjectMenuOpen, setSubjectMenuOpen] = useState(false)
   const [selectedRequests, setSelectedRequests] = useState<string[]>([])
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const soccerRequests = selectedRequests // Alias for cleanliness
   const isEdit = !!editingSubjectId
 
@@ -58,6 +68,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   useEffect(() => {
     if (editingPkg) {
       setSelectedRequests(editingPkg.studentRequests || [])
+      setSelectedSkills(editingPkg.focusSkills || [])
     }
   }, [editingPkg])
 
@@ -71,6 +82,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           supplementaryCurriculumLink: editingPkg.supplementaryCurriculumLink || '',
           timetableNote: editingPkg.timetableNote || '',
           studentRequests: editingPkg.studentRequests || [],
+          focusSkills: editingPkg.focusSkills || [],
         }
       : {
           subjectId: '',
@@ -79,6 +91,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           supplementaryCurriculumLink: '',
           timetableNote: '',
           studentRequests: [],
+          focusSkills: [],
         },
   })
 
@@ -217,7 +230,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 curriculumLink: data.curriculumLink || '',
                 supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
                 timetableNote: data.timetableNote || '',
-                studentRequests: selectedRequests
+                studentRequests: selectedRequests,
+                focusSkills: selectedSkills
               })
             } else {
               const newTotalMinutes = data.totalMinutes
@@ -246,7 +260,33 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 curriculumLink: data.curriculumLink || '',
                 supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
                 timetableNote: data.timetableNote || '',
-                studentRequests: selectedRequests
+                studentRequests: selectedRequests,
+                focusSkills: selectedSkills
+              }
+            }
+
+            // Sync future confirmed/pending booking requests to the new subject!
+            if (editingSubjectId && data.subjectId !== editingSubjectId && selectedSubjectObj) {
+              try {
+                const bookingsQuery = query(
+                  collection(db, 'bookingRequests'),
+                  where('studentId', '==', student.id),
+                  where('subjectId', '==', editingSubjectId),
+                  where('status', 'in', ['confirmed', 'pending'])
+                )
+                const bookingsSnap = await getDocs(bookingsQuery)
+                const batchPromises = bookingsSnap.docs
+                  .filter(doc => !doc.data().lessonId)
+                  .map(doc => {
+                    return updateDoc(doc.ref, {
+                      subjectId: selectedSubjectObj.id,
+                      subjectName: selectedSubjectObj.name,
+                      updatedAt: serverTimestamp(),
+                    })
+                  })
+                await Promise.all(batchPromises)
+              } catch (syncErr) {
+                console.error('Failed to sync future bookings to new subject:', syncErr)
               }
             }
           } else {
@@ -267,7 +307,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               curriculumLink: data.curriculumLink || '',
               supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
               timetableNote: data.timetableNote || '',
-              studentRequests: selectedRequests
+              studentRequests: selectedRequests,
+              focusSkills: selectedSkills
             }
           }
         }
@@ -305,11 +346,14 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           curriculumLink: data.curriculumLink || '',
           supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
           timetableNote: data.timetableNote || '',
-          studentRequests: selectedRequests
+          studentRequests: selectedRequests,
+          focusSkills: selectedSkills
         }
 
         updatedSubjects.push(newPkg)
       }
+
+
 
       // Recalculate aggregates
       const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
@@ -434,6 +478,32 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 : 'Gói chưa phát sinh buổi học nên hệ thống sẽ đổi trực tiếp sang môn mới.'}
             </p>
           )}
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-slate-200 p-4 bg-slate-50/50">
+          <label className="block text-sm font-bold text-slate-700">Kỹ năng trọng tâm (Tick chọn)</label>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {FOCUS_SKILLS_OPTIONS.map((skill) => {
+              const checked = selectedSkills.includes(skill)
+              return (
+                <label key={skill} className="flex items-center gap-2 text-sm text-slate-600 font-medium cursor-pointer hover:text-slate-900 select-none">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedSkills((prev) => [...prev, skill])
+                      } else {
+                        setSelectedSkills((prev) => prev.filter((s) => s !== skill))
+                      }
+                    }}
+                    className="rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>{skill}</span>
+                </label>
+              )
+            })}
+          </div>
         </div>
 
         {isTransferringSubject && editingPkg && editingPkg.usedMinutes > 0 ? (
