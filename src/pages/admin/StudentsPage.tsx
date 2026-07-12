@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, getDocs, getCountFromServer, deleteDoc, doc, limit } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, getDocs, getCountFromServer, deleteDoc, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -114,10 +114,34 @@ export function StudentsPage() {
   const handleDelete = async () => {
     if (!deleteStudent) return
     try {
+      // Release the student's active bookings first so teacher schedules are freed
+      // and no orphaned confirmed bookings are left behind
+      const bookingsSnap = await getDocs(query(
+        collection(db, 'bookingRequests'),
+        where('studentId', '==', deleteStudent.id),
+        where('status', 'in', ['pending', 'confirmed'])
+      ))
+      const bookingDocs = bookingsSnap.docs
+      for (let i = 0; i < bookingDocs.length; i += 450) {
+        const batch = writeBatch(db)
+        bookingDocs.slice(i, i + 450).forEach((bDoc) => {
+          batch.update(bDoc.ref, {
+            status: 'released',
+            releasedAt: serverTimestamp(),
+            releasedBy: 'system:student-deleted',
+          })
+        })
+        await batch.commit()
+      }
+
       await deleteDoc(doc(db, 'students', deleteStudent.id))
+      if (bookingDocs.length > 0) {
+        toast.success(`Đã xoá học viên và nhả ${bookingDocs.length} ca học đang giữ chỗ`)
+      }
       setDeleteStudent(null)
     } catch (error) {
       console.error('Error deleting student:', error)
+      toast.error('Lỗi khi xoá học viên')
     }
   }
 
