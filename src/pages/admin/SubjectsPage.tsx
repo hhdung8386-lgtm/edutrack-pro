@@ -228,7 +228,34 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
 
           return updateDoc(doc(db, 'students', studentDoc.id), updateObj);
         }).filter(Boolean) as Promise<any>[];
-        
+
+        // Sync denormalized subject name on teachers and booking requests when renamed
+        const nameChanged = data.name !== subject.name;
+        const teacherUpdates: Promise<any>[] = [];
+        const bookingUpdates: Promise<any>[] = [];
+        if (nameChanged) {
+          teachersSnap.docs.forEach((tDoc) => {
+            const t = tDoc.data() as any;
+            const subjectIds: string[] = t.subjectIds || [];
+            const idx = subjectIds.indexOf(subject.id);
+            if (idx === -1) return;
+            // subjectNames is index-aligned with subjectIds; rebuild to avoid sparse entries
+            const subjectNames = subjectIds.map((sid, i) =>
+              sid === subject.id ? data.name : (t.subjectNames?.[i] ?? '')
+            );
+            teacherUpdates.push(updateDoc(doc(db, 'teachers', tDoc.id), { subjectNames }));
+          });
+
+          const bookingsSnap = await getDocs(
+            query(collection(db, 'bookingRequests'), where('subjectId', '==', subject.id))
+          );
+          bookingsSnap.docs.forEach((bDoc) => {
+            if (bDoc.data().subjectName !== data.name) {
+              bookingUpdates.push(updateDoc(doc(db, 'bookingRequests', bDoc.id), { subjectName: data.name }));
+            }
+          });
+        }
+
         // Fetch all payrolls first in parallel to check paid status
         const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
           getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonDoc.id)))
@@ -303,7 +330,9 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         await Promise.all([
           Promise.all(studentUpdates),
           Promise.all(lessonUpdates),
-          Promise.all(payrollUpdates)
+          Promise.all(payrollUpdates),
+          Promise.all(teacherUpdates),
+          Promise.all(bookingUpdates)
         ]);
         
         toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
