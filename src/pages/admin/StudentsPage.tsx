@@ -24,7 +24,10 @@ export function StudentsPage() {
   const [search, setSearch] = useState(() => sessionStorage.getItem('students_search') || '')
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('students_statusFilter') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('students_branchFilter') || 'all')
+  const [subjectFilter, setSubjectFilter] = useState<string>(() => sessionStorage.getItem('students_subjectFilter') || 'all')
+  const [sortBy, setSortBy] = useState<string>(() => sessionStorage.getItem('students_sortBy') || 'newest')
   const [branches, setBranches] = useState<Branch[]>([])
+  const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editStudent, setEditStudent] = useState<Student | null>(null)
   const [addSessions, setAddSessions] = useState<Student | null>(null)
@@ -41,8 +44,10 @@ export function StudentsPage() {
     sessionStorage.setItem('students_search', search)
     sessionStorage.setItem('students_statusFilter', statusFilter)
     sessionStorage.setItem('students_branchFilter', branchFilter)
+    sessionStorage.setItem('students_subjectFilter', subjectFilter)
+    sessionStorage.setItem('students_sortBy', sortBy)
     sessionStorage.setItem('students_limitVal', String(limitVal))
-  }, [search, statusFilter, branchFilter, limitVal])
+  }, [search, statusFilter, branchFilter, subjectFilter, sortBy, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -102,14 +107,39 @@ export function StudentsPage() {
       })
   }, [])
 
+  useEffect(() => {
+    getDocs(collection(db, 'subjects'))
+      .then((snap) => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, name: (d.data().name as string) || '', status: d.data().status as string }))
+          .filter(s => s.name && s.status !== 'inactive')
+          .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+        setSubjects(list)
+      })
+      .catch((err) => {
+        console.error('Error loading subjects:', err)
+      })
+  }, [])
+
   const filtered = students.filter((s) => {
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.code.toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'all' ? s.status !== 'reserved' : s.status === statusFilter
     const matchBranch = branchFilter === 'all' || s.branchId === branchFilter
-    return matchSearch && matchStatus && matchBranch
+    // Học viên có thể học nhiều gói môn -> khớp gói chính hoặc bất kỳ gói nào
+    const matchSubject = subjectFilter === 'all'
+      || s.subjectId === subjectFilter
+      || (s.subjects || []).some(sub => sub.subjectId === subjectFilter)
+    return matchSearch && matchStatus && matchBranch && matchSubject
   })
+
+  // 'newest' giữ nguyên thứ tự Firestore (createdAt desc)
+  const sorted = sortBy === 'name_asc'
+    ? [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+    : sortBy === 'name_desc'
+      ? [...filtered].sort((a, b) => b.name.localeCompare(a.name, 'vi'))
+      : filtered
 
   const handleDelete = async () => {
     if (!deleteStudent) return
@@ -191,6 +221,29 @@ export function StudentsPage() {
               ))}
             </select>
           )}
+          {subjects.length > 0 && (
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[40px] max-w-[220px]"
+              aria-label="Lọc theo môn học"
+            >
+              <option value="all">Tất cả môn học</option>
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[40px]"
+            aria-label="Sắp xếp danh sách"
+          >
+            <option value="newest">Mới nhất</option>
+            <option value="name_asc">Tên A → Z</option>
+            <option value="name_desc">Tên Z → A</option>
+          </select>
         </div>
       </div>
 
@@ -220,7 +273,7 @@ export function StudentsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filtered.map((student) => {
+                  {sorted.map((student) => {
                     const mps = student.minutesPerSession || 50;
                     const totalMins = student.totalMinutes ?? (student.totalSessions * mps);
                     const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
@@ -311,7 +364,7 @@ export function StudentsPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map((student) => {
+            {sorted.map((student) => {
               const mps = student.minutesPerSession || 50;
               const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
               const remainingSessions25 = Math.floor(remainingMins / 25);

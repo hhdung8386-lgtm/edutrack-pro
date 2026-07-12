@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, BarChart2, FileText, Bell } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -64,17 +64,22 @@ export function AdminLayout() {
     return true
   })
 
+  // Danh sách đồng bộ với AdminSidebar (desktop) — iPad/mobile dùng menu này
   const mobileMenuItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/students', icon: Users, label: 'Học viên' },
     { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
     { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
     { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
+    { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
     { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
     { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
     { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
+    { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
+    { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
     { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
-    { to: '/admin/contracts', icon: ClipboardCheck, label: 'Hợp đồng' },
+    { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
+    { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
     { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
   ].filter((item) => {
     if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
@@ -146,6 +151,11 @@ export function AdminLayout() {
                   {item.bookingBadge && pendingBookingCount > 0 && (
                     <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                       {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
+                    </span>
+                  )}
+                  {item.hasBadge && pendingCount > 0 && (
+                    <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
                 </NavLink>
