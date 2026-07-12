@@ -8,7 +8,12 @@ import {
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
-import { Input, Textarea } from '@/components/ui/Input'
+import { Input } from '@/components/ui/Input'
+import { LessonReportForm } from '@/components/lessons/LessonReportForm'
+import {
+  LessonReportDraft, emptyLessonReport,
+  validateLessonReport, composeLessonComment, lessonReportFields,
+} from '@/components/lessons/lessonReport'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
 import { toast } from '@/stores/toastStore'
@@ -21,8 +26,6 @@ import { uploadLessonImage } from '@/lib/imageUploader'
 
 const schema = z.object({
   date: z.string().min(1),
-  comment: z.string().optional(),
-  homework: z.string().optional(),
   book: z.string()
     .min(1, 'Vui lòng nhập sách học')
     .refine(
@@ -56,6 +59,7 @@ export function AttendancePage() {
   const [teacherData, setTeacherData] = useState<{ name: string; code: string; subjectName?: string; level: number } | null>(null)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
+  const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
 
   const getErrorMessage = (errKey?: string) => {
     if (!errKey) return undefined
@@ -186,6 +190,16 @@ export function AttendancePage() {
       return
     }
 
+    // Form báo cáo chi tiết chỉ bắt buộc khi học viên có mặt
+    const isPresent = attendanceStatus === 'present'
+    if (isPresent) {
+      const errKey = validateLessonReport(report)
+      if (errKey) {
+        toast.warning(t(errKey))
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
       const subjects = student.subjects && student.subjects.length > 0
@@ -232,9 +246,14 @@ export function AttendancePage() {
         subjectName: selectedPkg.subjectName,
         date: data.date,
         minutes: selectedMinutes,
-        comment: data.comment || '',
-        homework: data.homework || '',
+        // Ghép báo cáo có cấu trúc thành `comment` để các màn hình cũ hiển thị được;
+        // đồng thời lưu bản có cấu trúc (pages/report/rating) bên dưới.
+        comment: isPresent ? composeLessonComment(report) : '',
+        homework: isPresent ? report.homework.trim() : '',
         book: data.book || '',
+        ...(isPresent
+          ? lessonReportFields(report)
+          : { pages: '', report: null, rating: null }),
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,
         status: 'pending',
@@ -256,7 +275,8 @@ export function AttendancePage() {
         setStudent(null)
         setCode('')
         setImages([])
-        reset({ date: today, comment: '', homework: '', book: '' })
+        reset({ date: today, book: '' })
+        setReport(emptyLessonReport())
         setSelectedMinutes(50)
         setAttendanceStatus('present')
       }, 2000)
@@ -526,8 +546,9 @@ export function AttendancePage() {
                 {...register('book')}
               />
 
-              <Textarea label={t('attendance.comment')} placeholder={t('attendance.comment_placeholder')} rows={3} {...register('comment')} />
-              <Textarea label={t('attendance.homework')} placeholder={t('attendance.homework_placeholder')} rows={2} {...register('homework')} />
+              {attendanceStatus === 'present' && (
+                <LessonReportForm value={report} onChange={setReport} />
+              )}
 
               {/* Images */}
               <div>

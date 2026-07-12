@@ -12,6 +12,11 @@ import { getToday } from '@/lib/constants'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { uploadLessonImage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
+import { LessonReportForm } from '@/components/lessons/LessonReportForm'
+import {
+  LessonReportDraft, emptyLessonReport,
+  validateLessonReport, composeLessonComment, lessonReportFields,
+} from '@/components/lessons/lessonReport'
 
 const isAttendanceAllowed = (booking: BookingRequest) => {
   if (!booking.requestedDate || !booking.requestedEnd) return false
@@ -159,8 +164,7 @@ export function BookingSchedulesPage() {
   // Attendance Form States
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [book, setBook] = useState('')
-  const [comment, setComment] = useState('')
-  const [homework, setHomework] = useState('')
+  const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
   const [images, setImages] = useState<ImageUpload[]>([])
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
 
@@ -427,6 +431,12 @@ export function BookingSchedulesPage() {
         toast.warning('Tên sách học không được vượt quá 20 từ!')
         return
       }
+      // Báo cáo chi tiết bắt buộc khi học viên có mặt
+      const errKey = validateLessonReport(report)
+      if (errKey) {
+        toast.warning(t(errKey))
+        return
+      }
     }
 
     setSubmittingAttendance(true)
@@ -503,9 +513,14 @@ export function BookingSchedulesPage() {
           subjectName: selectedBooking.subjectName || '',
           date: selectedBooking.requestedDate || getToday(),
           minutes,
-          comment: comment.trim(),
-          homework: homework.trim(),
+          // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
+          // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
+          comment: isPresent ? composeLessonComment(report) : '',
+          homework: isPresent ? report.homework.trim() : '',
           book: bookTitle,
+          ...(isPresent
+            ? lessonReportFields(report)
+            : { pages: '', report: null, rating: null }),
           imageURLs: images.map((i) => i.storageURL).filter(Boolean),
           attendanceStatus,
           status: 'pending',
@@ -533,8 +548,7 @@ export function BookingSchedulesPage() {
 
       // Reset form
       setBook('')
-      setComment('')
-      setHomework('')
+      setReport(emptyLessonReport())
       setImages([])
       setAttendanceStatus('present')
     } catch (error) {
@@ -701,9 +715,16 @@ export function BookingSchedulesPage() {
                 const allowed = isAttendanceAllowed(selectedBooking)
                 return (
                   <div className="flex flex-col items-end gap-1.5">
-                    <Button 
-                      variant="primary" 
-                      onClick={() => setShowAttendanceModal(true)} 
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        // Form mới tinh cho mỗi buổi — tránh nội dung buổi trước dính sang học viên khác
+                        setBook('')
+                        setReport(emptyLessonReport())
+                        setImages([])
+                        setAttendanceStatus('present')
+                        setShowAttendanceModal(true)
+                      }}
                       disabled={!allowed}
                       className="flex items-center gap-1.5"
                     >
@@ -1044,29 +1065,10 @@ export function BookingSchedulesPage() {
               />
             </div>
 
-            {/* Comments */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">{t('attendance.comment')}</label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-                placeholder={t('sched.comment_ph')}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Homework */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">{t('attendance.homework')}</label>
-              <textarea
-                value={homework}
-                onChange={(e) => setHomework(e.target.value)}
-                rows={2}
-                placeholder={t('sched.homework_ph')}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-              />
-            </div>
+            {/* Structured lesson report (only when student is present) */}
+            {attendanceStatus === 'present' && (
+              <LessonReportForm value={report} onChange={setReport} />
+            )}
 
             {/* Evidence image uploads */}
             <div className="space-y-1.5">

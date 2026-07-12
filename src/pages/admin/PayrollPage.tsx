@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, getDocs, updateDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Payroll, Teacher, Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -98,16 +98,40 @@ export function PayrollPage() {
     tp.teacher.name.toLowerCase().includes(search.toLowerCase())
   )
 
+  // Chưa trả (trong danh sách đang lọc) — dùng cho "Chọn tất cả"
+  const unpaidTeacherIds = filteredTeacherPayrolls.filter((tp) => !tp.paid).map((tp) => tp.teacher.id)
+  const allUnpaidSelected = unpaidTeacherIds.length > 0 && unpaidTeacherIds.every((id) => selected.has(id))
+
+  const toggleSelectAll = () => {
+    if (allUnpaidSelected) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(unpaidTeacherIds))
+    }
+  }
+
   const handleMarkPaid = async () => {
     if (selected.size === 0) return
     setPaying(true)
     try {
-      for (const teacherId of selected) {
-        const tPayrolls = payrolls.filter((p) => p.teacherId === teacherId)
-        for (const p of tPayrolls) {
-          await updateDoc(doc(db, 'payroll', p.id), { paid: true, paidAt: serverTimestamp() })
+      // Firestore giới hạn 500 thao tác/batch — chia lô để trả cho hàng trăm GV một lần
+      let batch = writeBatch(db)
+      let ops = 0
+      const flushIfFull = async () => {
+        if (ops >= 450) {
+          await batch.commit()
+          batch = writeBatch(db)
+          ops = 0
         }
-        await addDoc(collection(db, 'adminLogs'), {
+      }
+      for (const teacherId of selected) {
+        const tPayrolls = payrolls.filter((p) => p.teacherId === teacherId && !p.paid)
+        for (const p of tPayrolls) {
+          batch.update(doc(db, 'payroll', p.id), { paid: true, paidAt: serverTimestamp() })
+          ops++
+          await flushIfFull()
+        }
+        batch.set(doc(collection(db, 'adminLogs')), {
           adminId: user?.uid || '',
           action: 'MARK_PAID',
           targetType: 'payroll',
@@ -115,7 +139,10 @@ export function PayrollPage() {
           changes: { month, teacherId },
           createdAt: serverTimestamp(),
         })
+        ops++
+        await flushIfFull()
       }
+      if (ops > 0) await batch.commit()
       toast.success(`Đã đánh dấu thanh toán cho ${selected.size} giáo viên`)
       setSelected(new Set())
     } catch {
@@ -193,6 +220,29 @@ export function PayrollPage() {
           * Lưu ý: Lương hiển thị của từng giáo viên có thu nhập trên 2.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
         </p>
       </Card>
+
+      {/* Select all */}
+      {filteredTeacherPayrolls.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3">
+          <label className={`flex items-center gap-2.5 text-sm font-medium select-none ${unpaidTeacherIds.length === 0 ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'}`}>
+            <input
+              type="checkbox"
+              aria-label="Chọn tất cả giáo viên chưa trả lương"
+              checked={allUnpaidSelected}
+              disabled={unpaidTeacherIds.length === 0}
+              ref={(el) => { if (el) el.indeterminate = !allUnpaidSelected && selected.size > 0 }}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 accent-indigo-500"
+            />
+            Chọn tất cả chưa trả ({unpaidTeacherIds.length} giáo viên)
+          </label>
+          {selected.size > 0 && (
+            <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1">
+              Đã chọn {selected.size} giáo viên — bấm "Đánh dấu đã trả" để thanh toán 1 lần
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Per teacher */}
       <div className="space-y-3">

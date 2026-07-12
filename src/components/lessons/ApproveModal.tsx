@@ -240,6 +240,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             comment: lesson.comment || '',
             homework: lesson.homework || '',
             book: lesson.book || '',
+            pages: lesson.pages || '',
+            report: lesson.report || null,
+            rating: lesson.rating ?? null,
             imageURLs: lesson.imageURLs || [],
             status: 'approved',
             createdAt: lesson.createdAt || serverTimestamp(),
@@ -324,6 +327,18 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <div className="flex justify-between gap-4">
             <span className="text-slate-500 flex-shrink-0">Sách học</span>
             <span className="text-[#3BB8EB] font-bold truncate max-w-[150px]" title={lesson.book}>{lesson.book}</span>
+          </div>
+        )}
+        {lesson.pages && (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 flex-shrink-0">Trang học</span>
+            <span className="text-slate-700 font-medium truncate max-w-[180px]" title={lesson.pages}>{lesson.pages}</span>
+          </div>
+        )}
+        {typeof lesson.rating === 'number' && lesson.rating > 0 && (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 flex-shrink-0">Chấm điểm buổi học</span>
+            <span className="text-amber-500 font-bold">{'★'.repeat(lesson.rating)}{'☆'.repeat(Math.max(0, 5 - lesson.rating))} ({lesson.rating}/5)</span>
           </div>
         )}
 

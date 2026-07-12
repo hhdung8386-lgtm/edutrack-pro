@@ -144,6 +144,17 @@ export interface Subject {
   currency?: string
 }
 
+// Báo cáo buổi học có cấu trúc (form điểm danh mẫu mới).
+// Bài cũ không có các field này -> luôn optional, hiển thị fallback qua `comment`.
+export interface LessonReport {
+  knowledgeDone: boolean
+  knowledgeComment: string
+  gamesDone: boolean
+  gamesComment: string
+  exercisesDone: boolean
+  exercisesComment: string
+}
+
 export interface Lesson {
   id: string
   studentId: string
@@ -159,6 +170,9 @@ export interface Lesson {
   comment: string
   homework: string
   book?: string
+  pages?: string
+  report?: LessonReport | null
+  rating?: number | null
   imageURLs: string[]
   status: 'pending' | 'approved' | 'rejected'
   attendanceStatus?: 'present' | 'with_permission' | 'without_permission'
