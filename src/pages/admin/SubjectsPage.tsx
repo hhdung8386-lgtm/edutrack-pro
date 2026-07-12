@@ -112,20 +112,50 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     },
   })
 
+  // Ghi nhận giá đang nhập dở (nếu có) vào countryPrices để không bị mất khi bấm "Lưu thay đổi"
+  const saveCountryPrice = (): Record<string, { price: number; currency: string; isDefault?: boolean }> | null => {
+    const currency = COUNTRY_CURRENCY_MAP[selectedCountry].currency
+    const parsed = currency === 'USD' ? parseFloat(priceInput) : parseVietnameseNumber(priceInput)
+    if (isNaN(parsed) || parsed <= 0) {
+      toast.error('Vui lòng nhập đơn giá hợp lệ')
+      return null
+    }
+    const next = {
+      ...countryPrices,
+      [selectedCountry]: {
+        price: parsed,
+        currency,
+        isDefault: selectedCountry === 'VN'
+      }
+    }
+    setCountryPrices(next)
+    setPriceInput('')
+    setEditingCountry(null)
+    return next
+  }
+
   const onSubmit = async (data: FormData) => {
     try {
-      if (!countryPrices.VN) {
+      // Nếu còn giá đang nhập dở chưa bấm "Lưu"/"Thêm", tự động ghi nhận trước khi lưu form
+      let effectivePrices = countryPrices
+      if (priceInput.trim()) {
+        const committed = saveCountryPrice()
+        if (!committed) return
+        effectivePrices = committed
+      }
+
+      if (!effectivePrices.VN) {
         toast.error('Vui lòng thiết lập đơn giá mặc định cho Việt Nam')
         return
       }
 
-      const newRateVN = countryPrices.VN.price;
-      const newRatePH = countryPrices.PH?.price || newRateVN;
-      const newRateNative = countryPrices.US?.price || newRateVN;
-      const newCurrency = countryPrices.VN.currency || 'VND';
+      const newRateVN = effectivePrices.VN.price;
+      const newRatePH = effectivePrices.PH?.price || newRateVN;
+      const newRateNative = effectivePrices.US?.price || newRateVN;
+      const newCurrency = effectivePrices.VN.currency || 'VND';
 
       const other: Record<string, number> = {}
-      Object.entries(countryPrices).forEach(([c, i]) => {
+      Object.entries(effectivePrices).forEach(([c, i]) => {
         if (c !== 'VN' && c !== 'PH') {
           other[c] = i.price
         }
@@ -140,7 +170,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           pricePerMinutePH: newRatePH,
           pricePerMinuteNative: newRateNative,
           otherCountriesPrices: other,
-          countryPrices,
+          countryPrices: effectivePrices,
           currency: newCurrency,
           updatedAt: serverTimestamp()
         }
@@ -173,8 +203,8 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                 pricePerMinutePH: newRatePH,
                 pricePerMinuteNative: newRateNative,
                 otherCountriesPrices: other,
-                countryPrices,
-                currency: newCurrency 
+                countryPrices: effectivePrices,
+                currency: newCurrency
               }
             }
             return sub;
@@ -192,7 +222,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             updateObj.pricePerMinutePH = newRatePH;
             updateObj.pricePerMinuteNative = newRateNative;
             updateObj.otherCountriesPrices = other;
-            updateObj.countryPrices = countryPrices;
+            updateObj.countryPrices = effectivePrices;
             updateObj.currency = newCurrency;
           }
 
@@ -227,7 +257,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
 
           let rate = newRateVN;
           let cur = newCurrency;
-          const rateObj = countryPrices[teacherCountry] || countryPrices['VN'];
+          const rateObj = effectivePrices[teacherCountry] || effectivePrices['VN'];
           if (rateObj) {
             rate = rateObj.price;
             cur = rateObj.currency;
@@ -285,7 +315,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           pricePerMinutePH: newRatePH,
           pricePerMinuteNative: newRateNative,
           otherCountriesPrices: other,
-          countryPrices,
+          countryPrices: effectivePrices,
           currency: newCurrency,
           createdAt: serverTimestamp()
         }
@@ -362,6 +392,14 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                   type="text"
                   value={priceInput}
                   onChange={(e) => setPriceInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (saveCountryPrice()) {
+                        toast.success(editingCountry ? 'Đã cập nhật đơn giá!' : 'Đã thêm đơn giá mới!')
+                      }
+                    }
+                  }}
                   placeholder={COUNTRY_CURRENCY_MAP[selectedCountry]?.currency === 'USD' ? '0.12' : '2.500'}
                   className="w-full rounded-lg bg-white border border-slate-200 text-slate-900 pl-3 pr-12 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
                 />
@@ -372,24 +410,9 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
               <button
                 type="button"
                 onClick={() => {
-                  const currency = COUNTRY_CURRENCY_MAP[selectedCountry].currency
-                  const parsed = currency === 'USD' ? parseFloat(priceInput) : parseVietnameseNumber(priceInput)
-                  if (isNaN(parsed) || parsed <= 0) {
-                    toast.error('Vui lòng nhập đơn giá hợp lệ')
-                    return
+                  if (saveCountryPrice()) {
+                    toast.success(editingCountry ? 'Đã cập nhật đơn giá!' : 'Đã thêm đơn giá mới!')
                   }
-                  
-                  setCountryPrices((prev) => ({
-                    ...prev,
-                    [selectedCountry]: {
-                      price: parsed,
-                      currency,
-                      isDefault: selectedCountry === 'VN'
-                    }
-                  }))
-                  setPriceInput('')
-                  setEditingCountry(null)
-                  toast.success(editingCountry ? 'Đã cập nhật đơn giá!' : 'Đã thêm đơn giá mới!')
                 }}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition min-h-[42px] flex items-center justify-center gap-1 shadow-sm shadow-indigo-100"
               >
