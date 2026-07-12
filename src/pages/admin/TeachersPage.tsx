@@ -4,7 +4,6 @@ import { db } from '@/lib/firebase'
 import { Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { StatusBadge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
@@ -89,6 +88,74 @@ function GradeSelector({ teacherId, currentGrade }: { teacherId: string; current
               <span className={`w-2 h-2 rounded-full ${GRADE_STYLES[g].dot}`} />
               <span className={`${GRADE_STYLES[g].badge.split(' ')[1]}`}>Cấp {g}</span>
               {currentGrade === g && <span className="ml-auto text-emerald-500">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const STATUS_STYLES: Record<'active' | 'inactive', { badge: string; dot: string; label: string }> = {
+  active: { badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 hover:bg-emerald-200', dot: 'bg-emerald-400', label: 'Đang dạy' },
+  inactive: { badge: 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200', dot: 'bg-slate-400', label: 'Tạm dừng' },
+}
+
+function StatusSelector({ teacherId, currentStatus }: { teacherId: string; currentStatus: 'active' | 'inactive' }) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleSelect = async (status: 'active' | 'inactive') => {
+    setOpen(false)
+    if (status === currentStatus) return
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), { status })
+      toast.success(`Đã chuyển giáo viên sang "${STATUS_STYLES[status].label}"`)
+    } catch {
+      toast.error('Lỗi khi cập nhật trạng thái')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const style = STATUS_STYLES[currentStatus] || STATUS_STYLES.active
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
+        disabled={saving}
+        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${style.badge} ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        aria-label="Đổi trạng thái giáo viên"
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+        {style.label}
+        <ChevronDown className="w-3 h-3 opacity-60" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[120px]">
+          {(['active', 'inactive'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={(e) => { e.stopPropagation(); handleSelect(s) }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${
+                currentStatus === s ? 'bg-slate-50' : ''
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${STATUS_STYLES[s].dot}`} />
+              <span className={STATUS_STYLES[s].badge.split(' ')[1]}>{STATUS_STYLES[s].label}</span>
+              {currentStatus === s && <span className="ml-auto text-emerald-500">✓</span>}
             </button>
           ))}
         </div>
@@ -397,7 +464,9 @@ export function TeachersPage() {
                           {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'
                         </span>
                       </td>
-                      <td className="px-4 py-3"><StatusBadge status={teacher.status} type="teacher" /></td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <StatusSelector teacherId={teacher.id} currentStatus={teacher.status} />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button
@@ -439,7 +508,9 @@ export function TeachersPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-mono text-xs text-emerald-400">{teacher.code}</span>
-                      <StatusBadge status={teacher.status} type="teacher" />
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <StatusSelector teacherId={teacher.id} currentStatus={teacher.status} />
+                      </span>
                       {teacher.teacherGrade && (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${GRADE_STYLES[teacher.teacherGrade].badge}`}>
                           Cấp {teacher.teacherGrade}
