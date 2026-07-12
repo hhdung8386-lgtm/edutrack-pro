@@ -171,40 +171,13 @@ export function FutureBookingsPage() {
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
           const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
 
-          const nextSubjects = (studentData.subjects || []).map((sub) => {
-            const refundForSub = studentBookings
-              .filter(b => b.subjectId === sub.subjectId)
-              .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-
-            if (refundForSub > 0) {
-              const nextRem = (sub.remainingMinutes || 0) + refundForSub
-              return {
-                ...sub,
-                remainingMinutes: nextRem,
-                remainingSessions: Math.floor(nextRem / 25)
-              }
-            }
-            return sub
-          })
-
-          let nextRemainingSessions = studentData.remainingSessions
-          let nextRemainingMinutes = studentData.remainingMinutes
-          const refundForPrimary = studentBookings
-            .filter(b => b.subjectId === studentData.subjectId)
-            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-
-          if (refundForPrimary > 0 && typeof studentData.remainingMinutes === 'number') {
-            nextRemainingMinutes = (studentData.remainingMinutes || 0) + refundForPrimary
-            nextRemainingSessions = Math.floor(nextRemainingMinutes / 25)
-          }
-
-          // Firestore rejects undefined values — only write legacy fields when they are real numbers
+          // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
+          // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
+          // remainingMinutes here would double-refund the student (matches handleRelease in
+          // BookingRequestsPage and executeBatchCancel in BookingSchedulesPage).
           tx.update(studentRef, {
             reservedMinutes: nextHeld,
             heldMinutes: nextHeld,
-            subjects: nextSubjects,
-            ...(typeof nextRemainingMinutes === 'number' ? { remainingMinutes: nextRemainingMinutes } : {}),
-            ...(typeof nextRemainingSessions === 'number' ? { remainingSessions: nextRemainingSessions } : {}),
             updatedAt: serverTimestamp(),
           })
 
