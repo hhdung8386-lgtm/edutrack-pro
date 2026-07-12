@@ -134,8 +134,12 @@ export function FutureBookingsPage() {
         bookingsByStudent[b.studentId].push(b)
       })
 
-      // Run a transaction per student to update their minutes and documents safely
-      for (const [studentId, studentBookings] of Object.entries(bookingsByStudent)) {
+      // Run a transaction per student to update their minutes and documents safely.
+      // Chunk large selections to stay under Firestore's 500-writes-per-transaction limit.
+      const CHUNK_SIZE = 400
+      for (const [studentId, allStudentBookings] of Object.entries(bookingsByStudent)) {
+        for (let i = 0; i < allStudentBookings.length; i += CHUNK_SIZE) {
+        const studentBookings = allStudentBookings.slice(i, i + CHUNK_SIZE)
         const totalMinutesToRefund = studentBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
 
         await runTransaction(db, async (tx) => {
@@ -174,12 +178,13 @@ export function FutureBookingsPage() {
             nextRemainingSessions = Math.floor(nextRemainingMinutes / 25)
           }
 
+          // Firestore rejects undefined values — only write legacy fields when they are real numbers
           tx.update(studentRef, {
             reservedMinutes: nextHeld,
             heldMinutes: nextHeld,
             subjects: nextSubjects,
-            remainingMinutes: nextRemainingMinutes,
-            remainingSessions: nextRemainingSessions,
+            ...(typeof nextRemainingMinutes === 'number' ? { remainingMinutes: nextRemainingMinutes } : {}),
+            ...(typeof nextRemainingSessions === 'number' ? { remainingSessions: nextRemainingSessions } : {}),
             updatedAt: serverTimestamp(),
           })
 
@@ -208,6 +213,7 @@ export function FutureBookingsPage() {
             createdAt: serverTimestamp(),
           })
         })
+        }
       }
 
       toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả phút cho học viên tương ứng.`)
