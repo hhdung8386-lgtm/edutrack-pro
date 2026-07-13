@@ -328,6 +328,26 @@ export function BookingSchedulesPage() {
     getDocs(q).then((snap) => {
       const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
       setSelectedStudentBookings(list)
+
+      // Once bookings are known, make sure the pre-selected package actually has
+      // available minutes (remaining - already booked). If not, switch to the first
+      // package that does, so admins are not blocked by an exhausted default package.
+      const subs = selectedStudent.subjects || []
+      if (subs.length > 1) {
+        const availableOf = (subjectId: string) => {
+          const pkg = subs.find(s => s.subjectId === subjectId)
+          if (!pkg) return 0
+          const booked = list
+            .filter((b) => b.subjectId === subjectId && !b.lessonId)
+            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+          return Math.max(0, (pkg.remainingMinutes || 0) - booked)
+        }
+        setSelectedSubjectId((currentId) => {
+          if (currentId && availableOf(currentId) > 0) return currentId
+          const better = subs.find(s => availableOf(s.subjectId) > 0)
+          return better ? better.subjectId : currentId
+        })
+      }
     }).catch((error) => {
       console.error('Error loading student booking requests:', error)
     })
@@ -540,8 +560,11 @@ export function BookingSchedulesPage() {
   const handleStudentSelect = (student: Student) => {
     setSelectedStudent(student)
     setClassroomURL(student.classroomURL || '')
-    // Pre-select first active subject if available
-    const activeSub = student.subjects?.[0]
+    // Pre-select the first subject package that still has remaining minutes,
+    // so an exhausted/negative package (e.g. old tutor package) is not selected by default
+    const subs = student.subjects || []
+    const subWithBalance = subs.find(s => (s.remainingMinutes || 0) > 0)
+    const activeSub = subWithBalance || subs[0]
     if (activeSub) {
       setSelectedSubjectId(activeSub.subjectId)
     } else {
@@ -573,11 +596,6 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const computedHeldMinutes = selectedStudentBookings
-      .filter((b) => !b.lessonId)
-      .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-    const fund = getStudentMinuteFund(selectedStudent, computedHeldMinutes)
-
     const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
     const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
     const currentHour = now.getUTCHours()
@@ -603,7 +621,10 @@ export function BookingSchedulesPage() {
 
       if (isRecurring) {
         // For recurring, check future offset weeks
-        const maxSessions = Math.floor(Math.min(fund.available, availableSubjectMinutes) / duration)
+        // Cap by the selected subject package's available minutes (remaining - already booked).
+        // Do NOT use the student's global fund here: one exhausted/negative package must not
+        // block scheduling on another package that still has minutes.
+        const maxSessions = Math.floor(availableSubjectMinutes / duration)
         let sessionsScheduled = 0
         let weekIndex = 0
         while (sessionsScheduled < maxSessions) {
@@ -677,7 +698,9 @@ export function BookingSchedulesPage() {
 
         if (!isRecurring) {
           totalRequired = selectedSlots.length * duration
-          if (fund.available < totalRequired || availableSubjectMinutes < totalRequired) {
+          // Gate on the selected subject package only. The global fund can be dragged to 0
+          // by another exhausted/over-drawn package and must not block this package.
+          if (availableSubjectMinutes < totalRequired) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
           totalScheduled = selectedSlots.length
@@ -711,7 +734,7 @@ export function BookingSchedulesPage() {
             })
           }
         } else {
-          const maxSessions = Math.floor(Math.min(fund.available, availableSubjectMinutes) / duration)
+          const maxSessions = Math.floor(availableSubjectMinutes / duration)
           if (maxSessions === 0) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
@@ -1660,12 +1683,19 @@ export function BookingSchedulesPage() {
                 </label>
 
                 {isRecurring && (() => {
-                  const fund = getStudentMinuteFund(selectedStudent)
-                  const maxWeeks = Math.floor(fund.available / duration)
+                  // Estimate based on the selected subject package (same rule as the scheduling transaction)
+                  const pkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
+                  const bookedForSubject = selectedStudentBookings
+                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+                  const availableForSubject = pkg ? Math.max(0, (pkg.remainingMinutes || 0) - bookedForSubject) : 0
+                  const maxSessions = Math.floor(availableForSubject / duration)
+                  const slotsPerWeek = Math.max(1, selectedSlots.length)
+                  const maxWeeks = Math.ceil(maxSessions / slotsPerWeek)
                   return (
                     <div className="mt-2 text-xs font-bold text-indigo-600 border-t border-slate-200/50 pt-2 flex justify-between">
                       <span>Dự kiến xếp liên tục:</span>
-                      <span>{maxWeeks} tuần ({maxWeeks} ca)</span>
+                      <span>{maxWeeks} tuần ({maxSessions} ca)</span>
                     </div>
                   )
                 })()}

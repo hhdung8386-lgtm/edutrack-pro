@@ -93,8 +93,15 @@ export function FutureBookingsPage() {
       return matchesStudent && matchesSearch && matchesDate && matchesDayOfWeek
     })
 
-    // Sort by Date then Start Time
+    // Sort by Student Name A-Z (Vietnamese locale), then Student Code (so
+    // different students sharing a name stay grouped), then Date, then Start Time
     return [...filtered].sort((a, b) => {
+      const nameA = (a.studentName || '').trim()
+      const nameB = (b.studentName || '').trim()
+      const nameCompare = nameA.localeCompare(nameB, 'vi', { sensitivity: 'base' })
+      if (nameCompare !== 0) return nameCompare
+      const codeCompare = (a.studentCode || '').localeCompare(b.studentCode || '')
+      if (codeCompare !== 0) return codeCompare
       const dateA = a.requestedDate || ''
       const dateB = b.requestedDate || ''
       if (dateA !== dateB) return dateA.localeCompare(dateB)

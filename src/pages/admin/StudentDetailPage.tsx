@@ -279,39 +279,13 @@ export function StudentDetailPage() {
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
         const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
 
-        const nextSubjects = (studentData.subjects || []).map((sub) => {
-          const refundForSub = targetBookings
-            .filter(b => b.subjectId === sub.subjectId)
-            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-          
-          if (refundForSub > 0) {
-            const nextRem = (sub.remainingMinutes || 0) + refundForSub
-            return {
-              ...sub,
-              remainingMinutes: nextRem,
-              remainingSessions: Math.floor(nextRem / 25)
-            }
-          }
-          return sub
-        })
-
-        let nextRemainingSessions = studentData.remainingSessions
-        let nextRemainingMinutes = studentData.remainingMinutes
-        const refundForPrimary = targetBookings
-          .filter(b => b.subjectId === studentData.subjectId)
-          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-          
-        if (refundForPrimary > 0 && typeof studentData.remainingMinutes === 'number') {
-          nextRemainingMinutes = (studentData.remainingMinutes || 0) + refundForPrimary
-          nextRemainingSessions = Math.floor(nextRemainingMinutes / 25)
-        }
-
+        // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
+        // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
+        // subjects[].remainingMinutes here would double-refund the student (matches the fix
+        // in FutureBookingsPage and executeBatchCancel in BookingSchedulesPage).
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
           heldMinutes: nextHeld,
-          subjects: nextSubjects,
-          remainingMinutes: nextRemainingMinutes,
-          remainingSessions: nextRemainingSessions,
           updatedAt: serverTimestamp(),
         })
 
