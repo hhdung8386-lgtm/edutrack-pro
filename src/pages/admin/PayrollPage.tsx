@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Payroll, Teacher, Lesson } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatVND, getCurrentMonth, formatMoney, formatPricePerMinute } from '@/lib/constants'
-import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2 } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
@@ -36,7 +36,8 @@ export function PayrollPage() {
   useEffect(() => {
     const q = query(collection(db, 'payroll'), where('month', '==', month))
     return onSnapshot(q, (snap) => {
-      setPayrolls(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Payroll)))
+      // Bỏ các dòng đã void (hủy duyệt / xóa thưởng-trừ) khỏi bảng lương
+      setPayrolls(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Payroll)).filter((p) => !p.voided))
     })
   }, [month])
 
@@ -149,6 +150,23 @@ export function PayrollPage() {
       toast.error('Có lỗi xảy ra')
     } finally {
       setPaying(false)
+    }
+  }
+
+  // "Xóa" khoản thưởng/trừ = void (rules không cho delete payroll) — amount về 0 và ẩn khỏi bảng
+  const voidAdjustment = async (p: Payroll) => {
+    if (!window.confirm(`Xóa khoản ${p.amount >= 0 ? 'thưởng' : 'khấu trừ'} ${formatMoney(Math.abs(p.amount), p.currency)} (${p.adjustmentNote || 'không ghi chú'})?`)) return
+    try {
+      await updateDoc(doc(db, 'payroll', p.id), {
+        voided: true,
+        amount: 0,
+        voidedAt: serverTimestamp(),
+        voidedBy: user?.uid || '',
+      })
+      toast.success('Đã xóa khoản thưởng/khấu trừ')
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể xóa, vui lòng thử lại')
     }
   }
 
@@ -276,7 +294,14 @@ export function PayrollPage() {
                 )}
                 <div className="min-w-0">
                   <p className="font-medium text-slate-700 truncate">{teacher.name}</p>
-                  <p className="text-xs text-slate-500">×{teacher.level} · {tp.length} buổi · {minutes} phút</p>
+                  <p className="text-xs text-slate-500">
+                    ×{teacher.level} · {tp.filter(p => p.type !== 'adjustment').length} buổi · {minutes} phút
+                    {tp.some(p => p.type === 'adjustment') && (
+                      <span className="ml-1.5 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200/60 rounded-md px-1.5 py-0.5">
+                        {tp.filter(p => p.type === 'adjustment').length} thưởng/trừ
+                      </span>
+                    )}
+                  </p>
                   {teacher.bankAccountNo ? (
                     <p className="text-[11px] text-emerald-600 font-semibold mt-0.5 font-mono">
                       STK: {teacher.bankAccountNo} - {teacher.bankName} ({teacher.bankAccountName})
@@ -329,6 +354,33 @@ export function PayrollPage() {
                   </thead>
                   <tbody>
                     {tp.map((p) => {
+                      if (p.type === 'adjustment') {
+                        const isBonus = p.amount >= 0
+                        return (
+                          <tr key={p.id} className={`border-b border-slate-200/30 ${isBonus ? 'bg-emerald-50/40' : 'bg-rose-50/40'}`}>
+                            <td colSpan={5} className="px-5 py-2.5">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md mr-2 ${isBonus ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
+                                {isBonus ? <Gift className="w-3 h-3" /> : <MinusCircle className="w-3 h-3" />}
+                                {isBonus ? 'Thưởng' : 'Khấu trừ'}
+                              </span>
+                              <span className="text-slate-600 font-medium">{p.adjustmentNote || '—'}</span>
+                              {!p.paid && (
+                                <button
+                                  type="button"
+                                  onClick={() => voidAdjustment(p)}
+                                  className="ml-2 text-slate-300 hover:text-rose-500 transition-colors align-middle"
+                                  title="Xóa khoản này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 inline" />
+                                </button>
+                              )}
+                            </td>
+                            <td className={`px-5 py-2.5 text-right font-bold ${isBonus ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {isBonus ? '+' : ''}{formatMoney(p.amount, p.currency)}
+                            </td>
+                          </tr>
+                        )
+                      }
                       const lesson = lessons.find(l => l.id === p.lessonId)
                       return (
                         <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
@@ -376,6 +428,14 @@ export function PayrollPage() {
                     })()}
                   </tbody>
                 </table>
+                <AdjustmentBar
+                  teacherId={teacher.id}
+                  teacherName={teacher.name}
+                  teacherLevel={teacher.level}
+                  month={month}
+                  currency={tp[0]?.currency || 'VND'}
+                  adminUid={user?.uid || ''}
+                />
               </div>
             )}
           </Card>
@@ -384,6 +444,126 @@ export function PayrollPage() {
         {filteredTeacherPayrolls.length === 0 && (
           <p className="text-center text-slate-500 py-12">Không có dữ liệu lương tháng này</p>
         )}
+      </div>
+    </div>
+  )
+}
+
+// Thanh thêm Thưởng / Khấu trừ cho một giáo viên trong tháng đang xem.
+// Tạo doc payroll type='adjustment' (lessonId rỗng, minutes 0) — tự cộng vào tổng lương,
+// đi theo luồng "Đánh dấu đã trả" và xuất CSV sẵn có.
+function AdjustmentBar({ teacherId, teacherName, teacherLevel, month, currency, adminUid }: {
+  teacherId: string
+  teacherName: string
+  teacherLevel: number
+  month: string
+  currency: string
+  adminUid: string
+}) {
+  const [mode, setMode] = useState<null | 'bonus' | 'deduction'>(null)
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const reset = () => { setMode(null); setAmount(''); setNote('') }
+
+  const save = async () => {
+    const value = Math.abs(Number(String(amount).replace(/[^\d]/g, '')))
+    if (!value) { toast.warning('Vui lòng nhập số tiền hợp lệ'); return }
+    if (!note.trim()) { toast.warning('Vui lòng nhập lý do (VD: Thưởng chuyên cần tháng 7)'); return }
+    setSaving(true)
+    try {
+      await addDoc(collection(db, 'payroll'), {
+        teacherId,
+        teacherName,
+        lessonId: '',
+        type: 'adjustment',
+        adjustmentNote: note.trim(),
+        amount: mode === 'bonus' ? value : -value,
+        minutes: 0,
+        pricePerMinute: 0,
+        level: teacherLevel,
+        month,
+        currency,
+        paid: false,
+        createdBy: adminUid,
+        createdAt: serverTimestamp(),
+      })
+      toast.success(mode === 'bonus' ? `Đã thêm thưởng ${formatMoney(value, currency)}` : `Đã thêm khấu trừ ${formatMoney(value, currency)}`)
+      reset()
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể lưu, vui lòng thử lại')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!mode) {
+    return (
+      <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Điều chỉnh lương:</span>
+        <button
+          type="button"
+          onClick={() => setMode('bonus')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/70 text-emerald-700 text-xs font-bold transition-all active:scale-95"
+        >
+          <Gift className="w-3.5 h-3.5" />
+          Thêm thưởng
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('deduction')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200/70 text-rose-600 text-xs font-bold transition-all active:scale-95"
+        >
+          <MinusCircle className="w-3.5 h-3.5" />
+          Thêm khấu trừ
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`px-5 py-3.5 border-t space-y-2.5 ${mode === 'bonus' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
+      <p className={`text-xs font-bold flex items-center gap-1.5 ${mode === 'bonus' ? 'text-emerald-700' : 'text-rose-600'}`}>
+        {mode === 'bonus' ? <Gift className="w-4 h-4" /> : <MinusCircle className="w-4 h-4" />}
+        {mode === 'bonus' ? 'Thêm thưởng cho giáo viên' : 'Thêm khấu trừ lương'}
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={amount ? Number(String(amount).replace(/[^\d]/g, '')).toLocaleString('vi-VN') : ''}
+          onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
+          placeholder={`Số tiền (${currency})`}
+          className="h-9 w-full sm:w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold outline-none focus:border-indigo-500 tabular-nums"
+        />
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={120}
+          placeholder="Lý do (VD: Thưởng chuyên cần / Trừ đi trễ...)"
+          className="h-9 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-indigo-500"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={save}
+            className={`h-9 px-4 rounded-lg text-white text-xs font-bold transition disabled:opacity-50 ${mode === 'bonus' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+          >
+            {saving ? 'Đang lưu...' : 'Lưu'}
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={reset}
+            className="h-9 px-3 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 transition"
+          >
+            Hủy
+          </button>
+        </div>
       </div>
     </div>
   )

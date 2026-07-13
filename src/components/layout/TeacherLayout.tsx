@@ -1,5 +1,6 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { missingTeacherFields } from '@/lib/teacherProfile'
 import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange } from 'lucide-react'
 import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
@@ -16,7 +17,10 @@ export function TeacherLayout() {
   const { user, teacherId } = useAuthStore()
   const { lang, setLang, t } = useLanguageStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [profileReminder, setProfileReminder] = useState<{ missingPhoto: boolean } | null>(null)
+  // null = chưa biết (đang tải) — chỉ chặn khi chắc chắn hồ sơ thiếu
+  const [profileMissingCount, setProfileMissingCount] = useState<number | null>(null)
   
   // Real-time clock and timezone states
   const [timezoneOffset, setTimezoneOffset] = useState<number>(7)
@@ -83,11 +87,20 @@ export function TeacherLayout() {
         setTimezoneOffset(offset)
         const missingPhoto = !teacherData.photoURL
         setProfileReminder(missingPhoto ? { missingPhoto } : null)
+        setProfileMissingCount(missingTeacherFields(teacherData as Teacher).length)
       }
     })
 
     return unsub
   }, [teacherId])
+
+  // Hồ sơ chưa hoàn thiện -> khóa mọi trang, đưa về Hồ sơ để điền đủ (trừ trang Hợp đồng)
+  useEffect(() => {
+    if (profileMissingCount === null || profileMissingCount === 0) return
+    const path = location.pathname
+    if (path.startsWith('/teacher/profile') || path.startsWith('/teacher/contract')) return
+    navigate('/teacher/profile?setupRequired=true', { replace: true })
+  }, [profileMissingCount, location.pathname, navigate])
 
   // Real-time booking schedules notification listener
   useEffect(() => {
@@ -133,46 +146,49 @@ export function TeacherLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Desktop header */}
-      <header className="hidden lg:flex fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 items-center px-6 z-30 gap-4 shadow-sm">
-        <div className="flex items-center gap-3 flex-1">
-          <Logo className="h-9 w-auto max-w-[145px]" />
-          <span className="text-xs font-bold text-[#3BB8EB] uppercase tracking-wider border-l border-slate-200 pl-3 mr-1">{t('nav.teacher')}</span>
-          <span className="inline-block text-xs font-mono font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/50">
-            {formatTime()}
+      {/* Desktop header — mọi nhãn giữ 1 dòng (whitespace-nowrap), đồng hồ gọn, không cho wrap xấu */}
+      <header className="hidden lg:flex fixed top-0 left-0 right-0 h-16 bg-white/95 backdrop-blur border-b border-slate-200 items-center px-4 xl:px-6 z-30 gap-3 shadow-sm">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Logo className="h-9 w-auto max-w-[130px]" />
+          <span className="text-[11px] font-bold text-[#3BB8EB] uppercase tracking-wider border-l border-slate-200 pl-2.5 whitespace-nowrap">{t('nav.teacher')}</span>
+          <span
+            className="inline-flex items-center whitespace-nowrap text-[11px] font-mono font-bold text-slate-500 bg-slate-100/80 px-2 py-1 rounded-lg border border-slate-200/50 tabular-nums"
+            title={formatTime()}
+          >
+            {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
           </span>
         </div>
 
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-0.5 xl:gap-1 flex-1 justify-center min-w-0 overflow-x-auto hide-scrollbar">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
-                ${isActive ? 'bg-[#3BB8EB]/10 text-[#3BB8EB]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`
+                `flex items-center gap-1.5 xl:gap-2 px-2.5 xl:px-3.5 py-2 rounded-xl text-[13px] font-semibold whitespace-nowrap transition-all duration-200
+                ${isActive ? 'bg-[#3BB8EB]/10 text-[#2196F3] shadow-[inset_0_0_0_1px_rgba(59,184,235,0.25)]' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`
               }
             >
-              <item.icon className="w-4 h-4" />
+              <item.icon className="w-4 h-4 shrink-0" />
               {t(item.labelKey)}
             </NavLink>
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
+        <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200 shrink-0">
           {/* Notifications bell drawer */}
           <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
 
           {/* Language toggle */}
           <button
             onClick={toggleLang}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all whitespace-nowrap"
             title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
           >
             <Globe className="w-3.5 h-3.5" />
             {lang === 'vi' ? 'EN' : 'VI'}
           </button>
-          <span className="text-xs text-slate-500 hidden xl:block">{user?.email}</span>
+          <span className="text-[11px] text-slate-400 hidden 2xl:block max-w-[180px] truncate" title={user?.email || ''}>{user?.email}</span>
           <button onClick={handleSignOut} className="p-2 text-slate-400 hover:text-rose-500 transition-colors" title={t('nav.signout')}>
             <LogOut className="w-4 h-4" />
           </button>
@@ -201,7 +217,21 @@ export function TeacherLayout() {
 
       <main className="min-h-screen">
         <div className="pt-14 lg:pt-16 pb-20 lg:pb-6 px-4 sm:px-6 py-6">
-          {profileReminder && (
+          {profileMissingCount !== null && profileMissingCount > 0 && (
+            <div className="mx-auto mb-4 max-w-4xl rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-950 shadow-sm">
+              <p className="text-sm font-bold">
+                {lang === 'vi'
+                  ? `Hồ sơ của bạn còn thiếu ${profileMissingCount} mục bắt buộc`
+                  : `Your profile is missing ${profileMissingCount} required fields`}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-rose-700">
+                {lang === 'vi'
+                  ? 'Vui lòng hoàn thiện đầy đủ hồ sơ (kể cả ảnh đại diện) trước khi sử dụng các chức năng khác. Các ô còn thiếu được đánh dấu màu đỏ.'
+                  : 'Please complete your full profile (including profile photo) before using other features. Missing fields are highlighted in red.'}
+              </p>
+            </div>
+          )}
+          {profileReminder && profileMissingCount === 0 && (
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>

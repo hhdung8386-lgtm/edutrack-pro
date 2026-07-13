@@ -199,6 +199,10 @@ export interface Payroll {
   teacherId: string
   teacherName: string
   lessonId: string
+  /** 'adjustment' = khoản thưởng (amount > 0) hoặc khấu trừ (amount < 0) do admin thêm tay */
+  type?: 'adjustment'
+  adjustmentNote?: string
+  createdBy?: string
   amount: number
   minutes: number
   pricePerMinute: number

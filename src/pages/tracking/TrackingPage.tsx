@@ -21,6 +21,8 @@ export function TrackingPage() {
   const [notFound, setNotFound] = useState(false)
   const [studentResult, setStudentResult] = useState<{ student: Student; lessons: Lesson[] } | null>(null)
   const [teacherResult, setTeacherResult] = useState<{ teacher: Teacher; lessonCount: number } | null>(null)
+  // Nickname giáo viên (mã đăng nhập kiểu "Mirabelle") — phụ huynh không thấy tên thật
+  const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const prefill = searchParams.get('student') || searchParams.get('teacher')
@@ -53,6 +55,24 @@ export function TrackingPage() {
         const lessons = lSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
         lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
         setStudentResult({ student, lessons })
+
+        // Lấy nickname (code) của các giáo viên xuất hiện trong lịch sử
+        const teacherIds = Array.from(new Set(lessons.map(l => l.teacherId).filter(Boolean)))
+        if (teacherIds.length > 0) {
+          const nickEntries = await Promise.all(teacherIds.map(async (tid) => {
+            try {
+              const tSnap = await getDocs(query(collection(db, 'teachers'), where('__name__', '==', tid)))
+              if (tSnap.empty) return null
+              const t = tSnap.docs[0].data() as Teacher
+              const codeVal = (t.code || '').trim()
+              const nick = codeVal && !/^GV[A-Z0-9]{4,}$/i.test(codeVal) ? codeVal : t.name
+              return [tid, nick] as const
+            } catch { return null }
+          }))
+          const map: Record<string, string> = {}
+          for (const e of nickEntries) if (e) map[e[0]] = e[1]
+          setTeacherNicks(map)
+        }
 
         setSearchParams({ student: c })
       } else {
@@ -170,6 +190,7 @@ export function TrackingPage() {
           <StudentResult
             student={studentResult.student}
             lessons={studentResult.lessons}
+            teacherNicks={teacherNicks}
             onBack={reset}
           />
         ) : teacherResult ? (
@@ -184,7 +205,7 @@ export function TrackingPage() {
   )
 }
 
-function StudentResult({ student, lessons, onBack }: { student: Student; lessons: Lesson[]; onBack: () => void }) {
+function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { student: Student; lessons: Lesson[]; teacherNicks?: Record<string, string>; onBack: () => void }) {
   const usedPctRaw = student.totalSessions > 0
     ? Math.round((student.usedSessions / student.totalSessions) * 100)
     : 0
@@ -282,7 +303,7 @@ function StudentResult({ student, lessons, onBack }: { student: Student; lessons
               <div key={lesson.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-500">{lesson.date}</span>
-                  <span className="text-slate-600">{lesson.teacherName} · {lesson.minutes}'</span>
+                  <span className="text-slate-600">{teacherNicks[lesson.teacherId] || lesson.teacherName} · {lesson.minutes}'</span>
                 </div>
                 {lesson.comment && (
                   <div>

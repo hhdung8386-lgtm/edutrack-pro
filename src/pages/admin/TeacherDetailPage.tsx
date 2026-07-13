@@ -833,12 +833,8 @@ export function TeacherDetailPage() {
                   <span className="text-slate-500">Tên đăng nhập: </span>
                   <span className="text-indigo-600 font-bold font-mono">{teacher.code}</span>
                 </div>
-                {teacher.bio && (
-                  <div className="sm:col-span-2">
-                    <span className="text-slate-500">Giới thiệu: </span>
-                    <span className="text-slate-600 italic">{teacher.bio}</span>
-                  </div>
-                )}
+                {/* Câu giới thiệu — admin điền trực tiếp, phụ huynh sẽ thấy ở cổng phụ huynh */}
+                <InlineBioEditor teacherId={teacher.id} bio={teacher.bio || ''} onSaved={(bio) => setTeacher(prev => prev ? { ...prev, bio } : prev)} />
                 {teacher.bankAccountNo && (
                   <div className="sm:col-span-2 bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
@@ -1979,6 +1975,82 @@ export function TeacherDetailPage() {
       )}
 
       {showEdit && <TeacherFormModal teacher={teacher} onClose={() => setShowEdit(false)} />}
+    </div>
+  )
+}
+
+// Ô sửa nhanh "Câu giới thiệu" ngay trên trang chi tiết — không cần mở modal Sửa.
+// Nội dung này hiển thị cho phụ huynh ở cổng phụ huynh (kèm nickname giáo viên).
+function InlineBioEditor({ teacherId, bio, onSaved }: { teacherId: string; bio: string; onSaved: (bio: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(bio)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), { bio: draft.trim(), updatedAt: serverTimestamp() })
+      onSaved(draft.trim())
+      toast.success('Đã lưu câu giới thiệu')
+      setEditing(false)
+    } catch (err) {
+      console.error(err)
+      toast.error('Không thể lưu câu giới thiệu')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="sm:col-span-2 flex items-start gap-2">
+        <div className="min-w-0">
+          <span className="text-slate-500">Giới thiệu: </span>
+          {bio
+            ? <span className="text-slate-600 italic">"{bio}"</span>
+            : <span className="text-slate-400 italic">Chưa có câu giới thiệu (phụ huynh sẽ thấy phần này)</span>}
+        </div>
+        <button
+          type="button"
+          onClick={() => { setDraft(bio); setEditing(true) }}
+          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline flex-shrink-0 mt-0.5"
+        >
+          {bio ? 'Sửa' : 'Thêm'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="sm:col-span-2 space-y-2">
+      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Câu giới thiệu (phụ huynh thấy được)</label>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={2}
+        maxLength={300}
+        placeholder="VD: Cô Mirabelle có 5 năm kinh nghiệm luyện phát âm cho trẻ em, phong cách vui vẻ, kiên nhẫn..."
+        className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={save}
+          className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition disabled:opacity-50"
+        >
+          {saving ? 'Đang lưu...' : 'Lưu giới thiệu'}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => setEditing(false)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 transition"
+        >
+          Hủy
+        </button>
+        <span className="text-[10px] text-slate-400 ml-auto">{draft.length}/300</span>
+      </div>
     </div>
   )
 }

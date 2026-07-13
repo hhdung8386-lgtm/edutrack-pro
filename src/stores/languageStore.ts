@@ -54,6 +54,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'attendance.submitted': { vi: 'Đã gửi điểm danh!', en: 'Attendance submitted!' },
   'attendance.wait_admin': { vi: 'Chờ admin duyệt...', en: 'Waiting for admin approval...' },
   'attendance.submit_success': { vi: 'Đã gửi điểm danh, chờ admin duyệt', en: 'Attendance submitted, awaiting admin approval' },
+  'attendance.subject': { vi: 'Môn học', en: 'Subject' },
   'attendance.submit_fail': { vi: 'Gửi điểm danh thất bại', en: 'Failed to submit attendance' },
   'attendance.uploading': { vi: 'Ảnh đang tải lên — vui lòng chờ hoặc bấm X gỡ ảnh đang tải rồi gửi lại', en: 'Images are still uploading — please wait or remove the uploading image, then submit again' },
   'attendance.teacher_info': { vi: 'Giáo viên', en: 'Teacher' },

@@ -226,6 +226,16 @@ interface TeacherLite {
   name: string
   photoURL?: string
   country?: string
+  code?: string
+  bio?: string
+}
+
+// Phụ huynh/học viên chỉ thấy NICKNAME của giáo viên (mã đăng nhập kiểu "Mirabelle"),
+// không thấy tên thật. Mã hệ cũ dạng GVxxxx không phải nickname -> đành dùng tên.
+function teacherNickname(t: TeacherLite | undefined, fallbackName?: string) {
+  const code = (t?.code || '').trim()
+  if (code && !/^GV[A-Z0-9]{4,}$/i.test(code)) return code
+  return t?.name || fallbackName || ''
 }
 
 function ParentView({ student, lessons, bookings, onBack }: { student: Student; lessons: Lesson[]; bookings: BookingRequest[]; onBack: () => void }) {
@@ -250,7 +260,13 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           const snap = await getDoc(doc(db, 'teachers', id))
           if (!snap.exists()) return null
           const t = snap.data() as Teacher
-          return [id, { name: t.name, photoURL: t.photoURL || undefined, country: t.country || undefined }] as const
+          return [id, {
+            name: t.name,
+            photoURL: t.photoURL || undefined,
+            country: t.country || undefined,
+            code: t.code || undefined,
+            bio: t.bio || undefined,
+          }] as const
         } catch { return null }
       })
     ).then((entries) => {
@@ -550,16 +566,19 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center gap-3">
                 <TeacherAvatar
-                  name={selectedParentBooking.teacherName || '?'}
+                  name={teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherName) || '?'}
                   photoURL={teacherMap[selectedParentBooking.teacherId]?.photoURL}
                   country={teacherMap[selectedParentBooking.teacherId]?.country}
                   size={44}
                 />
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">
                     {lang === 'vi' ? 'Giáo viên' : 'Teacher'}
                   </span>
-                  <span className="text-sm font-bold text-slate-800 block mt-1">{selectedParentBooking.teacherName}</span>
+                  <span className="text-sm font-bold text-slate-800 block mt-1">{teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherName)}</span>
+                  {teacherMap[selectedParentBooking.teacherId]?.bio && (
+                    <p className="text-[11px] text-slate-500 italic mt-1 leading-snug">"{teacherMap[selectedParentBooking.teacherId]?.bio}"</p>
+                  )}
                 </div>
               </div>
 
@@ -632,13 +651,13 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <TeacherAvatar
-                name={detailLesson.teacherName || '?'}
+                name={teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherName) || '?'}
                 photoURL={teacherMap[detailLesson.teacherId]?.photoURL}
                 country={teacherMap[detailLesson.teacherId]?.country}
                 size={48}
               />
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900 truncate">{detailLesson.teacherName}</p>
+                <p className="text-sm font-bold text-slate-900 truncate">{teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherName)}</p>
                 <p className="text-xs text-slate-500 truncate">{detailLesson.subjectName}</p>
                 <p className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
                   {detailLesson.date} · {detailLesson.minutes} {lang === 'vi' ? 'phút' : 'min'}
@@ -797,7 +816,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 {dayFull[parseISODate(nextBooking.requestedDate || '').getDay()]}, {nextBooking.requestedDate?.split('-').reverse().join('/')} · {nextBooking.requestedStart}
               </p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                {nextBooking.teacherName} · {nextBooking.subjectName}
+                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)} · {nextBooking.subjectName}
               </p>
             </div>
             {roomLinkOf(nextBooking) && (
@@ -892,7 +911,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
         <section className="animate-slide-up [animation-delay:180ms]">
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 flex items-center gap-3">
             <TeacherAvatar
-              name={nextBooking.teacherName || '?'}
+              name={teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName) || '?'}
               photoURL={teacherMap[nextBooking.teacherId]?.photoURL}
               country={teacherMap[nextBooking.teacherId]?.country}
               size={44}
@@ -901,7 +920,10 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 {lang === 'vi' ? 'Giáo viên buổi tới' : 'Next Teacher'}
               </p>
-              <p className="text-[13px] font-bold text-slate-900 truncate mt-0.5">{nextBooking.teacherName}</p>
+              <p className="text-[13px] font-bold text-slate-900 truncate mt-0.5">{teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)}</p>
+              {teacherMap[nextBooking.teacherId]?.bio && (
+                <p className="text-[11px] text-slate-500 italic truncate mt-0.5">"{teacherMap[nextBooking.teacherId]?.bio}"</p>
+              )}
             </div>
             <Sparkles className="w-4 h-4 text-amber-400 ml-auto flex-shrink-0" />
           </div>
@@ -1131,13 +1153,13 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                 className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/80 hover:bg-sky-50 border border-slate-100 transition text-left active:scale-[0.98]"
               >
                 <TeacherAvatar
-                  name={b.teacherName || '?'}
+                  name={teacherNickname(teacherMap[b.teacherId], b.teacherName) || '?'}
                   photoURL={teacherMap[b.teacherId]?.photoURL}
                   country={teacherMap[b.teacherId]?.country}
                   size={36}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-800 truncate">{b.teacherName} · {b.subjectName}</p>
+                  <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherName)} · {b.subjectName}</p>
                   <p className="text-[11px] text-slate-500 tabular-nums mt-0.5">{b.requestedStart} - {b.requestedEnd}</p>
                 </div>
                 <ChevronRightIcon className="w-4 h-4 text-slate-300 flex-shrink-0" />
@@ -1169,7 +1191,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                     <p className="text-[9px] font-bold text-slate-400 mt-0.5">T{parseISODate(b.requestedDate || '').getMonth() + 1}</p>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-800 truncate">{b.teacherName} · {b.subjectName}</p>
+                    <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherName)} · {b.subjectName}</p>
                     <p className="text-[11px] text-slate-500 tabular-nums mt-0.5 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {b.requestedStart} - {b.requestedEnd}
@@ -1200,7 +1222,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                 {dayFull[parseISODate(nextBooking.requestedDate || '').getDay()]}, {nextBooking.requestedDate?.split('-').reverse().join('/')} · {nextBooking.requestedStart}
               </p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                {nextBooking.teacherName} · {nextBooking.subjectName}
+                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)} · {nextBooking.subjectName}
               </p>
             </div>
             {roomLinkOf(nextBooking) && (
@@ -1352,13 +1374,13 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, onDetail, lang }: {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2.5">
                         <TeacherAvatar
-                          name={lesson.teacherName || '?'}
+                          name={teacherNickname(teacher, lesson.teacherName) || '?'}
                           photoURL={teacher?.photoURL}
                           country={teacher?.country}
                           size={40}
                         />
                         <div className="min-w-0">
-                          <p className="text-[13px] font-bold text-slate-900 truncate">{lesson.teacherName}</p>
+                          <p className="text-[13px] font-bold text-slate-900 truncate">{teacherNickname(teacher, lesson.teacherName)}</p>
                           <p className="text-[11px] text-slate-500 truncate">{lesson.subjectName}</p>
                         </div>
                       </div>
