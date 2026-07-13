@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
-import { uploadLessonImage } from '@/lib/imageUploader'
+import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
 import {
@@ -403,7 +403,7 @@ export function BookingSchedulesPage() {
         )
       }).catch((err) => {
         console.error(err)
-        toast.error('Không thể upload ảnh, vui lòng thử lại')
+        toast.error(uploadErrorMessage(err, lang === 'vi' ? 'vi' : 'en'))
         setImages((prev) => prev.filter((item) => item.url !== localPreviewUrl))
       })
     }
@@ -416,6 +416,13 @@ export function BookingSchedulesPage() {
   // Submit attendance from calendar booking slot
   const submitAttendance = async () => {
     if (!selectedBooking || !teacherId) return
+    // Chặn gửi khi còn ảnh đang tải — trước đây ảnh đang tải bị âm thầm bỏ khỏi điểm danh
+    if (images.some((i) => i.uploading)) {
+      toast.warning(lang === 'vi'
+        ? 'Ảnh đang được tải lên. Vui lòng chờ hoặc bấm X gỡ ảnh đang tải rồi gửi lại.'
+        : 'Images are still uploading. Please wait or remove the uploading image, then submit again.')
+      return
+    }
     const isPresent = attendanceStatus === 'present'
     const bookTitle = isPresent ? book.trim() : 'Học viên vắng'
 
@@ -1048,15 +1055,15 @@ export function BookingSchedulesPage() {
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       </div>
                     )}
-                    {!img.uploading && (
-                      <button
-                        type="button"
-                        onClick={() => removeImage(idx)}
-                        className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-0.5"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, giáo viên vẫn tự gỡ để gửi điểm danh */}
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-0.5"
+                      aria-label={`Remove image ${idx + 1}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))}
                 {images.length < 20 && (

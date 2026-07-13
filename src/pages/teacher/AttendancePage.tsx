@@ -22,7 +22,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { formatVND, getToday, MINUTE_PRESETS } from '@/lib/constants'
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
-import { uploadLessonImage } from '@/lib/imageUploader'
+import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -159,7 +159,7 @@ export function AttendancePage() {
         )
       }).catch((err) => {
         console.error(err)
-        toast.error('Không thể upload ảnh, vui lòng thử lại')
+        toast.error(uploadErrorMessage(err, lang === 'vi' ? 'vi' : 'en'))
         setImages((prev) => prev.filter((item) => item.url !== localPreviewUrl))
       })
     }
@@ -167,6 +167,12 @@ export function AttendancePage() {
 
   const removeImage = (idx: number) => {
     setImages((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  // Khi form không hợp lệ (vd thiếu tên sách), báo rõ lý do — tránh cảm giác "bấm nút không hoạt động"
+  const onSubmitInvalid = (errs: Record<string, { message?: string } | undefined>) => {
+    const first = Object.values(errs).find(Boolean)
+    toast.warning(first?.message || (lang === 'vi' ? 'Vui lòng kiểm tra lại thông tin điểm danh' : 'Please review the attendance form'))
   }
 
   const handleAttendanceStatus = (status: 'present' | 'with_permission' | 'without_permission') => {
@@ -458,7 +464,7 @@ export function AttendancePage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit, onSubmitInvalid)} className="space-y-4">
               <div>
                 <label htmlFor="attendance-date" className="block text-sm font-medium text-slate-600 mb-1.5">{t('attendance.date')}</label>
                 <input id="attendance-date" type="date" max={today}
@@ -549,13 +555,12 @@ export function AttendancePage() {
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         </div>
                       )}
-                      {!img.uploading && (
-                        <button type="button" onClick={() => removeImage(i)}
-                          className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center"
-                          aria-label={`Remove image ${i + 1}`}>
-                          <X className="w-3 h-3 text-white" />
-                        </button>
-                      )}
+                      {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, giáo viên vẫn tự gỡ để gửi điểm danh */}
+                      <button type="button" onClick={() => removeImage(i)}
+                        className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center"
+                        aria-label={`Remove image ${i + 1}`}>
+                        <X className="w-3 h-3 text-white" />
+                      </button>
                     </div>
                   ))}
                   {images.length < 20 && (
