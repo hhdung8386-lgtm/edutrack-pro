@@ -461,32 +461,6 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
           </section>
         )}
 
-        {/* Textbook/Book Link Card */}
-        {student.textbookURL && (
-          <section className="animate-slide-up [animation-delay:55ms]">
-            <div className="bg-gradient-to-r from-sky-50 to-sky-100/50 border border-sky-200/60 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-sky-100">
-              <div className="space-y-1">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-[#3BB8EB]" />
-                  {lang === 'vi' ? 'Giáo trình / Sách học viên' : 'Curriculum / Textbook'}
-                </h3>
-                <p className="text-xs text-slate-500 leading-normal">
-                  {lang === 'vi' ? 'Bấm vào đây để mở và xem sách học tập trực tuyến của học viên.' : 'Click here to open and view the online textbook for the student.'}
-                </p>
-              </div>
-              <a
-                href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200 hover:shadow-sky-300 transition-all flex items-center gap-1.5 flex-shrink-0"
-              >
-                {lang === 'vi' ? 'Xem sách học' : 'View Textbook'}
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </section>
-        )}
-
         {/* Subject Packages Section */}
         <section className="space-y-4 animate-slide-up [animation-delay:60ms]">
           <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight px-1">

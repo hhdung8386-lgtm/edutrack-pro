@@ -1831,23 +1831,6 @@ export function BookingSchedulesPage() {
                         </p>
                       </div>
                     )}
-                    {st?.textbookURL && (
-                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <span className="text-xs text-slate-500 font-semibold block">Link sách học viên:</span>
-                          <p className="text-[11px] text-slate-400 truncate">{st.textbookURL}</p>
-                        </div>
-                        <a
-                          href={st.textbookURL.startsWith('http') ? st.textbookURL : `https://${st.textbookURL}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-[#3BB8EB] text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-sky-200/50"
-                        >
-                          Mở sách học viên
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    )}
                   </>
                 )
               })()}

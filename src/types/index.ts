@@ -58,6 +58,7 @@ export interface Student {
   status: 'active' | 'inactive' | 'expired' | 'reserved'
   subjects?: StudentSubject[]
   classroomURL?: string
+  /** @deprecated Link sách giờ nằm trong gói môn học (StudentSubject.curriculumLink); field cũ có thể còn tồn tại trong dữ liệu Firestore */
   textbookURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp

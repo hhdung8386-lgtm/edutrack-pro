@@ -1275,20 +1275,6 @@ export function StudentDetailPage() {
                   </a>
                 </div>
               )}
-              {student.textbookURL && (
-                <div className="col-span-2 mt-1 flex items-center gap-1">
-                  <span className="text-slate-500">Link sách học viên: </span>
-                  <a
-                    href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#3BB8EB] hover:text-[#2da8db] underline font-medium inline-flex items-center gap-1"
-                  >
-                    Xem sách học viên
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">

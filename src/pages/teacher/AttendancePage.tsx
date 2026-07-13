@@ -405,19 +405,6 @@ export function AttendancePage() {
                       </a>
                     </div>
                   )}
-                  {student.textbookURL && (
-                    <div className="mt-2.5">
-                      <a
-                        href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 text-[#3BB8EB] hover:text-[#2da8db] hover:bg-sky-100 text-xs font-bold rounded-lg transition-colors"
-                      >
-                        Mở sách học viên
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  )}
                   {selectedPkg?.timetableNote && (
                     <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200/50 rounded-xl">
                       <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Note timetable học viên:</span>

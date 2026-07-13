@@ -847,23 +847,6 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
-                    {student?.textbookURL && (
-                      <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-xs text-slate-500 font-semibold block">{t('sched.textbook_link')}</span>
-                          <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
-                        </div>
-                        <a
-                          href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
-                        >
-                          {t('sched.open_textbook')}
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    )}
                     {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
                       <div className="mt-2 pt-3 border-t border-slate-100">
                         <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
@@ -982,23 +965,6 @@ export function BookingSchedulesPage() {
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
                         Mở GT bổ trợ
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  )}
-                  {student?.textbookURL && (
-                    <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
-                      <div className="min-w-0 flex-1">
-                        <span className="text-xs text-slate-500 font-semibold block">{t('sched.textbook_link')}</span>
-                        <p className="text-[11px] text-slate-400 truncate">{student.textbookURL}</p>
-                      </div>
-                      <a
-                        href={student.textbookURL.startsWith('http') ? student.textbookURL : `https://${student.textbookURL}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
-                      >
-                        {t('sched.open_textbook')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>

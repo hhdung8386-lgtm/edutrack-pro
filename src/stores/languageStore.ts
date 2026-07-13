@@ -269,8 +269,6 @@ const translations: Record<string, Record<Lang, string>> = {
   'sched.curriculum': { vi: 'Giáo trình môn học:', en: 'Curriculum:' },
   'sched.view_curriculum': { vi: 'Xem giáo trình', en: 'View Curriculum' },
   'sched.timetable_note': { vi: 'Note timetable học viên:', en: 'Student timetable note:' },
-  'sched.textbook_link': { vi: 'Link sách học viên:', en: 'Student textbook link:' },
-  'sched.open_textbook': { vi: 'Mở sách học viên', en: 'Open Textbook' },
   'sched.attendance_btn': { vi: 'Điểm danh ngay', en: 'Check Attendance' },
   'sched.close': { vi: 'Đóng', en: 'Close' },
   'sched.cancel': { vi: 'Hủy', en: 'Cancel' },
