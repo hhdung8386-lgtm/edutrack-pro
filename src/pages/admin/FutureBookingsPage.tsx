@@ -11,6 +11,7 @@ import { toast } from '@/stores/toastStore'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle } from 'lucide-react'
 
 export function FutureBookingsPage() {
@@ -23,6 +24,7 @@ export function FutureBookingsPage() {
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
+  const [confirmTargets, setConfirmTargets] = useState<BookingRequest[] | null>(null)
 
   // Search & Filter state
   const [selectedStudentId, setSelectedStudentId] = useState<string>(searchParams.get('studentId') || 'all')
@@ -116,12 +118,6 @@ export function FutureBookingsPage() {
   const handleCancelBookings = async (targetBookings: BookingRequest[]) => {
     if (targetBookings.length === 0) return
 
-    const confirmMessage = targetBookings.length === 1
-      ? `Hủy ca học ngày ${targetBookings[0].requestedDate} lúc ${targetBookings[0].requestedStart} của học viên ${targetBookings[0].studentName || ''}?`
-      : `Bạn có chắc chắn muốn hủy ${targetBookings.length} ca học đã chọn và hoàn lại số phút cho các học viên tương ứng?`
-
-    if (!window.confirm(confirmMessage)) return
-
     setCancelling(true)
     try {
       // Group bookings by studentId
@@ -134,52 +130,54 @@ export function FutureBookingsPage() {
         bookingsByStudent[b.studentId].push(b)
       })
 
-      // Run a transaction per student to update their minutes and documents safely
-      for (const [studentId, studentBookings] of Object.entries(bookingsByStudent)) {
+      // Run a transaction per student to update their minutes and documents safely.
+      // Chunk large selections to stay under Firestore's 500-writes-per-transaction limit.
+      const CHUNK_SIZE = 400
+      for (const [studentId, allStudentBookings] of Object.entries(bookingsByStudent)) {
+        for (let i = 0; i < allStudentBookings.length; i += CHUNK_SIZE) {
+        const studentBookings = allStudentBookings.slice(i, i + CHUNK_SIZE)
         const totalMinutesToRefund = studentBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
 
         await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', studentId)
           const studentSnap = await tx.get(studentRef)
-          if (!studentSnap.exists()) return
+
+          if (!studentSnap.exists()) {
+            // Student was deleted — release the orphaned bookings, nothing to refund
+            for (const booking of studentBookings) {
+              tx.update(doc(db, 'bookingRequests', booking.id), {
+                status: 'released',
+                releasedAt: serverTimestamp(),
+                releasedBy: user?.uid ?? 'admin',
+              })
+            }
+            tx.set(doc(collection(db, 'adminLogs')), {
+              adminId: user?.uid ?? 'admin',
+              action: 'CANCEL_ORPHANED_BOOKINGS_BULK',
+              targetType: 'student',
+              targetId: studentId,
+              changes: {
+                studentName: studentBookings[0]?.studentName || '',
+                cancelledCount: studentBookings.length,
+                cancelledIds: studentBookings.map(b => b.id),
+                note: 'Student document no longer exists; bookings released without refund',
+              },
+              createdAt: serverTimestamp(),
+            })
+            return
+          }
 
           const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
           const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
 
-          const nextSubjects = (studentData.subjects || []).map((sub) => {
-            const refundForSub = studentBookings
-              .filter(b => b.subjectId === sub.subjectId)
-              .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-
-            if (refundForSub > 0) {
-              const nextRem = (sub.remainingMinutes || 0) + refundForSub
-              return {
-                ...sub,
-                remainingMinutes: nextRem,
-                remainingSessions: Math.floor(nextRem / 25)
-              }
-            }
-            return sub
-          })
-
-          let nextRemainingSessions = studentData.remainingSessions
-          let nextRemainingMinutes = studentData.remainingMinutes
-          const refundForPrimary = studentBookings
-            .filter(b => b.subjectId === studentData.subjectId)
-            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-
-          if (refundForPrimary > 0 && typeof studentData.remainingMinutes === 'number') {
-            nextRemainingMinutes = (studentData.remainingMinutes || 0) + refundForPrimary
-            nextRemainingSessions = Math.floor(nextRemainingMinutes / 25)
-          }
-
+          // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
+          // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
+          // remainingMinutes here would double-refund the student (matches handleRelease in
+          // BookingRequestsPage and executeBatchCancel in BookingSchedulesPage).
           tx.update(studentRef, {
             reservedMinutes: nextHeld,
             heldMinutes: nextHeld,
-            subjects: nextSubjects,
-            remainingMinutes: nextRemainingMinutes,
-            remainingSessions: nextRemainingSessions,
             updatedAt: serverTimestamp(),
           })
 
@@ -208,13 +206,15 @@ export function FutureBookingsPage() {
             createdAt: serverTimestamp(),
           })
         })
+        }
       }
 
       toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả phút cho học viên tương ứng.`)
       setSelectedBookingIds([])
-    } catch (err) {
+      setConfirmTargets(null)
+    } catch (err: any) {
       console.error('Cancel bookings failed:', err)
-      toast.error('Gặp lỗi khi hủy các ca học đã chọn')
+      toast.error(`Gặp lỗi khi hủy các ca học đã chọn${err?.message ? `: ${err.message}` : ''}`)
     } finally {
       setCancelling(false)
     }
@@ -386,7 +386,7 @@ export function FutureBookingsPage() {
               loading={cancelling}
               onClick={() => {
                 const targets = futureBookings.filter((b) => selectedBookingIds.includes(b.id))
-                handleCancelBookings(targets)
+                if (targets.length > 0) setConfirmTargets(targets)
               }}
               className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
             >
@@ -470,7 +470,7 @@ export function FutureBookingsPage() {
                         <button
                           type="button"
                           disabled={cancelling}
-                          onClick={() => handleCancelBookings([booking])}
+                          onClick={() => setConfirmTargets([booking])}
                           className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
                           title="Hủy ca này"
                         >
@@ -485,6 +485,22 @@ export function FutureBookingsPage() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={!!confirmTargets}
+        onClose={() => { if (!cancelling) setConfirmTargets(null) }}
+        onConfirm={() => { if (confirmTargets) handleCancelBookings(confirmTargets) }}
+        title={confirmTargets && confirmTargets.length === 1 ? 'Hủy ca học' : `Hủy ${confirmTargets?.length ?? 0} ca học đã chọn`}
+        description={
+          confirmTargets && confirmTargets.length === 1
+            ? `Hủy ca học ngày ${confirmTargets[0].requestedDate} lúc ${confirmTargets[0].requestedStart} của học viên ${confirmTargets[0].studentName || ''}?`
+            : `Bạn có chắc chắn muốn hủy ${confirmTargets?.length ?? 0} ca học đã chọn và hoàn lại số phút cho các học viên tương ứng?`
+        }
+        consequence="Các ca học sẽ được giải phóng khỏi lịch giáo viên và số phút giữ chỗ được hoàn lại cho học viên."
+        confirmLabel="Hủy ca học"
+        confirmVariant="danger"
+        loading={cancelling}
+      />
     </div>
   )
 }
