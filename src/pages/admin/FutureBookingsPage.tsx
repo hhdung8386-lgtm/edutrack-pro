@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import {
   collection, query, where, onSnapshot, runTransaction, doc,
   serverTimestamp
@@ -472,7 +472,19 @@ export function FutureBookingsPage() {
                         </span>
                       </td>
                       <td className="p-3.5 text-slate-600">{booking.subjectName}</td>
-                      <td className="p-3.5 text-slate-600 font-medium">{booking.teacherName || 'Chưa phân công'}</td>
+                      <td className="p-3.5 font-medium">
+                        {booking.teacherId ? (
+                          <Link
+                            to={`/admin/booking-schedules?teacherId=${booking.teacherId}`}
+                            className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                            title="Mở lịch xếp lớp của giáo viên này"
+                          >
+                            {booking.teacherName}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-600">{booking.teacherName || 'Chưa phân công'}</span>
+                        )}
+                      </td>
                       <td className="p-3.5 text-center">
                         <button
                           type="button"

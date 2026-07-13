@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingRequest } from '@/types'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -1723,7 +1723,19 @@ export function StudentDetailPage() {
                 {filteredHistoryLessons.map((lesson) => (
                     <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
-                      <td className="px-4 py-3 text-slate-600">{lesson.teacherName}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {lesson.teacherId ? (
+                          <Link
+                            to={`/admin/booking-schedules?teacherId=${lesson.teacherId}`}
+                            className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+                            title="Mở lịch xếp lớp của giáo viên này"
+                          >
+                            {lesson.teacherName}
+                          </Link>
+                        ) : (
+                          lesson.teacherName
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-slate-600">
                         <select
                           value={lesson.subjectId || ''}

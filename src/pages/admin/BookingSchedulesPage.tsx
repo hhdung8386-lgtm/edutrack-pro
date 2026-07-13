@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search, User, BookOpen, Link, Check, AlertTriangle, Trash2, ExternalLink, X } from 'lucide-react'
 import { db } from '@/lib/firebase'
@@ -168,8 +169,11 @@ interface SelectedSlot {
 
 export function BookingSchedulesPage() {
   const { user } = useAuthStore()
+  const [searchParams] = useSearchParams()
   const [teachers, setTeachers] = useState<Teacher[]>([])
-  const [selectedTeacherId, setSelectedTeacherId] = useState('')
+  // Allow deep-linking to a specific teacher's schedule (e.g. from the student
+  // lesson history page): /admin/booking-schedules?teacherId=...
+  const [selectedTeacherId, setSelectedTeacherId] = useState(() => searchParams.get('teacherId') || '')
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [search, setSearch] = useState('')
@@ -236,7 +240,11 @@ export function BookingSchedulesPage() {
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
           .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
         setTeachers(items)
-        setSelectedTeacherId((current) => current || items[0]?.id || '')
+        // Keep the deep-linked/current teacher only if they exist in the active list,
+        // otherwise fall back to the first teacher
+        setSelectedTeacherId((current) =>
+          current && items.some((t) => t.id === current) ? current : (items[0]?.id || '')
+        )
 
         const avMap: Record<string, TeacherAvailability> = {}
         availSnap.docs.forEach(docSnap => {
@@ -252,6 +260,17 @@ export function BookingSchedulesPage() {
     }
     loadTeachersAndAvailability()
   }, [])
+
+  // When arriving via deep link (?teacherId=...), scroll the selected teacher
+  // into view in the sidebar list once teachers are loaded
+  useEffect(() => {
+    if (loading) return
+    const target = searchParams.get('teacherId')
+    if (!target) return
+    const el = document.querySelector(`[data-teacher-id="${target}"]`)
+    if (el) el.scrollIntoView({ block: 'center' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   // Load students for scheduling
   useEffect(() => {
@@ -1277,6 +1296,7 @@ export function BookingSchedulesPage() {
               <button
                 key={teacher.id}
                 type="button"
+                data-teacher-id={teacher.id}
                 onClick={() => {
                   setSelectedTeacherId(teacher.id)
                   setSelectedSlots([])
