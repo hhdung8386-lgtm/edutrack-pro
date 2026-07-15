@@ -42,6 +42,7 @@ export interface Student {
   code: string
   name: string
   parentPhone: string
+  email?: string
   subjectId: string
   subjectName?: string
   branchId?: string
@@ -85,6 +86,8 @@ export interface Teacher {
   // Interview fields
   yob?: number
   livingArea?: string
+  /** Đã hoàn thành Chương trình Đào tạo Gia sư tại 123English (60 giờ) — admin xác nhận */
+  trainedAt123English?: boolean
   degreeType?: string
   university?: string
   major?: string

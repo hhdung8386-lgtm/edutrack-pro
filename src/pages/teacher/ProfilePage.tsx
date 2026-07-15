@@ -10,10 +10,56 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
-import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
+import { uploadTeacherPhoto, uploadLessonImage, deleteUploadedImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { missingTeacherFields } from '@/lib/teacherProfile'
-import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, X, Trash2, Link, Play, Camera, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { ImageLightbox } from '@/components/shared/ImageLightbox'
+import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
+
+type BilingualOption = {
+  value: string
+  vi: string
+  en: string
+}
+
+const LANGUAGE_OPTIONS: BilingualOption[] = [
+  { value: 'Tiếng Anh Giao Tiếp', vi: 'Tiếng Anh Giao Tiếp', en: 'Conversational English' },
+  { value: 'Tiếng Anh Trẻ Em', vi: 'Tiếng Anh Trẻ Em', en: 'English for Children' },
+  { value: 'Tiếng Anh Thiếu Niên', vi: 'Tiếng Anh Thiếu Niên', en: 'English for Teenagers' },
+  { value: 'Tiếng Anh Người Đi Làm', vi: 'Tiếng Anh Người Đi Làm', en: 'English for Working Adults' },
+  { value: 'Cambridge Starters/Movers/Flyers/KET/PET', vi: 'Cambridge Starters/Movers/Flyers/KET/PET', en: 'Cambridge Starters/Movers/Flyers/KET/PET' },
+  { value: 'IELTS', vi: 'IELTS', en: 'IELTS' },
+  { value: 'TOEIC', vi: 'TOEIC', en: 'TOEIC' },
+  { value: 'TOEFL', vi: 'TOEFL', en: 'TOEFL' },
+  { value: 'Tiếng Trung (HSK)', vi: 'Tiếng Trung (HSK)', en: 'Chinese (HSK)' },
+  { value: 'Tiếng Nhật (JLPT)', vi: 'Tiếng Nhật (JLPT)', en: 'Japanese (JLPT)' },
+  { value: 'Tiếng Hàn (TOPIK)', vi: 'Tiếng Hàn (TOPIK)', en: 'Korean (TOPIK)' },
+]
+
+const ACADEMIC_OPTIONS: BilingualOption[] = [
+  { value: 'Toán Học', vi: 'Toán Học', en: 'Mathematics' },
+  { value: 'Vật Lý', vi: 'Vật Lý', en: 'Physics' },
+  { value: 'Hóa Học', vi: 'Hóa Học', en: 'Chemistry' },
+  { value: 'Sinh Học', vi: 'Sinh Học', en: 'Biology' },
+  { value: 'Ngữ Văn', vi: 'Ngữ Văn', en: 'Literature' },
+  { value: 'Lịch Sử', vi: 'Lịch Sử', en: 'History' },
+  { value: 'Địa Lý', vi: 'Địa Lý', en: 'Geography' },
+  { value: 'Tin Học', vi: 'Tin Học', en: 'Computer Science' },
+  { value: 'Khoa Học Tự Nhiên', vi: 'Khoa Học Tự Nhiên', en: 'Natural Sciences' },
+  { value: 'Tiếng Việt', vi: 'Tiếng Việt', en: 'Vietnamese' },
+  { value: 'Luyện Thi Chuyển Cấp', vi: 'Luyện Thi Chuyển Cấp', en: 'Secondary School Entrance Exam Preparation' },
+  { value: 'Luyện Thi THPT Quốc Gia', vi: 'Luyện Thi THPT Quốc Gia', en: 'National High School Graduation Exam Preparation' },
+  { value: 'Chương Trình Quốc Tế SAT/ACT', vi: 'Chương Trình Quốc Tế SAT/ACT', en: 'International Programs: SAT/ACT' },
+]
+
+const STRENGTH_OPTIONS: BilingualOption[] = [
+  { value: 'pronunciation', vi: 'Phát âm chuẩn', en: 'Clear, accurate pronunciation' },
+  { value: 'patience', vi: 'Kiên nhẫn', en: 'Patient' },
+  { value: 'lesson_plans', vi: 'Có giáo án riêng', en: 'Provides own lesson plans' },
+  { value: 'close_followup', vi: 'Theo sát học viên', en: 'Closely monitors students' },
+  { value: 'progress_reports', vi: 'Báo cáo tiến độ định kỳ', en: 'Regular progress reports' },
+  { value: 'tools_proficiency', vi: 'Sử dụng Zoom/Meet thành thạo', en: 'Proficient with Zoom/Meet' },
+]
 
 export function ProfilePage() {
   const { teacherId } = useAuthStore()
@@ -28,9 +74,9 @@ export function ProfilePage() {
   const [bankName, setBankName] = useState('')
   const [bankAccountNo, setBankAccountNo] = useState('')
   const [bankAccountName, setBankAccountName] = useState('')
-  const [savingBank, setSavingBank] = useState(false)
 
   // ─── Hồ sơ bắt buộc (setup gate) ───
+  const [fullName, setFullName] = useState('')
   const [gender, setGender] = useState('')
   const [yob, setYob] = useState('')
   const [livingArea, setLivingArea] = useState('')
@@ -38,7 +84,17 @@ export function ProfilePage() {
   const [university, setUniversity] = useState('')
   const [major, setMajor] = useState('')
   const [teachingYears, setTeachingYears] = useState('')
+  const [studentsTaughtCount, setStudentsTaughtCount] = useState('')
+  const [studentAgesTaught, setStudentAgesTaught] = useState('')
+  const [teachingFormats, setTeachingFormats] = useState<string[]>([])
+  const [studentResults, setStudentResults] = useState('')
+  const [strengths, setStrengths] = useState<string[]>([])
+  const [otherStrengths, setOtherStrengths] = useState('')
+  const [languagesTaught, setLanguagesTaught] = useState<string[]>([])
+  const [academicSubjectsTaught, setAcademicSubjectsTaught] = useState<string[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [certUploadingIndex, setCertUploadingIndex] = useState<number | null>(null)
+  const [certImageView, setCertImageView] = useState<string | null>(null)
   const [savingProfile, setSavingProfile] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
 
@@ -51,6 +107,7 @@ export function ProfilePage() {
   // Sync state when teacher data loads
   useEffect(() => {
     if (teacher) {
+      setFullName(teacher.name || '')
       setBankName(teacher.bankName || '')
       setBankAccountNo(teacher.bankAccountNo || '')
       setBankAccountName(teacher.bankAccountName || '')
@@ -63,12 +120,21 @@ export function ProfilePage() {
       setUniversity(teacher.university || '')
       setMajor(teacher.major || '')
       setTeachingYears(teacher.teachingYears ? String(teacher.teachingYears) : '')
+      setStudentsTaughtCount(teacher.studentsTaughtCount ? String(teacher.studentsTaughtCount) : '')
+      setStudentAgesTaught(teacher.studentAgesTaught || '')
+      setTeachingFormats(teacher.teachingFormats || [])
+      setStudentResults(teacher.studentResults || '')
+      setStrengths(teacher.strengths || [])
+      setOtherStrengths(teacher.otherStrengths || '')
+      setLanguagesTaught(teacher.languagesTaught || [])
+      setAcademicSubjectsTaught(teacher.academicSubjectsTaught || [])
     }
   }, [teacher])
 
   // Bản nháp hiện tại (đang gõ) để kiểm tra thiếu trường realtime
   const draftProfile: Partial<Teacher> = {
     ...(teacher || {}),
+    name: fullName,
     photoURL: teacher?.photoURL || '',
     gender: (gender || undefined) as Teacher['gender'],
     yob: yob ? Number(yob) : undefined,
@@ -77,6 +143,14 @@ export function ProfilePage() {
     university,
     major,
     teachingYears: teachingYears ? Number(teachingYears) : undefined,
+    studentsTaughtCount: studentsTaughtCount ? Number(studentsTaughtCount) : undefined,
+    studentAgesTaught,
+    teachingFormats,
+    studentResults,
+    strengths,
+    otherStrengths,
+    languagesTaught,
+    academicSubjectsTaught,
     bankName,
     bankAccountNo,
     bankAccountName,
@@ -90,19 +164,48 @@ export function ProfilePage() {
       : 'border-slate-200 bg-slate-50'
 
   const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget
     const file = e.target.files?.[0]
     if (!file || !teacherId) return
     setPhotoUploading(true)
     try {
-      const url = await uploadLessonImage(teacherId, file)
-      await updateDoc(doc(db, 'teachers', teacherId), { photoURL: url })
+      const url = await uploadTeacherPhoto(teacherId, file)
+      try {
+        await updateDoc(doc(db, 'teachers', teacherId), { photoURL: url })
+      } catch (updateError) {
+        // Storage succeeded but Firestore failed: remove the orphaned file so
+        // repeated attempts do not leave unused billable objects behind.
+        await deleteUploadedImage(url).catch((cleanupError) => {
+          console.warn('Failed to clean up uploaded profile photo:', cleanupError)
+        })
+        throw updateError
+      }
       setTeacher(prev => prev ? { ...prev, photoURL: url } : prev)
       toast.success(lang === 'vi' ? 'Đã cập nhật ảnh đại diện!' : 'Profile photo updated!')
     } catch (err) {
       console.error(err)
       toast.error(uploadErrorMessage(err, lang === 'vi' ? 'vi' : 'en'))
     } finally {
+      // Allow choosing the same file again after a transient upload error.
+      input.value = ''
       setPhotoUploading(false)
+    }
+  }
+
+  // Upload ảnh chứng chỉ lên Firebase Storage (không dùng base64 nữa — base64 làm
+  // phình document teachers, dễ vượt 1MB gây lỗi lưu; và trình duyệt chặn mở data: URI)
+  const handleCertUpload = async (index: number, file: File, input: HTMLInputElement) => {
+    if (!teacherId) return
+    setCertUploadingIndex(index)
+    try {
+      const url = await uploadLessonImage(teacherId, file)
+      setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: url, status: 'pending' } : c))
+    } catch (err) {
+      console.error(err)
+      toast.error(uploadErrorMessage(err, lang === 'vi' ? 'vi' : 'en'))
+    } finally {
+      input.value = ''
+      setCertUploadingIndex(null)
     }
   }
 
@@ -120,6 +223,7 @@ export function ProfilePage() {
     setSavingProfile(true)
     try {
       await updateDoc(doc(db, 'teachers', teacherId), {
+        name: fullName.trim(),
         gender,
         yob: Number(yob),
         livingArea: livingArea.trim(),
@@ -127,13 +231,23 @@ export function ProfilePage() {
         university: university.trim(),
         major: major.trim(),
         teachingYears: Number(teachingYears),
+        studentsTaughtCount: Number(studentsTaughtCount),
+        studentAgesTaught: studentAgesTaught.trim(),
+        teachingFormats,
+        studentResults: studentResults.trim(),
+        strengths,
+        otherStrengths: otherStrengths.trim(),
+        languagesTaught,
+        academicSubjectsTaught,
         bankName: bankName.trim(),
         bankAccountNo: bankAccountNo.replace(/\s+/g, ''),
         bankAccountName: bankAccountName.toUpperCase(),
       })
       setTeacher(prev => prev ? {
-        ...prev, gender: gender as Teacher['gender'], yob: Number(yob), livingArea, degreeType, university, major,
-        teachingYears: Number(teachingYears), bankName, bankAccountNo, bankAccountName,
+        ...prev, name: fullName.trim(), gender: gender as Teacher['gender'], yob: Number(yob), livingArea, degreeType, university, major,
+        teachingYears: Number(teachingYears), studentsTaughtCount: Number(studentsTaughtCount), studentAgesTaught,
+        teachingFormats, studentResults, strengths, otherStrengths, languagesTaught, academicSubjectsTaught,
+        bankName, bankAccountNo, bankAccountName,
       } : prev)
       toast.success(lang === 'vi' ? 'Hồ sơ đã hoàn thiện! Bạn có thể sử dụng đầy đủ chức năng.' : 'Profile completed! All features unlocked.')
       if (setupRequired) navigate('/teacher/attendance')
@@ -142,30 +256,6 @@ export function ProfilePage() {
       toast.error(lang === 'vi' ? 'Không thể lưu hồ sơ, vui lòng thử lại' : 'Failed to save profile')
     } finally {
       setSavingProfile(false)
-    }
-  }
-
-  const handleSaveBank = async () => {
-    if (!teacherId) return
-    setSavingBank(true)
-    try {
-      await updateDoc(doc(db, 'teachers', teacherId), {
-        bankName,
-        bankAccountNo: bankAccountNo.replace(/\s+/g, ''),
-        bankAccountName: bankAccountName.toUpperCase()
-      })
-      setTeacher(prev => prev ? { 
-        ...prev, 
-        bankName, 
-        bankAccountNo: bankAccountNo.replace(/\s+/g, ''), 
-        bankAccountName: bankAccountName.toUpperCase() 
-      } : null)
-      toast.success('Đã cập nhật thông tin tài khoản ngân hàng!')
-    } catch (err) {
-      console.error(err)
-      toast.error('Không thể cập nhật thông tin ngân hàng')
-    } finally {
-      setSavingBank(false)
     }
   }
 
@@ -374,6 +464,15 @@ export function ProfilePage() {
 
           {/* Các trường bắt buộc */}
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Họ và tên *' : 'Full name *'}</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={lang === 'vi' ? 'VD: Nguyễn Văn A' : 'E.g. Maria Santos'}
+                autoComplete="name"
+                className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('name')}`} />
+              <p className="mt-1 text-[10px] text-slate-400">
+                {lang === 'vi' ? 'Tên này sẽ hiển thị trong danh sách giáo viên của Admin.' : 'This name will appear in the Admin teacher list.'}
+              </p>
+            </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Giới tính *' : 'Gender *'}</label>
               <select value={gender} onChange={(e) => setGender(e.target.value)}
@@ -390,7 +489,7 @@ export function ProfilePage() {
             </div>
             <div className="col-span-2">
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Khu vực sinh sống *' : 'Living area *'}</label>
-              <input type="text" value={livingArea} onChange={(e) => setLivingArea(e.target.value)} placeholder={lang === 'vi' ? 'VD: Quận 7, TP.HCM' : 'E.g: District 7, HCMC'}
+              <input type="text" value={livingArea} onChange={(e) => setLivingArea(e.target.value)} placeholder="Province/City of residence"
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('livingArea')}`} />
             </div>
             <div>
@@ -406,11 +505,6 @@ export function ProfilePage() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Số năm kinh nghiệm *' : 'Teaching years *'}</label>
-              <input type="number" value={teachingYears} onChange={(e) => setTeachingYears(e.target.value)} placeholder="VD: 3" min={1} max={50}
-                className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('teachingYears')}`} />
-            </div>
-            <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Trường ĐH/CĐ *' : 'University *'}</label>
               <input type="text" value={university} onChange={(e) => setUniversity(e.target.value)} placeholder={lang === 'vi' ? 'VD: ĐH Sư Phạm TP.HCM' : 'E.g: HCMC University of Education'}
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('university')}`} />
@@ -421,6 +515,159 @@ export function ProfilePage() {
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('major')}`} />
             </div>
           </div>
+
+          {/* Lĩnh vực & môn học giảng dạy */}
+          <section className={`mt-5 rounded-2xl border p-4 sm:p-5 transition-colors ${(showErrors || setupRequired) && isMissing('languagesTaught') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
+            <div className="mb-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-600">
+                {lang === 'vi' ? 'Lĩnh vực & Môn học giảng dạy *' : 'Teaching Areas & Subjects *'}
+              </h4>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {lang === 'vi' ? 'Chọn ít nhất một lĩnh vực hoặc môn học phù hợp.' : 'Select at least one teaching area or subject.'}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Ngoại ngữ có thể giảng dạy' : 'Languages you can teach'}
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex min-h-9 cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-white">
+                    <input
+                      type="checkbox"
+                      checked={languagesTaught.includes(option.value)}
+                      onChange={(e) => setLanguagesTaught((current) => e.target.checked
+                        ? [...current, option.value]
+                        : current.filter((value) => value !== option.value))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>{lang === 'vi' ? option.vi : option.en}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <p className="mb-2 text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Gia sư Văn hóa & Học thuật' : 'Academic Tutoring'}
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {ACADEMIC_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex min-h-9 cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-white">
+                    <input
+                      type="checkbox"
+                      checked={academicSubjectsTaught.includes(option.value)}
+                      onChange={(e) => setAcademicSubjectsTaught((current) => e.target.checked
+                        ? [...current, option.value]
+                        : current.filter((value) => value !== option.value))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>{lang === 'vi' ? option.vi : option.en}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Kinh nghiệm & ưu điểm */}
+          <section className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+            <h4 className="mb-4 text-xs font-extrabold uppercase tracking-wider text-indigo-600">
+              {lang === 'vi' ? '3. Kinh nghiệm & Ưu điểm' : '3. Experience & Strengths'}
+            </h4>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
+                  {lang === 'vi' ? 'Số năm kinh nghiệm *' : 'Years of experience *'}
+                </label>
+                <input type="number" value={teachingYears} onChange={(e) => setTeachingYears(e.target.value)} placeholder={lang === 'vi' ? 'Ví dụ: 3' : 'E.g. 3'} min={1} max={50}
+                  className={`min-h-[42px] w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 ${errCls('teachingYears')}`} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
+                  {lang === 'vi' ? 'Số học viên đã dạy *' : 'Students taught *'}
+                </label>
+                <input type="number" value={studentsTaughtCount} onChange={(e) => setStudentsTaughtCount(e.target.value)} placeholder={lang === 'vi' ? 'Ví dụ: 15' : 'E.g. 15'} min={1}
+                  className={`min-h-[42px] w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 ${errCls('studentsTaughtCount')}`} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">
+                  {lang === 'vi' ? 'Độ tuổi HS từng dạy *' : 'Student age groups taught *'}
+                </label>
+                <input type="text" value={studentAgesTaught} onChange={(e) => setStudentAgesTaught(e.target.value)} placeholder={lang === 'vi' ? 'Ví dụ: 6-12 tuổi' : 'E.g. ages 6-12'}
+                  className={`min-h-[42px] w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 ${errCls('studentAgesTaught')}`} />
+              </div>
+            </div>
+
+            <div className={`mt-4 rounded-xl border p-3 ${(showErrors || setupRequired) && isMissing('teachingFormats') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/40' : 'border-slate-200 bg-white'}`}>
+              <p className="mb-2 text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Hình thức dạy chính *' : 'Primary teaching formats *'}
+              </p>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {['online', 'offline'].map((format) => (
+                  <label key={format} className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={teachingFormats.includes(format)}
+                      onChange={(e) => setTeachingFormats((current) => e.target.checked
+                        ? [...current, format]
+                        : current.filter((value) => value !== format))}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    {format === 'online' ? 'Online' : 'Offline'}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Thành tích học viên đạt được' : 'Student achievements'}
+              </label>
+              <textarea
+                rows={3}
+                value={studentResults}
+                onChange={(e) => setStudentResults(e.target.value)}
+                placeholder={lang === 'vi' ? 'Ví dụ: Học viên đỗ chuyên Anh, tăng band điểm IELTS...' : 'E.g. students passed selective English exams or improved their IELTS band score...'}
+                className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+              />
+            </div>
+
+            <div className={`mt-4 rounded-xl border p-3 ${(showErrors || setupRequired) && isMissing('strengths') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/40' : 'border-slate-200 bg-white'}`}>
+              <p className="mb-2 text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Ưu điểm nổi bật *' : 'Key strengths *'}
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {STRENGTH_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex min-h-9 cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={strengths.includes(option.value)}
+                      onChange={(e) => setStrengths((current) => e.target.checked
+                        ? [...current, option.value]
+                        : current.filter((value) => value !== option.value))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>{lang === 'vi' ? option.vi : option.en}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-bold text-slate-600">
+                {lang === 'vi' ? 'Ưu điểm khác' : 'Other strengths'}
+              </label>
+              <textarea
+                rows={2}
+                value={otherStrengths}
+                onChange={(e) => setOtherStrengths(e.target.value)}
+                placeholder={lang === 'vi' ? 'Nhập ưu điểm khác nếu có...' : 'Add any other strengths (optional)...'}
+                className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200"
+              />
+            </div>
+          </section>
 
           {/* Bank (bắt buộc, thuộc hồ sơ) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
@@ -499,54 +746,6 @@ export function ProfilePage() {
           </div>
         </Card>
 
-        {/* Thông tin tài khoản ngân hàng */}
-        <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
-            <Wallet className="w-4 h-4 text-emerald-600" />
-            Thông tin thanh toán (Bank Account)
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tên ngân hàng / Bank Name</label>
-              <input
-                type="text"
-                value={bankName}
-                onChange={e => setBankName(e.target.value)}
-                placeholder="Ví dụ: Vietcombank, Techcombank..."
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Số tài khoản / Account Number</label>
-              <input
-                type="text"
-                value={bankAccountNo}
-                onChange={e => setBankAccountNo(e.target.value.replace(/\s+/g, ''))}
-                placeholder="Nhập số tài khoản ngân hàng"
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Tên chủ tài khoản / Account Holder Name</label>
-              <input
-                type="text"
-                value={bankAccountName}
-                onChange={e => setBankAccountName(e.target.value.toUpperCase())}
-                placeholder="Ví dụ: NGUYEN VAN A"
-                className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
-              />
-            </div>
-            <Button
-              type="button"
-              loading={savingBank}
-              onClick={handleSaveBank}
-              className="w-full rounded-xl bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold py-2.5 shadow-md shadow-sky-200/50"
-            >
-              Lưu thông tin thanh toán
-            </Button>
-          </div>
-        </Card>
-
         {/* Link YouTube */}
         <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
@@ -602,7 +801,7 @@ export function ProfilePage() {
                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_category')}</label>
                     <select
                       value={cert.category}
-                      onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as any } : c))}
+                      onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as TeacherCertificate['category'] } : c))}
                       className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-700"
                     >
                       <option value="foreign_language">{t('profile.cert_lang')}</option>
@@ -647,7 +846,14 @@ export function ProfilePage() {
                 <div className="flex items-center gap-3 pt-2">
                   {cert.fileURL ? (
                     <div className="flex items-center gap-3">
-                      <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">{t('profile.view_image')}</a>
+                      <button
+                        type="button"
+                        onClick={() => setCertImageView(cert.fileURL || null)}
+                        className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        {t('profile.view_image')}
+                      </button>
                       <button
                         type="button"
                         onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
@@ -657,35 +863,19 @@ export function ProfilePage() {
                       </button>
                     </div>
                   ) : (
-                    <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold text-indigo-650 cursor-pointer transition-all">
-                      <Upload className="w-3.5 h-3.5" />
-                      {t('profile.upload_image')}
+                    <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${certUploadingIndex === index ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-650'}`}>
+                      {certUploadingIndex === index
+                        ? <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                        : <Upload className="w-3.5 h-3.5" />}
+                      {certUploadingIndex === index ? (lang === 'vi' ? 'Đang tải...' : 'Uploading...') : t('profile.upload_image')}
                       <input
                         type="file"
                         accept="image/*"
                         className="hidden"
+                        disabled={certUploadingIndex !== null}
                         onChange={e => {
                           const file = e.target.files?.[0]
-                          if (file) {
-                            const reader = new FileReader()
-                            reader.readAsDataURL(file)
-                            reader.onload = (ev) => {
-                              const img = new window.Image()
-                              img.src = ev.target?.result as string
-                              img.onload = () => {
-                                const canvas = document.createElement('canvas')
-                                const MAX = 600
-                                let { width, height } = img
-                                if (width > MAX) { height = (height * MAX) / width; width = MAX }
-                                if (height > MAX) { width = (width * MAX) / height; height = MAX }
-                                canvas.width = width
-                                canvas.height = height
-                                canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-                                const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
-                                setCertificates(prev => prev.map((c, idx) => idx === index ? { ...c, fileURL: dataUrl, status: 'pending' } : c))
-                              }
-                            }
-                          }
+                          if (file) handleCertUpload(index, file, e.currentTarget)
                         }}
                       />
                     </label>
@@ -723,6 +913,7 @@ export function ProfilePage() {
           </div>
         </div>
       </div>
+      {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
     </div>
   )
 }

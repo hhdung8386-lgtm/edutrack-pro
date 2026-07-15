@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2 } from 'lucide-react'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { ImageLightbox } from '@/components/shared/ImageLightbox'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -48,6 +49,7 @@ export function TeacherDetailPage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [loading, setLoading] = useState(true)
+  const [certImageView, setCertImageView] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
   const [toggleLoading, setToggleLoading] = useState(false)
 
@@ -870,7 +872,7 @@ export function TeacherDetailPage() {
       </Card>
 
       {/* Interview Profile Card */}
-      {teacher && (teacher.yob || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (
+      {teacher && (teacher.yob || teacher.livingArea || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (
         <Card>
           <div className="border-b border-slate-100 pb-4 mb-4">
             <h3 className="text-base font-semibold text-slate-900">Hồ sơ năng lực & Thông tin phỏng vấn</h3>
@@ -884,6 +886,12 @@ export function TeacherDetailPage() {
                   <div>
                     <span className="text-slate-500 font-medium">Năm sinh: </span>
                     <span className="text-slate-800">{teacher.yob}</span>
+                  </div>
+                )}
+                {teacher.livingArea && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Tỉnh/Thành phố sinh sống: </span>
+                    <span className="text-slate-800">{teacher.livingArea}</span>
                   </div>
                 )}
                 {teacher.degreeType && (
@@ -910,6 +918,14 @@ export function TeacherDetailPage() {
                     <span className="text-slate-700">{teacher.academicAwards}</span>
                   </div>
                 )}
+                {teacher.trainedAt123English && (
+                  <div className="md:col-span-3">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Đã hoàn thành Chương trình Đào tạo Gia sư tại 123English (60 giờ)
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -934,7 +950,14 @@ export function TeacherDetailPage() {
                       <div className="flex items-center justify-between text-xs font-semibold pt-2 border-t border-slate-200/60">
                         <span className="text-slate-500">Điểm số: <span className="text-slate-800 font-bold">{cert.score || '—'}</span></span>
                         {cert.fileURL && (
-                          <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-700 hover:underline">Xem ảnh</a>
+                          <button
+                            type="button"
+                            onClick={() => setCertImageView(cert.fileURL || null)}
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 hover:underline font-semibold"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Xem ảnh
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1975,6 +1998,7 @@ export function TeacherDetailPage() {
       )}
 
       {showEdit && <TeacherFormModal teacher={teacher} onClose={() => setShowEdit(false)} />}
+      {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
     </div>
   )
 }

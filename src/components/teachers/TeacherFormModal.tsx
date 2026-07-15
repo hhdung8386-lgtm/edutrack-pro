@@ -14,8 +14,10 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { Upload, X } from 'lucide-react'
-import { formatVietnameseNumberInput } from '@/pages/admin/SubjectsPage'
+import { Upload, X, Eye, GraduationCap } from 'lucide-react'
+import { formatVietnameseNumberInput } from '@/lib/countryPricing'
+import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
+import { ImageLightbox } from '@/components/shared/ImageLightbox'
 
 interface Branch {
   id: string
@@ -89,6 +91,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [gpa, setGpa] = useState(teacher?.gpa || '')
   const [academicAwards, setAcademicAwards] = useState(teacher?.academicAwards || '')
   const [scholarship, setScholarship] = useState(teacher?.scholarship || '')
+  const [trainedAt123English, setTrainedAt123English] = useState(!!teacher?.trainedAt123English)
+  const [certUploadingIndex, setCertUploadingIndex] = useState<number | null>(null)
+  const [certImageView, setCertImageView] = useState<string | null>(null)
 
   const [ielts, setIelts] = useState(teacher?.ielts || '')
   const [toeic, setToeic] = useState(teacher?.toeic || '')
@@ -112,6 +117,22 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [generatedCode, setGeneratedCode] = useState('')
 
   const isEdit = !!teacher
+
+  // Upload ảnh chứng chỉ lên Firebase Storage (thay vì nhét base64 vào Firestore —
+  // base64 vừa làm phình document (nguy cơ vượt 1MB) vừa không mở/xem được ở tab mới)
+  const handleCertUpload = async (index: number, file: File) => {
+    setCertUploadingIndex(index)
+    try {
+      const pathId = teacher?.id || newUsername || generatedCode || 'pending-teacher'
+      const url = await uploadLessonImage(pathId, file)
+      setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: url } : c))
+    } catch (err) {
+      console.error(err)
+      toast.error(uploadErrorMessage(err, 'vi'))
+    } finally {
+      setCertUploadingIndex(null)
+    }
+  }
 
   const { register, formState: { isSubmitting } } = useForm<FormData>({
     // @ts-ignore
@@ -264,6 +285,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       const interviewData = {
         yob: yob ? Number(yob) : null,
         livingArea: livingArea || '',
+        trainedAt123English: !!trainedAt123English,
         degreeType: degreeType || '',
         university: university || '',
         major: major || '',
@@ -468,6 +490,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const watchLevel = register('level')
 
   return (
+    <>
     <Modal
       open
       onClose={onClose}
@@ -744,6 +767,17 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Tỉnh / Thành phố (sinh sống)</label>
+                <input
+                  type="text"
+                  placeholder="Ví dụ: TP. Hồ Chí Minh, Hà Nội, Đà Nẵng..."
+                  value={livingArea}
+                  onChange={e => setLivingArea(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
             </div>
 
             <div>
@@ -756,6 +790,23 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+
+            {/* Xác nhận đã hoàn thành chương trình đào tạo gia sư nội bộ */}
+            <label className={`flex items-start gap-3 cursor-pointer rounded-xl border p-3 transition-colors ${trainedAt123English ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+              <input
+                type="checkbox"
+                checked={trainedAt123English}
+                onChange={e => setTrainedAt123English(e.target.checked)}
+                className="mt-0.5 h-4.5 w-4.5 h-[18px] w-[18px] rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="flex items-start gap-2">
+                <GraduationCap className={`w-4 h-4 mt-0.5 flex-shrink-0 ${trainedAt123English ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span>
+                  <span className="block text-sm font-bold text-slate-800">Hoàn thành Chương trình Đào tạo Gia sư tại 123English</span>
+                  <span className="block text-xs text-slate-500 mt-0.5">Thời lượng đào tạo: 60 giờ</span>
+                </span>
+              </span>
+            </label>
           </div>
 
           {/* Section 2: Chứng chỉ */}
@@ -831,7 +882,14 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                     <span className="text-xs font-semibold text-slate-500">Ảnh đính kèm:</span>
                     {cert.fileURL ? (
                       <div className="flex items-center gap-3">
-                        <a href={cert.fileURL} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold hover:underline">Xem ảnh</a>
+                        <button
+                          type="button"
+                          onClick={() => setCertImageView(cert.fileURL || null)}
+                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold hover:underline"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Xem ảnh
+                        </button>
                         <button
                           type="button"
                           onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
@@ -841,35 +899,19 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                         </button>
                       </div>
                     ) : (
-                      <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100/80 rounded-lg text-xs font-bold text-indigo-600 cursor-pointer transition-colors">
-                        <Upload className="w-3.5 h-3.5" />
-                        Tải ảnh lên
+                      <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${certUploadingIndex === index ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-600'}`}>
+                        {certUploadingIndex === index
+                          ? <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                          : <Upload className="w-3.5 h-3.5" />}
+                        {certUploadingIndex === index ? 'Đang tải...' : 'Tải ảnh lên'}
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
+                          disabled={certUploadingIndex !== null}
                           onChange={e => {
                             const file = e.target.files?.[0]
-                            if (file) {
-                              const reader = new FileReader()
-                              reader.readAsDataURL(file)
-                              reader.onload = (ev) => {
-                                const img = new Image()
-                                img.src = ev.target?.result as string
-                                img.onload = () => {
-                                  const canvas = document.createElement('canvas')
-                                  const MAX = 600
-                                  let { width, height } = img
-                                  if (width > MAX) { height = (height * MAX) / width; width = MAX }
-                                  if (height > MAX) { width = (width * MAX) / height; height = MAX }
-                                  canvas.width = width
-                                  canvas.height = height
-                                  canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-                                  const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
-                                  setCertificates(prev => prev.map((c, idx) => idx === index ? { ...c, fileURL: dataUrl } : c))
-                                }
-                              }
-                            }
+                            if (file) handleCertUpload(index, file)
                           }}
                         />
                       </label>
@@ -1082,5 +1124,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         </div>
       </form>
     </Modal>
+    {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
+    </>
   )
 }

@@ -21,6 +21,7 @@ const schema = z.object({
   code: z.string().min(1, 'Mã học viên không được để trống').toUpperCase(),
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
+  email: z.string().email('Email không hợp lệ (VD: phuhuynh@gmail.com)').optional().or(z.literal('')),
   branchId: z.string().optional(),
   classroomURL: z.string().optional().or(z.literal('')),
 })
@@ -53,10 +54,11 @@ export function StudentFormModal({ student, onClose }: Props) {
           code: student.code,
           name: student.name,
           parentPhone: student.parentPhone,
+          email: student.email || '',
           branchId: student.branchId || '',
           classroomURL: student.classroomURL || '',
         }
-      : { code: '', branchId: '', classroomURL: '' },
+      : { code: '', branchId: '', classroomURL: '', email: '' },
   })
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export function StudentFormModal({ student, onClose }: Props) {
         await updateDoc(doc(db, 'students', student.id), {
           name: data.name,
           parentPhone: data.parentPhone,
+          email: data.email?.trim() || '',
           branchId: data.branchId || '',
           branchName: branch?.name || '',
           classroomURL: data.classroomURL || '',
@@ -109,6 +112,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           code: studentCode,
           name: data.name,
           parentPhone: data.parentPhone,
+          email: data.email?.trim() || '',
           subjectId: '',
           subjectName: '',
           branchId: data.branchId || '',
@@ -174,6 +178,13 @@ export function StudentFormModal({ student, onClose }: Props) {
           placeholder="0901234567"
           error={errors.parentPhone?.message}
           {...register('parentPhone')}
+        />
+        <Input
+          label="Email phụ huynh"
+          type="email"
+          placeholder="phuhuynh@gmail.com (không bắt buộc)"
+          error={errors.email?.message}
+          {...register('email')}
         />
         <Input
           label="Link phòng học"

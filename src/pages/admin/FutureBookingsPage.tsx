@@ -5,7 +5,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { BookingRequest, Student } from '@/types'
+import { BookingRequest, Student, Teacher } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { Card } from '@/components/ui/Card'
@@ -21,6 +21,8 @@ export function FutureBookingsPage() {
 
   const [students, setStudents] = useState<Student[]>([])
   const [bookings, setBookings] = useState<BookingRequest[]>([])
+  // Map teacherId -> nickname (mã đăng nhập kiểu "Mirabelle"); GVxxxx thì dùng tên thật
+  const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
@@ -41,6 +43,20 @@ export function FutureBookingsPage() {
       setSelectedStudentId('all')
     }
   }, [searchParams])
+
+  // Load teachers -> build nickname map
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'teachers'), (snap) => {
+      const map: Record<string, string> = {}
+      snap.docs.forEach((d) => {
+        const t = { id: d.id, ...d.data() } as Teacher
+        const code = (t.code || '').trim()
+        map[d.id] = code && !/^GV[A-Z0-9]{4,}$/i.test(code) ? code : t.name
+      })
+      setTeacherNicks(map)
+    })
+    return unsub
+  }, [])
 
   // Load students list
   useEffect(() => {
@@ -78,10 +94,12 @@ export function FutureBookingsPage() {
 
       // 3. Search query filter (student name, code or teacher name)
       const queryLower = searchQuery.toLowerCase().trim()
+      const nickForBooking = b.teacherId ? (teacherNicks[b.teacherId] || '') : ''
       const matchesSearch = !queryLower ||
         (b.studentName || '').toLowerCase().includes(queryLower) ||
         (b.studentCode || '').toLowerCase().includes(queryLower) ||
         (b.teacherName || '').toLowerCase().includes(queryLower) ||
+        nickForBooking.toLowerCase().includes(queryLower) ||
         (b.subjectName || '').toLowerCase().includes(queryLower)
 
       // 4. Date filter
@@ -107,7 +125,7 @@ export function FutureBookingsPage() {
       if (dateA !== dateB) return dateA.localeCompare(dateB)
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
-  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek])
+  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks])
 
   // Handle student filter change
   const handleStudentChange = (studentId: string) => {
@@ -479,10 +497,10 @@ export function FutureBookingsPage() {
                             className="text-indigo-600 hover:text-indigo-800 hover:underline"
                             title="Mở lịch xếp lớp của giáo viên này"
                           >
-                            {booking.teacherName}
+                            {teacherNicks[booking.teacherId] || booking.teacherName}
                           </Link>
                         ) : (
-                          <span className="text-slate-600">{booking.teacherName || 'Chưa phân công'}</span>
+                          <span className="text-slate-600">{(booking.teacherId && teacherNicks[booking.teacherId]) || booking.teacherName || 'Chưa phân công'}</span>
                         )}
                       </td>
                       <td className="p-3.5 text-center">
