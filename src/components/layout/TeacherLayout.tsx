@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink } from 'lucide-react'
 import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -264,6 +264,7 @@ export function TeacherLayout() {
 
       <main className="min-h-screen">
         <div className="pt-14 lg:pt-16 pb-20 lg:pb-6 px-4 sm:px-6 py-6">
+          <ZaloUrgentNotice lang={lang} />
           {profileMissingCount !== null && profileMissingCount > 0 && (
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-950 shadow-sm">
               <p className="text-sm font-bold">
@@ -401,6 +402,103 @@ export function TeacherLayout() {
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+// ─── THÔNG BÁO KHẨN: chuyển liên lạc từ Facebook sang Zalo ───
+// Banner hiện trên mọi trang giáo viên (mobile + desktop) cho đến khi
+// thầy/cô bấm "Đã hiểu" (ghi nhớ theo thiết bị bằng localStorage).
+// Muốn gỡ thông báo: xóa <ZaloUrgentNotice /> ở <main> phía trên.
+const ZALO_NOTICE_KEY = 'teacher-notice-zalo-migration-2026-07'
+const ZALO_PHONE_DISPLAY = '039.399.8733'
+const ZALO_PHONE_RAW = '0393998733'
+
+function ZaloUrgentNotice({ lang }: { lang: string }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(ZALO_NOTICE_KEY) === '1' } catch { return false }
+  })
+  if (dismissed) return null
+
+  const vi = lang === 'vi'
+
+  const dismiss = () => {
+    try { localStorage.setItem(ZALO_NOTICE_KEY, '1') } catch { /* ignore */ }
+    setDismissed(true)
+  }
+
+  const copyPhone = () => {
+    navigator.clipboard.writeText(ZALO_PHONE_RAW)
+      .then(() => toast.success(vi ? 'Đã sao chép số Zalo!' : 'Zalo number copied!'))
+      .catch(() => toast.error(vi ? 'Không thể sao chép, vui lòng ghi lại số' : 'Copy failed, please note the number'))
+  }
+
+  return (
+    <div className="mx-auto mb-4 max-w-4xl overflow-hidden rounded-2xl border-2 border-rose-300 bg-gradient-to-r from-rose-50 via-orange-50 to-amber-50 shadow-lg shadow-rose-100/60 animate-fade-in">
+      <div className="flex items-start gap-3.5 px-4 py-4 sm:px-5">
+        <span className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-rose-500 shadow-md shadow-rose-200">
+          <Megaphone className="h-5 w-5 text-white" />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-black uppercase tracking-wide text-rose-600">
+            {vi ? 'Thông báo khẩn' : 'Urgent Notice'}
+          </p>
+          <p className="mt-1.5 text-[13px] font-semibold leading-relaxed text-slate-800">
+            {vi
+              ? 'Toàn bộ Quý Thầy/Cô vui lòng kết bạn Zalo Trung tâm theo số:'
+              : 'All teachers, please add the Center on Zalo:'}
+            {' '}
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-rose-200 bg-white px-2 py-0.5 font-mono text-[13px] font-extrabold text-rose-600 align-middle">
+              {ZALO_PHONE_DISPLAY}
+              <button
+                type="button"
+                onClick={copyPhone}
+                className="text-slate-400 transition-colors hover:text-rose-500"
+                title={vi ? 'Sao chép số' : 'Copy number'}
+                aria-label={vi ? 'Sao chép số Zalo' : 'Copy Zalo number'}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+            {vi
+              ? 'Kể từ hôm nay, Trung tâm sẽ không còn sử dụng Facebook để liên lạc. Mọi thông báo, hỗ trợ và trao đổi sẽ được thực hiện qua Zalo. Xin Quý Thầy/Cô vui lòng kết bạn sớm để không bỏ lỡ các thông tin quan trọng. Xin cảm ơn!'
+              : 'Starting today, the Center will no longer use Facebook for communication. All announcements, support and discussions will happen on Zalo. Please add us soon so you do not miss important updates. Thank you!'}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={`https://zalo.me/${ZALO_PHONE_RAW}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0068FF] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-blue-200 transition-all hover:bg-[#0055d4] hover:-translate-y-0.5 active:scale-95"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              {vi ? 'Kết bạn Zalo ngay' : 'Add on Zalo now'}
+            </a>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              {vi ? 'Tôi đã kết bạn / Đã hiểu' : 'Done / Got it'}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={dismiss}
+          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/70 hover:text-slate-700"
+          title={vi ? 'Đóng thông báo' : 'Dismiss'}
+          aria-label={vi ? 'Đóng thông báo' : 'Dismiss notice'}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }
