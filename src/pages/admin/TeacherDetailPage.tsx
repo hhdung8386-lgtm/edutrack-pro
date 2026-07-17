@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { Teacher, Lesson, Student, TeacherAvailability, DayOfWeek, Payroll, Subject } from '@/types'
+import { Teacher, Lesson, Student, StudentSubject, TeacherAvailability, DayOfWeek, Payroll, Subject } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -14,9 +14,12 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2 } from 'lucide-react'
-import { formatVND, getCurrentMonth } from '@/lib/constants'
+import { formatMoney, formatMoneyTotals, getCurrentMonth } from '@/lib/constants'
+import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
+import { lessonRewardPoints } from '@/lib/rewards'
+import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -50,8 +53,51 @@ export function TeacherDetailPage() {
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [loading, setLoading] = useState(true)
   const [certImageView, setCertImageView] = useState<string | null>(null)
+  const [restoringLogin, setRestoringLogin] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [toggleLoading, setToggleLoading] = useState(false)
+
+  // Khôi phục quyền đăng nhập cho GV bị 403: luồng đổi nickname có thể để lại
+  // users doc với role 'inactive_teacher' trong khi teacher vẫn active — GV đăng
+  // nhập Auth thành công nhưng app đọc role sai nên bị chặn. Chỉ admin sửa được
+  // (rules không cho GV tự đổi role).
+  const handleRestoreLoginRole = async () => {
+    if (!teacher) return
+    setRestoringLogin(true)
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('teacherId', '==', teacher.id)))
+      if (snap.empty) {
+        toast.info('GV này chưa có tài khoản đăng nhập — chỉ cần đăng nhập lại bằng mã GV, hệ thống sẽ tự tạo.')
+        return
+      }
+      let fixed = 0
+      for (const d of snap.docs) {
+        const u = d.data()
+        if (u.role !== 'teacher') {
+          await updateDoc(d.ref, { role: 'teacher', username: teacher.code, restoredAt: serverTimestamp(), restoredBy: user?.uid || 'admin' })
+          fixed++
+        }
+      }
+      if (fixed > 0) {
+        await addDoc(collection(db, 'adminLogs'), {
+          adminId: user?.uid || '',
+          action: 'RESTORE_TEACHER_LOGIN_ROLE',
+          targetType: 'teacher',
+          targetId: teacher.id,
+          changes: { teacherCode: teacher.code, fixedUserDocs: fixed },
+          createdAt: serverTimestamp(),
+        })
+        toast.success(`Đã khôi phục quyền đăng nhập (${fixed} tài khoản). GV đăng xuất/đăng nhập lại là vào được.`)
+      } else {
+        toast.info('Tài khoản đăng nhập của GV này vẫn bình thường (role=teacher), không cần khôi phục.')
+      }
+    } catch (err) {
+      console.error('Restore login role failed:', err)
+      toast.error('Không thể khôi phục quyền đăng nhập, vui lòng thử lại')
+    } finally {
+      setRestoringLogin(false)
+    }
+  }
 
   const handleToggleStatus = async () => {
     if (!teacher) return
@@ -63,7 +109,7 @@ export function TeacherDetailPage() {
         updatedAt: serverTimestamp(),
       })
       setTeacher(prev => prev ? { ...prev, status: nextStatus } : null)
-      toast.success(nextStatus === 'inactive' ? 'Đã chuyển giáo viên sang tạm dừng dạy' : 'Đã kích hoạt lại giáo viên')
+      toast.success(nextStatus === 'inactive' ? 'Đã chuyển gia sư sang tạm dừng dạy' : 'Đã kích hoạt lại gia sư')
     } catch (err) {
       console.error(err)
       toast.error('Cập nhật trạng thái thất bại')
@@ -207,7 +253,7 @@ export function TeacherDetailPage() {
         getDocs(collection(db, 'teachers')),
       ])
       const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      const newRate = newSubject.pricePerMinute || 0
+      const teachersMap = new Map(teachers.map((item: any) => [item.id, item]))
 
       // Fetch all payrolls first to check paid status
       const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
@@ -230,10 +276,16 @@ export function TeacherDetailPage() {
           return
         }
 
-        const lessonRate = newRate
+        const lessonTeacher = teachersMap.get(lesson.teacherId) as any
+        const { price: lessonRate, currency: lessonCurrency } = getCountryRate(
+          newSubject,
+          lessonTeacher?.country || 'VN',
+        )
         const minutes = Number(lesson.minutes) || 0
         const teacherLevel = Number(lesson.teacherLevel) || 1
-        const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, lessonRate, teacherLevel) : 0
+        const newSalary = lesson.status === 'approved'
+          ? calculateSalary(minutes, lessonRate, teacherLevel, lessonCurrency)
+          : 0
 
         lessonUpdates.push(
           updateDoc(doc(db, 'lessons', lessonId), {
@@ -241,6 +293,7 @@ export function TeacherDetailPage() {
             subjectName: newSubject.name,
             pricePerMinute: lessonRate,
             salary: newSalary,
+            currency: lessonCurrency,
             updatedAt: serverTimestamp(),
           })
         )
@@ -262,6 +315,7 @@ export function TeacherDetailPage() {
               updateDoc(doc(db, 'payroll', pDoc.id), {
                 amount: newSalary,
                 pricePerMinute: lessonRate,
+                currency: lessonCurrency,
                 recalculatedAt: serverTimestamp(),
               })
             )
@@ -332,6 +386,15 @@ export function TeacherDetailPage() {
     try {
       if (targetStatus === 'approved') {
         // Luồng Duyệt buổi học (pending/rejected -> approved)
+        const matchedBooking = await resolveLessonBooking({
+          id: lesson.id,
+          bookingRequestId: lesson.bookingRequestId,
+          studentId: lesson.studentId,
+          teacherId: lesson.teacherId,
+          date: lesson.date,
+          minutes: lesson.minutes,
+          subjectId: lesson.subjectId,
+        })
         await runTransaction(db, async (tx) => {
           const lessonRef = doc(db, 'lessons', lesson.id)
           const studentRef = doc(db, 'students', lesson.studentId)
@@ -347,42 +410,79 @@ export function TeacherDetailPage() {
           const lessonNow = lessonSnap.data() as any
           if (lessonNow.status === 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
 
-          const student = studentSnap.data() as any
+          const student = studentSnap.data() as Student
+          const subjectId = lessonNow.subjectId || lesson.subjectId || student.subjectId || student.subjects?.[0]?.subjectId
+          if (!subjectId) throw new Error('SUBJECT_NOT_FOUND')
 
-          const [teacherSnap, subjectSnap] = await Promise.all([
+          const bookingRef = matchedBooking ? doc(db, 'bookingRequests', matchedBooking.id) : null
+          const rewardRef = doc(db, 'rewardTransactions', lesson.id)
+          const [teacherSnap, subjectSnap, rewardSnap, bookingSnap] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
-            tx.get(doc(db, 'subjects', student.subjectId)),
+            tx.get(doc(db, 'subjects', subjectId)),
+            tx.get(rewardRef),
+            bookingRef ? tx.get(bookingRef) : Promise.resolve(null),
           ])
 
           const teacherData = teacherSnap.data()
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
-          const pricePerMinute = subjectSnap.data()?.pricePerMinute ?? 0
-          const subjectId = student.subjectId
-          const subjectName = student.subjectName || subjectSnap.data()?.name || ''
-
           const lessonMinutes = Number(lesson.minutes) || 0
-          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel)
+          const bookingNow = bookingSnap?.exists()
+            ? ({ id: bookingSnap.id, ...bookingSnap.data() } as typeof matchedBooking)
+            : null
+
+          let updatedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
+            ? student.subjects.map((item) => ({ ...item }))
+            : student.subjectId
+              ? [{
+                  subjectId: student.subjectId,
+                  subjectName: student.subjectName || subjectSnap.data()?.name || 'Chưa rõ',
+                  totalSessions: Number(student.totalSessions) || 0,
+                  usedSessions: Number(student.usedSessions) || 0,
+                  remainingSessions: Number(student.remainingSessions) || 0,
+                  minutesPerSession: Number(student.minutesPerSession) || 50,
+                  totalMinutes: Number(student.totalMinutes ?? (student.totalSessions * (student.minutesPerSession || 50))) || 0,
+                  usedMinutes: Number(student.usedMinutes ?? ((student.usedSessions || 0) * (student.minutesPerSession || 50))) || 0,
+                  remainingMinutes: Number(student.remainingMinutes ?? ((student.remainingSessions || 0) * (student.minutesPerSession || 50))) || 0,
+                  pricePerMinute: Number(subjectSnap.data()?.pricePerMinute) || 0,
+                }]
+              : []
+
+          const subjectIndex = updatedSubjects.findIndex((item) => item.subjectId === subjectId)
+          if (subjectIndex < 0) throw new Error('STUDENT_SUBJECT_PACKAGE_NOT_FOUND')
+          const subjectPackage = updatedSubjects[subjectIndex]
+          const { price: pricePerMinute, currency } = getCountryRate(subjectPackage, teacherData?.country || 'VN')
+          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (lesson.date || '').slice(0, 7)
+          const newSubjectUsedMinutes = Number(subjectPackage.usedMinutes || 0) + lessonMinutes
+          const newSubjectRemainingMinutes = Math.max(0, Number(subjectPackage.totalMinutes || 0) - newSubjectUsedMinutes)
+          const subjectMps = Number(subjectPackage.minutesPerSession) || 50
+          const usedSessionsRaw = subjectMps > 0 ? newSubjectUsedMinutes / subjectMps : 0
+          const newSubjectUsedSessions = Math.abs(usedSessionsRaw - Math.round(usedSessionsRaw)) < 0.001
+            ? Math.round(usedSessionsRaw)
+            : Math.round(usedSessionsRaw * 100) / 100
+          const newSubjectRemainingSessions = Math.floor(newSubjectRemainingMinutes / subjectMps)
+          updatedSubjects[subjectIndex] = {
+            ...subjectPackage,
+            usedMinutes: newSubjectUsedMinutes,
+            remainingMinutes: newSubjectRemainingMinutes,
+            usedSessions: newSubjectUsedSessions,
+            remainingSessions: newSubjectRemainingSessions,
+          }
 
-          const mps = Number(student.minutesPerSession) || 50
-          const totalSessionsNum = Number(student.totalSessions) || 0
-          const usedSessionsNum = Number(student.usedSessions) || 0
-          const remainingSessionsNum = Number(student.remainingSessions ?? (totalSessionsNum - usedSessionsNum)) || 0
+          const totalSessions = updatedSubjects.reduce((sum, item) => sum + Number(item.totalSessions || 0), 0)
+          const usedSessions = updatedSubjects.reduce((sum, item) => sum + Number(item.usedSessions || 0), 0)
+          const remainingSessions = updatedSubjects.reduce((sum, item) => sum + Number(item.remainingSessions || 0), 0)
+          const totalMinutes = updatedSubjects.reduce((sum, item) => sum + Number(item.totalMinutes || 0), 0)
+          const usedMinutes = updatedSubjects.reduce((sum, item) => sum + Number(item.usedMinutes || 0), 0)
+          const remainingMinutes = updatedSubjects.reduce((sum, item) => sum + Number(item.remainingMinutes || 0), 0)
+          const primarySubject = updatedSubjects[0]
 
-          const totalMinutes = Number(student.totalMinutes ?? totalSessionsNum * mps) || 0
-          const prevUsedMinutes = Number(student.usedMinutes ?? usedSessionsNum * mps) || 0
-          const prevRemainingMinutes = Number(student.remainingMinutes ?? (totalMinutes - prevUsedMinutes)) || 0
           const prevHeldMinutes = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0
-
-          const newUsedMinutes = prevUsedMinutes + lessonMinutes
-          const newRemainingMinutes = totalMinutes - newUsedMinutes
-          const newHeldMinutes = Math.max(0, prevHeldMinutes - lessonMinutes)
-          const newRemainingSessions = Math.floor(newRemainingMinutes / mps)
-          const newUsedSessionsRaw = newUsedMinutes / mps
-          const newUsedSessions =
-            Math.abs(newUsedSessionsRaw - Math.round(newUsedSessionsRaw)) < 0.001
-              ? Math.round(newUsedSessionsRaw)
-              : Math.round(newUsedSessionsRaw * 100) / 100
+          const heldMinutesToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow)
+          const newHeldMinutes = Math.max(0, prevHeldMinutes - heldMinutesToRelease)
+          const earnedPoints = lessonRewardPoints(lessonNow as Lesson)
+          const shouldAwardPoints = earnedPoints > 0 && !rewardSnap.exists()
+          const subjectName = subjectPackage.subjectName || subjectSnap.data()?.name || ''
 
           tx.update(lessonRef, {
             status: 'approved',
@@ -391,26 +491,55 @@ export function TeacherDetailPage() {
             salary,
             teacherLevel,
             pricePerMinute,
+            currency,
             subjectId,
             subjectName,
-            sessionsBeforeApproval: remainingSessionsNum,
-            sessionsAfterApproval: newRemainingSessions,
-            minutesBeforeApproval: prevRemainingMinutes,
-            minutesAfterApproval: newRemainingMinutes,
+            sessionsBeforeApproval: subjectPackage.remainingSessions,
+            sessionsAfterApproval: newSubjectRemainingSessions,
+            minutesBeforeApproval: subjectPackage.remainingMinutes,
+            minutesAfterApproval: newSubjectRemainingMinutes,
+            ...(bookingNow ? { bookingRequestId: bookingNow.id } : {}),
+            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldMinutesToRelease > 0,
             rejectedReason: null, // Xoá lý do từ chối cũ nếu có
           })
 
+          if (bookingRef && bookingNow) tx.update(bookingRef, { lessonId: lesson.id })
+
           tx.update(studentRef, {
-            usedMinutes: newUsedMinutes,
-            remainingMinutes: newRemainingMinutes,
+            subjects: updatedSubjects,
+            usedMinutes,
+            remainingMinutes,
             totalMinutes,
-            minutesPerSession: mps,
-            usedSessions: newUsedSessions,
-            remainingSessions: newRemainingSessions,
+            totalSessions,
+            minutesPerSession: primarySubject?.minutesPerSession || 50,
+            usedSessions,
+            remainingSessions,
             reservedMinutes: newHeldMinutes,
             heldMinutes: newHeldMinutes,
-            status: newRemainingMinutes <= 0 ? 'expired' : 'active',
+            subjectId: primarySubject?.subjectId || '',
+            subjectName: primarySubject?.subjectName || '',
+            status: remainingMinutes <= 0 ? 'expired' : 'active',
+            ...(shouldAwardPoints ? {
+              rewardPoints: Number(student.rewardPoints || 0) + earnedPoints,
+              lifetimeRewardPoints: Number(student.lifetimeRewardPoints || 0) + earnedPoints,
+            } : {}),
             updatedAt: serverTimestamp(),
+          })
+
+          if (shouldAwardPoints) {
+            tx.set(rewardRef, {
+              type: 'lesson_rating',
+              studentId: lesson.studentId,
+              lessonId: lesson.id,
+              points: earnedPoints,
+              rating: earnedPoints,
+              createdAt: serverTimestamp(),
+              createdBy: user?.uid || '',
+            })
+          }
+
+          tx.update(doc(db, 'teachers', lesson.teacherId), {
+            totalApprovedMinutes: Number(teacherData?.totalApprovedMinutes || 0) + lessonMinutes,
           })
 
           const publicLessonRef = doc(db, 'publicLessons', lesson.id)
@@ -429,6 +558,9 @@ export function TeacherDetailPage() {
             comment: lesson.comment || '',
             homework: lesson.homework || '',
             book: lesson.book || '',
+            pages: lesson.pages || '',
+            report: lesson.report || null,
+            rating: lesson.rating ?? null,
             imageURLs: lesson.imageURLs || [],
             status: 'approved',
             createdAt: lesson.createdAt || serverTimestamp(),
@@ -443,6 +575,7 @@ export function TeacherDetailPage() {
             amount: salary,
             minutes: lessonMinutes,
             pricePerMinute,
+            currency,
             level: teacherLevel,
             month,
             paid: false,
@@ -459,10 +592,12 @@ export function TeacherDetailPage() {
               status: { from: currentStatus, to: 'approved' },
               salary,
               minutesDeducted: lessonMinutes,
-              minutesBefore: prevRemainingMinutes,
-              minutesAfter: newRemainingMinutes,
+              minutesBefore: subjectPackage.remainingMinutes,
+              minutesAfter: newSubjectRemainingMinutes,
               heldMinutesBefore: prevHeldMinutes,
               heldMinutesAfter: newHeldMinutes,
+              heldMinutesReleased: heldMinutesToRelease,
+              bookingRequestId: bookingNow?.id || null,
             },
             createdAt: serverTimestamp(),
           })
@@ -658,7 +793,7 @@ export function TeacherDetailPage() {
   }
 
   if (loading) return <LoadingSpinner />
-  if (!teacher) return <p className="text-slate-500 text-center py-20">Không tìm thấy giáo viên</p>
+  if (!teacher) return <p className="text-slate-500 text-center py-20">Không tìm thấy gia sư</p>
 
   const getMonthOptions = () => {
     const months = new Set<string>()
@@ -711,6 +846,13 @@ export function TeacherDetailPage() {
   const totalLessons = approvedLessons.length
   const totalMinutes = approvedLessons.reduce((acc, l) => acc + l.minutes, 0)
   const totalSalary = approvedLessons.reduce((acc, l) => acc + (l.salary || 0), 0)
+  const fallbackCurrency = COUNTRY_CURRENCY_MAP[teacher.country || 'VN']?.currency || 'VND'
+  const totalSalaryLabel = formatMoneyTotals(
+    approvedLessons.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
+    fallbackCurrency,
+  )
+  const approvedCurrencies = new Set(approvedLessons.map((lesson) => (lesson.currency || fallbackCurrency).toUpperCase()))
+  const isVndOnly = approvedCurrencies.size <= 1 && (approvedCurrencies.size === 0 || approvedCurrencies.has('VND'))
 
   const studentIdSet = new Set(lessons.filter(l => l.status !== 'rejected').map(l => l.studentId))
   const activeStudents = students.filter(s => studentIdSet.has(s.id))
@@ -719,10 +861,33 @@ export function TeacherDetailPage() {
   const lessonsInMonth = lessons.filter((l) => lessonMonth ? l.date.startsWith(lessonMonth) : true)
   const approvedInMonth = lessonsInMonth.filter((l) => l.status === 'approved')
   const pendingInMonth = lessonsInMonth.filter((l) => l.status === 'pending')
+  const monthCurrency = approvedInMonth.find((lesson) => lesson.currency)?.currency
+    || pendingInMonth.find((lesson) => lesson.currency)?.currency
+    || fallbackCurrency
+  const monthCurrencies = new Set(lessonsInMonth.map((lesson) => (lesson.currency || monthCurrency).toUpperCase()))
+  const isVndMonth = monthCurrencies.size <= 1 && (monthCurrencies.size === 0 || monthCurrencies.has('VND'))
 
   const approvedSalaryMonth = approvedInMonth.reduce((acc, l) => acc + (l.salary || 0), 0)
-  const pendingSalaryMonth = pendingInMonth.reduce((acc, l) => acc + calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1), 0)
+  const pendingSalaryMonth = pendingInMonth.reduce((acc, l) => acc + calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency), 0)
   const totalSalaryMonth = approvedSalaryMonth + pendingSalaryMonth
+  const approvedSalaryMonthLabel = formatMoneyTotals(
+    approvedInMonth.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
+    monthCurrency,
+  )
+  const pendingSalaryMonthLabel = formatMoneyTotals(
+    pendingInMonth.map((lesson) => ({
+      amount: calculateSalary(lesson.minutes, lesson.pricePerMinute || 0, lesson.teacherLevel ?? teacher?.level ?? 1, lesson.currency || monthCurrency),
+      currency: lesson.currency || monthCurrency,
+    })),
+    monthCurrency,
+  )
+  const totalSalaryMonthLabel = formatMoneyTotals([
+    ...approvedInMonth.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
+    ...pendingInMonth.map((lesson) => ({
+      amount: calculateSalary(lesson.minutes, lesson.pricePerMinute || 0, lesson.teacherLevel ?? teacher?.level ?? 1, lesson.currency || monthCurrency),
+      currency: lesson.currency || monthCurrency,
+    })),
+  ], monthCurrency)
 
   // Monthly paid/unpaid payroll stats
   const paidPayrollMonth = payrolls.filter(p => !p.voided && p.paid && (lessonMonth ? p.month === lessonMonth : true)).reduce((sum, p) => sum + p.amount, 0)
@@ -738,7 +903,7 @@ export function TeacherDetailPage() {
       ...lessonsInMonth.map((l) => {
         const p = payrolls.find((pay) => pay.lessonId === l.id && !pay.voided)
         const paymentStatus = p ? (p.paid ? 'Đã thanh toán' : 'Chưa thanh toán') : '—'
-        const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1)
+        const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency)
         return [
           l.date,
           l.studentName,
@@ -794,7 +959,7 @@ export function TeacherDetailPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900">{teacher.name}</h1>
-          <p className="text-sm text-slate-500">Chi tiết giáo viên</p>
+          <p className="text-sm text-slate-500">Chi tiết gia sư</p>
         </div>
       </div>
 
@@ -820,12 +985,6 @@ export function TeacherDetailPage() {
                 <div>
                   <span className="text-slate-500">Họ tên: </span>
                   <span className="text-slate-800 font-medium">{teacher.name}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Môn dạy: </span>
-                  <span className="text-slate-800">
-                    {(teacher.subjectNames || []).join(', ') || '—'}
-                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500">Level: </span>
@@ -867,6 +1026,16 @@ export function TeacherDetailPage() {
               {teacher.status === 'active' ? 'Tạm dừng dạy' : 'Kích hoạt dạy'}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              loading={restoringLogin}
+              onClick={handleRestoreLoginRole}
+              title="Sửa lỗi giáo viên đăng nhập bị 403 do tài khoản bị khóa quyền sau khi đổi nickname"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
+            >
+              Khôi phục đăng nhập
+            </Button>
           </div>
         </div>
       </Card>
@@ -922,7 +1091,7 @@ export function TeacherDetailPage() {
                   <div className="md:col-span-3">
                     <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Đã hoàn thành Chương trình Đào tạo Gia sư tại 123English (60 giờ)
+                      Đã hoàn thành Chương trình Đào tạo Gia sư tại Nội Bộ Trung Tâm (60 giờ)
                     </span>
                   </div>
                 )}
@@ -967,37 +1136,6 @@ export function TeacherDetailPage() {
                 <p className="text-sm text-slate-500 italic">Chưa cập nhật chứng chỉ.</p>
               )}
             </div>
-
-            {/* Lĩnh vực & Môn học giảng dạy */}
-            {((teacher.languagesTaught && teacher.languagesTaught.length > 0) || (teacher.academicSubjectsTaught && teacher.academicSubjectsTaught.length > 0)) && (
-              <div className="border-t border-slate-100 pt-4 space-y-4">
-                {teacher.languagesTaught && teacher.languagesTaught.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-indigo-600 mb-2 uppercase tracking-wider">Ngoại ngữ có thể giảng dạy</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {teacher.languagesTaught.map(lang => (
-                        <span key={lang} className="inline-block bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full text-xs border border-indigo-100 font-medium">
-                          {lang}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {teacher.academicSubjectsTaught && teacher.academicSubjectsTaught.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-indigo-600 mb-2 uppercase tracking-wider">Gia sư Văn Hóa & Học Thuật</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {teacher.academicSubjectsTaught.map(subj => (
-                        <span key={subj} className="inline-block bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs border border-emerald-100 font-medium">
-                          {subj}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Grid 3: Kinh nghiệm & Ưu điểm */}
             <div className="border-t border-slate-100 pt-4">
@@ -1102,14 +1240,14 @@ export function TeacherDetailPage() {
               <Wallet className="w-6 h-6 text-emerald-500" />
             </div>
             <div>
-              {totalSalary > 2000000 ? (
+              {isVndOnly && totalSalary > 2000000 ? (
                 <div className="space-y-0.5">
-                  <p className="text-xs text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatVND(totalSalary)}</span></p>
-                  <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatVND(totalSalary * 0.9)}</p>
+                  <p className="text-xs text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalary, 'VND')}</span></p>
+                  <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(totalSalary * 0.9, 'VND')}</p>
                   <p className="text-[10px] text-rose-500 italic font-medium">(-10% thuế TNCN)</p>
                 </div>
               ) : (
-                <p className="text-2xl font-bold text-emerald-600">{formatVND(totalSalary)}</p>
+                <p className="text-2xl font-bold text-emerald-600">{totalSalaryLabel}</p>
               )}
               <p className="text-xs font-semibold text-slate-700 mt-1">Tổng lương</p>
               <p className="text-[11px] text-slate-400 mt-0.5">(từ trước tới giờ)</p>
@@ -1355,7 +1493,7 @@ export function TeacherDetailPage() {
                             </td>
                             <td className="px-4 py-3">
                               <div className={`font-semibold ${unpaidSalary > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {unpaidSalary > 0 ? formatVND(unpaidSalary) : '0đ'}
+                                {unpaidSalary > 0 ? formatMoney(unpaidSalary, monthCurrency) : formatMoney(0, monthCurrency)}
                               </div>
                               <div className="text-[11px] text-slate-400">{unpaidMin}'</div>
                             </td>
@@ -1392,32 +1530,32 @@ export function TeacherDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-center">
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Đã duyệt</p>
-                {approvedSalaryMonth > 2000000 ? (
+                {isVndMonth && approvedSalaryMonth > 2000000 ? (
                   <div className="space-y-0.5">
-                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatVND(approvedSalaryMonth)}</span></p>
-                    <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatVND(approvedSalaryMonth * 0.9)}</p>
+                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(approvedSalaryMonth, 'VND')}</span></p>
+                    <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(approvedSalaryMonth * 0.9, 'VND')}</p>
                     <p className="text-[10px] text-rose-500 italic font-medium">(-10% thuế TNCN)</p>
                   </div>
                 ) : (
-                  <p className="text-xl font-bold text-emerald-600">{formatVND(approvedSalaryMonth)}</p>
+                  <p className="text-xl font-bold text-emerald-600">{approvedSalaryMonthLabel}</p>
                 )}
                 <p className="text-xs text-slate-400 mt-0.5">({approvedInMonth.length} buổi)</p>
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Chờ duyệt</p>
-                <p className="text-xl font-bold text-amber-500">{formatVND(pendingSalaryMonth)}</p>
+                <p className="text-xl font-bold text-amber-500">{pendingSalaryMonthLabel}</p>
                 <p className="text-xs text-slate-400 mt-0.5">({pendingInMonth.length} buổi)</p>
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Tổng lương tháng {Number(mMon) || ''}</p>
-                {totalSalaryMonth > 2000000 ? (
+                {isVndMonth && totalSalaryMonth > 2000000 ? (
                   <div className="space-y-0.5">
-                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatVND(totalSalaryMonth)}</span></p>
-                    <p className="text-lg font-bold text-emerald-600">Dự kiến sau trừ: {formatVND(totalSalaryMonth * 0.9)}</p>
+                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalaryMonth, 'VND')}</span></p>
+                    <p className="text-lg font-bold text-emerald-600">Dự kiến sau trừ: {formatMoney(totalSalaryMonth * 0.9, 'VND')}</p>
                     <p className="text-[10px] text-rose-500 italic font-medium">(-10% thuế TNCN)</p>
                   </div>
                 ) : (
-                  <p className="text-xl font-bold text-emerald-600">{formatVND(totalSalaryMonth)}</p>
+                  <p className="text-xl font-bold text-emerald-600">{totalSalaryMonthLabel}</p>
                 )}
               </div>
               <div className="flex justify-start md:justify-end">
@@ -1469,7 +1607,7 @@ export function TeacherDetailPage() {
                 <div className="space-y-1">
                   <p>Lương tháng chỉ tính các buổi đã duyệt.</p>
                   <p className="text-[11px] text-slate-500 italic">
-                    * Đối với giáo viên có tổng lương tháng trên 2.000.000 đ, hệ thống tự động khấu trừ 10% thuế TNCN theo quy định.
+                    * Đối với gia sư có tổng lương tháng trên 2.000.000 đ, hệ thống tự động khấu trừ 10% thuế TNCN theo quy định.
                   </p>
                 </div>
               </div>
@@ -1604,7 +1742,7 @@ export function TeacherDetailPage() {
                   const p = payrolls.find((pay) => pay.lessonId === l.id && !pay.voided);
                   const isPaid = p?.paid === true;
                   const hasPayroll = !!p;
-                  const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1);
+                  const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency);
                   const isNearBottom = filteredLessons.length - index <= 2;
 
                   return (
@@ -1618,7 +1756,7 @@ export function TeacherDetailPage() {
                       <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={l.book || ''}>{l.book || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 font-medium">{l.minutes}'</td>
                       <td className="px-4 py-3 text-slate-700 font-bold whitespace-nowrap">
-                        {formatVND(estSalary)}
+                        {formatMoney(estSalary, l.currency || monthCurrency)}
                       </td>
                       
                       {/* Interactive Status Selector Dropdown */}
@@ -1804,7 +1942,7 @@ export function TeacherDetailPage() {
           <div className="space-y-4">
             <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3 shadow-inner">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Giáo viên:</span>
+                <span className="text-slate-500">Gia sư:</span>
                 <span className="font-semibold text-slate-700">{teacher?.name}</span>
               </div>
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
@@ -1825,29 +1963,29 @@ export function TeacherDetailPage() {
               </div>
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Lương chưa trừ thuế:</span>
-                <span className="font-bold text-slate-700">{formatVND(approvedSalaryMonth)}</span>
+                <span className="font-bold text-slate-700">{approvedSalaryMonthLabel}</span>
               </div>
-              {approvedSalaryMonth > 2000000 ? (
+              {isVndMonth && approvedSalaryMonth > 2000000 ? (
                 <>
                   <div className="flex justify-between text-sm text-rose-500 font-medium">
                     <span>Thuế TNCN khấu trừ (10%):</span>
-                    <span>-{formatVND(approvedSalaryMonth * 0.1)}</span>
+                    <span>-{formatMoney(approvedSalaryMonth * 0.1, 'VND')}</span>
                   </div>
                   <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5 font-semibold">
                     <span className="text-slate-700">Lương thực nhận sau thuế (Net):</span>
-                    <span className="font-bold text-emerald-600">{formatVND(approvedSalaryMonth * 0.9)}</span>
+                    <span className="font-bold text-emerald-600">{formatMoney(approvedSalaryMonth * 0.9, 'VND')}</span>
                   </div>
                 </>
               ) : null}
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Đã thanh toán (Gross):</span>
-                <span className="font-bold text-emerald-600">{formatVND(paidPayrollMonth)}</span>
+                <span className="font-bold text-emerald-600">{formatMoney(paidPayrollMonth, monthCurrency)}</span>
               </div>
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Chưa thanh toán (Chờ trả - Gross):</span>
-                <span className="font-bold text-amber-500">{formatVND(unpaidPayrollMonth)}</span>
+                <span className="font-bold text-amber-500">{formatMoney(unpaidPayrollMonth, monthCurrency)}</span>
               </div>
-              {approvedSalaryMonth > 2000000 && (
+              {isVndMonth && approvedSalaryMonth > 2000000 && (
                 <div className="text-[10px] text-slate-400 italic border-t border-slate-200/30 pt-2 text-right">
                   * Lương thực nhận của tháng sẽ khấu trừ 10% do tổng thu nhập vượt quá 2.000.000đ.
                 </div>
@@ -1867,15 +2005,15 @@ export function TeacherDetailPage() {
             </div>
             <div>
               <p className="text-xs text-slate-400 font-semibold">Tổng lương tháng {Number(mMon) || ''}</p>
-              {totalSalaryMonth > 2000000 ? (
+              {isVndMonth && totalSalaryMonth > 2000000 ? (
                 <>
-                  <p className="text-[11px] text-slate-400 line-through leading-none mt-0.5">{formatVND(totalSalaryMonth)}</p>
-                  <p className="text-base font-extrabold text-slate-800 leading-tight">{formatVND(totalSalaryMonth * 0.9)}</p>
+                  <p className="text-[11px] text-slate-400 line-through leading-none mt-0.5">{formatMoney(totalSalaryMonth, 'VND')}</p>
+                  <p className="text-base font-extrabold text-slate-800 leading-tight">{formatMoney(totalSalaryMonth * 0.9, 'VND')}</p>
                   <p className="text-[9px] text-rose-500 italic font-semibold leading-none mt-0.5">(-10% thuế TNCN)</p>
                 </>
               ) : (
                 <>
-                  <p className="text-base font-extrabold text-slate-800 mt-0.5">{formatVND(totalSalaryMonth)}</p>
+                  <p className="text-base font-extrabold text-slate-800 mt-0.5">{totalSalaryMonthLabel}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">(Tính từ các buổi đã duyệt)</p>
                 </>
               )}
@@ -1890,13 +2028,13 @@ export function TeacherDetailPage() {
             <div>
               <p className="text-xs text-slate-400 font-semibold">Đã duyệt</p>
               <p className="text-base font-extrabold text-emerald-600 mt-0.5">{approvedInMonth.length} buổi</p>
-              {approvedSalaryMonth > 2000000 ? (
+              {isVndMonth && approvedSalaryMonth > 2000000 ? (
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  <span className="line-through">{formatVND(approvedSalaryMonth)}</span>
-                  <span className="text-emerald-600 font-semibold ml-1">→ {formatVND(approvedSalaryMonth * 0.9)}</span>
+                  <span className="line-through">{formatMoney(approvedSalaryMonth, 'VND')}</span>
+                  <span className="text-emerald-600 font-semibold ml-1">→ {formatMoney(approvedSalaryMonth * 0.9, 'VND')}</span>
                 </p>
               ) : (
-                <p className="text-[10px] text-slate-400 mt-0.5">{formatVND(approvedSalaryMonth)}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{approvedSalaryMonthLabel}</p>
               )}
             </div>
           </div>
@@ -1909,7 +2047,7 @@ export function TeacherDetailPage() {
             <div>
               <p className="text-xs text-slate-400 font-semibold">Chờ duyệt</p>
               <p className="text-base font-extrabold text-amber-500 mt-0.5">{pendingInMonth.length} buổi</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">{formatVND(pendingSalaryMonth)}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">{pendingSalaryMonthLabel}</p>
             </div>
           </div>
 
@@ -1920,7 +2058,7 @@ export function TeacherDetailPage() {
               <span className="text-xs font-semibold">Lương tháng {Number(mMon) || ''} chỉ tính các buổi đã duyệt.</span>
             </div>
             <div className="text-[10px] text-slate-500 italic mt-1 leading-normal">
-              * Giáo viên có tổng lương tháng trên 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN.
+              * Gia sư có tổng lương tháng trên 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN.
             </div>
           </div>
         </div>
@@ -1946,7 +2084,7 @@ export function TeacherDetailPage() {
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-1.5">
             <p className="text-slate-500 mb-2 leading-relaxed">
-              Hành động này sẽ **trả lại {revertingLesson.minutes} phút học** cho học viên <span className="text-slate-700 font-semibold">{revertingLesson.studentName}</span> và **vô hiệu hóa** bản ghi lương liên quan của giáo viên.
+              Hành động này sẽ **trả lại {revertingLesson.minutes} phút học** cho học viên <span className="text-slate-700 font-semibold">{revertingLesson.studentName}</span> và **vô hiệu hóa** bản ghi lương liên quan của gia sư.
             </p>
             <div className="flex justify-between border-t border-slate-100 pt-2">
               <span className="text-slate-500">Học viên</span>
@@ -1958,9 +2096,9 @@ export function TeacherDetailPage() {
             </div>
             {revertingLesson.salary != null && (
               <div className="flex justify-between border-t border-slate-100 pt-1.5 mt-1">
-                <span className="text-slate-500">Thu hồi lương giáo viên</span>
+                <span className="text-slate-500">Thu hồi lương gia sư</span>
                 <span className="text-rose-500 font-semibold">
-                  -{formatVND(revertingLesson.salary)}
+                  -{formatMoney(revertingLesson.salary, revertingLesson.currency)}
                 </span>
               </div>
             )}
@@ -2004,7 +2142,7 @@ export function TeacherDetailPage() {
 }
 
 // Ô sửa nhanh "Câu giới thiệu" ngay trên trang chi tiết — không cần mở modal Sửa.
-// Nội dung này hiển thị cho phụ huynh ở cổng phụ huynh (kèm nickname giáo viên).
+// Nội dung này hiển thị cho phụ huynh ở cổng phụ huynh (kèm nickname gia sư).
 function InlineBioEditor({ teacherId, bio, onSaved }: { teacherId: string; bio: string; onSaved: (bio: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(bio)

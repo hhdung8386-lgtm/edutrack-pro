@@ -38,7 +38,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
   }
 
   if (!teacherDoc) {
-    throw new Error('Mã giáo viên không tồn tại')
+    throw new Error('Mã gia sư không tồn tại')
   }
 
   const teacherId = teacherDoc.id
@@ -60,6 +60,23 @@ export async function signInTeacher(teacherCode: string, password: string) {
   for (const email of candidateEmails) {
     try {
       const credential = await signInWithEmailAndPassword(auth, email, TEACHER_FIXED_PASSWORD)
+
+      // Tài khoản bị khóa quyền (vd role='inactive_teacher' sót lại sau khi đổi nickname):
+      // báo lỗi rõ ràng ngay tại màn đăng nhập thay vì để GV vào rồi dính 403 khó hiểu.
+      // GV không tự đổi role được (rules chặn) — admin bấm "Khôi phục đăng nhập" ở trang chi tiết GV.
+      try {
+        const roleSnap = await getDoc(doc(db, 'users', credential.user.uid))
+        if (roleSnap.exists() && roleSnap.data().role !== 'teacher') {
+          await firebaseSignOut(auth)
+          throw new Error('LOGIN_ROLE_LOCKED')
+        }
+      } catch (roleErr: any) {
+        if (roleErr?.message === 'LOGIN_ROLE_LOCKED') {
+          throw new Error('Tài khoản gia sư đang bị khóa quyền truy cập. Vui lòng liên hệ trung tâm để Admin bấm "Khôi phục đăng nhập" cho bạn.')
+        }
+        console.warn('Failed to pre-check user role on sign-in:', roleErr)
+      }
+
       // Sign-in successful: ensure user doc is in sync with auth uid
       try {
         const userDocRef = doc(db, 'users', credential.user.uid)
@@ -88,12 +105,12 @@ export async function signInTeacher(teacherCode: string, password: string) {
       const code = firebaseErr.code
 
       if (code === 'auth/user-disabled') {
-        throw new Error('Tài khoản giáo viên đã bị khóa')
+        throw new Error('Tài khoản gia sư đã bị khóa')
       }
 
       if (code === 'auth/invalid-email') {
         if (email !== fallbackEmail && candidateEmails.length > 1) continue
-        throw new Error('Email giáo viên không hợp lệ')
+        throw new Error('Email gia sư không hợp lệ')
       }
 
       // Modern Firebase returns 'auth/invalid-credential' for both user-not-found AND wrong-password
@@ -143,11 +160,11 @@ export async function signInTeacher(teacherCode: string, password: string) {
           }
           if (createErr.code === 'auth/invalid-email') {
             if (email !== fallbackEmail && candidateEmails.length > 1) continue
-            throw new Error('Email giáo viên không hợp lệ')
+            throw new Error('Email gia sư không hợp lệ')
           }
           if (email !== fallbackEmail && candidateEmails.length > 1) continue
           console.error('Firebase create error:', createErr.code, createErr.message)
-          throw new Error('Không thể tạo tài khoản giáo viên: ' + (createErr.code || createErr.message || ''))
+          throw new Error('Không thể tạo tài khoản gia sư: ' + (createErr.code || createErr.message || ''))
         }
       }
 
@@ -158,7 +175,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
     }
   }
 
-  throw new Error('Không thể đăng nhập giáo viên. Vui lòng liên hệ admin.')
+  throw new Error('Không thể đăng nhập gia sư. Vui lòng liên hệ admin.')
 }
 
 export async function resetTeacherPassword(teacherId: string) {
@@ -202,7 +219,7 @@ export async function resetTeacherPassword(teacherId: string) {
     }
 
     if (!teacherCode) {
-      throw new Error('Không tìm thấy thông tin giáo viên')
+      throw new Error('Không tìm thấy thông tin gia sư')
     }
 
     const created = await createUserWithEmailAndPassword(secondaryAuth, fallbackEmail, TEACHER_FIXED_PASSWORD)

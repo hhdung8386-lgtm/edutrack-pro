@@ -106,6 +106,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
   const [teachingYears, setTeachingYears] = useState<string>(teacher?.teachingYears ? String(teacher.teachingYears) : '')
   const [studentsTaughtCount, setStudentsTaughtCount] = useState<string>(teacher?.studentsTaughtCount ? String(teacher.studentsTaughtCount) : '')
+  const [bookingPriority, setBookingPriority] = useState<string>(teacher?.bookingPriority ? String(teacher.bookingPriority) : '0')
   const [studentAgesTaught, setStudentAgesTaught] = useState(teacher?.studentAgesTaught || '')
   const [teachingFormats, setTeachingFormats] = useState<string[]>(teacher?.teachingFormats || [])
   const [studentResults, setStudentResults] = useState(teacher?.studentResults || '')
@@ -184,7 +185,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         })
         .catch((err) => {
           console.error(err)
-          toast.error('Không thể sinh mã tài khoản giáo viên')
+          toast.error('Không thể sinh mã tài khoản gia sư')
         })
     }
   }, [isEdit, generatedCode, gender])
@@ -206,7 +207,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     
     const nameVal = nameInput?.value || ''
     if (!nameVal.trim()) {
-      newErrors.name = 'Vui lòng nhập tên giáo viên'
+      newErrors.name = 'Vui lòng nhập tên gia sư'
       if (!firstErrorFieldId) firstErrorFieldId = 'field-name'
     }
 
@@ -269,6 +270,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
     const countryMap: Record<string, number> = {
       VN: 7,
       PH: 8,
+      ZA: 2,
       JP: 9,
       KR: 9,
       US_EST: -5,
@@ -302,6 +304,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         otherCerts: otherCerts || '',
         teachingYears: teachingYears ? Number(teachingYears) : null,
         studentsTaughtCount: studentsTaughtCount ? Number(studentsTaughtCount) : null,
+        bookingPriority: Math.max(0, Number(bookingPriority) || 0),
         studentAgesTaught: studentAgesTaught || '',
         teachingFormats: teachingFormats || [],
         studentResults: studentResults || '',
@@ -321,7 +324,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           const checkQuery = query(collection(db, 'teachers'), where('code', '==', newUsername))
           const checkSnap = await getDocs(checkQuery)
           if (!checkSnap.empty) {
-            toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi giáo viên khác!`)
+            toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi gia sư khác!`)
             return
           }
           const studentCheckQuery = query(collection(db, 'students'), where('code', '==', newUsername))
@@ -374,14 +377,17 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               }
             }
           } else {
-            // Fallback: if auth provisioning failed completely, try to update the first found user doc
-            const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
+            // Fallback: if auth provisioning failed completely, update the first found user doc.
+            // KHÔNG lọc role=='teacher' — doc có thể đã bị đánh dấu 'inactive_teacher' từ lần đổi
+            // nickname trước; nếu bỏ sót, GV sẽ kẹt 403 vĩnh viễn (bug thực tế của GV Nikolas).
+            const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id))
             const userSnap = await getDocs(userQuery)
             if (!userSnap.empty) {
               const userDoc = userSnap.docs[0]
               await updateDoc(userDoc.ref, {
                 username: newUsername,
-                email: finalEmail
+                email: finalEmail,
+                role: 'teacher',
               })
             }
           }
@@ -403,7 +409,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           photoURL,
           updatedAt: serverTimestamp(),
         })
-        toast.success('Đã cập nhật giáo viên')
+        toast.success('Đã cập nhật gia sư')
       } else {
         // CREATE mode - Admin creates account for teacher
         if (!newUsername) {
@@ -416,7 +422,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           try {
             code = await generateUniqueEnglishName(gender)
           } catch (err: any) {
-            toast.error('Không thể sinh mã giáo viên, vui lòng thử lại')
+            toast.error('Không thể sinh mã gia sư, vui lòng thử lại')
             return
           }
         }
@@ -452,7 +458,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         // Create teacher doc
         const teacherRef = await addDoc(collection(db, 'teachers'), {
           code,
-          name: finalName || 'Giáo viên mới',
+          name: finalName || 'Gia sư mới',
           level: data.level,
           bio: data.bio || '',
           country: data.country || 'VN',
@@ -474,7 +480,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           teacherId: teacherRef.id
         })
 
-        toast.success(`Đã tạo giáo viên thành công!`)
+        toast.success(`Đã tạo gia sư thành công!`)
       }
       onClose()
     } catch (err: any) {
@@ -495,7 +501,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       open
       onClose={onClose}
       size="xl"
-      title={isEdit ? 'Chỉnh sửa giáo viên' : 'Thêm giáo viên mới'}
+      title={isEdit ? 'Chỉnh sửa gia sư' : 'Thêm gia sư mới'}
       footer={
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={onClose}>Hủy</Button>
@@ -518,7 +524,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               await onSubmit({ name: nameVal, level: levelVal, bio: bioVal, country: countryVal })
             }}
           >
-            {isEdit ? 'Lưu thay đổi' : 'Tạo giáo viên'}
+            {isEdit ? 'Lưu thay đổi' : 'Tạo gia sư'}
           </Button>
         </div>
       }
@@ -589,8 +595,8 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               ) : (
                 <p className="text-[10px] text-slate-400 mt-1">
                   {isEdit 
-                    ? '⚠️ Thay đổi tên này sẽ đổi tài khoản đăng nhập của giáo viên!'
-                    : 'Giáo viên dùng tên này để đăng nhập vào hệ thống.'}
+                    ? '⚠️ Thay đổi tên này sẽ đổi tài khoản đăng nhập của gia sư!'
+                    : 'Gia sư dùng tên này để đăng nhập vào hệ thống.'}
                 </p>
               )}
             </div>
@@ -599,7 +605,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           {!isEdit && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-xs text-blue-700 font-medium">
-                ℹ️ <strong>Mật khẩu cố định:</strong> Tất cả giáo viên sẽ dùng mật khẩu <strong>1234560</strong>
+                ℹ️ <strong>Mật khẩu cố định:</strong> Tất cả gia sư sẽ dùng mật khẩu <strong>1234560</strong>
               </p>
             </div>
           )}
@@ -617,7 +623,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             )}
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-600 mb-1">Ảnh giáo viên</p>
+            <p className="text-sm font-medium text-slate-600 mb-1">Ảnh gia sư</p>
             <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
               Chọn ảnh...
@@ -632,7 +638,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
 
         <Input
           id="field-name"
-          label="Tên giáo viên *"
+          label="Tên gia sư *"
           placeholder="Nguyễn Thị B"
           error={localErrors.name}
           {...(() => {
@@ -656,6 +662,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           >
             <option value="VN">Việt Nam (GMT+7)</option>
             <option value="PH">Philippines (GMT+8)</option>
+            <option value="ZA">Nam Phi / South Africa (GMT+2)</option>
             <option value="JP">Nhật Bản / Japan (GMT+9)</option>
             <option value="KR">Hàn Quốc / Korea (GMT+9)</option>
             <option value="US_EST">Mỹ / USA (EST - GMT-5)</option>
@@ -702,6 +709,24 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
             })()}
           />
 
+        </div>
+
+        <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+          <label htmlFor="booking-priority" className="block text-sm font-semibold text-slate-700">
+            Thứ tự ưu tiên gợi ý đặt lịch
+          </label>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Nhập 1 để ưu tiên cao nhất, 2 cho vị trí tiếp theo. Nhập 0 nếu không ghim. Hệ thống vẫn kiểm tra môn học và lịch rảnh trước khi hiển thị.
+          </p>
+          <input
+            id="booking-priority"
+            type="number"
+            min="0"
+            step="1"
+            value={bookingPriority}
+            onChange={(event) => setBookingPriority(event.target.value)}
+            className="mt-3 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+          />
         </div>
 
         <Textarea
@@ -802,7 +827,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               <span className="flex items-start gap-2">
                 <GraduationCap className={`w-4 h-4 mt-0.5 flex-shrink-0 ${trainedAt123English ? 'text-emerald-600' : 'text-slate-400'}`} />
                 <span>
-                  <span className="block text-sm font-bold text-slate-800">Hoàn thành Chương trình Đào tạo Gia sư tại 123English</span>
+                  <span className="block text-sm font-bold text-slate-800">Hoàn thành Chương trình Đào tạo Gia sư tại Nội Bộ Trung Tâm</span>
                   <span className="block text-xs text-slate-500 mt-0.5">Thời lượng đào tạo: 60 giờ</span>
                 </span>
               </span>

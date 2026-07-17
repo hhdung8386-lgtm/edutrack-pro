@@ -8,6 +8,7 @@ import { signIn, signInTeacher } from '@/lib/auth'
 import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
+import { PublicFooter } from '@/components/layout/PublicFooter'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -68,13 +69,13 @@ export function LoginPage() {
       else setErrorMsg('Tài khoản không có quyền truy cập')
     } catch (err: unknown) {
       const msg = (err as Error).message || ''
-      if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found') || msg.includes('invalid-email') || msg.includes('Mật khẩu không đúng') || msg.includes('Mã giáo viên không tồn tại')) {
-        setErrorMsg('Mã giáo viên hoặc mật khẩu không đúng')
+      if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found') || msg.includes('invalid-email') || msg.includes('Mật khẩu không đúng') || msg.includes('Mã gia sư không tồn tại')) {
+        setErrorMsg('Mã gia sư hoặc mật khẩu không đúng')
       } else if (msg.includes('too-many-requests')) {
         setErrorMsg('Quá nhiều lần thử. Vui lòng thử lại sau.')
       } else if (msg.includes('không có quyền') || msg.includes('does not have access')) {
         setErrorMsg('Tài khoản không có quyền truy cập')
-      } else if (msg.includes('chưa được kích hoạt')) {
+      } else if (msg.includes('chưa được kích hoạt') || msg.includes('bị khóa quyền')) {
         setErrorMsg(msg)
       } else {
         setErrorMsg('Đăng nhập thất bại. Vui lòng thử lại.')
@@ -114,8 +115,8 @@ export function LoginPage() {
               <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-3">
                 <Users className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Đội ngũ giáo viên</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">Gồm các thầy cô Việt Nam và giáo viên nước ngoài đến từ Anh, Mỹ, sở hữu trình độ chuyên môn cao.</p>
+              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Đội ngũ gia sư</h3>
+              <p className="text-slate-600 text-xs leading-relaxed">Gồm các thầy cô Việt Nam và gia sư nước ngoài đến từ Anh, Mỹ, sở hữu trình độ chuyên môn cao.</p>
             </div>
             <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
               <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-3">
@@ -154,7 +155,7 @@ export function LoginPage() {
             </div>
             <div>
               <h3 className="font-bold text-slate-900 mb-1.5">Truyền thông</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">Thường xuyên cập nhật các video bài giảng, giới thiệu giáo viên mới và các chương trình ưu đãi học phí.</p>
+              <p className="text-slate-600 text-sm leading-relaxed">Thường xuyên cập nhật các video bài giảng, giới thiệu gia sư mới và các chương trình ưu đãi học phí.</p>
             </div>
           </div>
         </div>
@@ -265,7 +266,7 @@ export function LoginPage() {
         {/* Right Side: Cards */}
         <div className="bg-[#F8FAFC] flex flex-col lg:justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 lg:py-12 space-y-4 lg:overflow-y-auto">
           {/* Card: Tra cứu */}
-          <div className="bg-white rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/60 relative overflow-hidden">
+          <div className="relative rounded-2xl border border-slate-100/60 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             <div className="absolute top-5 right-5 flex gap-1">
               <div className="w-1 h-1 rounded-full bg-amber-200" />
               <div className="w-1 h-1 rounded-full bg-amber-200" />
@@ -304,6 +305,7 @@ export function LoginPage() {
               >
                 <Search className="w-4 h-4" /> {t('landing.search_btn')}
               </button>
+
             </div>
 
             <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium bg-slate-50 py-2.5 rounded-lg">
@@ -357,19 +359,7 @@ export function LoginPage() {
       </main>
 
       {/* Compact Footer */}
-      <footer className="border-t border-slate-200 bg-white py-3 shrink-0">
-        <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-            © 2026 Hộ kinh doanh Gia Sư Toàn Năng
-          </div>
-          <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500 font-medium">
-            <span className="hover:text-slate-800 cursor-pointer transition-colors">Chính sách bảo mật</span>
-            <span className="hover:text-slate-800 cursor-pointer transition-colors">Điều khoản sử dụng</span>
-            <div className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-white cursor-pointer hover:bg-black transition-colors font-bold text-[9px]">f</div>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
 
       {/* Section Modal */}
       {activeSection && (
@@ -387,7 +377,7 @@ export function LoginPage() {
       <Modal
         open={loginRole !== null}
         onClose={() => setLoginRole(null)}
-        title={loginRole === 'teacher' ? 'Đăng nhập Giáo viên' : 'Đăng nhập Quản trị viên'}
+        title={loginRole === 'teacher' ? 'Đăng nhập Gia sư' : 'Đăng nhập Quản trị viên'}
         size="sm"
       >
         <form onSubmit={handleLoginSubmit(onLogin)} className="space-y-4">
@@ -399,7 +389,7 @@ export function LoginPage() {
 
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">
-              {loginRole === 'teacher' ? 'Mã giáo viên' : 'Tài khoản'}
+              {loginRole === 'teacher' ? 'Mã gia sư' : 'Tài khoản'}
             </label>
             <div className="relative">
               <User className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -438,7 +428,7 @@ export function LoginPage() {
 
           {loginRole === 'teacher' && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-600 font-medium">
-               Đăng nhập với mã giáo viên (vd: GVMLLNBR)
+               Đăng nhập với mã gia sư (vd: GVMLLNBR)
             </div>
           )}
 
