@@ -1,37 +1,49 @@
 import { useState, useEffect, useMemo } from 'react'
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore'
+import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Student, Lesson, BookingRequest, Teacher } from '@/types'
+import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
 import {
   Search, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Info, Clock,
-  User as UserIcon, Globe, Home, History, GraduationCap, CalendarPlus,
+  User as UserIcon, Globe, History, GraduationCap, CalendarPlus, Gift, CreditCard,
   Star, Video, BookOpen, CalendarCheck2, Lightbulb, ChevronRight as ChevronRightIcon,
-  FileText, Sparkles, ArrowLeft,
+  FileText, Sparkles, ArrowLeft, ArrowUpRight, Award, MapPin, MessageSquareText,
+  PlayCircle, UserRound, CheckCircle2, RotateCcw, ClipboardCheck, CalendarDays,
+  Trophy, Copy, Camera,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
+import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { WaveDivider } from '@/components/shared/WaveDivider'
 import { NotificationDrawer } from '@/components/shared/NotificationDrawer'
-import { TeacherAvatar } from '@/components/shared/TeacherAvatar'
+import { normalizeTeacherCountryCode, TeacherAvatar } from '@/components/shared/TeacherAvatar'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { BottomSheet } from '@/components/ui/BottomSheet'
 import { useLanguageStore } from '@/stores/languageStore'
+import { toast } from '@/stores/toastStore'
+import { RewardsTab } from '@/components/parent/RewardsTab'
+import { TopUpTab } from '@/components/parent/TopUpTab'
+import { BookingExperienceTab, type TeacherRecommendation } from '@/components/parent/BookingExperienceTab'
+import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
 } from 'recharts'
+import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { rewardMonthKey } from '@/lib/rewards'
 
 const STORAGE_KEY = '123english_parent_session'
 
-function saveSession(code: string) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ code, savedAt: Date.now() }))
+function saveSession(code: string, studentId: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ code, studentId, savedAt: Date.now() }))
 }
-function loadSession(): { code: string } | null {
+function loadSession(): { code: string; studentId?: string } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const data = JSON.parse(raw)
     if (Date.now() - data.savedAt > 30 * 24 * 60 * 60 * 1000) { localStorage.removeItem(STORAGE_KEY); return null }
-    return { code: data.code }
+    return { code: data.code, studentId: data.studentId }
   } catch { return null }
 }
 function clearSession() { localStorage.removeItem(STORAGE_KEY) }
@@ -58,35 +70,75 @@ export function ParentDashboardPage() {
     const session = loadSession()
     if (session) {
       setStudentCode(session.code)
-      handleLogin(session.code).finally(() => setAutoLoading(false))
+      handleLogin(session.code, session.studentId).finally(() => setAutoLoading(false))
     } else {
       setAutoLoading(false)
     }
   }, [])
 
-  const handleLogin = async (code?: string) => {
+  useEffect(() => {
+    const studentId = result?.student.id
+    if (!studentId) return
+
+    const unsubscribeStudent = onSnapshot(doc(db, 'students', studentId), (snapshot) => {
+      if (!snapshot.exists()) return
+      setResult((current) => current && current.student.id === studentId
+        ? { ...current, student: { id: snapshot.id, ...snapshot.data() } as Student }
+        : current)
+    }, (snapshotError) => {
+      console.error('Keep student diamond balance in sync failed:', snapshotError)
+    })
+
+    const bookingQuery = query(
+      collection(db, 'bookingRequests'),
+      where('studentId', '==', studentId),
+      where('status', 'in', ['confirmed', 'pending']),
+    )
+    const unsubscribeBookings = onSnapshot(bookingQuery, (snapshot) => {
+      const nextBookings = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+      setResult((current) => current && current.student.id === studentId
+        ? { ...current, bookings: nextBookings }
+        : current)
+    }, (snapshotError) => {
+      console.error('Keep student bookings in sync failed:', snapshotError)
+    })
+
+    return () => {
+      unsubscribeStudent()
+      unsubscribeBookings()
+    }
+  }, [result?.student.id])
+
+  const handleLogin = async (code?: string, cachedStudentId?: string) => {
     setError('')
     const finalCode = (code || studentCode).trim().toUpperCase()
     if (!finalCode) { setError('Vui lòng nhập Mã học sinh'); return }
 
     setSearching(true)
     try {
-      const q = query(collection(db, 'students'), where('code', '==', finalCode))
-      const snap = await getDocs(q)
-      if (snap.empty) { setError('Không tìm thấy học sinh với mã này'); return }
+      let student: Student | null = null
+      if (cachedStudentId) {
+        const cachedSnap = await getDoc(doc(db, 'students', cachedStudentId))
+        if (cachedSnap.exists() && String(cachedSnap.data().code || '').toUpperCase() === finalCode) {
+          student = { id: cachedSnap.id, ...cachedSnap.data() } as Student
+        }
+      }
 
-      const student = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
+      if (!student) {
+        const studentQuery = query(collection(db, 'students'), where('code', '==', finalCode), limit(1))
+        const studentSnap = await getDocs(studentQuery)
+        if (studentSnap.empty) { setError('Không tìm thấy học sinh với mã này'); return }
+        student = { id: studentSnap.docs[0].id, ...studentSnap.docs[0].data() } as Student
+      }
 
       const lq = query(collection(db, 'publicLessons'), where('studentId', '==', student.id), where('status', '==', 'approved'))
-      const lSnap = await getDocs(lq)
+      const bq = query(collection(db, 'bookingRequests'), where('studentId', '==', student.id), where('status', 'in', ['confirmed', 'pending']))
+      const [lSnap, bSnap] = await Promise.all([getDocs(lq), getDocs(bq)])
       const lessons = lSnap.docs.map(d => ({ id: d.id, ...d.data() } as Lesson))
       lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
-
-      const bq = query(collection(db, 'bookingRequests'), where('studentId', '==', student.id), where('status', 'in', ['confirmed', 'pending']))
-      const bSnap = await getDocs(bq)
       const bookings = bSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
 
-      saveSession(finalCode)
+      saveSession(finalCode, student.id)
       setResult({ student, lessons, bookings })
     } catch (err) {
       console.error(err)
@@ -100,19 +152,49 @@ export function ParentDashboardPage() {
 
   if (autoLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-sky-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-[#3BB8EB] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">{lang === 'vi' ? 'Đang tải...' : 'Loading...'}</p>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white font-quicksand" aria-label={lang === 'vi' ? 'Đang tải trang học viên' : 'Loading student portal'}>
+        <header className="border-b border-slate-200/70 bg-white">
+          <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3.5">
+            <div className="h-9 w-9 animate-pulse rounded-xl bg-slate-100" />
+            <div className="flex-1 space-y-2"><div className="h-4 w-32 animate-pulse rounded bg-slate-200" /><div className="h-2.5 w-24 animate-pulse rounded bg-slate-100" /></div>
+            <div className="h-10 w-10 animate-pulse rounded-xl bg-slate-100" />
+          </div>
+        </header>
+        <div className="mx-auto max-w-2xl space-y-5 px-4 py-5">
+          <div className="flex items-center justify-between"><div className="space-y-2"><div className="h-5 w-36 animate-pulse rounded bg-slate-200" /><div className="h-3 w-48 animate-pulse rounded bg-slate-100" /></div><div className="h-10 w-28 animate-pulse rounded-xl bg-sky-100" /></div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mx-auto mb-5 h-5 w-32 animate-pulse rounded bg-slate-200" />
+            <div className="grid grid-cols-7 gap-2">
+              {Array.from({ length: 35 }, (_, index) => <div key={index} className="aspect-square animate-pulse rounded-xl bg-slate-100" />)}
+            </div>
+          </div>
+          <div className="h-44 animate-pulse rounded-2xl border border-sky-100 bg-white" />
         </div>
       </div>
     )
   }
 
-  if (result) return <ParentView student={result.student} lessons={result.lessons} bookings={result.bookings} onBack={reset} />
+  if (result) return (
+    <ParentView
+      student={result.student}
+      lessons={result.lessons}
+      bookings={result.bookings}
+      onBack={reset}
+      onBookingCancelled={(bookingId, heldMinutes) => setResult((current) => current ? {
+        ...current,
+        student: { ...current.student, reservedMinutes: heldMinutes, heldMinutes },
+        bookings: current.bookings.filter((booking) => booking.id !== bookingId),
+      } : current)}
+      onBookingCreated={(booking, heldMinutes) => setResult((current) => current ? {
+        ...current,
+        student: { ...current.student, reservedMinutes: heldMinutes, heldMinutes },
+        bookings: [...current.bookings, booking],
+      } : current)}
+    />
+  )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-sky-50 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-sky-50 relative overflow-hidden font-quicksand">
       <div className="absolute top-[-15%] right-[-10%] w-[50%] h-[50%] bg-[#3BB8EB]/8 rounded-full blur-[100px]" />
       <div className="absolute bottom-[-15%] left-[-10%] w-[40%] h-[40%] bg-[#FFE500]/10 rounded-full blur-[100px]" />
 
@@ -148,7 +230,7 @@ export function ParentDashboardPage() {
             {lang === 'vi' ? 'Xin chào, Phụ huynh!' : 'Welcome, Parents!'}
           </h2>
           <p className="text-slate-500 text-sm max-w-xs mx-auto leading-relaxed">
-            {lang === 'vi' ? 'Nhập mã học viên và SĐT để xem bài tập, nhận xét từ giáo viên' : 'Enter student code to view homework & teacher feedback'}
+            {lang === 'vi' ? 'Nhập mã học viên và SĐT để xem bài tập, nhận xét từ gia sư' : 'Enter student code to view homework & teacher feedback'}
           </p>
         </div>
 
@@ -160,7 +242,7 @@ export function ParentDashboardPage() {
             <input
               type="text" value={studentCode} onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()} placeholder={lang === 'vi' ? 'VD: HS8X2K91' : 'E.g. HS8X2K91'}
-              className="w-full rounded-xl bg-[#FFE500]/5 border-2 border-[#FFE500]/30 text-slate-900 placeholder-slate-400 px-4 py-3.5 text-lg font-mono font-bold tracking-widest uppercase text-center focus:outline-none focus:ring-2 focus:ring-[#3BB8EB]/40 focus:border-[#3BB8EB] transition-all"
+              className="w-full rounded-xl bg-[#FFE500]/5 border-2 border-[#FFE500]/30 text-slate-900 placeholder-slate-400 px-4 py-3.5 text-lg font-bold tracking-widest uppercase text-center focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-600 transition-all"
               autoCapitalize="characters" autoCorrect="off"
             />
           </div>
@@ -198,12 +280,340 @@ export function ParentDashboardPage() {
   )
 }
 
+const PROFILE_WEEK_DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+function getProfileWeekDates(weekOffset = 0) {
+  const monday = new Date()
+  monday.setHours(0, 0, 0, 0)
+  const day = monday.getDay()
+  monday.setDate(monday.getDate() + (day === 0 ? -6 : 1 - day))
+  monday.setDate(monday.getDate() + weekOffset * 7)
+  const weekStartISO = getLocalISODate(monday)
+
+  return PROFILE_WEEK_DAYS.map((weekDay, index) => {
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + index)
+    return { weekDay, date, weekStartISO }
+  })
+}
+
+type ProfileTimeSlotStatus = 'available' | 'booked' | 'past' | 'unavailable'
+
+interface ProfileTimeSlot {
+  weekDay: DayOfWeek
+  dateISO: string
+  weekStartISO: string
+  start: string
+  end: string
+  status: ProfileTimeSlotStatus
+}
+
+function profileTimeToMinutes(time: string) {
+  const [hours = '0', minutes = '0'] = time.split(':')
+  return Number(hours) * 60 + Number(minutes)
+}
+
+function profileMinutesToTime(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function isProfileSlotInsideAvailability(
+  availability: TeacherAvailability | null | undefined,
+  weekStartISO: string,
+  weekDay: DayOfWeek,
+  start: string,
+  duration: number,
+) {
+  const slots = availability?.weekOverrides?.[weekStartISO]?.slots || availability?.slots
+  const ranges = slots?.[weekDay]?.timeRanges || []
+  const startMinutes = profileTimeToMinutes(start)
+  const endMinutes = startMinutes + duration
+  return ranges.some((range) => startMinutes >= profileTimeToMinutes(range.start) && endMinutes <= profileTimeToMinutes(range.end))
+}
+
+function isProfileSlotBooked(bookings: BookingRequest[], dateISO: string, start: string, duration: number) {
+  const startMinutes = profileTimeToMinutes(start)
+  const endMinutes = startMinutes + duration
+  return bookings.some((booking) => {
+    if (booking.requestedDate !== dateISO || !['pending', 'confirmed'].includes(booking.status)) return false
+    const bookingStart = profileTimeToMinutes(booking.requestedStart)
+    const bookingEnd = profileTimeToMinutes(booking.requestedEnd)
+    return Math.max(startMinutes, bookingStart) < Math.min(endMinutes, bookingEnd)
+  })
+}
+
+function getProfileSlotStatus(
+  availability: TeacherAvailability | null | undefined,
+  bookings: BookingRequest[],
+  weekStartISO: string,
+  weekDay: DayOfWeek,
+  dateISO: string,
+  start: string,
+  duration = 25,
+): ProfileTimeSlotStatus {
+  const [year, month, day] = dateISO.split('-').map(Number)
+  const [hour, minute] = start.split(':').map(Number)
+  const startsAt = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0)
+  const insideAvailability = isProfileSlotInsideAvailability(availability, weekStartISO, weekDay, start, duration)
+  if (insideAvailability && isProfileSlotBooked(bookings, dateISO, start, duration)) return 'booked'
+  if (startsAt.getTime() <= Date.now()) return 'past'
+  if (!insideAvailability) return 'unavailable'
+  return 'available'
+}
+
+function TeacherProfileContent({ teacher, availability, availabilityLoading, bookings, bookingsLoading, nickname, lang, onBookSlot }: {
+  teacher?: TeacherLite
+  availability?: TeacherAvailability | null
+  availabilityLoading: boolean
+  bookings: BookingRequest[]
+  bookingsLoading: boolean
+  nickname: string
+  lang: string
+  onBookSlot: (slot: ProfileTimeSlot) => void
+}) {
+  const approvedCertificates = (teacher?.certificates || []).filter((item) => item.status === 'approved' && !item.voided)
+  const pedagogicalCertificates = approvedCertificates.filter((item) => item.category === 'pedagogical' || (item.category === 'other' && /tefl|tesol|celta|delta|teaching|pedagog|sư phạm/i.test(item.title)))
+  const foreignLanguageCertificates = approvedCertificates.filter((item) => !pedagogicalCertificates.includes(item))
+  const [weekOffset, setWeekOffset] = useState(0)
+  const weekDates = useMemo(() => getProfileWeekDates(weekOffset), [weekOffset])
+  const weekStartISO = weekDates[0].weekStartISO
+  const effectiveSlots = availability?.weekOverrides?.[weekStartISO]?.slots || availability?.slots
+  const availableDays = weekDates.filter(({ weekDay }) => {
+    const slot = effectiveSlots?.[weekDay]
+    return slot?.available && slot.timeRanges?.length > 0
+  })
+  const todayISO = getLocalISODate(new Date())
+  const firstAvailableDay = availableDays.find(({ date }) => getLocalISODate(date) === todayISO)?.weekDay || availableDays[0]?.weekDay || 'mon'
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek | null>(null)
+  const effectiveSelectedDay = selectedDay && weekDates.some(({ weekDay }) => weekDay === selectedDay) ? selectedDay : firstAvailableDay
+  const selectedDate = weekDates.find(({ weekDay }) => weekDay === effectiveSelectedDay)
+  const selectedDateISO = selectedDate ? getLocalISODate(selectedDate.date) : ''
+  const selectedTimeSlots = Array.from({ length: 48 }, (_, index): ProfileTimeSlot => {
+    const start = profileMinutesToTime(index * 30)
+    return {
+      weekDay: effectiveSelectedDay,
+      dateISO: selectedDateISO,
+      weekStartISO,
+      start,
+      end: profileMinutesToTime(index * 30 + 25),
+      status: getProfileSlotStatus(availability, bookings, weekStartISO, effectiveSelectedDay, selectedDateISO, start),
+    }
+  })
+  const availableSlotCount = selectedTimeSlots.filter((slot) => slot.status === 'available').length
+  const weekNote = availability?.weekOverrides?.[weekStartISO]?.note || availability?.note
+  const dayLabels = lang === 'vi'
+    ? { mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ Nhật' }
+    : { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
+  const shortDayLabels = lang === 'vi'
+    ? { mon: 'T2', tue: 'T3', wed: 'T4', thu: 'T5', fri: 'T6', sat: 'T7', sun: 'CN' }
+    : { mon: 'Mo', tue: 'Tu', wed: 'We', thu: 'Th', fri: 'Fr', sat: 'Sa', sun: 'Su' }
+  const formatProfileDate = (date: Date) => `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+  const gender = teacher?.gender === 'female'
+    ? (lang === 'vi' ? 'Nữ' : 'Female')
+    : teacher?.gender === 'male'
+      ? (lang === 'vi' ? 'Nam' : 'Male')
+      : (lang === 'vi' ? 'Đang cập nhật' : 'Updating')
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 sm:p-5">
+        <div className="flex items-center gap-4">
+          <TeacherAvatar name={nickname} photoURL={teacher?.photoURL} country={teacher?.country} size={72} />
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-black tracking-tight text-slate-950">{nickname}</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+              {teacher?.country && <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 ring-1 ring-sky-100"><MapPin className="h-3.5 w-3.5 text-sky-600" />{teacher.country}</span>}
+              {typeof teacher?.teachingYears === 'number' && <span className="rounded-lg bg-white px-2.5 py-1.5 ring-1 ring-sky-100">{teacher.teachingYears} {lang === 'vi' ? 'năm kinh nghiệm' : 'years of experience'}</span>}
+            </div>
+          </div>
+        </div>
+        {teacher?.bio && <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-600">{teacher.bio}</p>}
+      </section>
+
+      <div className="grid gap-4">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-5 w-5 text-sky-600" />
+            <h3 className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Thông tin chuyên môn' : 'Professional information'}</h3>
+          </div>
+          <dl className="mt-4 grid grid-cols-1 gap-x-5 gap-y-3 text-sm sm:grid-cols-2">
+            <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Giới tính:' : 'Gender:'}</dt><dd className="min-w-0 truncate font-bold text-slate-800">{gender}</dd></div>
+            <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Học vị:' : 'Degree:'}</dt><dd className="min-w-0 truncate font-bold text-slate-800">{teacher?.degreeType || (lang === 'vi' ? 'Đang cập nhật' : 'Updating')}</dd></div>
+            <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Trường:' : 'University:'}</dt><dd className="min-w-0 truncate font-bold text-slate-800" title={teacher?.university}>{teacher?.university || (lang === 'vi' ? 'Đang cập nhật' : 'Updating')}</dd></div>
+            {typeof teacher?.studentsTaughtCount === 'number' && <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Học viên đã dạy:' : 'Students taught:'}</dt><dd className="min-w-0 truncate font-bold text-slate-800">{teacher.studentsTaughtCount}</dd></div>}
+          </dl>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2">
+            <Award className="h-5 w-5 text-sky-600" />
+            <h3 className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Chứng chỉ' : 'Certificates'}</h3>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-sky-50/70 p-3 ring-1 ring-sky-100">
+              <p className="text-[11px] font-black uppercase tracking-wide text-sky-700">{lang === 'vi' ? 'Ngoại ngữ' : 'Language certificates'}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {foreignLanguageCertificates.map((certificate, index) => <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-sky-800 ring-1 ring-sky-100">{certificate.title}</span>)}
+                {foreignLanguageCertificates.length === 0 && <span className="text-xs font-medium text-slate-500">{lang === 'vi' ? 'Đang cập nhật' : 'Updating'}</span>}
+              </div>
+            </div>
+            <div className="rounded-xl bg-emerald-50/70 p-3 ring-1 ring-emerald-100">
+              <p className="text-[11px] font-black uppercase tracking-wide text-emerald-700">{lang === 'vi' ? 'Sư phạm' : 'Teaching certificates'}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {pedagogicalCertificates.map((certificate, index) => <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-800 ring-1 ring-emerald-100">{certificate.title}</span>)}
+                {pedagogicalCertificates.length === 0 && <span className="text-xs font-medium text-slate-500">{lang === 'vi' ? 'Đang cập nhật' : 'Updating'}</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-2xl border border-sky-100 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+            <CalendarDays className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Lịch rảnh của gia sư' : 'Teacher availability'}</h3>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">
+              {lang === 'vi' ? 'Tuần' : 'Week'} {formatProfileDate(weekDates[0].date)} - {formatProfileDate(weekDates[6].date)}
+            </p>
+          </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => { setWeekOffset((value) => value - 1); setSelectedDay(null) }}
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-[0.97]"
+              aria-label={lang === 'vi' ? 'Xem tuần trước' : 'View previous week'}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              {lang === 'vi' ? 'Tuần trước' : 'Previous'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setWeekOffset((value) => value + 1); setSelectedDay(null) }}
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-[0.97]"
+              aria-label={lang === 'vi' ? 'Xem tuần sau' : 'View next week'}
+            >
+              {lang === 'vi' ? 'Tuần sau' : 'Next'}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {availabilityLoading ? (
+          <div className="mt-4 space-y-2" aria-label={lang === 'vi' ? 'Đang tải lịch rảnh' : 'Loading availability'}>
+            {[1, 2, 3].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
+          </div>
+        ) : availableDays.length > 0 ? (
+          <div className="mt-4">
+            <div className="grid grid-cols-7 gap-1.5 rounded-2xl bg-slate-50 p-2 ring-1 ring-slate-100">
+              {weekDates.map(({ weekDay, date }) => {
+                const available = availableDays.some((item) => item.weekDay === weekDay)
+                const active = effectiveSelectedDay === weekDay
+                const isToday = getLocalISODate(date) === todayISO
+                return (
+                  <button
+                    key={weekDay}
+                    type="button"
+                    onClick={() => setSelectedDay(weekDay)}
+                    aria-pressed={active}
+                    className={`flex min-h-[58px] flex-col items-center justify-center rounded-xl text-center transition focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.96] ${active ? 'bg-sky-600 text-white shadow-md shadow-sky-200' : available ? 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-sky-50 hover:text-sky-700' : 'bg-white/60 text-slate-400 hover:bg-white hover:text-slate-600'} ${isToday && !active ? 'ring-1 ring-sky-200' : ''}`}
+                  >
+                    <span className="text-[9px] font-black uppercase">{shortDayLabels[weekDay]}</span>
+                    <span className="mt-1 text-sm font-black tabular-nums">{date.getDate()}</span>
+                    {available && <span className={`mt-1 h-1 w-1 rounded-full ${active ? 'bg-white' : 'bg-sky-500'}`} />}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_14px_34px_-28px_rgba(2,132,199,0.55)]">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 pb-3">
+                <p className="text-xs font-black text-slate-900">
+                  {dayLabels[effectiveSelectedDay]}
+                  <span className="ml-1.5 font-semibold text-slate-500">- {selectedDate ? formatProfileDate(selectedDate.date) : ''}</span>
+                </p>
+                <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-[9px] font-bold text-slate-500">
+                  <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded border border-sky-400 bg-white" />{lang === 'vi' ? 'Có thể đặt' : 'Available'}</span>
+                  <span className="inline-flex items-center gap-1 line-through"><i className="h-2.5 w-2.5 rounded border border-sky-200 bg-[repeating-linear-gradient(-45deg,#f0f9ff_0,#f0f9ff_2px,#dbeafe_2px,#dbeafe_4px)]" />{lang === 'vi' ? 'Đã có lớp' : 'Booked'}</span>
+                  <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-slate-100 ring-1 ring-slate-200" />{lang === 'vi' ? 'Không mở' : 'Unavailable'}</span>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-6 gap-1.5" aria-label={lang === 'vi' ? 'Bảng lịch từng 30 phút' : '30-minute timetable'}>
+                {selectedTimeSlots.map((slot) => {
+                  const available = slot.status === 'available'
+                  const booked = slot.status === 'booked'
+                  const past = slot.status === 'past'
+                  return (
+                    <button
+                      key={`${slot.dateISO}-${slot.start}`}
+                      type="button"
+                      disabled={!available || bookingsLoading}
+                      onClick={() => onBookSlot(slot)}
+                      aria-label={
+                        available
+                          ? (lang === 'vi' ? `Đặt lịch lúc ${slot.start}` : `Book ${slot.start}`)
+                          : booked
+                            ? (lang === 'vi' ? `${slot.start} đã được đặt` : `${slot.start} booked`)
+                            : past
+                              ? (lang === 'vi' ? `${slot.start} đã qua` : `${slot.start} passed`)
+                              : (lang === 'vi' ? `${slot.start} không nằm trong lịch rảnh` : `${slot.start} unavailable`)
+                      }
+                      className={`flex min-h-9 items-center justify-center rounded-lg px-1 text-[10px] font-extrabold tabular-nums transition focus:outline-none focus:ring-2 focus:ring-sky-300 ${
+                        available
+                          ? 'border border-sky-300 bg-white text-sky-700 shadow-sm hover:-translate-y-0.5 hover:border-sky-500 hover:bg-sky-600 hover:text-white active:scale-[0.96]'
+                          : booked
+                            ? 'cursor-not-allowed border border-sky-100 bg-[repeating-linear-gradient(-45deg,#f8fbff_0,#f8fbff_3px,#e0f2fe_3px,#e0f2fe_5px)] text-sky-400 line-through decoration-2'
+                            : past
+                              ? 'cursor-not-allowed border border-slate-100 bg-slate-50 text-slate-300'
+                              : 'cursor-not-allowed border border-transparent bg-slate-50/70 text-slate-300'
+                      }`}
+                    >
+                      {slot.start}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                <p className="text-[10px] font-semibold leading-4 text-slate-500">
+                  {lang === 'vi' ? 'Chọn giờ viền xanh để gửi yêu cầu đặt lịch.' : 'Choose a blue outlined time to request a class.'}
+                </p>
+                <span className="shrink-0 text-[10px] font-black tabular-nums text-sky-700">{availableSlotCount} {lang === 'vi' ? 'giờ trống' : 'open'}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-sky-200 bg-sky-50/60 px-4 py-5 text-center">
+            <CalendarDays className="mx-auto h-7 w-7 text-sky-300" />
+            <p className="mt-2 text-sm font-bold text-slate-600">{lang === 'vi' ? 'Gia sư chưa cập nhật lịch rảnh cho tuần này.' : 'The teacher has not updated availability for this week.'}</p>
+          </div>
+        )}
+
+        {weekNote && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600">{weekNote}</p>}
+      </section>
+
+      {teacher?.youtubeLink && /^https?:\/\//i.test(teacher.youtubeLink) && (
+        <a href={teacher.youtubeLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-sky-700 active:scale-[0.98]">
+          <PlayCircle className="h-4 w-4" />
+          {lang === 'vi' ? 'Xem video giới thiệu' : 'Watch introduction video'}
+          <ArrowUpRight className="h-4 w-4" />
+        </a>
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab-based mobile-app style parent view
-// Tabs: Home · Đặt Lịch · Lịch Sử · Khóa Học (bottom navigation)
+// Tabs: Hồ sơ · Đổi quà · Đặt lịch · Nạp tiền · Lịch sử (bottom navigation)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ParentTab = 'home' | 'booking' | 'history' | 'courses'
+type ParentTab = 'profile' | 'rewards' | 'booking' | 'topup' | 'history'
 
 const DAY_LABELS_VI = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
 const DAY_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -222,30 +632,527 @@ function parseISODate(iso: string) {
   return new Date(y, (m || 1) - 1, d || 1)
 }
 
+function bookingStartTime(booking: BookingRequest) {
+  if (!booking.requestedDate || !booking.requestedStart) return null
+  const [year, month, day] = booking.requestedDate.split('-').map(Number)
+  const [hour, minute] = booking.requestedStart.split(':').map(Number)
+  const date = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 interface TeacherLite {
-  name: string
+  name?: string
   photoURL?: string
   country?: string
   code?: string
   bio?: string
+  gender?: Teacher['gender']
+  degreeType?: string
+  university?: string
+  teachingYears?: number
+  studentsTaughtCount?: number
+  subjectNames?: string[]
+  strengths?: string[]
+  otherStrengths?: string
+  certificates?: Teacher['certificates']
+  youtubeLink?: string
+  status?: Teacher['status']
+  subjectIds?: string[]
+  teacherGrade?: Teacher['teacherGrade']
+  bookingPriority?: number
+  level?: number
+  pointsPer25Minutes?: number
 }
 
-// Phụ huynh/học viên chỉ thấy NICKNAME của giáo viên (mã đăng nhập kiểu "Mirabelle"),
-// không thấy tên thật. Mã hệ cũ dạng GVxxxx không phải nickname -> đành dùng tên.
-function teacherNickname(t: TeacherLite | undefined, fallbackName?: string) {
-  const code = (t?.code || '').trim()
+const RECOMMENDATION_GRADE_WEIGHT: Record<string, number> = {
+  A: 30,
+  B: 22,
+  PH: 22,
+  SA: 22,
+  C: 12,
+}
+
+const RECOMMENDATION_DAY_LABELS_VI: Record<DayOfWeek, string> = { mon: 'T2', tue: 'T3', wed: 'T4', thu: 'T5', fri: 'T6', sat: 'T7', sun: 'CN' }
+const RECOMMENDATION_DAY_LABELS_EN: Record<DayOfWeek, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' }
+
+function normalizeRecommendationText(value?: string) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function teacherMatchesStudentSubjects(teacher: Teacher, subjects: StudentSubject[]) {
+  if (subjects.length === 0) return true
+  const subjectIds = new Set(subjects.map((item) => item.subjectId).filter(Boolean))
+  if ((teacher.subjectIds || []).some((id) => subjectIds.has(id))) return true
+
+  const studentNames = subjects.map((item) => normalizeRecommendationText(item.subjectName)).filter(Boolean)
+  const teacherNames = (teacher.subjectNames || []).map(normalizeRecommendationText).filter(Boolean)
+  return studentNames.some((studentName) => teacherNames.some((teacherName) => teacherName === studentName || teacherName.includes(studentName) || studentName.includes(teacherName)))
+}
+
+function matchedRecommendationSubjects(teacher: Teacher, subjects: StudentSubject[]) {
+  const teacherIds = new Set(teacher.subjectIds || [])
+  const teacherNames = (teacher.subjectNames || []).map(normalizeRecommendationText)
+  return subjects
+    .filter((item) => teacherIds.has(item.subjectId) || teacherNames.some((name) => {
+      const studentName = normalizeRecommendationText(item.subjectName)
+      return !!studentName && (name === studentName || name.includes(studentName) || studentName.includes(name))
+    }))
+    .map((item) => item.subjectName)
+}
+
+function recommendationBaseScore(teacher: Teacher) {
+  const gradeScore = teacher.teacherGrade ? RECOMMENDATION_GRADE_WEIGHT[teacher.teacherGrade] || 0 : 0
+  const profileScore = (teacher.photoURL ? 14 : 0) + (teacher.bio ? 5 : 0) + Math.min(15, Number(teacher.teachingYears || 0) * 3)
+  const experienceScore = Math.min(15, Math.floor(Number(teacher.studentsTaughtCount || 0) / 5))
+  return gradeScore + profileScore + experienceScore
+}
+
+function approvedTeachingMinutes(teacher: Teacher) {
+  return Math.max(0, Number(teacher.totalApprovedMinutes || 0))
+}
+
+function compareTeacherWorkload(a: Teacher, b: Teacher) {
+  const aMinutes = approvedTeachingMinutes(a)
+  const bMinutes = approvedTeachingMinutes(b)
+  const aHasNoMinutes = aMinutes === 0
+  const bHasNoMinutes = bMinutes === 0
+  if (aHasNoMinutes !== bHasNoMinutes) return aHasNoMinutes ? -1 : 1
+  if (aMinutes !== bMinutes) return aMinutes - bMinutes
+  return recommendationBaseScore(b) - recommendationBaseScore(a)
+}
+
+function recommendationCountryCode(teacher: Pick<Teacher, 'country' | 'teacherGrade'>) {
+  // Dữ liệu chuyển tiếp hiện phân nhóm gia sư nước ngoài bằng teacherGrade.
+  // Ưu tiên phân nhóm đã được Admin xác nhận để không hiển thị cờ VN sai cho nhóm SA/PH.
+  if (teacher.teacherGrade === 'SA') return 'ZA'
+  if (teacher.teacherGrade === 'PH') return 'PH'
+  return normalizeTeacherCountryCode(teacher.country)
+}
+
+function recommendationCountryLabel(country: string | undefined, lang: string) {
+  const labels: Record<string, [string, string]> = {
+    VN: ['Việt Nam', 'Vietnam'],
+    PH: ['Philippines', 'Philippines'],
+    ZA: ['Nam Phi', 'South Africa'],
+    JP: ['Nhật Bản', 'Japan'],
+    KR: ['Hàn Quốc', 'South Korea'],
+    US_EST: ['Hoa Kỳ', 'United States'],
+    US_PST: ['Hoa Kỳ', 'United States'],
+  }
+  const item = country ? labels[normalizeTeacherCountryCode(country)] : undefined
+  return item ? item[lang === 'vi' ? 0 : 1] : country || ''
+}
+
+function getRecommendationRollingDates() {
+  const dayKeys: Record<number, DayOfWeek> = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  return Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date(today)
+    date.setDate(today.getDate() + offset)
+    const monday = new Date(date)
+    const weekday = monday.getDay()
+    monday.setDate(monday.getDate() + (weekday === 0 ? -6 : 1 - weekday))
+    return {
+      date,
+      weekDay: dayKeys[date.getDay()],
+      weekStartISO: getLocalISODate(monday),
+    }
+  })
+}
+
+function recommendationAvailabilitySummary(availability: TeacherAvailability | null, bookings: BookingRequest[], lang: string) {
+  const rollingDates = getRecommendationRollingDates()
+  const availableDays = new Set<DayOfWeek>()
+  let availableSlotCount = 0
+
+  for (const { weekDay, date, weekStartISO } of rollingDates) {
+    const dateISO = getLocalISODate(date)
+    for (let index = 0; index < 48; index += 1) {
+      const start = profileMinutesToTime(index * 30)
+      if (getProfileSlotStatus(availability, bookings, weekStartISO, weekDay, dateISO, start) === 'available') {
+        availableSlotCount += 1
+        availableDays.add(weekDay)
+      }
+    }
+  }
+
+  const labels = lang === 'vi' ? RECOMMENDATION_DAY_LABELS_VI : RECOMMENDATION_DAY_LABELS_EN
+  return {
+    availableSlotCount,
+    availableDayLabels: rollingDates.filter((item) => availableDays.has(item.weekDay)).map((item) => labels[item.weekDay]),
+  }
+}
+
+interface TeacherLessonReview {
+  lessonId: string
+  studentId: string
+  teacherId: string
+  rating: number
+}
+
+interface StudentLeaderboardEntry {
+  id: string
+  name: string
+  code: string
+  rewardPoints: number
+  profileAvatarId?: Student['profileAvatarId']
+}
+
+const STUDENT_AVATARS = ['1', '2', '3', '4', '5'] as const
+
+function getCurrentLeaderboardMonth() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  }).formatToParts(new Date())
+  const year = Number(parts.find((part) => part.type === 'year')?.value)
+  const month = Number(parts.find((part) => part.type === 'month')?.value)
+  const nextYear = month === 12 ? year + 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+
+  return {
+    month,
+    startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+    nextStartDate: `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`,
+  }
+}
+
+function studentAvatarUrl(avatarId?: Student['profileAvatarId']) {
+  return `/student-avatars/${avatarId || '1'}.png`
+}
+
+function StudentProfileOverview({ student, completedLessons, avatarId, leaderboard, savingAvatar, onChooseAvatar, lang }: {
+  student: Student
+  completedLessons: number
+  avatarId?: Student['profileAvatarId']
+  leaderboard: StudentLeaderboardEntry[]
+  savingAvatar: boolean
+  onChooseAvatar: (avatarId: Student['profileAvatarId']) => void
+  lang: string
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const points = Number(student.rewardPoints || 0)
+  const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
+  const { month: leaderboardMonth } = getCurrentLeaderboardMonth()
+  const leaderboardTitle = lang === 'vi'
+    ? `Bảng thi đua tháng ${leaderboardMonth}`
+    : `${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())} leaderboard`
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(student.code)
+      toast.success(lang === 'vi' ? 'Đã sao chép mã học viên' : 'Student code copied')
+    } catch {
+      toast.error(lang === 'vi' ? 'Không thể sao chép mã học viên' : 'Could not copy the student code')
+    }
+  }
+
+  return (
+    <>
+      <section className="space-y-4 animate-slide-up">
+        <div className="rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_20px_55px_-38px_rgba(2,132,199,0.55)] sm:p-6">
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={() => setPickerOpen(true)} className="group relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2" aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}>
+              <img src={studentAvatarUrl(avatarId)} alt="" className="h-20 w-20 rounded-full object-cover ring-4 ring-sky-50 sm:h-24 sm:w-24" />
+              <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-sky-600 text-white shadow-md transition group-hover:bg-sky-700"><Camera className="h-4 w-4" /></span>
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">{lang === 'vi' ? 'Hồ sơ học viên' : 'Student profile'}</p>
+              <h2 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{lang === 'vi' ? 'Chào' : 'Hello'}, <span className="text-sky-600">{student.name}</span></h2>
+              <button type="button" onClick={copyCode} className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-sky-700">
+                {lang === 'vi' ? 'Mã học viên' : 'Student ID'}: <span className="font-extrabold tracking-wide text-slate-700">{student.code}</span><Copy className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-sky-50/80 px-4 py-3.5 ring-1 ring-sky-100">
+              <div className="flex items-center gap-2 text-sky-700"><Star className="h-5 w-5 fill-sky-600 text-sky-600" /><span className="text-2xl font-black tabular-nums text-slate-950">{points}</span></div>
+              <p className="mt-1 text-[11px] font-bold text-slate-500">{lang === 'vi' ? 'Sao của bạn' : 'Your stars'}</p>
+            </div>
+            <div className="rounded-2xl bg-sky-50/80 px-4 py-3.5 ring-1 ring-sky-100">
+              <div className="flex items-center gap-2 text-sky-700"><CalendarCheck2 className="h-5 w-5" /><span className="text-2xl font-black tabular-nums text-slate-950">{completedLessons}</span></div>
+              <p className="mt-1 text-[11px] font-bold text-slate-500">{lang === 'vi' ? 'Buổi học đã hoàn thành' : 'Completed lessons'}</p>
+            </div>
+          </div>
+        </div>
+
+        {leaderboard.length > 0 && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5"><Trophy className="h-5 w-5 text-sky-600" /><h3 className="text-base font-black text-slate-950">{leaderboardTitle}</h3></div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-extrabold text-slate-500">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
+            </div>
+            <div className="mt-4 space-y-2">
+              {leaderboard.map((entry, index) => {
+                const isCurrent = entry.id === student.id
+                return (
+                  <div key={entry.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${isCurrent ? 'bg-sky-50 ring-1 ring-sky-200' : 'bg-slate-50/80'}`}>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-black ${index < 3 ? 'bg-sky-600 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200'}`}>{index + 1}</span>
+                    <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>{isCurrent && <p className="text-[10px] font-bold text-sky-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}</div>
+                    <span className="inline-flex items-center gap-1 text-sm font-black tabular-nums text-sky-700"><Star className="h-4 w-4 fill-sky-600 text-sky-600" />{entry.rewardPoints}</span>
+                  </div>
+                )
+              })}
+            </div>
+            {currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tiếp tục tích lũy sao để xuất hiện trong bảng thi đua.' : 'Keep earning stars to enter the leaderboard.'}</p>}
+          </div>
+        )}
+      </section>
+
+      <BottomSheet open={pickerOpen} onClose={() => setPickerOpen(false)} title={lang === 'vi' ? 'Chọn nhân vật đại diện' : 'Choose your character'} size="sm" footer={<Button fullWidth variant="outline" onClick={() => setPickerOpen(false)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>}>
+        <p className="mb-4 text-sm leading-6 text-slate-600">{lang === 'vi' ? 'Chọn một nhân vật. Lựa chọn sẽ được lưu vào hồ sơ học viên và hiển thị ở bảng thi đua.' : 'Choose a character. It will be saved to the student profile and leaderboard.'}</p>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+          {STUDENT_AVATARS.map((item) => {
+            const active = avatarId === item || (!avatarId && item === '1')
+            return <button key={item} type="button" disabled={savingAvatar} onClick={() => { onChooseAvatar(item); setPickerOpen(false) }} className={`relative aspect-square overflow-hidden rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${active ? 'ring-4 ring-sky-500' : 'ring-1 ring-slate-200 hover:-translate-y-0.5 hover:ring-sky-300'}`} aria-label={`${lang === 'vi' ? 'Nhân vật' : 'Character'} ${item}`}><img src={studentAvatarUrl(item)} alt="" className="h-full w-full object-cover" />{active && <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-sky-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>}</button>
+          })}
+        </div>
+      </BottomSheet>
+    </>
+  )
+}
+
+// Phụ huynh/học viên chỉ thấy nickname của gia sư. Tuyệt đối không fallback
+// sang tên thật từ teacher/lesson/booking vì đây là màn hình dành cho học viên.
+function teacherNickname(t: TeacherLite | undefined, fallbackCode?: string, genericLabel = 'Gia sư') {
+  const code = (t?.code || fallbackCode || '').trim()
   if (code && !/^GV[A-Z0-9]{4,}$/i.test(code)) return code
-  return t?.name || fallbackName || ''
+  return genericLabel
 }
 
-function ParentView({ student, lessons, bookings, onBack }: { student: Student; lessons: Lesson[]; bookings: BookingRequest[]; onBack: () => void }) {
+function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, onBookingCreated }: {
+  student: Student
+  lessons: Lesson[]
+  bookings: BookingRequest[]
+  onBack: () => void
+  onBookingCancelled: (bookingId: string, heldMinutes: number) => void
+  onBookingCreated: (booking: BookingRequest, heldMinutes: number) => void
+}) {
   const { lang, setLang } = useLanguageStore()
+  const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
   const navigate = useNavigate()
-  const [tab, setTab] = useState<ParentTab>('home')
+  const [tab, setTab] = useState<ParentTab>('booking')
   const [viewImage, setViewImage] = useState<string | null>(null)
   const [selectedParentBooking, setSelectedParentBooking] = useState<BookingRequest | null>(null)
   const [detailLesson, setDetailLesson] = useState<Lesson | null>(null)
   const [teacherMap, setTeacherMap] = useState<Record<string, TeacherLite>>({})
+  const [teacherAvailabilityMap, setTeacherAvailabilityMap] = useState<Record<string, TeacherAvailability | null>>({})
+  const [teacherScheduleBookings, setTeacherScheduleBookings] = useState<Record<string, BookingRequest[]>>({})
+  const [teacherScheduleLoading, setTeacherScheduleLoading] = useState<Record<string, boolean>>({})
+  const [profileTeacherId, setProfileTeacherId] = useState<string | null>(null)
+  const [profileBookingSlot, setProfileBookingSlot] = useState<ProfileTimeSlot | null>(null)
+  const [profileBookingDuration, setProfileBookingDuration] = useState<25 | 50>(25)
+  const [profileBookingSubjectId, setProfileBookingSubjectId] = useState('')
+  const [submittingProfileBooking, setSubmittingProfileBooking] = useState(false)
+  const [teacherReviews, setTeacherReviews] = useState<Record<string, number>>({})
+  const [cancellationRequests, setCancellationRequests] = useState<BookingCancellationRequest[]>([])
+  const [cancelReason, setCancelReason] = useState('')
+  const [submittingCancellation, setSubmittingCancellation] = useState(false)
+  const [cancellationDialog, setCancellationDialog] = useState<{ booking: BookingRequest; mode: 'confirm' | 'blocked' } | null>(null)
+  const [profileAvatarId, setProfileAvatarId] = useState<Student['profileAvatarId']>(student.profileAvatarId)
+  const [savingAvatar, setSavingAvatar] = useState(false)
+  const [leaderboard, setLeaderboard] = useState<StudentLeaderboardEntry[]>([])
+  const [showTeacherSuggestions, setShowTeacherSuggestions] = useState(false)
+  const [recommendedTeachers, setRecommendedTeachers] = useState<TeacherRecommendation[]>([])
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+  const [recommendationsError, setRecommendationsError] = useState(false)
+  const [recommendationReload, setRecommendationReload] = useState(0)
+
+  useEffect(() => {
+    setProfileAvatarId(student.profileAvatarId)
+  }, [student.profileAvatarId])
+
+  useEffect(() => {
+    const leaderboardQuery = query(
+      collection(db, 'students'),
+      where('monthlyRewardMonth', '==', rewardMonthKey()),
+    )
+    return onSnapshot(leaderboardQuery, (snap) => {
+      const topStudents = snap.docs
+        .map((item) => ({ id: item.id, data: item.data() as Student }))
+        .filter(({ data }) => data.status !== 'reserved')
+        .sort((left, right) => Number(right.data.monthlyRewardPoints || 0) - Number(left.data.monthlyRewardPoints || 0) || left.id.localeCompare(right.id))
+        .slice(0, 7)
+      setLeaderboard(topStudents.map(({ id, data }) => {
+        return {
+          id,
+          name: data.name || data.code || (lang === 'vi' ? 'Học viên' : 'Student'),
+          code: data.code || '',
+          rewardPoints: Number(data.monthlyRewardPoints || 0),
+          profileAvatarId: data.profileAvatarId,
+        }
+      }))
+    }, (error) => {
+      console.error('Load student leaderboard failed:', error)
+      setLeaderboard([])
+    })
+  }, [lang])
+
+  const chooseProfileAvatar = async (avatarId: Student['profileAvatarId']) => {
+    if (!avatarId || savingAvatar || avatarId === profileAvatarId) return
+    const previous = profileAvatarId
+    setProfileAvatarId(avatarId)
+    setSavingAvatar(true)
+    try {
+      await updateDoc(doc(db, 'students', student.id), {
+        profileAvatarId: avatarId,
+        updatedAt: serverTimestamp(),
+      })
+      toast.success(lang === 'vi' ? 'Đã cập nhật nhân vật đại diện' : 'Profile character updated')
+    } catch (error) {
+      console.error('Update student avatar failed:', error)
+      setProfileAvatarId(previous)
+      toast.error(lang === 'vi' ? 'Chưa thể lưu nhân vật. Vui lòng thử lại.' : 'Could not save the character. Please try again.')
+    } finally {
+      setSavingAvatar(false)
+    }
+  }
+
+  useEffect(() => {
+    const requestQuery = query(collection(db, 'bookingCancellationRequests'), where('studentId', '==', student.id))
+    return onSnapshot(requestQuery, (snap) => {
+      setCancellationRequests(snap.docs.map((item) => ({ id: item.id, ...item.data() } as BookingCancellationRequest)))
+    }, (error) => {
+      console.error('Load cancellation requests failed:', error)
+    })
+  }, [student.id])
+
+  useEffect(() => {
+    const reviewQuery = query(collection(db, 'teacherLessonReviews'), where('studentId', '==', student.id))
+    return onSnapshot(reviewQuery, (snap) => {
+      const reviews: Record<string, number> = {}
+      snap.docs.forEach((item) => {
+        const review = item.data() as TeacherLessonReview
+        if (review.lessonId && Number.isInteger(review.rating)) reviews[review.lessonId] = review.rating
+      })
+      setTeacherReviews(reviews)
+    }, (error) => {
+      console.error('Load teacher reviews failed:', error)
+    })
+  }, [student.id])
+
+  const openCancellationDialog = (booking: BookingRequest) => {
+    if (!['pending', 'confirmed'].includes(booking.status)) return
+
+    const startsAt = bookingStartTime(booking)
+    const mode = booking.status === 'pending'
+      ? 'confirm'
+      : (!startsAt || startsAt.getTime() - Date.now() < 60 * 60 * 1000 ? 'blocked' : 'confirm')
+    setCancelReason('')
+    setSelectedParentBooking(null)
+    setCancellationDialog({ booking, mode })
+  }
+
+  const submitCancellationRequest = async () => {
+    const booking = cancellationDialog?.booking
+    if (!booking || cancellationDialog.mode !== 'confirm' || !['pending', 'confirmed'].includes(booking.status)) return
+
+    const startsAt = bookingStartTime(booking)
+    if (booking.status === 'confirmed' && (!startsAt || startsAt.getTime() - Date.now() < 60 * 60 * 1000)) {
+      setCancellationDialog({ booking, mode: 'blocked' })
+      return
+    }
+
+    setSubmittingCancellation(true)
+    try {
+      const pendingRequest = cancellationRequests.find((item) => item.bookingId === booking.id && item.status === 'pending')
+      const nextHeld = await runTransaction(db, async (tx) => {
+        const bookingRef = doc(db, 'bookingRequests', booking.id)
+        const studentRef = doc(db, 'students', student.id)
+        const [bookingSnap, studentSnap] = await Promise.all([tx.get(bookingRef), tx.get(studentRef)])
+
+        if (!bookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const currentBooking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+        const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+        if (!['pending', 'confirmed'].includes(currentBooking.status) || currentBooking.lessonId) throw new Error('BOOKING_ALREADY_PROCESSED')
+        if (currentBooking.studentId !== student.id || currentBooking.studentCode !== student.code) throw new Error('STUDENT_MISMATCH')
+
+        const currentStartsAt = bookingStartTime(currentBooking)
+        if (currentBooking.status === 'confirmed' && (!currentStartsAt || currentStartsAt.getTime() - Date.now() < 60 * 60 * 1000)) throw new Error('CANCELLATION_WINDOW_CLOSED')
+
+        const points = getBookingPoints(currentBooking, teacherMap[currentBooking.teacherId])
+        const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
+        if (points <= 0) throw new Error('INVALID_HELD_POINTS')
+        const wasHolding = currentBooking.status === 'confirmed' || currentBooking.heldImmediately === true
+        if (wasHolding && currentHeld < points) throw new Error('INVALID_HELD_POINTS')
+        const heldAfterCancellation = wasHolding ? currentHeld - points : currentHeld
+
+        if (wasHolding) {
+          tx.update(studentRef, {
+            reservedMinutes: heldAfterCancellation,
+            heldMinutes: heldAfterCancellation,
+            lastSelfCancellationBookingId: currentBooking.id,
+            updatedAt: serverTimestamp(),
+          })
+        }
+        tx.update(bookingRef, {
+          status: 'released',
+          releasedAt: serverTimestamp(),
+          releasedBy: `student:${student.code}`,
+          heldMinutesAfterRelease: heldAfterCancellation,
+          selfServiceCancelled: true,
+          cancellationPolicyMinutes: currentBooking.status === 'confirmed' ? 60 : 0,
+          cancellationReason: cancelReason.trim(),
+          cancelledMinutes: currentBooking.requestedMinutes,
+        })
+        if (pendingRequest) {
+          tx.update(doc(db, 'bookingCancellationRequests', pendingRequest.id), {
+            status: 'approved',
+            reviewedAt: serverTimestamp(),
+            reviewedBy: `student:${student.code}`,
+          })
+        }
+
+        return heldAfterCancellation
+      })
+
+      onBookingCancelled(booking.id, nextHeld)
+      toast.success(booking.status === 'pending'
+        ? (lang === 'vi' ? 'Đã hủy yêu cầu đặt lịch và giải phóng khung giờ.' : 'Pending booking cancelled and the time slot is available again.')
+        : (lang === 'vi' ? `Đã hủy buổi học và hoàn ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương về quỹ khả dụng.` : `Class cancelled. ${getBookingPoints(booking, teacherMap[booking.teacherId])} diamonds are available again.`))
+      setCancelReason('')
+      setCancellationDialog(null)
+    } catch (error) {
+      console.error('Automatic cancellation failed:', error)
+      const code = error instanceof Error ? error.message : ''
+      if (code === 'CANCELLATION_WINDOW_CLOSED') {
+        setCancellationDialog({ booking, mode: 'blocked' })
+      } else if (code === 'BOOKING_ALREADY_PROCESSED') {
+        toast.info(lang === 'vi' ? 'Buổi học này đã được xử lý trước đó.' : 'This class was already processed.')
+        setCancellationDialog(null)
+      } else {
+        toast.error(lang === 'vi' ? 'Chưa thể hủy buổi học. Vui lòng thử lại.' : 'Could not cancel the class. Please try again.')
+      }
+    } finally {
+      setSubmittingCancellation(false)
+    }
+  }
+
+  const submitTeacherRating = async (lesson: Lesson, rating: number) => {
+    if (!lesson.id || !lesson.teacherId || rating < 1 || rating > 5 || teacherReviews[lesson.id]) return
+    await setDoc(doc(db, 'teacherLessonReviews', lesson.id), {
+      lessonId: lesson.id,
+      studentId: student.id,
+      studentCode: student.code,
+      teacherId: lesson.teacherId,
+      rating,
+      createdAt: serverTimestamp(),
+    })
+    setTeacherReviews((current) => ({ ...current, [lesson.id]: rating }))
+    toast.success(lang === 'vi' ? 'Đã gửi đánh giá gia sư.' : 'Teacher rating submitted.')
+  }
 
   // Fetch photo + country of every teacher appearing in lessons/bookings (public read)
   useEffect(() => {
@@ -257,30 +1164,80 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
     Promise.all(
       Array.from(ids).map(async (id) => {
         try {
-          const snap = await getDoc(doc(db, 'teachers', id))
+          const [snap, availabilitySnap] = await Promise.all([
+            getDoc(doc(db, 'teachers', id)),
+            getDoc(doc(db, 'teacherAvailability', id)).catch(() => null),
+          ])
           if (!snap.exists()) return null
           const t = snap.data() as Teacher
           return [id, {
-            name: t.name,
+            name: t.name || undefined,
             photoURL: t.photoURL || undefined,
             country: t.country || undefined,
             code: t.code || undefined,
             bio: t.bio || undefined,
-          }] as const
+            gender: t.gender,
+            degreeType: t.degreeType || undefined,
+            university: t.university || undefined,
+            teachingYears: t.teachingYears,
+            studentsTaughtCount: t.studentsTaughtCount,
+            subjectNames: t.subjectNames || [],
+            strengths: t.strengths || [],
+            otherStrengths: t.otherStrengths || undefined,
+            certificates: t.certificates || [],
+            youtubeLink: t.youtubeLink || undefined,
+            status: t.status,
+            subjectIds: t.subjectIds || [],
+            teacherGrade: t.teacherGrade,
+            bookingPriority: t.bookingPriority,
+            level: t.level,
+          }, availabilitySnap?.exists()
+            ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
+            : null] as const
         } catch { return null }
       })
     ).then((entries) => {
       const map: Record<string, TeacherLite> = {}
-      for (const e of entries) if (e) map[e[0]] = e[1]
+      const availabilityMap: Record<string, TeacherAvailability | null> = {}
+      for (const e of entries) {
+        if (!e) continue
+        map[e[0]] = e[1]
+        availabilityMap[e[0]] = e[2]
+      }
       setTeacherMap(map)
+      setTeacherAvailabilityMap(availabilityMap)
     })
   }, [lessons, bookings])
 
+  useEffect(() => {
+    if (!profileTeacherId) return
+    let active = true
+    setTeacherScheduleLoading((current) => ({ ...current, [profileTeacherId]: true }))
+    const teacherBookingQuery = query(collection(db, 'bookingRequests'), where('teacherId', '==', profileTeacherId))
+    getDocs(teacherBookingQuery)
+      .then((snapshot) => {
+        if (!active) return
+        const activeBookings = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+          .filter((booking) => ['pending', 'confirmed'].includes(booking.status))
+        setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: activeBookings }))
+      })
+      .catch((error) => {
+        console.error('Load teacher timetable bookings failed:', error)
+        if (active) setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: [] }))
+      })
+      .finally(() => {
+        if (active) setTeacherScheduleLoading((current) => ({ ...current, [profileTeacherId]: false }))
+      })
+    return () => { active = false }
+  }, [profileTeacherId])
+
   // ─── Minute fund stats ───────────────────────────────────────────
   const pMps = student.minutesPerSession || 50
-  const pTotalMin = student.totalMinutes ?? student.totalSessions * pMps
+  const packageMinuteSummary = getStudentPackageMinuteSummary(student)
+  const pTotalMin = packageMinuteSummary.totalMinutes
   const pUsedMin = student.usedMinutes ?? student.usedSessions * pMps
-  const pRemainingMin = student.remainingMinutes ?? (pTotalMin - pUsedMin)
+  const pRemainingMin = packageMinuteSummary.remainingMinutes
   const pHeldMin = student.reservedMinutes ?? student.heldMinutes ?? 0
   const pAvailableMin = Math.max(0, pRemainingMin - pHeldMin)
   const usedPct = pTotalMin > 0 ? Math.min(100, Math.round((pUsedMin / pTotalMin) * 100)) : 0
@@ -318,7 +1275,290 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
     return []
   }, [student])
 
+  useEffect(() => {
+    if (!showTeacherSuggestions) return
+    let active = true
+
+    const loadRecommendations = async () => {
+      setRecommendationsLoading(true)
+      setRecommendationsError(false)
+      try {
+        const activeSnapshot = await getDocs(query(
+          collection(db, 'teachers'),
+          where('status', '==', 'active'),
+        ))
+        const activeTeachers = activeSnapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() } as Teacher))
+          .sort(compareTeacherWorkload)
+        const subjectMatches = activeTeachers.filter((teacher) => teacherMatchesStudentSubjects(teacher, subjectPackages))
+        const subjectMatchIds = new Set(subjectMatches.map((teacher) => teacher.id))
+        const fallbackTeachers = activeTeachers.filter((teacher) => !subjectMatchIds.has(teacher.id))
+        // Học viên mới thường chưa có đủ dữ liệu môn học. Luôn bổ sung ứng viên đang hoạt động,
+        // nhưng vẫn giữ nhóm khớp môn ở phía trước và ưu tiên gia sư có 0 phút đã dạy.
+        const orderedCandidates = [...subjectMatches, ...fallbackTeachers]
+        const recommendationCountries = ['VN', 'PH', 'ZA'] as const
+        // Giữ một pool cân bằng theo quốc gia để nhóm có ít gia sư hơn (đặc biệt Nam Phi)
+        // không bị loại khỏi top toàn cục trước khi kiểm tra lịch rảnh.
+        const candidates = recommendationCountries.flatMap((countryCode) => (
+          orderedCandidates
+            .filter((teacher) => recommendationCountryCode(teacher) === countryCode)
+            .slice(0, 16)
+        ))
+
+        const enriched = await Promise.all(candidates.map(async (teacher) => {
+          const [availabilitySnapshot, bookingSnapshot] = await Promise.all([
+            getDoc(doc(db, 'teacherAvailability', teacher.id)).catch(() => null),
+            getDocs(query(collection(db, 'bookingRequests'), where('teacherId', '==', teacher.id))).catch(() => null),
+          ])
+          const availability = availabilitySnapshot?.exists()
+            ? ({ id: availabilitySnapshot.id, ...availabilitySnapshot.data() } as TeacherAvailability)
+            : null
+          const activeBookings = bookingSnapshot?.docs
+            .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+            .filter((booking) => ['pending', 'confirmed'].includes(booking.status)) || []
+          const availabilitySummary = recommendationAvailabilitySummary(availability, activeBookings, lang)
+          return { teacher, availability, activeBookings, ...availabilitySummary }
+        }))
+
+        if (!active) return
+
+        const teacherUpdates: Record<string, TeacherLite> = {}
+        const availabilityUpdates: Record<string, TeacherAvailability | null> = {}
+        const bookingUpdates: Record<string, BookingRequest[]> = {}
+        enriched.forEach(({ teacher, availability, activeBookings }) => {
+          teacherUpdates[teacher.id] = {
+            name: teacher.name || undefined,
+            photoURL: teacher.photoURL || undefined,
+            country: recommendationCountryCode(teacher) || teacher.country || undefined,
+            code: teacher.code || undefined,
+            bio: teacher.bio || undefined,
+            gender: teacher.gender,
+            degreeType: teacher.degreeType || undefined,
+            university: teacher.university || undefined,
+            teachingYears: teacher.teachingYears,
+            studentsTaughtCount: teacher.studentsTaughtCount,
+            subjectNames: teacher.subjectNames || [],
+            strengths: teacher.strengths || [],
+            otherStrengths: teacher.otherStrengths || undefined,
+            certificates: teacher.certificates || [],
+            youtubeLink: teacher.youtubeLink || undefined,
+            status: teacher.status,
+            subjectIds: teacher.subjectIds || [],
+            teacherGrade: teacher.teacherGrade,
+            bookingPriority: teacher.bookingPriority,
+            level: teacher.level,
+            pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
+          }
+          availabilityUpdates[teacher.id] = availability
+          bookingUpdates[teacher.id] = activeBookings
+        })
+        setTeacherMap((current) => ({ ...current, ...teacherUpdates }))
+        setTeacherAvailabilityMap((current) => ({ ...current, ...availabilityUpdates }))
+        setTeacherScheduleBookings((current) => ({ ...current, ...bookingUpdates }))
+
+        const eligibleRecommendations = enriched
+          .filter((item) => item.availableSlotCount > 0)
+          .sort((a, b) => {
+            const workloadDifference = compareTeacherWorkload(a.teacher, b.teacher)
+            return workloadDifference || b.availableSlotCount - a.availableSlotCount
+          })
+
+        // Luôn có ứng viên cho học viên mới chưa phát sinh buổi học. Mỗi quốc gia ưu tiên
+        // người đang có lịch rảnh; nếu lịch chưa được cập nhật thì dùng ứng viên dự phòng.
+        const recommendationsByCountry = recommendationCountries.map((countryCode) => {
+          const available = eligibleRecommendations
+            .filter((item) => recommendationCountryCode(item.teacher) === countryCode)
+          const availableIds = new Set(available.map((item) => item.teacher.id))
+          const fallback = enriched
+            .filter((item) => recommendationCountryCode(item.teacher) === countryCode && !availableIds.has(item.teacher.id))
+            .sort((a, b) => compareTeacherWorkload(a.teacher, b.teacher))
+          return [...available, ...fallback].slice(0, 2)
+        })
+
+        // Xen kẽ quốc gia: VN 1 → Philippines 1 → Nam Phi 1 → VN 2 → Philippines 2 → Nam Phi 2.
+        const interleavedRecommendations = [0, 1].flatMap((position) => (
+          recommendationsByCountry
+            .map((countryTeachers) => countryTeachers[position])
+            .filter((item): item is NonNullable<typeof item> => Boolean(item))
+        ))
+
+        const suggestions = interleavedRecommendations
+          .map(({ teacher, availableSlotCount, availableDayLabels }): TeacherRecommendation => ({
+            id: teacher.id,
+            nickname: teacherNickname(teacher, teacher.code, genericTeacherLabel),
+            photoURL: teacher.photoURL || undefined,
+            country: recommendationCountryCode(teacher) || teacher.country || undefined,
+            countryLabel: recommendationCountryLabel(recommendationCountryCode(teacher) || teacher.country, lang),
+            teachingYears: teacher.teachingYears,
+            pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
+            availableSlotCount,
+            availableDayLabels,
+            matchedSubjectNames: matchedRecommendationSubjects(teacher, subjectPackages),
+          }))
+
+        setRecommendedTeachers(suggestions)
+      } catch (error) {
+        console.error('Load teacher recommendations failed:', error)
+        if (active) {
+          setRecommendedTeachers([])
+          setRecommendationsError(true)
+        }
+      } finally {
+        if (active) setRecommendationsLoading(false)
+      }
+    }
+
+    void loadRecommendations()
+    return () => { active = false }
+  }, [showTeacherSuggestions, recommendationReload, subjectPackages, lang, genericTeacherLabel])
+
+  const profileSubjectPackage = subjectPackages.find(
+    (item) => item.subjectId === profileBookingSubjectId,
+  ) || subjectPackages[0]
+  const profileSubjectHeldMinutes = profileSubjectPackage
+    ? getHeldBookingMinutes(bookings, profileSubjectPackage.subjectId)
+    : 0
+  const profileAvailableMinutes = profileSubjectPackage
+    ? Math.max(0, profileSubjectPackage.remainingMinutes - profileSubjectHeldMinutes)
+    : pAvailableMin
+  const profileTeacher = profileTeacherId ? teacherMap[profileTeacherId] : undefined
+  const profileBookingPoints = calculateLessonPoints(profileBookingDuration, getTeacherPointsPer25Minutes(profileTeacher))
+
   // ─── Analytics ───────────────────────────────────────────────────
+  const openProfileBooking = (slot: ProfileTimeSlot) => {
+    setProfileBookingDuration(25)
+    setProfileBookingSubjectId(subjectPackages[0]?.subjectId || student.subjectId || '')
+    setProfileBookingSlot(slot)
+  }
+
+  const profileDurationIsAvailable = Boolean(
+    profileTeacherId
+    && profileBookingSlot
+    && isProfileSlotInsideAvailability(
+      teacherAvailabilityMap[profileTeacherId],
+      profileBookingSlot.weekStartISO,
+      profileBookingSlot.weekDay,
+      profileBookingSlot.start,
+      profileBookingDuration,
+    )
+    && !isProfileSlotBooked(
+      teacherScheduleBookings[profileTeacherId] || [],
+      profileBookingSlot.dateISO,
+      profileBookingSlot.start,
+      profileBookingDuration,
+    )
+  )
+
+  const submitProfileBooking = async () => {
+    if (!profileTeacherId || !profileBookingSlot || !profileDurationIsAvailable) return
+    if (profileAvailableMinutes < profileBookingPoints) {
+      toast.warning(lang === 'vi' ? 'Quỹ kim cương khả dụng chưa đủ cho thời lượng đã chọn.' : 'Your available diamond balance is not enough for this duration.')
+      return
+    }
+
+    const teacher = teacherMap[profileTeacherId]
+    const subjectPackage = subjectPackages.find((item) => item.subjectId === profileBookingSubjectId) || subjectPackages[0]
+    if (!teacher || !subjectPackage) {
+      toast.error(lang === 'vi' ? 'Chưa đủ thông tin gia sư hoặc môn học để đặt lịch.' : 'Teacher or subject information is incomplete.')
+      return
+    }
+
+    setSubmittingProfileBooking(true)
+    try {
+      const latestSnapshot = await getDocs(query(collection(db, 'bookingRequests'), where('teacherId', '==', profileTeacherId)))
+      const latestBookings = latestSnapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+        .filter((booking) => ['pending', 'confirmed'].includes(booking.status))
+      setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: latestBookings }))
+
+      const stillAvailable = isProfileSlotInsideAvailability(
+        teacherAvailabilityMap[profileTeacherId],
+        profileBookingSlot.weekStartISO,
+        profileBookingSlot.weekDay,
+        profileBookingSlot.start,
+        profileBookingDuration,
+      ) && !isProfileSlotBooked(latestBookings, profileBookingSlot.dateISO, profileBookingSlot.start, profileBookingDuration)
+
+      if (!stillAvailable) {
+        toast.warning(lang === 'vi' ? 'Khung giờ này vừa được người khác đặt. Vui lòng chọn khung khác.' : 'This time was just booked. Please choose another slot.')
+        return
+      }
+
+      const requestedEnd = profileMinutesToTime(profileTimeToMinutes(profileBookingSlot.start) + profileBookingDuration)
+      const bookingRef = doc(collection(db, 'bookingRequests'))
+      const createdAt = Timestamp.now()
+      const teacherConfirmationDeadlineAt = Timestamp.fromMillis(createdAt.toMillis() + 3 * 60 * 60 * 1000)
+      const bookingPayload: BookingRequest = {
+        id: bookingRef.id,
+        status: 'pending' as const,
+        teacherId: profileTeacherId,
+        teacherCode: teacher.code || '',
+        teacherName: teacher.name || teacher.code || 'Gia sư',
+        teacherPhotoURL: teacher.photoURL || '',
+        studentId: student.id,
+        studentCode: student.code,
+        studentName: student.name,
+        subjectId: subjectPackage.subjectId,
+        subjectName: subjectPackage.subjectName,
+        requestedDay: profileBookingSlot.weekDay,
+        requestedDate: profileBookingSlot.dateISO,
+        requestedWeekStart: profileBookingSlot.weekStartISO,
+        requestedStart: profileBookingSlot.start,
+        requestedEnd,
+        requestedMinutes: profileBookingDuration,
+        requestedPoints: profileBookingPoints,
+        pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
+        availableMinutesAtRequest: profileAvailableMinutes,
+        heldMinutesAtRequest: profileSubjectHeldMinutes,
+        heldImmediately: true,
+        teacherConfirmationDeadlineAt,
+        note: '',
+        createdAt,
+      }
+      const nextHeld = await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', student.id)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentFund = getStudentPackageMinuteSummary(currentStudent)
+        const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
+        const currentAvailable = Math.max(0, currentFund.remainingMinutes - currentHeld)
+        if (currentAvailable < profileBookingPoints) throw new Error('NOT_ENOUGH_POINTS')
+
+        const heldAfterRequest = currentHeld + profileBookingPoints
+        tx.update(studentRef, {
+          reservedMinutes: heldAfterRequest,
+          heldMinutes: heldAfterRequest,
+          lastBookingHoldRequestId: bookingRef.id,
+          updatedAt: serverTimestamp(),
+        })
+        tx.set(bookingRef, {
+          ...bookingPayload,
+          heldMinutesAfterRequest: heldAfterRequest,
+          createdAt: serverTimestamp(),
+        })
+        return heldAfterRequest
+      })
+      const createdBooking = { ...bookingPayload, heldMinutesAfterRequest: nextHeld }
+      setTeacherScheduleBookings((current) => ({
+        ...current,
+        [profileTeacherId]: [...(current[profileTeacherId] || []), createdBooking],
+      }))
+      onBookingCreated(createdBooking, nextHeld)
+      setProfileBookingSlot(null)
+      toast.success(lang === 'vi' ? `Đã giữ ${profileBookingPoints} kim cương và gửi lịch cho gia sư xác nhận.` : `${profileBookingPoints} diamonds are now held and the teacher has been asked to confirm.`)
+    } catch (error) {
+      console.error('Profile timetable booking failed:', error)
+      const code = error instanceof Error ? error.message : ''
+      toast.error(code === 'NOT_ENOUGH_POINTS'
+        ? (lang === 'vi' ? 'Quỹ kim cương khả dụng không đủ để đặt khung giờ này.' : 'Your available diamond balance is not enough for this slot.')
+        : (lang === 'vi' ? 'Chưa thể gửi yêu cầu đặt lịch. Vui lòng thử lại.' : 'Could not send the booking request. Please try again.'))
+    } finally {
+      setSubmittingProfileBooking(false)
+    }
+  }
+
   const { monthlyData, durationData, insights } = useMemo(() => {
     const buckets: Record<string, { count: number; minutes: number }> = {}
     const now = new Date()
@@ -377,94 +1617,177 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
 
   const dayFull = lang === 'vi' ? DAY_FULL_VI : DAY_FULL_EN
   const roomLinkOf = (b: BookingRequest | null) => (b?.classroomURL || student.classroomURL || '')
+  const studentGivenName = student.name.trim().split(/\s+/).slice(-1)[0] || student.name
 
-  const NAV_ITEMS: { key: ParentTab; label: string; labelEn: string; icon: typeof Home }[] = [
-    { key: 'home', label: 'Trang chủ', labelEn: 'Home', icon: Home },
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [tab])
+
+  const NAV_ITEMS: { key: ParentTab; label: string; labelEn: string; icon: typeof UserIcon }[] = [
+    { key: 'profile', label: 'Hồ sơ', labelEn: 'Profile', icon: UserIcon },
+    { key: 'rewards', label: 'Đổi quà', labelEn: 'Rewards', icon: Gift },
     { key: 'booking', label: 'Đặt lịch', labelEn: 'Reserve', icon: CalendarPlus },
+    { key: 'topup', label: 'Ví học', labelEn: 'Learning wallet', icon: CreditCard },
     { key: 'history', label: 'Lịch sử', labelEn: 'History', icon: History },
-    { key: 'courses', label: 'Khóa học', labelEn: 'Courses', icon: GraduationCap },
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Header */}
-      <header className="sticky top-0 bg-white/85 backdrop-blur-xl border-b border-slate-200/70 z-30">
-        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-100"
-            aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-[15px] font-semibold text-slate-900 leading-tight truncate tracking-tight">
-              {student.name}
-            </h1>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5 tracking-wide">
-              {student.code}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+    <div className="min-h-screen bg-slate-50 font-quicksand">
+      {/* Header vàng brand + dải lượn sóng ngăn cách với nội dung bên dưới */}
+      <header className="sticky top-0 z-30 bg-gradient-to-b from-[#FFE04A] via-[#FFD32E] to-[#FFC61A] shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
+        <div className="mx-auto max-w-2xl px-4 pt-2.5 pb-1">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <button
-              onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
-              className="p-2 text-slate-500 hover:text-slate-800 transition-colors rounded-lg hover:bg-slate-100 flex items-center gap-1 text-[11px] font-bold"
-              title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+              onClick={onBack}
+              className="rounded-xl p-2 text-amber-900/70 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
+              aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
             >
-              <Globe className="w-3.5 h-3.5 text-slate-400" />
-              <span className="uppercase">{lang}</span>
+              <LogOut className="h-4 w-4" />
             </button>
-            <NotificationDrawer targetType="students" targetId={student.id} />
-            <Logo className="scale-[0.55] origin-right opacity-80 hidden sm:block" />
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[17px] font-black leading-tight tracking-tight text-amber-950 sm:text-lg">
+                {lang === 'vi' ? 'Chào ' : 'Hello '}<span className="text-white drop-shadow-[0_1px_2px_rgba(146,94,0,0.45)]">{studentGivenName}</span>
+              </h1>
+              <p className="mt-0.5 truncate text-[11px] font-bold tracking-wide text-amber-900/70">
+                {lang === 'vi' ? 'Mã học viên' : 'Student code'}: {student.code}
+              </p>
+            </div>
+
+            <div className="order-3 ml-auto flex w-full justify-end gap-2 sm:order-none sm:w-auto">
+            <div className="flex min-h-10 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10">
+              <button
+                type="button"
+                onClick={() => setTab('rewards')}
+                className="flex h-full items-center gap-2 px-3 text-sm font-black tabular-nums transition hover:bg-amber-50"
+                aria-label={lang === 'vi' ? 'Xem số Sao' : 'View stars'}
+              >
+                <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
+                {(student.rewardPoints || 0).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('rewards')}
+                className="grid h-10 w-9 place-items-center border-l border-amber-100 text-lg font-bold text-amber-600 transition hover:bg-amber-50"
+                aria-label={lang === 'vi' ? 'Đi đến trang đổi quà' : 'Open rewards'}
+              >
+                +
+              </button>
+            </div>
+
+            <div className="flex min-h-10 items-center overflow-hidden rounded-full bg-white text-sky-950 shadow-sm ring-1 ring-amber-900/10">
+              <button
+                type="button"
+                onClick={() => setTab('topup')}
+                className="flex h-full items-center gap-2 px-3 text-sm font-black tabular-nums transition hover:bg-sky-50"
+                aria-label={lang === 'vi' ? 'Xem số dư kim cương' : 'View diamond balance'}
+              >
+                <DiamondPointsIcon className="h-[18px] w-[18px]" />
+                {pAvailableMin.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('topup')}
+                className="grid h-10 w-9 place-items-center border-l border-sky-100 text-lg font-bold text-sky-600 transition hover:bg-sky-50"
+                aria-label={lang === 'vi' ? 'Nạp thêm kim cương' : 'Top up diamonds'}
+              >
+                +
+              </button>
+            </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
+                className="flex h-9 items-center gap-1 rounded-xl px-2 text-[11px] font-black text-amber-900/80 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
+                title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span className="uppercase">{lang}</span>
+              </button>
+              <NotificationDrawer targetType="students" targetId={student.id} />
+            </div>
           </div>
         </div>
+        <WaveDivider fill="#F8FAFC" height={26} />
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 pt-6 pb-32">
-        {tab === 'home' && (
-          <HomeTab
-            student={student}
-            usedPct={usedPct}
-            stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
-            insights={insights}
-            nextBooking={nextBooking}
-            teacherMap={teacherMap}
-            roomLinkOf={roomLinkOf}
-            dayFull={dayFull}
-            onGoTab={setTab}
-            lang={lang}
-          />
+      <main className="mx-auto max-w-2xl px-4 pb-32 pt-5 sm:pt-6">
+        {tab === 'profile' && (
+          <div className="space-y-8">
+            <StudentProfileOverview
+              student={student}
+              completedLessons={lessons.length}
+              avatarId={profileAvatarId}
+              leaderboard={leaderboard}
+              savingAvatar={savingAvatar}
+              onChooseAvatar={chooseProfileAvatar}
+              lang={lang}
+            />
+            <HomeTab
+              student={student}
+              usedPct={usedPct}
+              stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
+              insights={insights}
+              nextBooking={nextBooking}
+              teacherMap={teacherMap}
+              roomLinkOf={roomLinkOf}
+              dayFull={dayFull}
+              onGoTab={setTab}
+              lang={lang}
+            />
+            <CoursesTab
+              subjectPackages={subjectPackages}
+              bookings={bookings}
+              monthlyData={monthlyData}
+              durationData={durationData}
+              insights={insights}
+              pieColors={PIE_COLORS}
+              lang={lang}
+            />
+          </div>
         )}
+        {tab === 'rewards' && <RewardsTab student={student} lang={lang} />}
         {tab === 'booking' && (
-          <BookingTab
+          <BookingExperienceTab
+            subjectPackages={subjectPackages}
             bookings={bookings}
             upcomingBookings={upcomingBookings}
-            nextBooking={nextBooking}
             teacherMap={teacherMap}
             roomLinkOf={roomLinkOf}
-            dayFull={dayFull}
-            onSelectBooking={setSelectedParentBooking}
+            onSelectBooking={(booking) => {
+              setCancelReason('')
+              setSelectedParentBooking(booking)
+            }}
+            onOpenTeacherProfile={setProfileTeacherId}
+            onCancelBooking={openCancellationDialog}
+            cancellationRequests={cancellationRequests}
+            onOpenHistory={() => setTab('history')}
             lang={lang}
-            onPickTeacher={() => navigate('/giao-vien')}
+            onPickTeacher={() => setShowTeacherSuggestions(true)}
+            showRecommendations={showTeacherSuggestions}
+            onCloseRecommendations={() => setShowTeacherSuggestions(false)}
+            recommendedTeachers={recommendedTeachers}
+            recommendationsLoading={recommendationsLoading}
+            recommendationsError={recommendationsError}
+            onRetryRecommendations={() => setRecommendationReload((value) => value + 1)}
           />
         )}
+        {tab === 'topup' && <TopUpTab student={student} lang={lang} />}
         {tab === 'history' && (
           <HistoryTab
             lessons={lessons}
             teacherMap={teacherMap}
             subjectPackages={subjectPackages}
+            rewardPoints={student.rewardPoints || 0}
+            teacherReviews={teacherReviews}
             onDetail={setDetailLesson}
-            lang={lang}
-          />
-        )}
-        {tab === 'courses' && (
-          <CoursesTab
-            subjectPackages={subjectPackages}
-            bookings={bookings}
-            monthlyData={monthlyData}
-            durationData={durationData}
-            insights={insights}
-            pieColors={PIE_COLORS}
+            onTeacherProfile={setProfileTeacherId}
+            onRateTeacher={submitTeacherRating}
+            onRebook={() => {
+              setTab('booking')
+              setShowTeacherSuggestions(true)
+            }}
+            onRewards={() => setTab('rewards')}
             lang={lang}
           />
         )}
@@ -474,7 +1797,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
       <nav className="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
         <div className="max-w-2xl mx-auto sm:px-4 sm:pb-3">
           <div className="pointer-events-auto bg-white/95 backdrop-blur-xl border-t border-slate-200/80 sm:border sm:rounded-3xl sm:shadow-[0_10px_40px_-12px_rgba(15,23,42,0.25)] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-2">
-            <div className="grid grid-cols-4">
+            <div className="grid grid-cols-5">
               {NAV_ITEMS.map(({ key, label, labelEn, icon: Icon }) => {
                 const active = tab === key
                 const isCenter = key === 'booking'
@@ -487,25 +1810,25 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                     aria-label={lang === 'vi' ? label : labelEn}
                   >
                     {isCenter ? (
-                      <span className={`flex items-center justify-center w-12 h-12 -mt-7 rounded-full shadow-lg transition-all duration-300 ring-4 ring-slate-50 ${
+                      <span className={`flex items-center justify-center w-12 h-12 -mt-7 rounded-full shadow-lg transition-all duration-300 ring-4 ring-white ${
                         active
-                          ? 'bg-gradient-to-br from-[#3BB8EB] to-[#2196F3] shadow-sky-300/60 scale-105'
-                          : 'bg-gradient-to-br from-[#4cc3f2] to-[#3BB8EB] shadow-sky-200/60 group-hover:scale-105'
+                          ? 'bg-gradient-to-b from-[#FFD32E] to-[#FFB800] shadow-amber-300/70 scale-105'
+                          : 'bg-gradient-to-b from-[#FFDE59] to-[#FFC61A] shadow-amber-200/70 group-hover:scale-105'
                       }`}>
-                        <Icon className="w-5.5 h-5.5 w-[22px] h-[22px] text-white" />
+                        <Icon className="w-5.5 h-5.5 w-[22px] h-[22px] text-amber-950" />
                       </span>
                     ) : (
                       <span className={`flex items-center justify-center w-9 h-9 rounded-2xl transition-all duration-300 ${
-                        active ? 'bg-sky-50 scale-105' : 'group-hover:bg-slate-100'
+                        active ? 'bg-amber-100 scale-105' : 'group-hover:bg-slate-100'
                       }`}>
-                        <Icon className={`w-[21px] h-[21px] transition-colors ${active ? 'text-[#3BB8EB]' : 'text-slate-400 group-hover:text-slate-600'}`} strokeWidth={active ? 2.4 : 2} />
+                        <Icon className={`w-[21px] h-[21px] transition-colors ${active ? 'text-amber-600' : 'text-slate-400 group-hover:text-slate-600'}`} strokeWidth={active ? 2.4 : 2} />
                       </span>
                     )}
-                    <span className={`text-[10px] font-bold tracking-tight transition-colors ${active ? 'text-[#3BB8EB]' : 'text-slate-400'}`}>
+                    <span className={`text-[10px] font-bold tracking-tight transition-colors ${active ? 'text-amber-700' : 'text-slate-400'}`}>
                       {lang === 'vi' ? label : labelEn}
                     </span>
                     {active && !isCenter && (
-                      <span className="absolute -top-[7px] w-1 h-1 rounded-full bg-[#3BB8EB] animate-fade-in" />
+                      <span className="absolute -top-[7px] w-1 h-1 rounded-full bg-amber-500 animate-fade-in" />
                     )}
                   </button>
                 )
@@ -537,6 +1860,107 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
         </div>
       )}
 
+      {profileTeacherId && (
+        <BottomSheet
+          open
+          size="md"
+          onClose={() => setProfileTeacherId(null)}
+          title={lang === 'vi' ? 'Hồ sơ gia sư' : 'Teacher Profile'}
+          footer={
+            <div className="flex justify-end">
+              <Button variant="ghost" onClick={() => setProfileTeacherId(null)}>
+                {lang === 'vi' ? 'Đóng' : 'Close'}
+              </Button>
+            </div>
+          }
+        >
+          <TeacherProfileContent
+            teacher={teacherMap[profileTeacherId]}
+            availability={teacherAvailabilityMap[profileTeacherId]}
+            availabilityLoading={!(profileTeacherId in teacherAvailabilityMap)}
+            bookings={teacherScheduleBookings[profileTeacherId] || []}
+            bookingsLoading={teacherScheduleLoading[profileTeacherId] ?? true}
+            nickname={teacherNickname(teacherMap[profileTeacherId], undefined, genericTeacherLabel)}
+            lang={lang}
+            onBookSlot={openProfileBooking}
+          />
+        </BottomSheet>
+      )}
+
+      {profileTeacherId && profileBookingSlot && (
+        <Modal
+          open
+          size="sm"
+          onClose={() => setProfileBookingSlot(null)}
+          title={lang === 'vi' ? 'Xác nhận đặt lịch' : 'Confirm booking'}
+          footer={
+            <div className="grid w-full grid-cols-2 gap-3">
+              <Button variant="outline" disabled={submittingProfileBooking} onClick={() => setProfileBookingSlot(null)}>
+                {lang === 'vi' ? 'Quay lại' : 'Back'}
+              </Button>
+              <Button loading={submittingProfileBooking} disabled={!profileDurationIsAvailable || profileAvailableMinutes < profileBookingPoints} onClick={submitProfileBooking}>
+                {lang === 'vi' ? 'Gửi yêu cầu' : 'Send request'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
+              <p className="text-xs font-bold text-slate-500">{lang === 'vi' ? 'Gia sư' : 'Teacher'}</p>
+              <p className="mt-1 text-base font-black text-slate-950">{teacherNickname(teacherMap[profileTeacherId], undefined, genericTeacherLabel)}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white px-3 py-2.5 ring-1 ring-sky-100">
+                  <p className="text-[10px] font-bold text-slate-400">{lang === 'vi' ? 'Ngày học' : 'Date'}</p>
+                  <p className="mt-1 text-sm font-black tabular-nums text-slate-800">{profileBookingSlot.dateISO}</p>
+                </div>
+                <div className="rounded-xl bg-white px-3 py-2.5 ring-1 ring-sky-100">
+                  <p className="text-[10px] font-bold text-slate-400">{lang === 'vi' ? 'Bắt đầu' : 'Starts at'}</p>
+                  <p className="mt-1 text-sm font-black tabular-nums text-sky-700">{profileBookingSlot.start}</p>
+                </div>
+              </div>
+            </section>
+
+            <div>
+              <p className="text-xs font-black text-slate-700">{lang === 'vi' ? 'Thời lượng buổi học' : 'Class duration'}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {([25, 50] as const).map((minutes) => {
+                  const durationAvailable = isProfileSlotInsideAvailability(teacherAvailabilityMap[profileTeacherId], profileBookingSlot.weekStartISO, profileBookingSlot.weekDay, profileBookingSlot.start, minutes)
+                    && !isProfileSlotBooked(teacherScheduleBookings[profileTeacherId] || [], profileBookingSlot.dateISO, profileBookingSlot.start, minutes)
+                  return (
+                    <button
+                      key={minutes}
+                      type="button"
+                      disabled={!durationAvailable}
+                      onClick={() => setProfileBookingDuration(minutes)}
+                      className={`min-h-11 rounded-xl border px-3 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-sky-300 ${profileBookingDuration === minutes ? 'border-sky-600 bg-sky-600 text-white' : durationAvailable ? 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50' : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'}`}
+                    >
+                      {minutes} {lang === 'vi' ? 'phút' : 'minutes'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {subjectPackages.length > 1 && (
+              <label className="block">
+                <span className="text-xs font-black text-slate-700">{lang === 'vi' ? 'Môn học' : 'Subject'}</span>
+                <select value={profileBookingSubjectId} onChange={(event) => setProfileBookingSubjectId(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                  {subjectPackages.map((subject) => <option key={subject.subjectId} value={subject.subjectId}>{subject.subjectName}</option>)}
+                </select>
+              </label>
+            )}
+
+            <div className="rounded-xl bg-slate-50 px-3.5 py-3 text-xs leading-5 text-slate-600">
+              <p>{lang === 'vi' ? `Quỹ kim cương khả dụng của môn: ${profileAvailableMinutes.toLocaleString('vi-VN')}. Buổi ${profileBookingDuration} phút với gia sư này dùng ${profileBookingPoints} kim cương.` : `Available subject balance: ${profileAvailableMinutes.toLocaleString('en-US')} diamonds. This ${profileBookingDuration}-minute class uses ${profileBookingPoints} diamonds.`}</p>
+              <p>{lang === 'vi' ? 'Yêu cầu sẽ ở trạng thái chờ xác nhận. Khi gửi thành công, khung giờ được đánh dấu đã đặt để tránh học viên khác chọn trùng.' : 'The request remains pending confirmation. After submission, the time is marked as booked to prevent duplicate selection.'}</p>
+            </div>
+
+            {!profileDurationIsAvailable && <p className="rounded-xl bg-amber-50 px-3.5 py-3 text-xs font-bold leading-5 text-amber-700">{lang === 'vi' ? 'Thời lượng này không còn phù hợp với lịch rảnh hoặc đã trùng một lịch khác.' : 'This duration no longer fits the availability or overlaps another booking.'}</p>}
+            {profileAvailableMinutes < profileBookingPoints && <p className="rounded-xl bg-rose-50 px-3.5 py-3 text-xs font-bold leading-5 text-rose-700">{lang === 'vi' ? 'Quỹ kim cương khả dụng của môn chưa đủ cho thời lượng đã chọn.' : 'Your available subject diamond balance is not enough for this duration.'}</p>}
+          </div>
+        </Modal>
+      )}
+
       {/* ─── Booking Detail Modal ─── */}
       {selectedParentBooking && (
         <Modal
@@ -566,16 +1990,16 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-center gap-3">
                 <TeacherAvatar
-                  name={teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherName) || '?'}
+                  name={teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherCode, genericTeacherLabel)}
                   photoURL={teacherMap[selectedParentBooking.teacherId]?.photoURL}
                   country={teacherMap[selectedParentBooking.teacherId]?.country}
                   size={44}
                 />
                 <div className="min-w-0">
                   <span className="text-[10px] text-slate-400 font-bold uppercase block leading-none">
-                    {lang === 'vi' ? 'Giáo viên' : 'Teacher'}
+                    {lang === 'vi' ? 'Gia sư' : 'Teacher'}
                   </span>
-                  <span className="text-sm font-bold text-slate-800 block mt-1">{teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherName)}</span>
+                  <span className="text-sm font-bold text-slate-800 block mt-1">{teacherNickname(teacherMap[selectedParentBooking.teacherId], selectedParentBooking.teacherCode, genericTeacherLabel)}</span>
                   {teacherMap[selectedParentBooking.teacherId]?.bio && (
                     <p className="text-[11px] text-slate-500 italic mt-1 leading-snug">"{teacherMap[selectedParentBooking.teacherId]?.bio}"</p>
                   )}
@@ -630,14 +2054,120 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
                 )
               })()}
             </div>
+
+            {['pending', 'confirmed'].includes(selectedParentBooking.status) && (() => {
+              const pendingRequest = cancellationRequests.find((item) => item.bookingId === selectedParentBooking.id && item.status === 'pending')
+
+              if (pendingRequest) {
+                return (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-sm font-black text-amber-900">{lang === 'vi' ? 'Yêu cầu hủy cũ đang được xử lý' : 'Previous cancellation is being processed'}</p>
+                    <p className="mt-1 text-xs leading-5 text-amber-800">{lang === 'vi' ? 'Bạn vẫn có thể bấm hủy để hệ thống xử lý tự động nếu buổi học còn cách ít nhất 1 giờ.' : 'You can still use automatic cancellation when the class is at least one hour away.'}</p>
+                    <Button variant="danger" className="mt-3 w-full" onClick={() => openCancellationDialog(selectedParentBooking)}>
+                      {lang === 'vi' ? 'Hủy tự động' : 'Cancel automatically'}
+                    </Button>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-4">
+                  <p className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Bạn không thể tham gia buổi học?' : 'Cannot attend this class?'}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{lang === 'vi' ? 'Hủy trước giờ học ít nhất 1 giờ. Hệ thống sẽ hủy ngay và tự động trả lại số phút đang giữ.' : 'Cancel at least one hour before class. The system releases the class and held minutes immediately.'}</p>
+                  <Button variant="danger" className="mt-3 w-full" onClick={() => openCancellationDialog(selectedParentBooking)}>
+                    {lang === 'vi' ? 'Hủy buổi học' : 'Cancel class'}
+                  </Button>
+                </div>
+              )
+            })()}
           </div>
         </Modal>
       )}
 
+      {cancellationDialog && (() => {
+        const booking = cancellationDialog.booking
+        const teacher = teacherMap[booking.teacherId]
+        const teacherName = teacherNickname(teacher, booking.teacherCode, genericTeacherLabel)
+        const courseName = !booking.subjectName?.trim() || /chưa\s*xếp|chua\s*xep/i.test(booking.subjectName)
+          ? (lang === 'vi' ? 'Lớp học 1 kèm 1' : '1-on-1 class')
+          : booking.subjectName
+        const isBlocked = cancellationDialog.mode === 'blocked'
+        return (
+          <Modal open size="sm" onClose={() => !submittingCancellation && setCancellationDialog(null)}>
+            <div className="space-y-5">
+              <div className="text-center">
+                <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${isBlocked ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
+                  <Info className="h-7 w-7" />
+                </div>
+                <h3 className="mt-4 text-xl font-black tracking-tight text-slate-950">
+                  {isBlocked
+                    ? (lang === 'vi' ? 'Không thể hủy buổi học' : 'Class cannot be cancelled')
+                    : (lang === 'vi' ? 'Hủy buổi học?' : 'Cancel this class?')}
+                </h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
+                  {isBlocked
+                    ? (lang === 'vi' ? 'Buổi học chỉ được hủy trước giờ bắt đầu ít nhất 1 giờ.' : 'A class can only be cancelled at least one hour before it starts.')
+                    : (lang === 'vi' ? 'Kiểm tra lại thông tin. Sau khi xác nhận, lịch sẽ được hủy ngay.' : 'Review the class details. The cancellation takes effect immediately after confirmation.')}
+                </p>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+                <div className="flex items-start gap-3">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                  <div><p className="text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Thời gian' : 'Time'}</p><p className="mt-0.5 font-bold text-slate-900">{booking.requestedDate?.split('-').reverse().join('/')} · {booking.requestedStart} - {booking.requestedEnd}</p></div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                  <div><p className="text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Gia sư' : 'Teacher'}</p><p className="mt-0.5 font-bold text-slate-900">{teacherName}</p></div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                  <div><p className="text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Khóa học' : 'Course'}</p><p className="mt-0.5 font-bold text-slate-900">{courseName}</p></div>
+                </div>
+              </div>
+
+              {isBlocked ? (
+                <>
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center text-sm leading-6 text-amber-900">
+                    {lang === 'vi' ? 'Nếu cần hỗ trợ khẩn cấp, vui lòng liên hệ trung tâm để được kiểm tra.' : 'For urgent support, please contact the center for assistance.'}
+                  </div>
+                  <Button fullWidth className="bg-sky-600 hover:bg-sky-700" onClick={() => setCancellationDialog(null)}>
+                    {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-slate-800">{lang === 'vi' ? 'Lý do hủy (không bắt buộc)' : 'Cancellation reason (optional)'}</label>
+                    <textarea
+                      value={cancelReason}
+                      onChange={(event) => setCancelReason(event.target.value)}
+                      rows={3}
+                      placeholder={lang === 'vi' ? 'Nhập lý do nếu bạn muốn lưu lại ghi chú' : 'Add an optional note for this cancellation'}
+                      className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                    />
+                  </div>
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs leading-5 text-rose-700">
+                    {booking.status === 'pending'
+                      ? (lang === 'vi' ? `Yêu cầu chờ xác nhận sẽ được hủy ngay, khung giờ được mở lại và ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương đang giữ được hoàn về quỹ khả dụng.` : `The pending request is cancelled immediately, the slot reopens, and ${getBookingPoints(booking, teacherMap[booking.teacherId])} held diamonds become available again.`)
+                      : (lang === 'vi' ? `Hệ thống sẽ hủy ngay và hoàn ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương đang giữ về quỹ khả dụng. Thao tác này không thể hoàn tác.` : `The class is cancelled immediately and ${getBookingPoints(booking, teacherMap[booking.teacherId])} held diamonds become available again. This cannot be undone.`)}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button variant="outline" disabled={submittingCancellation} onClick={() => setCancellationDialog(null)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>
+                    <Button variant="danger" loading={submittingCancellation} onClick={submitCancellationRequest}>{lang === 'vi' ? 'Xác nhận hủy' : 'Confirm cancellation'}</Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal>
+        )
+      })()}
+
       {/* ─── Lesson Detail Modal (Xem chi tiết) ─── */}
       {detailLesson && (
-        <Modal
+        <BottomSheet
           open
+          size="md"
           onClose={() => setDetailLesson(null)}
           title={lang === 'vi' ? 'Chi tiết buổi học' : 'Lesson Details'}
           footer={
@@ -648,17 +2178,17 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
             </div>
           }
         >
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
+          <div className="mx-auto w-full max-w-xl space-y-5">
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <TeacherAvatar
-                name={teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherName) || '?'}
+                name={teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherCode, genericTeacherLabel)}
                 photoURL={teacherMap[detailLesson.teacherId]?.photoURL}
                 country={teacherMap[detailLesson.teacherId]?.country}
                 size={48}
               />
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900 truncate">{teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherName)}</p>
-                <p className="text-xs text-slate-500 truncate">{detailLesson.subjectName}</p>
+                <p className="truncate text-sm font-extrabold text-slate-950">{teacherNickname(teacherMap[detailLesson.teacherId], detailLesson.teacherCode, genericTeacherLabel)}</p>
+                {detailLesson.subjectName?.trim() && !/chưa\s*xếp|chua\s*xep/i.test(detailLesson.subjectName) && <p className="truncate text-xs font-semibold text-slate-500">{detailLesson.subjectName}</p>}
                 <p className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
                   {detailLesson.date} · {detailLesson.minutes} {lang === 'vi' ? 'phút' : 'min'}
                 </p>
@@ -672,42 +2202,68 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
             </div>
 
             {(detailLesson.book || detailLesson.pages) && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 p-4 sm:grid-cols-2">
                 {detailLesson.book && (
-                  <div>
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 ring-1 ring-sky-100"><BookOpen className="h-4 w-4" /></span>
+                    <div className="min-w-0">
                     <p className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'vi' ? 'Sách học' : 'Book'}</p>
                     <p className="text-xs font-bold text-[#3BB8EB] mt-0.5 break-words">{detailLesson.book}</p>
+                    </div>
                   </div>
                 )}
                 {detailLesson.pages && (
-                  <div>
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 ring-1 ring-sky-100"><FileText className="h-4 w-4" /></span>
+                    <div className="min-w-0">
                     <p className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'vi' ? 'Trang học' : 'Pages'}</p>
                     <p className="text-xs font-bold text-slate-700 mt-0.5 break-words">{detailLesson.pages}</p>
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
-            {detailLesson.comment && (
-              <div>
-                <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-[0.15em] mb-1.5">
-                  {lang === 'vi' ? 'Nhận xét của giáo viên' : 'Teacher Feedback'}
+            {(detailLesson.report || detailLesson.comment) && (
+              <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-700">
+                  <MessageSquareText className="h-4 w-4" />
+                  {lang === 'vi' ? 'Nhận xét của gia sư' : 'Teacher Feedback'}
                 </p>
-                <div className="relative pl-4">
-                  <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-emerald-400 rounded-full" />
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{detailLesson.comment}</p>
-                </div>
+                {detailLesson.report ? (
+                  <div className="space-y-3">
+                    {[
+                      { label: lang === 'vi' ? 'Kiến thức' : 'Knowledge', value: detailLesson.report.knowledgeComment, done: detailLesson.report.knowledgeDone, icon: Lightbulb },
+                      { label: lang === 'vi' ? 'Hoạt động trên lớp' : 'Class activities', value: detailLesson.report.gamesComment, done: detailLesson.report.gamesDone, icon: PlayCircle },
+                      { label: lang === 'vi' ? 'Bài tập trên lớp' : 'Class exercises', value: detailLesson.report.exercisesComment, done: detailLesson.report.exercisesDone, icon: ClipboardCheck },
+                    ].map((row) => {
+                      const RowIcon = row.icon
+                      return (
+                        <div key={row.label} className="flex items-start gap-3 rounded-xl bg-emerald-50/60 p-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-emerald-100"><RowIcon className="h-4 w-4" /></span>
+                          <p className="min-w-0 text-sm leading-6 text-slate-700"><span className="font-extrabold text-slate-900">{row.label}:</span> {cleanLessonText(row.value) || (row.done ? (lang === 'vi' ? 'Đã hoàn thành' : 'Completed') : (lang === 'vi' ? 'Chưa hoàn thành' : 'Not completed'))}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="relative pl-4">
+                    <span className="absolute bottom-1 left-0 top-1 w-[3px] rounded-full bg-emerald-400" />
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{cleanLegacyFeedback(detailLesson.comment || '')}</p>
+                  </div>
+                )}
               </div>
             )}
 
             {detailLesson.homework && (
-              <div>
-                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-[0.15em] mb-1.5">
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/65 p-4">
+                <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-amber-700">
+                  <ClipboardCheck className="h-4 w-4" />
                   {lang === 'vi' ? 'Bài tập về nhà' : 'Homework'}
                 </p>
                 <div className="relative pl-4">
                   <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-amber-400 rounded-full" />
-                  <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{detailLesson.homework}</p>
+                  <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">{cleanLessonText(detailLesson.homework)}</p>
                 </div>
               </div>
             )}
@@ -737,7 +2293,7 @@ function ParentView({ student, lessons, bookings, onBack }: { student: Student; 
               </p>
             )}
           </div>
-        </Modal>
+        </BottomSheet>
       )}
     </div>
   )
@@ -758,13 +2314,14 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
   onGoTab: (t: ParentTab) => void
   lang: string
 }) {
+  const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
   return (
     <div className="space-y-6">
       {/* Hero progress card */}
       <section className="animate-slide-up">
-        <div className="relative bg-gradient-to-br from-slate-900 via-[#1e3a5f] to-[#3BB8EB] rounded-3xl p-7 text-white shadow-[0_20px_60px_-15px_rgba(59,184,235,0.4)] overflow-hidden">
+        <div className="relative bg-gradient-to-br from-slate-950 via-sky-950 to-sky-600 rounded-3xl p-7 text-white shadow-[0_20px_60px_-15px_rgba(2,132,199,0.4)] overflow-hidden">
           <div className="absolute -top-20 -right-20 w-64 h-64 bg-[#FFD600]/15 rounded-full blur-[80px]" />
-          <div className="absolute -bottom-24 -left-16 w-56 h-56 bg-[#3BB8EB]/30 rounded-full blur-[100px]" />
+          <div className="absolute -bottom-24 -left-16 w-56 h-56 bg-sky-500/30 rounded-full blur-[100px]" />
 
           <div className="relative z-10">
             <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200/80 font-medium mb-1">
@@ -783,7 +2340,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
 
             <div className="grid grid-cols-4 divide-x divide-white/15">
               {[
-                { label: lang === 'vi' ? 'Tổng số phút' : 'Total minutes', val: stats.total, color: 'text-white' },
+                { label: lang === 'vi' ? 'Tổng kim cương' : 'Total diamonds', val: stats.total, color: 'text-white' },
                 { label: lang === 'vi' ? 'Đã học' : 'Completed', val: stats.used, color: 'text-sky-200' },
                 { label: lang === 'vi' ? 'Giữ chỗ' : 'Booked', val: stats.held, color: stats.held > 0 ? 'text-[#FFD600]' : 'text-sky-100/70' },
                 { label: lang === 'vi' ? 'Khả dụng' : 'Available', val: stats.available, color: stats.available <= 0 ? 'text-rose-200' : 'text-emerald-300' },
@@ -791,9 +2348,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 <div key={s.label} className="px-3 first:pl-0 last:pr-0">
                   <p className={`text-[26px] sm:text-[32px] font-bold leading-none tracking-tight ${s.color}`}>{s.val}</p>
                   <p className="text-[10px] sm:text-[11px] text-sky-100/80 mt-2 tracking-wide font-medium">{s.label}</p>
-                  <p className="text-[9px] text-sky-200/50 mt-0.5 uppercase tracking-wider font-semibold">
-                    {lang === 'vi' ? 'phút' : 'min'}
-                  </p>
+                  <DiamondPointsIcon className="mt-1 h-3.5 w-3.5 text-violet-200" />
                 </div>
               ))}
             </div>
@@ -806,7 +2361,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
         <section className="animate-slide-up [animation-delay:60ms]">
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 shadow-sm flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center flex-shrink-0">
-              <CalendarCheck2 className="w-5 h-5 text-[#3BB8EB]" />
+              <CalendarCheck2 className="w-5 h-5 text-sky-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -816,7 +2371,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 {dayFull[parseISODate(nextBooking.requestedDate || '').getDay()]}, {nextBooking.requestedDate?.split('-').reverse().join('/')} · {nextBooking.requestedStart}
               </p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)} · {nextBooking.subjectName}
+                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherCode, genericTeacherLabel)} · {nextBooking.subjectName}
               </p>
             </div>
             {roomLinkOf(nextBooking) && (
@@ -824,7 +2379,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 href={roomLinkOf(nextBooking)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3.5 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
+                className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
               >
                 <Video className="w-3.5 h-3.5" />
                 {lang === 'vi' ? 'Vào lớp' : 'Join'}
@@ -837,7 +2392,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
       {/* Classroom link */}
       {student.classroomURL && (
         <section className="animate-slide-up [animation-delay:90ms]">
-          <div className="bg-gradient-to-r from-indigo-50 to-indigo-100/50 border border-indigo-200/60 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-indigo-100">
+          <div className="bg-sky-50 border border-sky-200/70 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-sky-100">
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <span className="flex h-2 w-2 relative">
@@ -847,14 +2402,14 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 {lang === 'vi' ? 'Phòng học trực tuyến' : 'Online Classroom'}
               </h3>
               <p className="text-xs text-slate-500 leading-normal">
-                {lang === 'vi' ? 'Bấm vào đây để tham gia lớp học trực tuyến cùng giáo viên.' : 'Click here to join the online classroom with the teacher.'}
+                {lang === 'vi' ? 'Bấm vào đây để tham gia lớp học trực tuyến cùng gia sư.' : 'Click here to join the online classroom with the teacher.'}
               </p>
             </div>
             <a
               href={student.classroomURL}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center gap-1.5 flex-shrink-0"
+              className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200 hover:shadow-sky-300 transition-all flex items-center gap-1.5 flex-shrink-0"
             >
               {lang === 'vi' ? 'Vào học ngay' : 'Join Class Now'}
               <ExternalLink className="w-3.5 h-3.5" />
@@ -888,9 +2443,9 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
       {/* Quick actions */}
       <section className="grid grid-cols-3 gap-3 animate-slide-up [animation-delay:150ms]">
         {[
-          { key: 'booking' as ParentTab, icon: CalendarPlus, label: lang === 'vi' ? 'Đặt lịch học' : 'Book Class', color: 'text-[#3BB8EB] bg-sky-50 border-sky-100' },
-          { key: 'history' as ParentTab, icon: History, label: lang === 'vi' ? 'Lịch sử học' : 'History', color: 'text-violet-500 bg-violet-50 border-violet-100' },
-          { key: 'courses' as ParentTab, icon: GraduationCap, label: lang === 'vi' ? 'Khóa học' : 'Courses', color: 'text-emerald-500 bg-emerald-50 border-emerald-100' },
+          { key: 'booking' as ParentTab, icon: CalendarPlus, label: lang === 'vi' ? 'Đặt lịch học' : 'Book Class', color: 'text-sky-600 bg-sky-50 border-sky-100' },
+          { key: 'history' as ParentTab, icon: History, label: lang === 'vi' ? 'Lịch sử học' : 'History', color: 'text-sky-600 bg-sky-50 border-sky-100' },
+          { key: 'profile' as ParentTab, icon: GraduationCap, label: lang === 'vi' ? 'Khóa học' : 'Courses', color: 'text-sky-600 bg-sky-50 border-sky-100' },
         ].map(({ key, icon: Icon, label, color }) => (
           <button
             key={key}
@@ -911,16 +2466,16 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
         <section className="animate-slide-up [animation-delay:180ms]">
           <div className="bg-white border border-slate-200/70 rounded-2xl p-4 flex items-center gap-3">
             <TeacherAvatar
-              name={teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName) || '?'}
+              name={teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherCode, genericTeacherLabel)}
               photoURL={teacherMap[nextBooking.teacherId]?.photoURL}
               country={teacherMap[nextBooking.teacherId]?.country}
               size={44}
             />
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                {lang === 'vi' ? 'Giáo viên buổi tới' : 'Next Teacher'}
+                {lang === 'vi' ? 'Gia sư buổi tới' : 'Next Teacher'}
               </p>
-              <p className="text-[13px] font-bold text-slate-900 truncate mt-0.5">{teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)}</p>
+              <p className="text-[13px] font-bold text-slate-900 truncate mt-0.5">{teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherCode, genericTeacherLabel)}</p>
               {teacherMap[nextBooking.teacherId]?.bio && (
                 <p className="text-[11px] text-slate-500 italic truncate mt-0.5">"{teacherMap[nextBooking.teacherId]?.bio}"</p>
               )}
@@ -936,7 +2491,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: ĐẶT LỊCH (calendar view of booked sessions + link to booking flow)
 // ─────────────────────────────────────────────────────────────────────────────
-function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomLinkOf, dayFull, onSelectBooking, lang, onPickTeacher }: {
+export function LegacyBookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomLinkOf, dayFull, onSelectBooking, lang, onPickTeacher }: {
   bookings: BookingRequest[]
   upcomingBookings: BookingRequest[]
   nextBooking: BookingRequest | null
@@ -947,6 +2502,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
   lang: string
   onPickTeacher: () => void
 }) {
+  const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth(), 1)
@@ -1008,7 +2564,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
             <p className="text-[13px] font-extrabold text-[#1e3a8a] leading-snug uppercase">
               {lang === 'vi' ? 'Học tiếng Anh online' : 'Learn English Online'}
               <br />
-              {lang === 'vi' ? '1 kèm 1 cùng giáo viên' : '1-on-1 with teachers'}
+              {lang === 'vi' ? '1 kèm 1 cùng gia sư' : '1-on-1 with teachers'}
             </p>
             <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
               {lang === 'vi' ? 'Linh hoạt thời gian, học mọi lúc mọi nơi' : 'Flexible time, learn anywhere'}
@@ -1026,7 +2582,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
           className="bg-white border border-sky-200/80 text-[#2196F3] rounded-2xl py-3 px-4 text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-sky-50 hover:-translate-y-0.5 active:scale-95 transition-all duration-300 shadow-sm"
         >
           <UserIcon className="w-4 h-4" />
-          {lang === 'vi' ? 'Chọn giáo viên' : 'Choose Teacher'}
+          {lang === 'vi' ? 'Chọn gia sư' : 'Choose Teacher'}
         </button>
         <button
           type="button"
@@ -1153,13 +2709,13 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                 className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/80 hover:bg-sky-50 border border-slate-100 transition text-left active:scale-[0.98]"
               >
                 <TeacherAvatar
-                  name={teacherNickname(teacherMap[b.teacherId], b.teacherName) || '?'}
+                  name={teacherNickname(teacherMap[b.teacherId], b.teacherCode, genericTeacherLabel)}
                   photoURL={teacherMap[b.teacherId]?.photoURL}
                   country={teacherMap[b.teacherId]?.country}
                   size={36}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherName)} · {b.subjectName}</p>
+                  <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherCode, genericTeacherLabel)} · {b.subjectName}</p>
                   <p className="text-[11px] text-slate-500 tabular-nums mt-0.5">{b.requestedStart} - {b.requestedEnd}</p>
                 </div>
                 <ChevronRightIcon className="w-4 h-4 text-slate-300 flex-shrink-0" />
@@ -1191,7 +2747,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                     <p className="text-[9px] font-bold text-slate-400 mt-0.5">T{parseISODate(b.requestedDate || '').getMonth() + 1}</p>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherName)} · {b.subjectName}</p>
+                    <p className="text-xs font-bold text-slate-800 truncate">{teacherNickname(teacherMap[b.teacherId], b.teacherCode, genericTeacherLabel)} · {b.subjectName}</p>
                     <p className="text-[11px] text-slate-500 tabular-nums mt-0.5 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {b.requestedStart} - {b.requestedEnd}
@@ -1222,7 +2778,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
                 {dayFull[parseISODate(nextBooking.requestedDate || '').getDay()]}, {nextBooking.requestedDate?.split('-').reverse().join('/')} · {nextBooking.requestedStart}
               </p>
               <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherName)} · {nextBooking.subjectName}
+                {teacherNickname(teacherMap[nextBooking.teacherId], nextBooking.teacherCode, genericTeacherLabel)} · {nextBooking.subjectName}
               </p>
             </div>
             {roomLinkOf(nextBooking) && (
@@ -1250,7 +2806,7 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
           <ul className="text-[11px] text-slate-600 space-y-1.5 font-medium list-disc pl-4">
             <li>{lang === 'vi' ? 'Thời gian học tính theo giờ Việt Nam (GMT+7).' : 'Class times follow Vietnam time (GMT+7).'}</li>
             <li>{lang === 'vi' ? 'Vui lòng vào lớp trước giờ học 5 phút.' : 'Please join the class 5 minutes early.'}</li>
-            <li>{lang === 'vi' ? 'Nếu cần hủy hoặc đổi lịch, vui lòng liên hệ trung tâm trước tối thiểu 2 giờ.' : 'To cancel or reschedule, please contact the center at least 2 hours in advance.'}</li>
+            <li>{lang === 'vi' ? 'Hủy trước giờ học ít nhất 1 giờ để hệ thống tự động trả lại số phút đang giữ.' : 'Cancel at least one hour before class so held minutes are released automatically.'}</li>
           </ul>
         </div>
       </section>
@@ -1258,195 +2814,263 @@ function BookingTab({ bookings, upcomingBookings, nextBooking, teacherMap, roomL
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TAB: LỊCH SỬ (lesson history cards with teacher avatar + flag + rating)
-// ─────────────────────────────────────────────────────────────────────────────
-function HistoryTab({ lessons, teacherMap, subjectPackages, onDetail, lang }: {
+// TAB: LỊCH SỬ
+// Dữ liệu báo cáo mới được đọc trực tiếp từ `report`; `comment` chỉ là fallback
+// cho các buổi cũ để không phải migrate hoặc ghi đè dữ liệu đang có.
+function cleanLegacyFeedback(value: string) {
+  return value
+    .split('\n')
+    .map((line) => line
+      .replace(/\u{1F4D6}|\u{2B50}/gu, '')
+      .replace(/([123])\uFE0F?\u20E3/gu, '$1.')
+      .replace(/\u2713/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim())
+    .filter((line) => line && !/^Chấm điểm buổi học:/i.test(line))
+    .join('\n')
+    .replace(/\s+([123]\.)\s+/g, '\n$1 ')
+    .replace(/\s+(Bài tập về nhà:)\s*/gi, '\n$1 ')
+}
+
+function cleanLessonText(value: string) {
+  return value
+    .replace(/([0-9])\uFE0F?\u20E3/gu, '$1.')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\uFE0F|\u20E3/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,:;])/g, '$1')
+    .trim()
+}
+
+function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teacherReviews, onDetail, onTeacherProfile, onRateTeacher, onRebook, onRewards, lang }: {
   lessons: Lesson[]
   teacherMap: Record<string, TeacherLite>
-  subjectPackages: Student['subjects'] & {}
-  onDetail: (l: Lesson) => void
+  subjectPackages: StudentSubject[]
+  rewardPoints: number
+  teacherReviews: Record<string, number>
+  onDetail: (lesson: Lesson) => void
+  onTeacherProfile: (teacherId: string) => void
+  onRateTeacher: (lesson: Lesson, rating: number) => Promise<void>
+  onRebook: () => void
+  onRewards: () => void
   lang: string
 }) {
+  const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
   const [subjectFilter, setSubjectFilter] = useState('all')
   const [monthFilter, setMonthFilter] = useState('all')
+  const [ratingDrafts, setRatingDrafts] = useState<Record<string, number>>({})
+  const [savingReview, setSavingReview] = useState('')
+
+  const saveTeacherRating = async (lesson: Lesson) => {
+    const rating = ratingDrafts[lesson.id]
+    if (!rating || teacherReviews[lesson.id]) return
+    setSavingReview(lesson.id)
+    try {
+      await onRateTeacher(lesson, rating)
+    } catch (error) {
+      console.error('Submit teacher rating failed:', error)
+      toast.error(lang === 'vi' ? 'Chưa gửi được đánh giá. Vui lòng thử lại.' : 'Could not submit the rating. Please try again.')
+    } finally {
+      setSavingReview('')
+    }
+  }
 
   const months = useMemo(() => {
-    const set = new Set<string>()
-    lessons.forEach(l => l.date && set.add(l.date.slice(0, 7)))
-    return Array.from(set).sort().reverse()
+    const values = new Set<string>()
+    lessons.forEach((lesson) => lesson.date && values.add(lesson.date.slice(0, 7)))
+    return Array.from(values).sort().reverse()
   }, [lessons])
 
   const subjects = useMemo(() => {
-    const map = new Map<string, string>()
-    lessons.forEach(l => { if (l.subjectId) map.set(l.subjectId, l.subjectName || '') })
-    return Array.from(map.entries())
+    const values = new Map<string, string>()
+    lessons.forEach((lesson) => {
+      if (lesson.subjectId && lesson.subjectName && !/chưa\s*xếp|chua\s*xep/i.test(lesson.subjectName)) {
+        values.set(lesson.subjectId, lesson.subjectName)
+      }
+    })
+    return Array.from(values.entries())
   }, [lessons])
 
-  const filtered = useMemo(() => {
-    return lessons.filter(l =>
-      (subjectFilter === 'all' || l.subjectId === subjectFilter) &&
-      (monthFilter === 'all' || l.date?.slice(0, 7) === monthFilter)
-    )
-  }, [lessons, subjectFilter, monthFilter])
+  const filtered = useMemo(() => lessons.filter((lesson) =>
+    (subjectFilter === 'all' || lesson.subjectId === subjectFilter) &&
+    (monthFilter === 'all' || lesson.date?.slice(0, 7) === monthFilter)
+  ), [lessons, subjectFilter, monthFilter])
 
   const dayLabels = lang === 'vi' ? DAY_LABELS_VI : DAY_LABELS_EN
 
-  let lastMonthKey = ''
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between px-1 animate-slide-up">
-        <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">
-          {lang === 'vi' ? 'Lịch sử buổi học' : 'Lesson History'}
-        </h3>
-        <span className="text-[11px] text-slate-400 font-medium">
-          {filtered.length} {lang === 'vi' ? 'buổi' : 'sessions'}
-        </span>
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-lg font-extrabold tracking-tight text-slate-950">{lang === 'vi' ? 'Lịch sử buổi học' : 'Lesson history'}</h2>
+        <span className="text-xs font-semibold text-slate-400">{filtered.length} {lang === 'vi' ? 'buổi' : 'sessions'}</span>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 animate-slide-up [animation-delay:40ms]">
-        <select
-          value={subjectFilter}
-          onChange={(e) => setSubjectFilter(e.target.value)}
-          className="h-9 flex-1 min-w-0 rounded-full border border-slate-200 bg-white px-3.5 text-[11px] font-bold text-slate-600 outline-none focus:border-[#3BB8EB] cursor-pointer shadow-sm"
-        >
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.42fr)] gap-2">
+        <select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
           <option value="all">{lang === 'vi' ? 'Tất cả môn' : 'All subjects'}</option>
           {subjects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        <select
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-          className="h-9 w-32 rounded-full border border-slate-200 bg-white px-3.5 text-[11px] font-bold text-slate-600 outline-none focus:border-[#3BB8EB] cursor-pointer shadow-sm"
-        >
+        <select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
           <option value="all">{lang === 'vi' ? 'Tất cả tháng' : 'All months'}</option>
-          {months.map(m => {
-            const [y, mo] = m.split('-')
-            return <option key={m} value={m}>{lang === 'vi' ? `Tháng ${parseInt(mo)}/${y}` : `${parseInt(mo)}/${y}`}</option>
+          {months.map((month) => {
+            const [year, monthNumber] = month.split('-')
+            return <option key={month} value={month}>{lang === 'vi' ? `Tháng ${parseInt(monthNumber)}/${year}` : `${parseInt(monthNumber)}/${year}`}</option>
           })}
         </select>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white border border-dashed border-slate-200 rounded-2xl text-center py-14 animate-slide-up">
-          <History className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-slate-500 text-sm font-medium">
-            {lang === 'vi' ? 'Chưa có buổi học nào' : 'No lessons yet'}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            {lang === 'vi' ? 'Buổi học sẽ hiển thị sau khi được trung tâm duyệt' : 'Lessons appear after being approved by the center'}
-          </p>
+        <div className="rounded-2xl border border-dashed border-sky-200 bg-white py-14 text-center">
+          <History className="mx-auto h-8 w-8 text-sky-300" />
+          <p className="mt-3 text-sm font-extrabold text-slate-700">{lang === 'vi' ? 'Chưa có buổi học nào' : 'No lessons yet'}</p>
+          <p className="mt-1 text-xs font-medium text-slate-400">{lang === 'vi' ? 'Buổi học xuất hiện sau khi được trung tâm duyệt.' : 'Lessons appear after center approval.'}</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((lesson, i) => {
-            const d = parseISODate(lesson.date)
+        <div className="space-y-4">
+          {filtered.map((lesson, index) => {
+            const date = parseISODate(lesson.date)
             const monthKey = lesson.date?.slice(0, 7) || ''
-            const showMonthHeader = monthKey !== lastMonthKey
-            lastMonthKey = monthKey
+            const previousMonthKey = index > 0 ? filtered[index - 1]?.date?.slice(0, 7) || '' : ''
+            const showMonthHeader = index === 0 || monthKey !== previousMonthKey
             const teacher = teacherMap[lesson.teacherId]
-            const pkg = subjectPackages?.find(s => s.subjectId === lesson.subjectId)
-            const docLink = pkg?.curriculumLink
-              ? (pkg.curriculumLink.startsWith('http') ? pkg.curriculumLink : `https://${pkg.curriculumLink}`)
-              : ''
+            const storedTeacherHint = lesson.teacherCode || lesson.teacherName?.trim().split(/\s+/).slice(-1)[0] || ''
+            const nickname = teacherNickname(teacher, storedTeacherHint, genericTeacherLabel)
+            const subjectPackage = subjectPackages.find((item) => item.subjectId === lesson.subjectId)
+            const rawDocumentLink = subjectPackage?.curriculumLink || ''
+            const documentLink = rawDocumentLink ? (rawDocumentLink.startsWith('http') ? rawDocumentLink : `https://${rawDocumentLink}`) : ''
+            const report = lesson.report
+            const legacyFeedback = report ? '' : cleanLegacyFeedback(lesson.comment || '')
+            const hasRating = typeof lesson.rating === 'number' && lesson.rating > 0
+            const submittedTeacherRating = teacherReviews[lesson.id] || 0
+            const selectedTeacherRating = submittedTeacherRating || ratingDrafts[lesson.id] || 0
+            const reportRows = report ? [
+              { label: lang === 'vi' ? 'Kiến thức' : 'Knowledge', value: report.knowledgeComment, done: report.knowledgeDone },
+              { label: lang === 'vi' ? 'Hoạt động trên lớp' : 'Class activities', value: report.gamesComment, done: report.gamesDone },
+              { label: lang === 'vi' ? 'Bài tập trên lớp' : 'Class exercises', value: report.exercisesComment, done: report.exercisesDone },
+            ] : []
 
             return (
               <div key={lesson.id}>
-                {showMonthHeader && (
-                  <p className="text-[11px] font-bold text-slate-400 px-1 pt-2 pb-2 animate-fade-in">
-                    {lang === 'vi' ? `Tháng ${d.getMonth() + 1}/${d.getFullYear()}` : `${d.toLocaleString('en', { month: 'long' })} ${d.getFullYear()}`}
-                  </p>
-                )}
-                <article
-                  className="bg-white border border-slate-200/70 rounded-2xl p-4 hover:border-sky-200 hover:shadow-lg hover:shadow-sky-100/50 transition-all duration-300 animate-slide-up"
-                  style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
-                >
+                {showMonthHeader && <p className="px-1 pb-2 pt-1 text-xs font-bold text-slate-400">{lang === 'vi' ? `Tháng ${date.getMonth() + 1}/${date.getFullYear()}` : `${date.toLocaleString('en', { month: 'long' })} ${date.getFullYear()}`}</p>}
+                <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_40px_-34px_rgba(2,132,199,0.45)] sm:p-5">
                   <div className="flex items-start gap-3">
-                    {/* Date badge */}
-                    <div className="w-12 flex-shrink-0 text-center bg-slate-50 border border-slate-100 rounded-xl py-2">
-                      <p className="text-[9px] font-bold text-slate-400 uppercase leading-none">{dayLabels[d.getDay()]}</p>
-                      <p className="text-xl font-extrabold text-slate-800 leading-tight tabular-nums">{String(d.getDate()).padStart(2, '0')}</p>
-                      <p className="text-[9px] font-bold text-slate-400 leading-none">T{d.getMonth() + 1}</p>
+                    <div className="w-12 shrink-0 rounded-xl bg-sky-50 py-2 text-center ring-1 ring-sky-100">
+                      <p className="text-[9px] font-extrabold uppercase leading-none text-sky-700">{dayLabels[date.getDay()]}</p>
+                      <p className="text-xl font-extrabold leading-tight tabular-nums text-slate-900">{String(date.getDate()).padStart(2, '0')}</p>
+                      <p className="text-[9px] font-bold leading-none text-slate-400">T{date.getMonth() + 1}</p>
                     </div>
 
-                    {/* Teacher + lesson info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <TeacherAvatar
-                          name={teacherNickname(teacher, lesson.teacherName) || '?'}
-                          photoURL={teacher?.photoURL}
-                          country={teacher?.country}
-                          size={40}
-                        />
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-bold text-slate-900 truncate">{teacherNickname(teacher, lesson.teacherName)}</p>
-                          <p className="text-[11px] text-slate-500 truncate">{lesson.subjectName}</p>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1.5 flex-wrap">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span className="tabular-nums font-semibold">{lesson.minutes} {lang === 'vi' ? 'phút' : 'min'}</span>
-                        <span className="text-slate-300">|</span>
-                        <span className="inline-flex items-center gap-1 text-[#3BB8EB] font-bold">
-                          <Video className="w-3 h-3" />
-                          {lang === 'vi' ? 'Đã học' : 'Completed'}
+                    <button type="button" disabled={!lesson.teacherId} onClick={() => lesson.teacherId && onTeacherProfile(lesson.teacherId)} className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 disabled:cursor-default" aria-label={lang === 'vi' ? 'Xem hồ sơ gia sư' : 'View teacher profile'}>
+                      <TeacherAvatar name={nickname} photoURL={teacher?.photoURL} country={teacher?.country} size={42} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-extrabold text-slate-950 transition-colors group-hover:text-sky-700">{nickname}</span>
+                        {lesson.subjectName?.trim() && !/chưa\s*xếp|chua\s*xep/i.test(lesson.subjectName) && (
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">{lesson.subjectName}</span>
+                        )}
+                        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold text-slate-500">
+                          <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{lesson.minutes} {lang === 'vi' ? 'phút' : 'min'}</span>
+                          <span className="inline-flex items-center gap-1 text-sky-700"><Video className="h-3.5 w-3.5" />{lang === 'vi' ? 'Đã học' : 'Completed'}</span>
                         </span>
-                      </p>
-                    </div>
+                      </span>
+                    </button>
+
+                    <button type="button" onClick={onRebook} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2.5 text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.97]">
+                      <RotateCcw className="h-3.5 w-3.5" />{lang === 'vi' ? 'Đặt lại' : 'Rebook'}
+                    </button>
                   </div>
 
-                  {/* Teacher feedback */}
-                  {(lesson.comment || (typeof lesson.rating === 'number' && lesson.rating > 0)) && (
-                    <div className="mt-3 bg-sky-50/60 border border-sky-100/70 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                          {lang === 'vi' ? 'Nhận xét của giáo viên' : 'Teacher Feedback'}
-                        </p>
-                        {typeof lesson.rating === 'number' && lesson.rating > 0 && (
-                          <span className="flex items-center gap-1 text-[11px] font-extrabold text-amber-500">
-                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                            {lesson.rating.toFixed(1)}
-                          </span>
+                  <section className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-3.5 sm:p-4">
+                    <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900"><MessageSquareText className="h-4 w-4 text-sky-600" />{lang === 'vi' ? 'Nhận xét của gia sư' : 'Teacher feedback'}</div>
+
+                    {(lesson.book || lesson.pages) && (
+                      <div className="mt-3 flex items-start gap-2 rounded-xl bg-white p-3 text-xs leading-5 text-slate-600 ring-1 ring-sky-100">
+                        <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                        <p><span className="font-extrabold text-slate-800">{lang === 'vi' ? 'Nội dung học' : 'Learning material'}:</span> {[lesson.book, lesson.pages].filter(Boolean).join(', ')}</p>
+                      </div>
+                    )}
+
+                    {reportRows.length > 0 ? (
+                      <div className="mt-3 space-y-2.5">
+                        {reportRows.map((row) => (
+                          <div key={row.label} className="flex items-start gap-2.5 text-xs leading-5 text-slate-600">
+                            {row.done ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" /> : <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
+                            <p><span className="font-extrabold text-slate-800">{row.label}:</span> {row.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : legacyFeedback ? (
+                      <p className="mt-3 whitespace-pre-line text-xs leading-5 text-slate-600">{legacyFeedback}</p>
+                    ) : (
+                      <p className="mt-3 text-xs font-medium text-slate-500">{lang === 'vi' ? 'Buổi học chưa có nhận xét chi tiết.' : 'No detailed feedback for this lesson.'}</p>
+                    )}
+
+                    <button type="button" onClick={() => onDetail(lesson)} className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-extrabold text-sky-700 transition hover:bg-white active:scale-[0.98]"><FileText className="h-3.5 w-3.5" />{lang === 'vi' ? 'Xem chi tiết' : 'View details'}<ChevronRight className="h-3.5 w-3.5" /></button>
+                  </section>
+
+                  <section className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-2xl border border-sky-100 bg-white p-3.5">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-extrabold text-slate-700">{lang === 'vi' ? 'Điểm gia sư dành cho bạn' : 'Your lesson score'}</p>
+                      <div className="mt-2 flex items-center gap-1">
+                        {Array.from({ length: 5 }, (_, starIndex) => <Star key={starIndex} className={`h-4 w-4 ${hasRating && starIndex < Number(lesson.rating) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`} />)}
+                        <span className="ml-1 text-base font-extrabold tabular-nums text-slate-900">{hasRating ? Number(lesson.rating).toFixed(1) : '0.0'}<span className="text-xs text-slate-400">/5</span></span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={onRewards} className="flex min-w-[112px] items-center gap-2 rounded-xl bg-sky-50 px-3 text-left transition hover:bg-sky-100 active:scale-[0.98]">
+                      <Gift className="h-5 w-5 shrink-0 text-sky-600" />
+                      <span><span className="block text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Sao đang có' : 'Available stars'}</span><span className="block text-base font-extrabold tabular-nums text-slate-900">{rewardPoints}</span></span>
+                    </button>
+                  </section>
+
+                  {lesson.teacherId && (
+                    <section className="mt-3 rounded-2xl border border-amber-100 bg-amber-50/55 p-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-900">{lang === 'vi' ? 'Đánh giá gia sư' : 'Rate your teacher'}</p>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">
+                            {submittedTeacherRating
+                              ? (lang === 'vi' ? 'Cảm ơn bạn đã gửi đánh giá cho buổi học này.' : 'Thank you for rating this lesson.')
+                              : (lang === 'vi' ? 'Chọn từ 1 đến 5 sao, sau đó bấm Gửi đánh giá.' : 'Choose 1 to 5 stars, then submit your rating.')}
+                          </p>
+                        </div>
+                        {submittedTeacherRating > 0 && <span className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-xs font-black text-amber-700 ring-1 ring-amber-200">{submittedTeacherRating}/5</span>}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-1" role="radiogroup" aria-label={lang === 'vi' ? 'Chọn số sao đánh giá gia sư' : 'Select teacher rating'}>
+                          {Array.from({ length: 5 }, (_, index) => {
+                            const star = index + 1
+                            const active = star <= selectedTeacherRating
+                            return (
+                              <button
+                                key={star}
+                                type="button"
+                                disabled={submittedTeacherRating > 0 || savingReview === lesson.id}
+                                onClick={() => setRatingDrafts((current) => ({ ...current, [lesson.id]: star }))}
+                                className="flex h-10 w-10 items-center justify-center rounded-xl transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300 active:scale-[0.94] disabled:cursor-default"
+                                role="radio"
+                                aria-checked={selectedTeacherRating === star}
+                                aria-label={`${star} ${lang === 'vi' ? 'sao' : 'stars'}`}
+                              >
+                                <Star className={`h-6 w-6 transition ${active ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {!submittedTeacherRating && (
+                          <Button size="sm" loading={savingReview === lesson.id} disabled={!ratingDrafts[lesson.id] || !!savingReview} onClick={() => saveTeacherRating(lesson)} className="bg-sky-600 hover:bg-sky-700">
+                            {lang === 'vi' ? 'Gửi đánh giá' : 'Submit rating'}
+                          </Button>
                         )}
                       </div>
-                      {lesson.comment && (
-                        <p className="text-[12px] text-slate-600 leading-relaxed line-clamp-3">{lesson.comment}</p>
-                      )}
-                    </div>
+                    </section>
                   )}
 
-                  {/* Actions */}
-                  <div className="grid grid-cols-2 gap-2.5 mt-3">
-                    <button
-                      type="button"
-                      onClick={() => onDetail(lesson)}
-                      className="py-2 rounded-xl border border-sky-200 text-[#2196F3] text-[11px] font-bold hover:bg-sky-50 active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      {lang === 'vi' ? 'Xem chi tiết' : 'View Details'}
-                    </button>
-                    {docLink ? (
-                      <a
-                        href={docLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-2 rounded-xl bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-[11px] font-bold active:scale-95 transition-all duration-200 flex items-center justify-center gap-1.5 shadow-sm shadow-sky-200"
-                      >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        {lang === 'vi' ? 'Xem tài liệu học' : 'View Materials'}
-                      </a>
+                  <div className="mt-3 grid grid-cols-2 gap-2.5">
+                    {documentLink ? (
+                      <a href={documentLink} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2 text-center text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.98]"><BookOpen className="h-4 w-4" />{lang === 'vi' ? 'Ôn tập tài liệu' : 'Review materials'}</a>
                     ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="py-2 rounded-xl bg-slate-100 text-slate-400 text-[11px] font-bold cursor-not-allowed flex items-center justify-center gap-1.5"
-                      >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        {lang === 'vi' ? 'Chưa có tài liệu' : 'No materials'}
-                      </button>
+                      <button type="button" disabled className="flex min-h-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 text-center text-[11px] font-bold text-slate-400"><BookOpen className="h-4 w-4" />{lang === 'vi' ? 'Chưa có tài liệu' : 'No materials'}</button>
                     )}
+                    <button type="button" onClick={() => onDetail(lesson)} disabled={!lesson.homework} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-2 text-center text-[11px] font-extrabold text-white transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"><ClipboardCheck className="h-4 w-4" />{lesson.homework ? (lang === 'vi' ? 'Xem bài tập' : 'View homework') : (lang === 'vi' ? 'Chưa có bài tập' : 'No homework')}</button>
                   </div>
                 </article>
               </div>
@@ -1486,9 +3110,7 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {subjectPackages.map((sub, i) => {
-              const bookedMins = bookings
-                .filter((b) => b.subjectId === sub.subjectId && !b.lessonId)
-                .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+              const bookedMins = getHeldBookingMinutes(bookings, sub.subjectId)
               const availMins = Math.max(0, sub.remainingMinutes - bookedMins)
               const subPct = sub.totalMinutes > 0 ? Math.min(100, Math.round((sub.usedMinutes / sub.totalMinutes) * 100)) : 0
 
@@ -1523,25 +3145,25 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
 
                   <div className="grid grid-cols-4 gap-1 text-center bg-slate-50/70 rounded-xl p-2.5 text-[10px]">
                     <div>
-                      <p className="font-bold text-slate-700">{sub.totalMinutes}p</p>
+                      <p className="flex items-center justify-center gap-1 font-bold text-slate-700"><DiamondPointsIcon className="h-3 w-3 text-violet-500" />{sub.totalMinutes}</p>
                       <p className="text-[9px] text-slate-500 leading-none mt-1">
-                        {lang === 'vi' ? 'Tổng thời gian' : 'Total time'}
+                        {lang === 'vi' ? 'Tổng' : 'Total'}
                       </p>
                     </div>
                     <div>
-                      <p className="font-bold text-indigo-500">{sub.usedMinutes}p</p>
+                      <p className="flex items-center justify-center gap-1 font-bold text-indigo-500"><DiamondPointsIcon className="h-3 w-3 text-violet-500" />{sub.usedMinutes}</p>
                       <p className="text-[9px] text-slate-500 leading-none mt-1">
                         {lang === 'vi' ? 'Đã học' : 'Completed'}
                       </p>
                     </div>
                     <div>
-                      <p className="font-bold text-amber-600">{bookedMins}p</p>
+                      <p className="flex items-center justify-center gap-1 font-bold text-amber-600"><DiamondPointsIcon className="h-3 w-3 text-violet-500" />{bookedMins}</p>
                       <p className="text-[9px] text-slate-500 leading-none mt-1">
                         {lang === 'vi' ? 'Đã đặt' : 'Booked'}
                       </p>
                     </div>
                     <div>
-                      <p className={`font-bold ${availMins <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{availMins}p</p>
+                      <p className={`flex items-center justify-center gap-1 font-bold ${availMins <= 0 ? 'text-rose-500' : 'text-emerald-500'}`}><DiamondPointsIcon className="h-3 w-3 text-violet-500" />{availMins}</p>
                       <p className="text-[9px] text-slate-500 leading-none mt-1">
                         {lang === 'vi' ? 'Khả dụng' : 'Available'}
                       </p>
@@ -1586,8 +3208,8 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">
             {lang === 'vi' ? 'Số buổi học 6 tháng gần nhất' : 'Sessions in last 6 months'}
           </p>
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-44 min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={monthlyData} margin={{ top: 5, right: 5, bottom: 0, left: -22 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -1596,7 +3218,7 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
                   contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
                   formatter={(value) => [`${value ?? 0} ${lang === 'vi' ? 'buổi' : 'sessions'}`, '']}
                 />
-                <Bar dataKey="buoi" fill="#3BB8EB" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="buoi" fill="#0284c7" radius={[6, 6, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1607,8 +3229,8 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
               {lang === 'vi' ? 'Phân bổ thời lượng buổi học' : 'Session duration distribution'}
             </p>
-            <div className="h-44 flex items-center">
-              <ResponsiveContainer width="55%" height="100%">
+            <div className="h-44 min-w-0 flex items-center">
+              <ResponsiveContainer width="55%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={durationData} dataKey="value" nameKey="name" innerRadius={34} outerRadius={58} paddingAngle={3}>
                     {durationData.map((_, idx) => (
