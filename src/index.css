@@ -19,10 +19,32 @@
 
   html {
     scroll-behavior: smooth;
+    width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
     @apply bg-slate-50 text-slate-900 font-sans;
+    width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  #root {
+    width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  @media (max-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 
   /* Scrollbar Styling */
@@ -303,6 +325,31 @@
 
   .animate-fade-in-up {
     animation: fade-in-up 500ms ease-out forwards;
+  }
+
+  /* Sóng chạy liên tục: path lặp đúng 1 chu kỳ nên dịch 50% là nối liền, không giật */
+  @keyframes wave-scroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-wave {
+    animation: wave-scroll 14s linear infinite;
+  }
+
+  .animate-wave-slow {
+    animation: wave-scroll 22s linear infinite reverse;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-wave,
+    .animate-wave-slow {
+      animation: none;
+    }
   }
 
   /* Truncate utilities */

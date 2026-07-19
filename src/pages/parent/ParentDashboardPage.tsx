@@ -1635,7 +1635,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     <div className="min-h-screen bg-slate-50 font-quicksand">
       {/* Header vàng brand + dải lượn sóng ngăn cách với nội dung bên dưới */}
       <header className="sticky top-0 z-30 bg-gradient-to-b from-[#FFE04A] via-[#FFD32E] to-[#FFC61A] shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
-        <div className="mx-auto max-w-2xl px-4 pt-2.5 pb-1">
+        <div className="mx-auto max-w-2xl px-4 pt-2.5 pb-3">
           <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             <button
               onClick={onBack}
