@@ -32,15 +32,82 @@ service cloud.firestore {
 
     // Students collection
     match /students/{studentId} {
+      function isPublicAvatarSelection() {
+        return request.resource.data.profileAvatarId in ['1', '2', '3', '4', '5']
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'profileAvatarId', 'updatedAt'
+          ]);
+      }
+
+      function isPublicBookingHold() {
+        let bookingId = request.resource.data.get('lastBookingHoldRequestId', '');
+        let bookingAfter = getAfter(/databases/$(database)/documents/bookingRequests/$(bookingId));
+        let heldBefore = resource.data.get('reservedMinutes', resource.data.get('heldMinutes', 0));
+        let heldAfter = request.resource.data.get('reservedMinutes', request.resource.data.get('heldMinutes', -1));
+        let bookingPoints = bookingAfter.data.get('requestedPoints', bookingAfter.data.requestedMinutes);
+        return bookingId is string
+          && bookingId.size() > 0
+          && bookingAfter.data.status == 'pending'
+          && bookingAfter.data.heldImmediately == true
+          && bookingAfter.data.studentId == studentId
+          && bookingAfter.data.studentCode == resource.data.code
+          && bookingAfter.data.heldMinutesAfterRequest == heldAfter
+          && bookingAfter.data.createdAt == request.time
+          && bookingPoints is int
+          && bookingPoints > 0
+          && heldBefore is int
+          && heldAfter == heldBefore + bookingPoints
+          // Chốt chặn phía server: không cho giữ vượt quỹ còn lại của học viên.
+          // Học viên dữ liệu cũ chưa có field remainingMinutes thì bỏ qua chốt này
+          // (mặc định rất lớn) để không chặn nhầm - giao diện vẫn kiểm tra theo gói môn.
+          && heldAfter <= resource.data.get('remainingMinutes', 99999999)
+          && request.resource.data.heldMinutes == heldAfter
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'reservedMinutes', 'heldMinutes', 'lastBookingHoldRequestId', 'updatedAt'
+          ]);
+      }
+
+      function isSelfCancellationMinuteRelease() {
+        let bookingId = request.resource.data.get('lastSelfCancellationBookingId', '');
+        let bookingBefore = get(/databases/$(database)/documents/bookingRequests/$(bookingId));
+        let bookingAfter = getAfter(/databases/$(database)/documents/bookingRequests/$(bookingId));
+        let heldBefore = resource.data.get('reservedMinutes', resource.data.get('heldMinutes', 0));
+        let heldAfter = request.resource.data.get('reservedMinutes', request.resource.data.get('heldMinutes', -1));
+        let bookingPoints = bookingBefore.data.get('requestedPoints', bookingBefore.data.requestedMinutes);
+        return bookingId is string
+          && bookingId.size() > 0
+          && (
+            bookingBefore.data.status == 'confirmed'
+            || (bookingBefore.data.status == 'pending' && bookingBefore.data.heldImmediately == true)
+          )
+          && bookingBefore.data.studentId == studentId
+          && bookingBefore.data.studentCode == resource.data.code
+          && bookingPoints is int
+          && bookingAfter.data.status == 'released'
+          && bookingAfter.data.selfServiceCancelled == true
+          && bookingAfter.data.releasedBy == 'student:' + resource.data.code
+          && heldBefore is int
+          && heldBefore >= bookingPoints
+          && heldAfter == heldBefore - bookingPoints
+          && request.resource.data.heldMinutes == heldAfter
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'reservedMinutes', 'heldMinutes', 'lastSelfCancellationBookingId', 'updatedAt'
+          ]);
+      }
+
       allow read: if true; // Public read for lookup by student code on tracking page
-      allow create, update: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isPublicBookingHold() || isSelfCancellationMinuteRelease() || isPublicAvatarSelection();
       allow delete: if isAdmin();
     }
 
     // Teachers collection
     match /teachers/{teacherId} {
       allow read: if true; // Public read for teacher code verification during login
-      allow update: if isAdmin() || (isTeacher() && request.auth.uid == resource.data.uid);
+      allow update: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
       allow create: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -95,17 +162,149 @@ service cloud.firestore {
 
     // Booking requests from public teacher page
     match /bookingRequests/{requestId} {
-      allow create: if isAdmin() || (
-                    request.resource.data.status == 'pending'
-                    && request.resource.data.teacherId is string
-                    && request.resource.data.studentId is string
-                    && request.resource.data.studentCode is string
-                    && request.resource.data.requestedMinutes is int
-                    && request.resource.data.requestedMinutes in [25, 50, 75, 100]
-                    );
+      function isPublicBookingCreate() {
+        let studentBefore = get(/databases/$(database)/documents/students/$(request.resource.data.studentId));
+        let studentAfter = getAfter(/databases/$(database)/documents/students/$(request.resource.data.studentId));
+        let teacher = get(/databases/$(database)/documents/teachers/$(request.resource.data.teacherId));
+        let heldBefore = studentBefore.data.get('reservedMinutes', studentBefore.data.get('heldMinutes', 0));
+        let heldAfter = studentAfter.data.get('reservedMinutes', studentAfter.data.get('heldMinutes', -1));
+        let teacherPoints = teacher.data.get('pointsPer25Minutes', 25);
+        let bookingPoints = request.resource.data.requestedPoints;
+        return request.resource.data.status == 'pending'
+          && request.resource.data.teacherId is string
+          && request.resource.data.studentId is string
+          && request.resource.data.studentCode == studentBefore.data.code
+          && request.resource.data.requestedMinutes is int
+          && request.resource.data.requestedMinutes in [25, 50, 75, 100]
+          && teacherPoints is int
+          && bookingPoints is int
+          && bookingPoints == teacherPoints * (request.resource.data.requestedMinutes / 25)
+          && request.resource.data.pointsPer25Minutes == teacherPoints
+          && request.resource.data.heldImmediately == true
+          && request.resource.data.heldMinutesAfterRequest == heldAfter
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.teacherConfirmationDeadlineAt is timestamp
+          && studentAfter.data.lastBookingHoldRequestId == requestId
+          && heldBefore is int
+          && heldAfter == heldBefore + bookingPoints;
+      }
+
+      function isPublicSelfCancellation() {
+        let studentBefore = get(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let studentAfter = getAfter(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let heldBefore = studentBefore.data.get('reservedMinutes', studentBefore.data.get('heldMinutes', 0));
+        let heldAfter = studentAfter.data.get('reservedMinutes', studentAfter.data.get('heldMinutes', -1));
+        let bookingPoints = resource.data.get('requestedPoints', resource.data.requestedMinutes);
+        let deadlineIsValid = !resource.data.keys().hasAny(['selfCancellationDeadlineAt'])
+          || request.time <= resource.data.selfCancellationDeadlineAt;
+        return resource.data.status == 'confirmed'
+          && !resource.data.keys().hasAny(['lessonId'])
+          && request.resource.data.status == 'released'
+          && request.resource.data.selfServiceCancelled == true
+          && request.resource.data.cancellationPolicyMinutes == 60
+          && request.resource.data.cancelledMinutes == resource.data.requestedMinutes
+          && request.resource.data.cancellationReason is string
+          && request.resource.data.releasedAt == request.time
+          && request.resource.data.releasedBy == 'student:' + resource.data.studentCode
+          && request.resource.data.heldMinutesAfterRelease == heldAfter
+          && studentAfter.data.lastSelfCancellationBookingId == requestId
+          && studentAfter.data.code == resource.data.studentCode
+          && heldBefore is int
+          && bookingPoints is int
+          && heldBefore >= bookingPoints
+          && heldAfter == heldBefore - bookingPoints
+          && deadlineIsValid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'releasedAt', 'releasedBy', 'heldMinutesAfterRelease',
+            'selfServiceCancelled', 'cancellationPolicyMinutes', 'cancellationReason',
+            'cancelledMinutes'
+          ]);
+      }
+
+      function isPublicPendingCancellation() {
+        let studentBefore = get(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let studentAfter = getAfter(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let heldBefore = studentBefore.data.get('reservedMinutes', studentBefore.data.get('heldMinutes', 0));
+        let heldAfter = studentAfter.data.get('reservedMinutes', studentAfter.data.get('heldMinutes', -1));
+        let bookingPoints = resource.data.get('requestedPoints', resource.data.requestedMinutes);
+        return resource.data.status == 'pending'
+          && resource.data.heldImmediately == true
+          && !resource.data.keys().hasAny(['lessonId'])
+          && request.resource.data.status == 'released'
+          && request.resource.data.selfServiceCancelled == true
+          && request.resource.data.cancellationPolicyMinutes == 0
+          && request.resource.data.cancelledMinutes == resource.data.requestedMinutes
+          && request.resource.data.cancellationReason is string
+          && request.resource.data.releasedAt == request.time
+          && request.resource.data.releasedBy == 'student:' + resource.data.studentCode
+          && request.resource.data.heldMinutesAfterRelease == heldAfter
+          && studentAfter.data.lastSelfCancellationBookingId == requestId
+          && studentAfter.data.code == resource.data.studentCode
+          && heldBefore is int
+          && bookingPoints is int
+          && heldBefore >= bookingPoints
+          && heldAfter == heldBefore - bookingPoints
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'releasedAt', 'releasedBy', 'heldMinutesAfterRelease',
+            'selfServiceCancelled', 'cancellationPolicyMinutes', 'cancellationReason',
+            'cancelledMinutes'
+          ]);
+      }
+
+      allow create: if isAdmin() || isPublicBookingCreate();
       allow read: if true;
-      allow update: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
+      allow update: if isAdmin()
+        || (isTeacher() && resource.data.teacherId == getTeacherId())
+        || isPublicSelfCancellation()
+        || isPublicPendingCancellation();
       allow delete: if isAdmin();
+    }
+
+    // A parent/student may request cancellation for a confirmed booking only.
+    // Admin is the only role allowed to approve/reject so releasing the teacher
+    // slot and held student minutes remains one atomic transaction.
+    match /bookingCancellationRequests/{requestId} {
+      allow read: if true;
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.bookingId is string
+        && request.resource.data.studentId is string
+        && request.resource.data.studentCode is string
+        && request.resource.data.teacherId is string
+        && request.resource.data.requestedMinutes is int
+        && request.resource.data.studentCode == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.code
+        && request.resource.data.studentId == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.studentId
+        && request.resource.data.teacherId == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.teacherId
+        && request.resource.data.requestedMinutes == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.requestedMinutes
+        && get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.status == 'confirmed';
+      allow update: if isAdmin() || (
+        resource.data.status == 'pending'
+        && request.resource.data.status == 'approved'
+        && request.resource.data.reviewedAt == request.time
+        && request.resource.data.reviewedBy == 'student:' + resource.data.studentCode
+        && getAfter(/databases/$(database)/documents/bookingRequests/$(resource.data.bookingId)).data.status == 'released'
+        && getAfter(/databases/$(database)/documents/bookingRequests/$(resource.data.bookingId)).data.selfServiceCancelled == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy'])
+      );
+      allow delete: if false;
+    }
+
+    // One immutable student rating for each approved lesson. The document ID is
+    // the public lesson ID, preventing duplicate ratings for the same class.
+    match /teacherLessonReviews/{lessonId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly([
+          'lessonId', 'studentId', 'studentCode', 'teacherId', 'rating', 'createdAt'
+        ])
+        && request.resource.data.lessonId == lessonId
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.createdAt == request.time
+        && get(/databases/$(database)/documents/publicLessons/$(lessonId)).data.status == 'approved'
+        && request.resource.data.studentId == get(/databases/$(database)/documents/publicLessons/$(lessonId)).data.studentId
+        && request.resource.data.studentCode == get(/databases/$(database)/documents/publicLessons/$(lessonId)).data.studentCode
+        && request.resource.data.teacherId == get(/databases/$(database)/documents/publicLessons/$(lessonId)).data.teacherId;
+      allow update, delete: if false;
     }
 
     // Contracts collection
@@ -124,8 +323,68 @@ service cloud.firestore {
 
     // Notifications collection
     match /notifications/{notificationId} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.targetType == 'teachers');
+      allow read: if isAdmin()
+        || (isTeacher() && resource.data.targetType == 'teachers')
+        || resource.data.targetType == 'students';
       allow write: if isAdmin();
+    }
+
+    // Reward catalog shown in the public student portal.
+    match /rewardCatalog/{giftId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Public student portal can only create a pending request whose student and
+    // gift snapshot match the current server data. Admin performs all state changes.
+    match /rewardRedemptions/{redemptionId} {
+      allow read: if true;
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.studentId is string
+        && request.resource.data.giftId is string
+        && request.resource.data.points is int
+        && request.resource.data.points > 0
+        && request.resource.data.studentCode == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.code
+        && request.resource.data.giftName == get(/databases/$(database)/documents/rewardCatalog/$(request.resource.data.giftId)).data.name
+        && request.resource.data.points == get(/databases/$(database)/documents/rewardCatalog/$(request.resource.data.giftId)).data.points;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Immutable ledgers make lesson rewards and redemptions idempotent.
+    match /rewardTransactions/{transactionId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /paymentSettings/{settingId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /topUpPackages/{packageId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /topUpRequests/{requestId} {
+      allow read: if true;
+      allow create: if request.resource.data.status == 'pending'
+        && request.resource.data.studentId is string
+        && request.resource.data.packageId is string
+        && request.resource.data.price is number
+        && request.resource.data.studentCode == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.code
+        && request.resource.data.packageName == get(/databases/$(database)/documents/topUpPackages/$(request.resource.data.packageId)).data.name
+        && request.resource.data.subjectId == get(/databases/$(database)/documents/topUpPackages/$(request.resource.data.packageId)).data.subjectId
+        && request.resource.data.totalMinutes == get(/databases/$(database)/documents/topUpPackages/$(request.resource.data.packageId)).data.totalMinutes
+        && request.resource.data.price == get(/databases/$(database)/documents/topUpPackages/$(request.resource.data.packageId)).data.price;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /topUpTransactions/{transactionId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Catch-all deny
