@@ -1,9 +1,12 @@
-// Dải lượn sóng ngăn cách giữa khối header màu vàng và phần nội dung bên dưới.
+// Dải lượn sóng ngăn cách giữa khối header vàng và phần nội dung bên dưới.
 //
-// Sóng chạy liên tục bằng cách vẽ path lặp ĐÚNG 2 chu kỳ trong viewBox (mỗi chu kỳ
-// rộng 720 đơn vị), đặt SVG rộng gấp đôi khung rồi trượt ngang -50%. Vì điểm đầu và
-// điểm cuối của mỗi chu kỳ trùng nhau nên vòng lặp nối liền, không thấy điểm nhảy.
-// Hai lớp chạy ngược chiều với tốc độ khác nhau tạo cảm giác mặt nước có chiều sâu.
+// Phối màu theo yêu cầu: chỉ dùng VÀNG ĐẬM + VÀNG NHẠT, không còn dải trắng.
+// Lớp sau là vàng nhạt (tạo chiều sâu trên nền vàng đậm của header), lớp trước
+// mang đúng màu nền nội dung (kem ấm) nên chuyển tiếp liền mạch, không thấy vệt cắt.
+//
+// Sóng chạy liên tục: path lặp ĐÚNG 2 chu kỳ trong viewBox (mỗi chu kỳ rộng 720
+// đơn vị), SVG rộng gấp đôi khung rồi trượt ngang -50%. Điểm đầu và cuối mỗi chu kỳ
+// trùng nhau nên vòng lặp nối liền, không thấy điểm nhảy.
 
 // Một chu kỳ: y bắt đầu 40 → nhô lên 10 → về 40 → hạ xuống 70 → về 40
 const WAVE_PATH =
@@ -17,14 +20,17 @@ const WAVE_PATH_BACK =
 
 export function WaveDivider({
   className = '',
-  fill = '#F8FAFC',
+  /** Màu nền nội dung phía dưới — lớp sóng chính (mặc định: kem ấm) */
+  fill = '#FFFBEB',
+  /** Lớp sóng phía sau — vàng nhạt tạo chiều sâu trên nền vàng đậm */
+  backFill = '#FFE98F',
   height = 26,
   /** Tắt chuyển động nếu muốn sóng tĩnh */
   animated = true,
 }: {
   className?: string
-  /** Màu của phần nội dung phía dưới (sóng chính là "mặt nước" của nền dưới) */
   fill?: string
+  backFill?: string
   height?: number
   animated?: boolean
 }) {
@@ -34,18 +40,18 @@ export function WaveDivider({
       style={{ height }}
       aria-hidden="true"
     >
-      {/* Lớp sóng phía sau: mờ hơn, trôi ngược chiều và chậm hơn */}
+      {/* Lớp sóng vàng nhạt phía sau: trôi ngược chiều và chậm hơn */}
       <svg
         viewBox="0 0 1440 80"
         preserveAspectRatio="none"
         className={`absolute inset-y-0 left-0 h-full ${animated ? 'animate-wave-slow' : ''}`}
-        style={{ width: '200%', opacity: 0.5 }}
+        style={{ width: '200%' }}
         focusable="false"
       >
-        <path fill={fill} d={WAVE_PATH_BACK} />
+        <path fill={backFill} d={WAVE_PATH_BACK} />
       </svg>
 
-      {/* Lớp sóng chính */}
+      {/* Lớp sóng chính mang màu nền nội dung */}
       <svg
         viewBox="0 0 1440 80"
         preserveAspectRatio="none"

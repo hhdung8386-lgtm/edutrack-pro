@@ -183,7 +183,7 @@ export function TeacherLayout() {
   }, [teacherId])
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-brand-50">
       {/* Desktop header — tông vàng thương hiệu, nhãn giữ 1 dòng, sóng ngăn cách phía dưới */}
       <header className="hidden lg:block fixed top-0 left-0 right-0 z-30">
         <div className="flex h-16 items-center gap-3 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 px-4 xl:px-6 shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
@@ -233,7 +233,7 @@ export function TeacherLayout() {
           </button>
         </div>
         </div>
-        <WaveDivider fill="#F8FAFC" height={16} />
+        <WaveDivider height={16} />
       </header>
 
       {/* Mobile header */}
@@ -266,7 +266,7 @@ export function TeacherLayout() {
           <LogOut className="w-4 h-4" />
         </button>
         </div>
-        <WaveDivider fill="#F8FAFC" height={14} />
+        <WaveDivider height={14} />
       </header>
 
       {/* Chừa chỗ cho header cố định: mobile 56+14, desktop 64+16 */}
