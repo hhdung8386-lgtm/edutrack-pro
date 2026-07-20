@@ -8,7 +8,7 @@ import {
   Star, Video, BookOpen, CalendarCheck2, Lightbulb, ChevronRight as ChevronRightIcon,
   FileText, Sparkles, ArrowLeft, ArrowUpRight, Award, MapPin, MessageSquareText,
   PlayCircle, UserRound, CheckCircle2, RotateCcw, ClipboardCheck, CalendarDays,
-  Trophy, Copy, Camera,
+  Trophy, Copy, Camera, Flame, Crown,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
@@ -829,18 +829,90 @@ function studentAvatarUrl(avatarId?: Student['profileAvatarId']) {
   return `/student-avatars/${avatarId || '1'}.png`
 }
 
-function StudentProfileOverview({ student, completedLessons, avatarId, leaderboard, savingAvatar, onChooseAvatar, lang }: {
+// Chuỗi tuần học liên tiếp — tính thật từ ngày các buổi đã học, đếm ngược từ tuần
+// hiện tại. Nếu tuần này chưa học thì bắt đầu đếm từ tuần trước để không tụt về 0 giữa tuần.
+function computeWeekStreak(lessons: Lesson[]): number {
+  if (!lessons.length) return 0
+  const weekKey = (date: Date) => {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  }
+  const weeks = new Set(
+    lessons
+      .map((l) => (l.date ? new Date(l.date) : null))
+      .filter((d): d is Date => !!d && !Number.isNaN(d.getTime()))
+      .map(weekKey),
+  )
+  const cursor = new Date()
+  if (!weeks.has(weekKey(cursor))) cursor.setDate(cursor.getDate() - 7)
+  let streak = 0
+  while (weeks.has(weekKey(cursor))) {
+    streak++
+    cursor.setDate(cursor.getDate() - 7)
+  }
+  return streak
+}
+
+// Vòng tròn tiến độ học tập
+function ProgressRing({ percent, size = 104 }: { percent: number; size?: number }) {
+  const stroke = 10
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const filled = Math.min(100, Math.max(0, percent))
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#FFF4C7" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#FFC61A"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - filled / 100)}
+          style={{ transition: 'stroke-dashoffset 900ms ease-out' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-black leading-none tabular-nums text-slate-950">{filled}<span className="text-sm">%</span></span>
+      </div>
+    </div>
+  )
+}
+
+function StudentProfileOverview({ student, completedLessons, avatarId, leaderboard, savingAvatar, onChooseAvatar, stats, usedPct, lessons, onGoTab, lang }: {
   student: Student
   completedLessons: number
   avatarId?: Student['profileAvatarId']
   leaderboard: StudentLeaderboardEntry[]
   savingAvatar: boolean
   onChooseAvatar: (avatarId: Student['profileAvatarId']) => void
+  stats: { total: number; used: number; held: number; available: number }
+  usedPct: number
+  lessons: Lesson[]
+  onGoTab: (tab: ParentTab) => void
   lang: string
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const points = Number(student.rewardPoints || 0)
   const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
+  // Quy đổi theo buổi 25 phút để hai vế cùng đơn vị, không lệch số
+  const doneSessions = Math.round(stats.used / 25)
+  const totalSessions = Math.round(stats.total / 25)
+  const weekStreak = useMemo(() => computeWeekStreak(lessons), [lessons])
+  const encourage = usedPct >= 80
+    ? (lang === 'vi' ? 'Tuyệt vời! Bạn sắp hoàn thành khóa học' : 'Amazing! You are close to finishing')
+    : usedPct >= 40
+      ? (lang === 'vi' ? 'Cố lên! Bạn đang học rất tốt' : 'Keep going! You are doing great')
+      : (lang === 'vi' ? 'Bắt đầu thôi! Mỗi buổi học đều đáng giá' : 'Let’s go! Every lesson counts')
+  const podium = leaderboard.slice(0, 3)
+  const restBoard = leaderboard.slice(3)
+  // Thứ tự hiển thị bục: hạng 2 - hạng 1 - hạng 3
+  const podiumOrder = [podium[1], podium[0], podium[2]].filter(Boolean) as StudentLeaderboardEntry[]
   const { month: leaderboardMonth } = getCurrentLeaderboardMonth()
   const leaderboardTitle = lang === 'vi'
     ? `Bảng thi đua tháng ${leaderboardMonth}`
@@ -858,52 +930,138 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
   return (
     <>
       <section className="space-y-4 animate-slide-up">
-        <div className="rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_20px_55px_-38px_rgba(2,132,199,0.55)] sm:p-6">
+        {/* Thẻ hồ sơ + đổi nhân vật */}
+        <div className="rounded-3xl border border-brand-200 bg-white p-5 shadow-[0_20px_55px_-38px_rgba(180,120,0,0.5)] sm:p-6">
           <div className="flex items-center gap-4">
-            <button type="button" onClick={() => setPickerOpen(true)} className="group relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2" aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}>
-              <img src={studentAvatarUrl(avatarId)} alt="" className="h-20 w-20 rounded-full object-cover ring-4 ring-sky-50 sm:h-24 sm:w-24" />
-              <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-sky-600 text-white shadow-md transition group-hover:bg-sky-700"><Camera className="h-4 w-4" /></span>
+            <button type="button" onClick={() => setPickerOpen(true)} className="group relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2" aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}>
+              <img src={studentAvatarUrl(avatarId)} alt="" className="h-20 w-20 rounded-full object-cover ring-4 ring-brand-100 sm:h-24 sm:w-24" />
+              <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-brand-500 text-brand-900 shadow-md transition group-hover:bg-brand-600"><Camera className="h-4 w-4" /></span>
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">{lang === 'vi' ? 'Hồ sơ học viên' : 'Student profile'}</p>
-              <h2 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{lang === 'vi' ? 'Chào' : 'Hello'}, <span className="text-sky-600">{student.name}</span></h2>
-              <button type="button" onClick={copyCode} className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-sky-700">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">{lang === 'vi' ? 'Hồ sơ học viên' : 'Student profile'}</p>
+              <h2 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{lang === 'vi' ? 'Chào' : 'Hello'}, <span className="text-brand-700">{student.name}</span></h2>
+              <button type="button" onClick={copyCode} className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-brand-700">
                 {lang === 'vi' ? 'Mã học viên' : 'Student ID'}: <span className="font-extrabold tracking-wide text-slate-700">{student.code}</span><Copy className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
+        </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-sky-50/80 px-4 py-3.5 ring-1 ring-sky-100">
-              <div className="flex items-center gap-2 text-sky-700"><Star className="h-5 w-5 fill-sky-600 text-sky-600" /><span className="text-2xl font-black tabular-nums text-slate-950">{points}</span></div>
-              <p className="mt-1 text-[11px] font-bold text-slate-500">{lang === 'vi' ? 'Sao của bạn' : 'Your stars'}</p>
+        {/* Tiến độ học tập — vòng tròn + thanh tiến độ theo buổi */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="inline-flex items-center gap-2 text-base font-black text-slate-950">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Trophy className="h-4 w-4" /></span>
+              {lang === 'vi' ? 'Tiến độ học tập' : 'Learning progress'}
+            </h3>
+          </div>
+          <div className="flex items-center gap-5">
+            <ProgressRing percent={usedPct} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black leading-snug text-slate-900">{encourage}</p>
+              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-300 to-brand-500 transition-all duration-700"
+                  style={{ width: `${Math.min(100, usedPct)}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs font-bold text-slate-500 tabular-nums">
+                {doneSessions}/{totalSessions} {lang === 'vi' ? 'buổi (25 phút)' : 'sessions (25 min)'}
+              </p>
             </div>
-            <div className="rounded-2xl bg-sky-50/80 px-4 py-3.5 ring-1 ring-sky-100">
-              <div className="flex items-center gap-2 text-sky-700"><CalendarCheck2 className="h-5 w-5" /><span className="text-2xl font-black tabular-nums text-slate-950">{completedLessons}</span></div>
-              <p className="mt-1 text-[11px] font-bold text-slate-500">{lang === 'vi' ? 'Buổi học đã hoàn thành' : 'Completed lessons'}</p>
+          </div>
+
+          {/* 4 ô chỉ số — đều lấy từ dữ liệu thật */}
+          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <div className="rounded-2xl bg-brand-50 px-3 py-3 ring-1 ring-brand-200">
+              <div className="flex items-center gap-1.5"><Star className="h-4 w-4 fill-brand-500 text-brand-500" /><span className="text-xl font-black tabular-nums text-slate-950">{points}</span></div>
+              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Sao' : 'Stars'}</p>
+            </div>
+            <div className="rounded-2xl bg-sky-50 px-3 py-3 ring-1 ring-sky-100">
+              <div className="flex items-center gap-1.5"><BookOpen className="h-4 w-4 text-sky-600" /><span className="text-xl font-black tabular-nums text-slate-950">{completedLessons}</span></div>
+              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Buổi đã học' : 'Lessons done'}</p>
+            </div>
+            <div className="rounded-2xl bg-cyan-50 px-3 py-3 ring-1 ring-cyan-100">
+              <div className="flex items-center gap-1.5"><DiamondPointsIcon className="h-4 w-4" /><span className="text-xl font-black tabular-nums text-slate-950">{stats.available}</span></div>
+              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Kim cương' : 'Diamonds'}</p>
+            </div>
+            <div className="rounded-2xl bg-orange-50 px-3 py-3 ring-1 ring-orange-100">
+              <div className="flex items-center gap-1.5"><Flame className="h-4 w-4 text-orange-500" /><span className="text-xl font-black tabular-nums text-slate-950">{weekStreak}</span></div>
+              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Tuần liên tiếp' : 'Week streak'}</p>
             </div>
           </div>
         </div>
 
+        {/* CTA vàng */}
+        <button
+          type="button"
+          onClick={() => onGoTab('booking')}
+          className="group flex w-full items-center gap-4 rounded-3xl bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 p-5 text-left shadow-[0_18px_40px_-24px_rgba(180,120,0,0.75)] transition hover:brightness-[1.03] active:scale-[0.99]"
+        >
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-brand-800 shadow-sm">
+            <CalendarPlus className="h-7 w-7" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-black text-brand-900">{lang === 'vi' ? 'Tiếp tục học hôm nay!' : 'Keep learning today!'}</span>
+            <span className="mt-0.5 block text-xs font-semibold leading-5 text-brand-900/75">
+              {lang === 'vi' ? 'Đặt lịch ngay để không bỏ lỡ thói quen học tập nhé.' : 'Book a class so you keep your learning habit.'}
+            </span>
+          </span>
+          <ChevronRightIcon className="h-5 w-5 shrink-0 text-brand-900/70 transition-transform group-hover:translate-x-0.5" />
+        </button>
+
         {leaderboard.length > 0 && (
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5"><Trophy className="h-5 w-5 text-sky-600" /><h3 className="text-base font-black text-slate-950">{leaderboardTitle}</h3></div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-extrabold text-slate-500">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
+              <div className="flex items-center gap-2.5"><Trophy className="h-5 w-5 text-brand-600" /><h3 className="text-base font-black text-slate-950">{leaderboardTitle}</h3></div>
+              <span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-extrabold text-brand-700 ring-1 ring-brand-200">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
             </div>
-            <div className="mt-4 space-y-2">
-              {leaderboard.map((entry, index) => {
-                const isCurrent = entry.id === student.id
-                return (
-                  <div key={entry.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${isCurrent ? 'bg-sky-50 ring-1 ring-sky-200' : 'bg-slate-50/80'}`}>
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-black ${index < 3 ? 'bg-sky-600 text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200'}`}>{index + 1}</span>
-                    <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>{isCurrent && <p className="text-[10px] font-bold text-sky-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}</div>
-                    <span className="inline-flex items-center gap-1 text-sm font-black tabular-nums text-sky-700"><Star className="h-4 w-4 fill-sky-600 text-sky-600" />{entry.rewardPoints}</span>
-                  </div>
-                )
-              })}
-            </div>
+
+            {/* Bục vinh danh top 3: hạng 2 - hạng 1 - hạng 3 */}
+            {podium.length > 0 && (
+              <div className="mt-5 grid grid-cols-3 items-end gap-2.5">
+                {podiumOrder.map((entry) => {
+                  const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
+                  const isFirst = rank === 1
+                  const isCurrent = entry.id === student.id
+                  const ringColor = isFirst ? 'ring-brand-400' : rank === 2 ? 'ring-slate-300' : 'ring-orange-300'
+                  const badgeColor = isFirst ? 'bg-brand-500 text-brand-900' : rank === 2 ? 'bg-slate-400 text-white' : 'bg-orange-400 text-white'
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`relative flex flex-col items-center rounded-2xl px-2 pb-3 pt-6 ${isFirst ? 'bg-brand-50 ring-1 ring-brand-200' : 'bg-slate-50'} ${isCurrent ? 'ring-2 ring-brand-400' : ''}`}
+                    >
+                      {isFirst && <Crown className="absolute -top-1 left-1/2 h-6 w-6 -translate-x-1/2 fill-brand-400 text-brand-500" />}
+                      <div className="relative">
+                        <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-16 w-16' : 'h-12 w-12'}`} />
+                        <span className={`absolute -bottom-1 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-black ring-2 ring-white ${badgeColor}`}>{rank}</span>
+                      </div>
+                      <p className={`mt-2.5 line-clamp-2 text-center text-[11px] font-extrabold leading-tight text-slate-800 ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name}</p>
+                      <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-black tabular-nums text-brand-700">
+                        <Star className="h-3 w-3 fill-brand-500 text-brand-500" />{entry.rewardPoints}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {restBoard.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {restBoard.map((entry) => {
+                  const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
+                  const isCurrent = entry.id === student.id
+                  return (
+                    <div key={entry.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${isCurrent ? 'bg-brand-50 ring-1 ring-brand-300' : 'bg-slate-50/80'}`}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 ring-1 ring-slate-200">{rank}</span>
+                      <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>{isCurrent && <p className="text-[10px] font-bold text-brand-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}</div>
+                      <span className="inline-flex items-center gap-1 text-sm font-black tabular-nums text-brand-700"><Star className="h-4 w-4 fill-brand-500 text-brand-500" />{entry.rewardPoints}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             {currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tiếp tục tích lũy sao để xuất hiện trong bảng thi đua.' : 'Keep earning stars to enter the leaderboard.'}</p>}
           </div>
         )}
@@ -1721,6 +1879,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               leaderboard={leaderboard}
               savingAvatar={savingAvatar}
               onChooseAvatar={chooseProfileAvatar}
+              stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
+              usedPct={usedPct}
+              lessons={lessons}
+              onGoTab={setTab}
               lang={lang}
             />
             <HomeTab
