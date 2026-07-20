@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, BarChart2, FileText, Bell } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, BarChart2, FileText, Bell, Gift } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -14,17 +14,18 @@ import { NotificationDrawer } from '../shared/NotificationDrawer'
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
   '/admin/students': 'Học viên',
-  '/admin/teachers': 'Giáo viên',
-  '/admin/teacher-availability': 'Lịch giáo viên',
+  '/admin/teachers': 'Gia sư',
+  '/admin/teacher-availability': 'Lịch gia sư',
   '/admin/booking-schedules': 'Lịch xếp lớp',
   '/admin/future-bookings': 'Lịch học đã đặt',
-  '/admin/bookings': 'Yêu cầu giáo viên',
+  '/admin/bookings': 'Yêu cầu gia sư',
   '/admin/subjects': 'Môn học',
   '/admin/evaluations': 'Đánh giá học viên',
   '/admin/approvals': 'Duyệt buổi dạy',
   '/admin/reports': 'Báo cáo',
-  '/admin/payroll': 'Lương giáo viên',
+  '/admin/payroll': 'Lương gia sư',
   '/admin/contracts': 'Hợp đồng',
+  '/admin/student-experience': 'Quà tặng & nạp tiền',
   '/admin/settings': 'Cài đặt',
 }
 
@@ -54,32 +55,29 @@ export function AdminLayout() {
 
   const mobileNavItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/admin/students', icon: Users, label: 'Học viên' },
-    { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá' },
+    role === 'teacher_manager'
+      ? { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' }
+      : { to: '/admin/students', icon: Users, label: 'Học viên' },
     { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
-    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu', bookingBadge: true },
-  ].filter((item) => {
-    if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
-    if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
-    return true
-  })
+  ]
 
   // Danh sách đồng bộ với AdminSidebar (desktop) — iPad/mobile dùng menu này
   const mobileMenuItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/students', icon: Users, label: 'Học viên' },
-    { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
-    { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
+    { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' },
+    { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
     { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
     { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
-    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
+    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', bookingBadge: true },
     { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
     { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
     { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
     { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
-    { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
+    { to: '/admin/payroll', icon: Wallet, label: 'Lương gia sư' },
     { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
     { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
+    { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
     { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
   ].filter((item) => {
     if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
@@ -104,7 +102,7 @@ export function AdminLayout() {
         <div className="flex items-center gap-2">
           <span className="font-extrabold text-slate-800 text-sm hidden lg:inline-block">{pageTitle}</span>
           <div className="flex items-center gap-2 lg:hidden">
-            <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white text-xs">
+            <div className="w-7 h-7 bg-gradient-to-br from-brand-400 to-brand-500 rounded-lg flex items-center justify-center font-black text-brand-900 text-xs">
               ET
             </div>
             <span className="font-bold text-slate-800 text-sm">{pageTitle}</span>
@@ -124,30 +122,39 @@ export function AdminLayout() {
         </div>
       </header>
 
-      {/* Mobile sheet overlay */}
+      {/* Mobile all-features sheet */}
       {sheetOpen && (
         <>
-          <div className="lg:hidden fixed inset-0 bg-black/60 z-50" onClick={() => setSheetOpen(false)} />
-          <div className="lg:hidden fixed right-0 top-0 bottom-0 w-72 bg-slate-50 border-l border-slate-200 z-50 flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <span className="font-semibold text-slate-900">Menu</span>
-              <button onClick={() => setSheetOpen(false)} className="p-2 text-slate-500 hover:text-slate-900" aria-label="Đóng menu">
+          <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[2px] lg:hidden" onClick={() => setSheetOpen(false)} />
+          <section className="fixed inset-x-0 bottom-0 z-50 flex max-h-[84dvh] flex-col rounded-t-[28px] border-t border-brand-200 bg-white shadow-[0_-24px_70px_-30px_rgba(15,23,42,0.45)] lg:hidden" aria-label="Tất cả chức năng quản trị">
+            <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200" />
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 pb-4 pt-3">
+              <div className="flex items-center gap-3">
+                <img src="/logo.png" alt="123English" className="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-100" />
+                <div>
+                  <h2 className="text-base font-extrabold tracking-tight text-slate-950">Tất cả chức năng</h2>
+                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500">Chọn mục cần quản lý</p>
+                </div>
+              </div>
+              <button onClick={() => setSheetOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 active:scale-[0.97]" aria-label="Đóng menu">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+            <nav className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto px-4 py-4 pb-6">
               {mobileMenuItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   onClick={() => setSheetOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors
-                    ${isActive ? 'bg-indigo-500/15 text-indigo-400' : 'text-slate-500 hover:text-white hover:bg-white'}`
+                    `relative flex min-h-[68px] items-center gap-3 rounded-2xl border px-3.5 py-3 text-sm font-bold transition active:scale-[0.98]
+                    ${isActive ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-100 bg-slate-50/70 text-slate-700 hover:border-brand-200 hover:bg-brand-50/70'}`
                   }
                 >
-                  <item.icon className="w-5 h-5" />
-                  {item.label}
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
+                    <item.icon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 leading-5">{item.label}</span>
                   {item.bookingBadge && pendingBookingCount > 0 && (
                     <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                       {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
@@ -161,16 +168,16 @@ export function AdminLayout() {
                 </NavLink>
               ))}
             </nav>
-            <div className="px-3 py-4 border-t border-slate-200">
+            <div className="border-t border-slate-100 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-slate-500 hover:text-rose-400 hover:bg-white w-full transition-colors"
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-slate-600 transition hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
               >
                 <LogOut className="w-5 h-5" />
                 Đăng xuất
               </button>
             </div>
-          </div>
+          </section>
         </>
       )}
 
@@ -182,40 +189,45 @@ export function AdminLayout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-50 border-t border-slate-200 z-40 safe-area-inset-bottom">
-        <div className="grid grid-cols-4 h-14">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <div className="grid h-16 grid-cols-4">
           {mobileNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium relative
-                ${isActive ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-600'}`
+                `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97]
+                ${isActive ? 'text-brand-700' : 'text-slate-500 hover:text-slate-700'}`
               }
             >
               {({ isActive }) => (
                 <>
                   <div className="relative">
-                    <item.icon className={`w-5 h-5 ${isActive ? 'text-indigo-400' : ''}`} />
+                    <item.icon className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
                     {item.hasBadge && pendingCount > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                         {pendingCount > 9 ? '9+' : pendingCount}
                       </span>
                     )}
-                    {item.bookingBadge && pendingBookingCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {pendingBookingCount > 9 ? '9+' : pendingBookingCount}
-                      </span>
-                    )}
                   </div>
                   <span>{item.label}</span>
                   {isActive && (
-                    <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-indigo-400 rounded-full" />
+                    <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />
                   )}
                 </>
               )}
             </NavLink>
           ))}
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-500 transition hover:text-slate-700 active:scale-[0.97]"
+            aria-label="Mở tất cả chức năng"
+          >
+            <Menu className="h-5 w-5" />
+            <span>Menu</span>
+            {(pendingBookingCount > 0) && <span className="absolute left-1/2 top-2.5 ml-3 h-2 w-2 rounded-full bg-amber-500" />}
+          </button>
         </div>
       </nav>
     </div>

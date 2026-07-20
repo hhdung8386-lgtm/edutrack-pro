@@ -5,6 +5,21 @@
 @theme {
   --font-quicksand: 'Quicksand', sans-serif;
   --font-jakarta: 'Plus Jakarta Sans', sans-serif;
+
+  /* Bảng màu thương hiệu 123English (vàng) — sinh ra bg-brand-*, text-brand-*,
+     border-brand-*, from-brand-*... dùng chung cho header, nav, nút ở mọi trang.
+     LƯU Ý: dự án dùng Tailwind v4 nên màu phải khai báo ở đây, tailwind.config.ts
+     KHÔNG còn tác dụng. */
+  --color-brand-50: #fffbeb;
+  --color-brand-100: #fff4c7;
+  --color-brand-200: #ffe98f;
+  --color-brand-300: #ffe04a;
+  --color-brand-400: #ffd32e;
+  --color-brand-500: #ffc61a;
+  --color-brand-600: #f0a800;
+  --color-brand-700: #c98500;
+  --color-brand-800: #8a5b00;
+  --color-brand-900: #5c3d00;
 }
 
 @layer base {

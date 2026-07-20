@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
   LogOut, FileText, CalendarClock, CalendarDays,
-  ChevronLeft, ChevronRight, Bell
+  ChevronLeft, ChevronRight, Bell, Gift
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -13,18 +13,19 @@ import { Logo } from '@/components/shared/Logo'
 const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/admin/students', icon: Users, label: 'Học viên' },
-  { to: '/admin/teachers', icon: GraduationCap, label: 'Giáo viên' },
-  { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch giáo viên' },
+  { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' },
+  { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
   { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
   { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
-  { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu giáo viên', bookingBadge: true },
+  { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
   { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
   { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
   { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
-  { to: '/admin/payroll', icon: Wallet, label: 'Lương giáo viên' },
+  { to: '/admin/payroll', icon: Wallet, label: 'Lương gia sư' },
   { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
   { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
+  { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
   { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
 ]
 
@@ -60,7 +61,7 @@ export function AdminSidebar({
       {/* Logo */}
       <div className={`px-5 py-5 border-b border-slate-200 flex flex-col items-center transition-all ${isCollapsed ? 'px-2' : 'px-5'}`}>
         {isCollapsed ? (
-          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center font-bold text-white shadow-sm shadow-indigo-500/20" title="EduTrack Pro">
+          <div className="w-10 h-10 bg-gradient-to-br from-brand-400 to-brand-500 rounded-xl flex items-center justify-center font-black text-brand-900 shadow-sm shadow-brand-500/30" title="EduTrack Pro">
             ET
           </div>
         ) : (
@@ -84,14 +85,14 @@ export function AdminSidebar({
               `flex items-center rounded-lg text-sm font-medium transition-all duration-150 group relative
               ${isCollapsed ? 'justify-center p-2.5 mx-auto w-11 h-11' : 'gap-3 px-3 py-2.5 mx-1'}
               ${isActive
-                ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20'
+                ? 'bg-brand-100 text-brand-800 border border-brand-300'
                 : 'text-slate-500 hover:text-slate-900 hover:bg-white'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-600'}`} />
+                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand-700' : 'text-slate-500 group-hover:text-slate-600'}`} />
                 {!isCollapsed && <span className="flex-1">{item.label}</span>}
                 {isCollapsed ? (
                   ((item.hasBadge && pendingCount > 0) || (item.bookingBadge && pendingBookingCount > 0)) && (
@@ -121,8 +122,8 @@ export function AdminSidebar({
       <div className={`py-3 border-t border-slate-200 transition-all ${isCollapsed ? 'px-2' : 'px-3'}`}>
         {isCollapsed ? (
           <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-500/20 border border-indigo-500/30 rounded-full flex items-center justify-center flex-shrink-0" title={user?.email || undefined}>
-              <span className="text-xs font-bold text-indigo-400">
+            <div className="w-8 h-8 bg-brand-100 border border-brand-300 rounded-full flex items-center justify-center flex-shrink-0" title={user?.email || undefined}>
+              <span className="text-xs font-black text-brand-800">
                 {user?.email?.[0]?.toUpperCase() || 'A'}
               </span>
             </div>
@@ -136,15 +137,15 @@ export function AdminSidebar({
           </div>
         ) : (
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white transition-colors group">
-            <div className="w-8 h-8 bg-indigo-500/20 border border-indigo-500/30 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-bold text-indigo-400">
+            <div className="w-8 h-8 bg-brand-100 border border-brand-300 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-black text-brand-800">
                 {user?.email?.[0]?.toUpperCase() || 'A'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-slate-600 truncate">{user?.email}</p>
               <p className="text-[10px] text-slate-500">
-                {role === 'student_manager' ? 'Quản lý Học viên' : role === 'teacher_manager' ? 'Quản lý Giáo viên' : 'Quản trị viên'}
+                {role === 'student_manager' ? 'Quản lý Học viên' : role === 'teacher_manager' ? 'Quản lý Gia sư' : 'Quản trị viên'}
               </p>
             </div>
             <button
@@ -162,7 +163,7 @@ export function AdminSidebar({
       <div className="px-3 py-2 border-t border-slate-200 flex justify-center">
         <button
           onClick={onToggleCollapse}
-          className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50/50 rounded-lg transition-colors w-full flex items-center justify-center gap-2"
+          className="p-2 text-slate-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors w-full flex items-center justify-center gap-2"
           title={isCollapsed ? "Mở rộng menu" : "Thu gọn menu"}
         >
           {isCollapsed ? (
