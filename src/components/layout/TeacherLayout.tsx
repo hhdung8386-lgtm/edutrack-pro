@@ -233,7 +233,7 @@ export function TeacherLayout() {
           </button>
         </div>
         </div>
-        <WaveDivider height={16} />
+        <WaveDivider height={26} />
       </header>
 
       {/* Mobile header */}
@@ -266,12 +266,12 @@ export function TeacherLayout() {
           <LogOut className="w-4 h-4" />
         </button>
         </div>
-        <WaveDivider height={14} />
+        <WaveDivider height={28} />
       </header>
 
       {/* Chừa chỗ cho header cố định: mobile 56+14, desktop 64+16 */}
       <main className="min-h-screen">
-        <div className="pt-[70px] lg:pt-[80px] pb-20 lg:pb-6 px-4 sm:px-6 py-6">
+        <div className="pt-[84px] lg:pt-[90px] pb-20 lg:pb-6 px-4 sm:px-6 py-6">
           <ZaloUrgentNotice lang={lang} />
           {profileMissingCount !== null && profileMissingCount > 0 && (
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-950 shadow-sm">

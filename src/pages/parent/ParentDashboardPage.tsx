@@ -854,9 +854,9 @@ function computeWeekStreak(lessons: Lesson[]): number {
   return streak
 }
 
-// Vòng tròn tiến độ học tập
-function ProgressRing({ percent, size = 104 }: { percent: number; size?: number }) {
-  const stroke = 10
+// Vòng tròn tiến độ học tập — ảnh đại diện nằm gọn bên trong vòng, không hiện số %
+function ProgressRing({ percent, size = 104, children }: { percent: number; size?: number; children?: React.ReactNode }) {
+  const stroke = 8
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const filled = Math.min(100, Math.max(0, percent))
@@ -877,8 +877,8 @@ function ProgressRing({ percent, size = 104 }: { percent: number; size?: number 
           style={{ transition: 'stroke-dashoffset 900ms ease-out' }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-black leading-none tabular-nums text-slate-950">{filled}<span className="text-sm">%</span></span>
+      <div className="absolute inset-0 flex items-center justify-center" style={{ padding: stroke + 4 }}>
+        {children}
       </div>
     </div>
   )
@@ -930,33 +930,32 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
   return (
     <>
       <section className="space-y-4 animate-slide-up">
-        {/* Thẻ hồ sơ + đổi nhân vật */}
-        <div className="rounded-3xl border border-brand-200 bg-white p-5 shadow-[0_20px_55px_-38px_rgba(180,120,0,0.5)] sm:p-6">
-          <div className="flex items-center gap-4">
-            <button type="button" onClick={() => setPickerOpen(true)} className="group relative shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2" aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}>
-              <img src={studentAvatarUrl(avatarId)} alt="" className="h-20 w-20 rounded-full object-cover ring-4 ring-brand-100 sm:h-24 sm:w-24" />
-              <span className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-brand-500 text-brand-900 shadow-md transition group-hover:bg-brand-600"><Camera className="h-4 w-4" /></span>
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-700">{lang === 'vi' ? 'Hồ sơ học viên' : 'Student profile'}</p>
-              <h2 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{lang === 'vi' ? 'Chào' : 'Hello'}, <span className="text-brand-700">{student.name}</span></h2>
-              <button type="button" onClick={copyCode} className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-brand-700">
-                {lang === 'vi' ? 'Mã học viên' : 'Student ID'}: <span className="font-extrabold tracking-wide text-slate-700">{student.code}</span><Copy className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+        {/* Tiêu đề mục — dạng title riêng, đồng bộ với các trang khác (vd "Ví học") */}
+        <div className="px-1">
+          <h2 className="text-lg font-extrabold tracking-tight text-slate-950">
+            {lang === 'vi' ? 'Tiến độ học tập' : 'Learning progress'}
+          </h2>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">
+            {lang === 'vi' ? 'Theo dõi hành trình học và thành tích của bạn.' : 'Track your learning journey and achievements.'}
+          </p>
         </div>
 
-        {/* Tiến độ học tập — vòng tròn + thanh tiến độ theo buổi */}
+        {/* Ảnh đại diện nằm trong vòng tiến độ + thanh tiến độ theo buổi */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="inline-flex items-center gap-2 text-base font-black text-slate-950">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Trophy className="h-4 w-4" /></span>
-              {lang === 'vi' ? 'Tiến độ học tập' : 'Learning progress'}
-            </h3>
-          </div>
           <div className="flex items-center gap-5">
-            <ProgressRing percent={usedPct} />
+            <ProgressRing percent={usedPct}>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="group relative h-full w-full rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2"
+                aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}
+              >
+                <img src={studentAvatarUrl(avatarId)} alt="" className="h-full w-full rounded-full object-cover" />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-brand-500 text-brand-900 shadow-md transition group-hover:bg-brand-600">
+                  <Camera className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            </ProgressRing>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-black leading-snug text-slate-900">{encourage}</p>
               <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
@@ -1866,7 +1865,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             </div>
           </div>
         </div>
-        <WaveDivider height={26} />
+        <WaveDivider height={32} />
       </header>
 
       <main className="mx-auto max-w-2xl px-4 pb-32 pt-5 sm:pt-6">
