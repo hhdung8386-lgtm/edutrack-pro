@@ -1792,75 +1792,81 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     <div className="min-h-screen bg-brand-50 font-quicksand">
       {/* Header vàng brand + dải lượn sóng ngăn cách với nội dung bên dưới */}
       <header className="sticky top-0 z-30 bg-gradient-to-b from-[#FFE04A] via-[#FFD32E] to-[#FFC61A] shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
-        <div className="mx-auto max-w-2xl px-4 pt-2.5 pb-3">
-          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-            <button
-              onClick={onBack}
-              className="rounded-xl p-2 text-amber-900/70 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
-              aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-[17px] font-black leading-tight tracking-tight text-amber-950 sm:text-lg">
-                {lang === 'vi' ? 'Chào ' : 'Hello '}<span className="text-white drop-shadow-[0_1px_2px_rgba(146,94,0,0.45)]">{studentGivenName}</span>
-              </h1>
-              <p className="mt-0.5 truncate text-[11px] font-bold tracking-wide text-amber-900/70">
-                {lang === 'vi' ? 'Mã học viên' : 'Student code'}: {student.code}
-              </p>
+        <div className="mx-auto max-w-2xl px-4 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={onBack}
+                className="rounded-xl p-2 text-amber-900/70 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97] shrink-0"
+                aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm sm:text-base font-black leading-tight tracking-tight text-amber-950">
+                  {lang === 'vi' ? 'Chào ' : 'Hello '}<span className="text-white drop-shadow-[0_1px_2px_rgba(146,94,0,0.45)]">{studentGivenName}</span>
+                </h1>
+                <p className="mt-0.5 truncate text-[10px] sm:text-[11px] font-bold tracking-wide text-amber-900/70 font-mono">
+                  {student.code}
+                </p>
+              </div>
             </div>
 
-            <div className="order-3 ml-auto flex w-full justify-end gap-2 sm:order-none sm:w-auto">
-            <div className="flex min-h-10 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10">
-              <button
-                type="button"
-                onClick={() => setTab('rewards')}
-                className="flex h-full items-center gap-2 px-3 text-sm font-black tabular-nums transition hover:bg-amber-50"
-                aria-label={lang === 'vi' ? 'Xem số Sao' : 'View stars'}
-              >
-                <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
-                {(student.rewardPoints || 0).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('rewards')}
-                className="grid h-10 w-9 place-items-center border-l border-amber-100 text-lg font-bold text-amber-600 transition hover:bg-amber-50"
-                aria-label={lang === 'vi' ? 'Đi đến trang đổi quà' : 'Open rewards'}
-              >
-                +
-              </button>
-            </div>
+            {/* Right side items */}
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              {/* Star balance */}
+              <div className="flex h-8 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTab('rewards')}
+                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-amber-50"
+                  aria-label={lang === 'vi' ? 'Xem số Sao' : 'View stars'}
+                >
+                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
+                  {(student.rewardPoints || 0).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('rewards')}
+                  className="grid h-8 w-6 place-items-center border-l border-amber-100 font-bold text-amber-600 transition hover:bg-amber-50"
+                  aria-label={lang === 'vi' ? 'Đi đến trang đổi quà' : 'Open rewards'}
+                >
+                  +
+                </button>
+              </div>
 
-            <div className="flex min-h-10 items-center overflow-hidden rounded-full bg-white text-sky-950 shadow-sm ring-1 ring-amber-900/10">
-              <button
-                type="button"
-                onClick={() => setTab('topup')}
-                className="flex h-full items-center gap-2 px-3 text-sm font-black tabular-nums transition hover:bg-sky-50"
-                aria-label={lang === 'vi' ? 'Xem số dư kim cương' : 'View diamond balance'}
-              >
-                <DiamondPointsIcon className="h-[18px] w-[18px]" />
-                {pAvailableMin.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('topup')}
-                className="grid h-10 w-9 place-items-center border-l border-sky-100 text-lg font-bold text-sky-600 transition hover:bg-sky-50"
-                aria-label={lang === 'vi' ? 'Nạp thêm kim cương' : 'Top up diamonds'}
-              >
-                +
-              </button>
-            </div>
-            </div>
+              {/* Diamond balance */}
+              <div className="flex h-8 items-center overflow-hidden rounded-full bg-white text-sky-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTab('topup')}
+                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-sky-50"
+                  aria-label={lang === 'vi' ? 'Xem số dư kim cương' : 'View diamond balance'}
+                >
+                  <DiamondPointsIcon className="h-3.5 w-3.5" />
+                  {pAvailableMin.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('topup')}
+                  className="grid h-8 w-6 place-items-center border-l border-sky-100 font-bold text-sky-600 transition hover:bg-sky-50"
+                  aria-label={lang === 'vi' ? 'Nạp thêm kim cương' : 'Top up diamonds'}
+                >
+                  +
+                </button>
+              </div>
 
-            <div className="flex shrink-0 items-center gap-1">
+              {/* Language toggle */}
               <button
                 onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
-                className="flex h-9 items-center gap-1 rounded-xl px-2 text-[11px] font-black text-amber-900/80 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
+                className="flex h-8 items-center gap-0.5 rounded-xl px-1.5 text-[10px] font-black text-amber-900/80 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
                 title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
               >
                 <Globe className="h-3.5 w-3.5" />
                 <span className="uppercase">{lang}</span>
               </button>
+
+              {/* Notification bell */}
               <NotificationDrawer targetType="students" targetId={student.id} />
             </div>
           </div>
