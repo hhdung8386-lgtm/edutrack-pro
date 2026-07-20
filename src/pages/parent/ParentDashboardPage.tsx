@@ -825,8 +825,16 @@ function getCurrentLeaderboardMonth() {
   }
 }
 
+const STUDENT_AVATAR_SVGS: Record<string, string> = {
+  '1': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23FFC61A"/><circle cx="26" cy="26" r="12" fill="%23E6AB00"/><circle cx="74" cy="26" r="12" fill="%23E6AB00"/><circle cx="26" cy="26" r="6" fill="%23FFF2B2"/><circle cx="74" cy="26" r="6" fill="%23FFF2B2"/><circle cx="50" cy="58" r="18" fill="%23FFF8DC"/><ellipse cx="50" cy="52" rx="7" ry="5" fill="%235C3A00"/><path d="M 44 60 Q 50 67 56 60" stroke="%235C3A00" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="35" cy="44" r="5" fill="%233A2500"/><circle cx="65" cy="44" r="5" fill="%233A2500"/><circle cx="37" cy="42" r="2" fill="%23FFFFFF"/><circle cx="67" cy="42" r="2" fill="%23FFFFFF"/><circle cx="28" cy="52" r="5" fill="%23FF9F1C" opacity="0.6"/><circle cx="72" cy="52" r="5" fill="%23FF9F1C" opacity="0.6"/></svg>`,
+  '2': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%2338BDF8"/><polygon points="20,38 35,14 42,40" fill="%230284C7"/><polygon points="80,38 65,14 58,40" fill="%230284C7"/><polygon points="24,34 35,18 40,36" fill="%23BAE6FD"/><polygon points="76,34 65,18 60,36" fill="%23BAE6FD"/><path d="M 25,40 Q 50,25 75,40 L 50,85 Z" fill="%23FFFFFF"/><ellipse cx="50" cy="55" rx="6" ry="4" fill="%230F172A"/><circle cx="36" cy="45" r="4.5" fill="%230F172A"/><circle cx="64" cy="45" r="4.5" fill="%230F172A"/><circle cx="38" cy="43" r="1.5" fill="%23FFFFFF"/><circle cx="66" cy="43" r="1.5" fill="%23FFFFFF"/><path d="M 45 63 Q 50 68 55 63" stroke="%230F172A" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`,
+  '3': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%2334D399"/><ellipse cx="32" cy="24" rx="8" ry="20" fill="%23ECFDF5" stroke="%23059669" stroke-width="4"/><ellipse cx="68" cy="24" rx="8" ry="20" fill="%23ECFDF5" stroke="%23059669" stroke-width="4"/><ellipse cx="32" cy="24" rx="4" ry="12" fill="%23FBCFE8"/><ellipse cx="68" cy="24" rx="4" ry="12" fill="%23FBCFE8"/><ellipse cx="50" cy="60" rx="16" ry="12" fill="%23ECFDF5"/><ellipse cx="50" cy="54" rx="5" ry="3.5" fill="%23DB2777"/><path d="M 45 60 Q 50 66 55 60" stroke="%23059669" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="36" cy="46" r="4.5" fill="%23065F46"/><circle cx="64" cy="46" r="4.5" fill="%23065F46"/><circle cx="38" cy="44" r="1.5" fill="%23FFFFFF"/><circle cx="66" cy="44" r="1.5" fill="%23FFFFFF"/><circle cx="28" cy="54" r="5" fill="%23F472B6" opacity="0.6"/><circle cx="72" cy="54" r="5" fill="%23F472B6" opacity="0.6"/></svg>`,
+  '4': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23FB923C"/><circle cx="24" cy="28" r="10" fill="%23EA580C"/><circle cx="76" cy="28" r="10" fill="%23EA580C"/><circle cx="24" cy="28" r="5" fill="%23FFEDD5"/><circle cx="76" cy="28" r="5" fill="%23FFEDD5"/><path d="M 42 16 L 50 26 L 58 16 L 54 30 L 46 30 Z" fill="%23C2410C"/><ellipse cx="50" cy="58" rx="16" ry="12" fill="%23FFF7ED"/><polygon points="50,50 44,56 56,56" fill="%237C2D12"/><path d="M 44 60 Q 50 67 56 60" stroke="%237C2D12" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="35" cy="45" r="4.5" fill="%23431407"/><circle cx="65" cy="45" r="4.5" fill="%23431407"/><circle cx="37" cy="43" r="1.5" fill="%23FFFFFF"/><circle cx="67" cy="43" r="1.5" fill="%23FFFFFF"/><path d="M 22 45 L 30 47 M 78 45 L 70 47" stroke="%23C2410C" stroke-width="3" stroke-linecap="round"/></svg>`,
+  '5': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23C084FC"/><circle cx="26" cy="24" r="13" fill="%231E1B4B"/><circle cx="74" cy="24" r="13" fill="%231E1B4B"/><circle cx="26" cy="24" r="6" fill="%23818CF8"/><circle cx="74" cy="24" r="6" fill="%23818CF8"/><ellipse cx="36" cy="46" rx="9" ry="11" fill="%231E1B4B"/><ellipse cx="64" cy="46" rx="9" ry="11" fill="%231E1B4B"/><circle cx="36" cy="46" r="4" fill="%23FFFFFF"/><circle cx="64" cy="46" r="4" fill="%23FFFFFF"/><circle cx="37" cy="45" r="2" fill="%231E1B4B"/><circle cx="65" cy="45" r="2" fill="%231E1B4B"/><ellipse cx="50" cy="62" rx="14" ry="10" fill="%23F5F3FF"/><ellipse cx="50" cy="57" rx="5" ry="3.5" fill="%23312E81"/><path d="M 45 63 Q 50 68 55 63" stroke="%23312E81" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`,
+}
+
 function studentAvatarUrl(avatarId?: Student['profileAvatarId']) {
-  return `/student-avatars/${avatarId || '1'}.png`
+  return STUDENT_AVATAR_SVGS[avatarId || '1'] || STUDENT_AVATAR_SVGS['1']
 }
 
 // Chuỗi tuần học liên tiếp — tính thật từ ngày các buổi đã học, đếm ngược từ tuần
@@ -1393,9 +1401,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const pMps = student.minutesPerSession || 50
   const packageMinuteSummary = getStudentPackageMinuteSummary(student)
   const pTotalMin = packageMinuteSummary.totalMinutes
-  const pUsedMin = student.usedMinutes ?? student.usedSessions * pMps
+  const pUsedMin = student.usedMinutes ?? packageMinuteSummary.usedMinutes
   const pRemainingMin = packageMinuteSummary.remainingMinutes
-  const pHeldMin = student.reservedMinutes ?? student.heldMinutes ?? 0
+  const pHeldMin = useMemo(() => {
+    return bookings
+      .filter(b => !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
+      .reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
+  }, [bookings])
   const pAvailableMin = Math.max(0, pRemainingMin - pHeldMin)
   const usedPct = pTotalMin > 0 ? Math.min(100, Math.round((pUsedMin / pTotalMin) * 100)) : 0
 
