@@ -846,7 +846,7 @@ export function TeacherDetailPage() {
   const totalLessons = approvedLessons.length
   const totalMinutes = approvedLessons.reduce((acc, l) => acc + l.minutes, 0)
   const totalSalary = approvedLessons.reduce((acc, l) => acc + (l.salary || 0), 0)
-  const fallbackCurrency = COUNTRY_CURRENCY_MAP[teacher.country || 'VN']?.currency || 'VND'
+  const fallbackCurrency = COUNTRY_CURRENCY_MAP[teacher.country || 'VN'] || 'VND'
   const totalSalaryLabel = formatMoneyTotals(
     approvedLessons.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
     fallbackCurrency,

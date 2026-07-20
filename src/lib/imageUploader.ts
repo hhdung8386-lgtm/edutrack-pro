@@ -1,4 +1,4 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { storage } from './firebase'
 
 export interface ImageUpload {
@@ -99,6 +99,43 @@ export async function uploadLessonImage(teacherId: string, file: File): Promise<
   )
 
   return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+}
+
+export async function uploadTeacherPhoto(teacherId: string, file: File): Promise<string> {
+  let blob: Blob
+  let contentType = 'image/jpeg'
+  try {
+    blob = await compressImage(file)
+  } catch {
+    if (file.size <= MAX_RAW_SIZE) {
+      blob = file
+      contentType = file.type || 'image/jpeg'
+    } else {
+      throw new Error('UNSUPPORTED_IMAGE')
+    }
+  }
+
+  const timestamp = Date.now()
+  const randomStr = Math.random().toString(36).substring(2, 8)
+  const filePath = `teachers/${teacherId}/${timestamp}_${randomStr}.jpg`
+  const fileRef = ref(storage, filePath)
+
+  const uploadResult = await withTimeout(
+    uploadBytes(fileRef, blob, { contentType }),
+    UPLOAD_TIMEOUT_MS,
+  )
+
+  return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+}
+
+export async function deleteUploadedImage(url: string): Promise<void> {
+  if (!url) return
+  try {
+    const fileRef = ref(storage, url)
+    await deleteObject(fileRef)
+  } catch (err) {
+    console.error('Failed to delete image:', err)
+  }
 }
 
 // Thông báo lỗi upload thân thiện theo nguyên nhân

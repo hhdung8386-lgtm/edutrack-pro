@@ -212,8 +212,8 @@ export function TopUpTab({ student, lang }: { student: Student; lang: string }) 
             />
             <div className="space-y-3 text-sm">
               <InfoRow label={lang === 'vi' ? 'Ngân hàng' : 'Bank'} value={settings.bankName} />
-              <InfoRow label={lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'} value={settings.accountName} />
-              <InfoRow label={lang === 'vi' ? 'Số tài khoản' : 'Account number'} value={settings.accountNumber} copy={() => copy(settings.accountNumber)} />
+              <InfoRow label={lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'} value={settings.accountName || ''} />
+              <InfoRow label={lang === 'vi' ? 'Số tài khoản' : 'Account number'} value={settings.accountNumber || ''} copy={() => copy(settings.accountNumber || '')} />
               <InfoRow label={lang === 'vi' ? 'Nội dung chuyển khoản' : 'Transfer content'} value={transferContent} accent copy={() => copy(transferContent)} />
             </div>
           </div>

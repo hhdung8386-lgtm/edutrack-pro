@@ -61,6 +61,10 @@ export interface Student {
   classroomURL?: string
   /** @deprecated Link sách giờ nằm trong gói môn học (StudentSubject.curriculumLink); field cũ có thể còn tồn tại trong dữ liệu Firestore */
   textbookURL?: string
+  rewardPoints?: number
+  lifetimeRewardPoints?: number
+  monthlyRewardPoints?: number
+  profileAvatarId?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -83,6 +87,9 @@ export interface Teacher {
   contractAccepted?: boolean
   country?: string
   timezoneOffset?: number
+  pointsPer25Minutes?: number
+  bookingPriority?: number
+  totalApprovedMinutes?: number
   // Interview fields
   yob?: number
   livingArea?: string
@@ -195,6 +202,8 @@ export interface Lesson {
   createdAt: Timestamp
   updatedAt: Timestamp
   currency?: string
+  points?: number
+  pointsPer25Minutes?: number
 }
 
 export interface Payroll {
@@ -252,6 +261,10 @@ export interface BookingRequest {
   releasedBy?: string
   lessonId?: string
   currency?: string
+  heldImmediately?: boolean
+  requestedPoints?: number
+  pointsPer25Minutes?: number
+  teacherConfirmationDeadlineAt?: Timestamp
 }
 
 export interface AdminLog {
@@ -316,4 +329,86 @@ export interface SystemNotification {
   senderName: string
   createdAt: Timestamp
   readBy?: string[] // array of user/student/teacher IDs
+}
+
+export interface BookingCancellationRequest {
+  id: string
+  studentId: string
+  studentCode: string
+  studentName: string
+  bookingId: string
+  requestedAt: Timestamp
+  status: 'pending' | 'approved' | 'rejected'
+  rejectedReason?: string
+  resolvedAt?: Timestamp
+  resolvedBy?: string
+}
+
+export interface RewardGift {
+  id: string
+  name: string
+  points: number
+  imageURL?: string
+  description?: string
+  status: 'active' | 'inactive'
+  featured?: boolean
+  stock?: number
+}
+
+export interface RewardRedemption {
+  id: string
+  studentId: string
+  studentCode: string
+  studentName: string
+  giftId: string
+  giftName: string
+  points: number
+  createdAt: Timestamp
+  status: 'pending' | 'approved' | 'fulfilled' | 'rejected' | 'shipped' | 'delivered' | 'cancelled'
+  shippingAddress?: string
+  notes?: string
+}
+
+export interface PaymentSettings {
+  bankName: string
+  bankAccountNo: string
+  bankAccountName: string
+  qrTemplate?: string
+  contactPhone?: string
+  contactZalo?: string
+  guideVideoUrl?: string
+  transferPrefix?: string
+  qrImageURL?: string
+  accountName?: string
+  accountNumber?: string
+  supportNote?: string
+}
+
+export interface TopUpPackage {
+  id: string
+  name: string
+  price: number
+  currency: string
+  sessions: number
+  minutesPerSession: number
+  totalMinutes: number
+  status: 'active' | 'inactive'
+  featured?: boolean
+  subjectId?: string
+  subjectName?: string
+}
+
+export interface TopUpRequest {
+  id: string
+  studentId: string
+  studentCode: string
+  studentName: string
+  packageId: string
+  packageName: string
+  price: number
+  currency: string
+  totalMinutes: number
+  createdAt: Timestamp
+  status: 'pending' | 'approved' | 'rejected'
+  rejectedReason?: string
 }

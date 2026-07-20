@@ -40,7 +40,7 @@ export function RewardsTab({ student, lang }: { student: Student; lang: string }
   const availablePoints = Math.max(0, rewardPoints - pendingPoints)
 
   const redeem = async (gift: RewardGift) => {
-    if (gift.stock <= 0 || availablePoints < gift.points) return
+    if ((gift.stock ?? 0) <= 0 || availablePoints < gift.points) return
     if (redemptions.some((item) => item.giftId === gift.id && item.status === 'pending')) {
       toast.warning(lang === 'vi' ? 'Quà này đang chờ Admin xác nhận' : 'This gift is already pending review')
       return
@@ -105,7 +105,7 @@ export function RewardsTab({ student, lang }: { student: Student; lang: string }
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {gifts.map((gift) => {
             const pending = redemptions.some((item) => item.giftId === gift.id && item.status === 'pending')
-            const disabled = gift.stock <= 0 || availablePoints < gift.points || pending
+            const disabled = (gift.stock ?? 0) <= 0 || availablePoints < gift.points || pending
             return (
               <article key={gift.id} className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 transition hover:-translate-y-0.5 hover:shadow-lg">
                 <div className="aspect-[4/3] bg-slate-100">
@@ -115,7 +115,7 @@ export function RewardsTab({ student, lang }: { student: Student; lang: string }
                   <h3 className="line-clamp-2 text-sm font-bold leading-5 text-slate-900">{gift.name}</h3>
                   <p className="mt-1 flex items-center gap-1 text-xs font-black text-amber-600"><Star className="h-3.5 w-3.5 fill-current" /> {gift.points.toLocaleString('vi-VN')} {lang === 'vi' ? 'sao' : 'stars'}</p>
                   <Button onClick={() => redeem(gift)} loading={submittingId === gift.id} disabled={disabled} variant="outline" size="sm" className="mt-3 w-full border-brand-300 text-brand-800 hover:bg-brand-50 focus:ring-brand-300">
-                    {pending ? (lang === 'vi' ? 'Đang chờ' : 'Pending') : gift.stock <= 0 ? (lang === 'vi' ? 'Hết quà' : 'Out of stock') : lang === 'vi' ? 'Đổi quà' : 'Redeem'}
+                    {pending ? (lang === 'vi' ? 'Đang chờ' : 'Pending') : (gift.stock ?? 0) <= 0 ? (lang === 'vi' ? 'Hết quà' : 'Out of stock') : lang === 'vi' ? 'Đổi quà' : 'Redeem'}
                   </Button>
                 </div>
               </article>

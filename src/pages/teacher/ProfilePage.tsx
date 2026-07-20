@@ -175,7 +175,7 @@ export function ProfilePage() {
       } catch (updateError) {
         // Storage succeeded but Firestore failed: remove the orphaned file so
         // repeated attempts do not leave unused billable objects behind.
-        await deleteUploadedImage(url).catch((cleanupError) => {
+        await deleteUploadedImage(url).catch((cleanupError: any) => {
           console.warn('Failed to clean up uploaded profile photo:', cleanupError)
         })
         throw updateError

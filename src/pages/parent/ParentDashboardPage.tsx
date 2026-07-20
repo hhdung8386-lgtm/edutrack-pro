@@ -1890,27 +1890,6 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               onGoTab={setTab}
               lang={lang}
             />
-            <HomeTab
-              student={student}
-              usedPct={usedPct}
-              stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
-              insights={insights}
-              nextBooking={nextBooking}
-              teacherMap={teacherMap}
-              roomLinkOf={roomLinkOf}
-              dayFull={dayFull}
-              onGoTab={setTab}
-              lang={lang}
-            />
-            <CoursesTab
-              subjectPackages={subjectPackages}
-              bookings={bookings}
-              monthlyData={monthlyData}
-              durationData={durationData}
-              insights={insights}
-              pieColors={PIE_COLORS}
-              lang={lang}
-            />
           </div>
         )}
         {tab === 'rewards' && <RewardsTab student={student} lang={lang} />}

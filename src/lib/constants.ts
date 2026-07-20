@@ -43,6 +43,27 @@ export function formatMoney(amount: number, currency: string = 'VND'): string {
   }).format(amount)
 }
 
+export function formatMoneyTotals(
+  items: { amount: number; currency?: string }[],
+  fallbackCurrency: string = 'VND'
+): string {
+  if (items.length === 0) {
+    return formatMoney(0, fallbackCurrency)
+  }
+  const totals: Record<string, number> = {}
+  for (const item of items) {
+    const curr = (item.currency || fallbackCurrency).toUpperCase()
+    totals[curr] = (totals[curr] || 0) + item.amount
+  }
+  const parts = Object.entries(totals)
+    .filter(([_, val]) => val !== 0)
+    .map(([curr, val]) => formatMoney(val, curr))
+  if (parts.length === 0) {
+    return formatMoney(0, fallbackCurrency)
+  }
+  return parts.join(' + ')
+}
+
 export function formatPricePerMinute(price: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
   if (curr === 'USD') {

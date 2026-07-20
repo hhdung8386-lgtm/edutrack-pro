@@ -1,26 +1,16 @@
 // Avatar giáo viên kèm huy hiệu quốc kỳ tròn (giống app học tiếng Anh 1-1).
-// Cờ lấy từ thư viện flag-icons (lipis/flag-icons) — chỉ import đúng các nước đang dùng
-// để bundle nhẹ. GV chưa có ảnh sẽ fallback chữ cái đầu trên nền gradient.
-// ?no-inline: giữ SVG là file riêng — inline data-URI làm hỏng cờ có ký tự đặc biệt (vd: VN)
-import vnFlag from 'flag-icons/flags/1x1/vn.svg?no-inline'
-import phFlag from 'flag-icons/flags/1x1/ph.svg?no-inline'
-import usFlag from 'flag-icons/flags/1x1/us.svg?no-inline'
-import gbFlag from 'flag-icons/flags/1x1/gb.svg?no-inline'
-import auFlag from 'flag-icons/flags/1x1/au.svg?no-inline'
-import caFlag from 'flag-icons/flags/1x1/ca.svg?no-inline'
-import zaFlag from 'flag-icons/flags/1x1/za.svg?no-inline'
-import inFlag from 'flag-icons/flags/1x1/in.svg?no-inline'
+// GV chưa có ảnh sẽ fallback chữ cái đầu trên nền gradient.
 
-const FLAG_MAP: Record<string, string> = {
-  VN: vnFlag,
-  PH: phFlag,
-  US: usFlag,
-  GB: gbFlag,
-  UK: gbFlag,
-  AU: auFlag,
-  CA: caFlag,
-  ZA: zaFlag,
-  IN: inFlag,
+const FLAG_EMOJI_MAP: Record<string, string> = {
+  VN: '🇻🇳',
+  PH: '🇵🇭',
+  US: '🇺🇸',
+  GB: '🇬🇧',
+  UK: '🇬🇧',
+  AU: '🇦🇺',
+  CA: '🇨🇦',
+  ZA: '🇿🇦',
+  IN: '🇮🇳',
 }
 
 const AVATAR_GRADIENTS = [
@@ -46,8 +36,15 @@ interface TeacherAvatarProps {
   className?: string
 }
 
+export function normalizeTeacherCountryCode(country?: string): string {
+  const code = (country || 'VN').toUpperCase().trim()
+  if (code === 'UK') return 'GB'
+  return code
+}
+
 export function TeacherAvatar({ name, photoURL, country, size = 48, className = '' }: TeacherAvatarProps) {
-  const flag = country ? FLAG_MAP[country.toUpperCase()] : undefined
+  const code = country ? normalizeTeacherCountryCode(country) : undefined
+  const flagEmoji = code ? FLAG_EMOJI_MAP[code] : undefined
   const initial = (name || '?').trim().charAt(0).toUpperCase()
   const flagSize = Math.max(14, Math.round(size * 0.38))
 
@@ -68,13 +65,14 @@ export function TeacherAvatar({ name, photoURL, country, size = 48, className = 
           {initial}
         </div>
       )}
-      {flag && (
-        <img
-          src={flag}
-          alt={country}
-          className="absolute rounded-full ring-2 ring-white object-cover"
-          style={{ width: flagSize, height: flagSize, bottom: -2, right: -2 }}
-        />
+      {flagEmoji && (
+        <span
+          className="absolute flex items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200 select-none overflow-hidden leading-none"
+          style={{ width: flagSize, height: flagSize, bottom: -2, right: -2, fontSize: Math.max(10, Math.round(flagSize * 0.75)) }}
+          aria-label={country}
+        >
+          {flagEmoji}
+        </span>
       )}
     </div>
   )

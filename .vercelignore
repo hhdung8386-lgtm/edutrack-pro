@@ -1,0 +1,10 @@
+.git
+.claude
+.vercel
+node_modules
+dist
+.env
+.env.*
+*.log
+bao-cao-vietmytravel
+scratch
