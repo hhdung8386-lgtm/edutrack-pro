@@ -223,7 +223,7 @@ export function ParentDashboardPage() {
 
       <main className="max-w-lg mx-auto px-4 py-10 relative z-10">
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-gradient-to-br from-[#3BB8EB] to-[#2196F3] rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-sky-200/50 rotate-3 hover:rotate-0 transition-transform">
+          <div className="w-20 h-20 bg-gradient-to-br from-[#3BB8EB] to-[#2196F3] rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-brand-200/50 rotate-3 hover:rotate-0 transition-transform">
             <BookOpen className="w-10 h-10 text-white" />
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 mb-2">
@@ -261,7 +261,7 @@ export function ParentDashboardPage() {
           )}
 
           <button onClick={() => handleLogin()} disabled={searching}
-            className="w-full py-3.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-bold rounded-xl shadow-lg shadow-sky-200/50 hover:shadow-sky-300/50 hover:-translate-y-0.5 transition-all duration-300 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+            className="w-full py-3.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white font-bold rounded-xl shadow-lg shadow-brand-200/50 hover:shadow-brand-300/50 hover:-translate-y-0.5 transition-all duration-300 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
             {searching
               ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               : <><Search className="w-4 h-4" /> {lang === 'vi' ? 'XEM THÔNG TIN HỌC TẬP' : 'VIEW LEARNING INFO'}</>}
@@ -487,7 +487,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
             <button
               type="button"
               onClick={() => { setWeekOffset((value) => value - 1); setSelectedDay(null) }}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-[0.97]"
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
               aria-label={lang === 'vi' ? 'Xem tuần trước' : 'View previous week'}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -496,7 +496,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
             <button
               type="button"
               onClick={() => { setWeekOffset((value) => value + 1); setSelectedDay(null) }}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-[0.97]"
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
               aria-label={lang === 'vi' ? 'Xem tuần sau' : 'View next week'}
             >
               {lang === 'vi' ? 'Tuần sau' : 'Next'}
@@ -522,7 +522,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
                     type="button"
                     onClick={() => setSelectedDay(weekDay)}
                     aria-pressed={active}
-                    className={`flex min-h-[58px] flex-col items-center justify-center rounded-xl text-center transition focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.96] ${active ? 'bg-sky-600 text-white shadow-md shadow-sky-200' : available ? 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-sky-50 hover:text-sky-700' : 'bg-white/60 text-slate-400 hover:bg-white hover:text-slate-600'} ${isToday && !active ? 'ring-1 ring-sky-200' : ''}`}
+                    className={`flex min-h-[58px] flex-col items-center justify-center rounded-xl text-center transition focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.96] ${active ? 'bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 shadow-md shadow-brand-200' : available ? 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-700' : 'bg-white/60 text-slate-400 hover:bg-white hover:text-slate-600'} ${isToday && !active ? 'ring-1 ring-brand-300' : ''}`}
                   >
                     <span className="text-[9px] font-black uppercase">{shortDayLabels[weekDay]}</span>
                     <span className="mt-1 text-sm font-black tabular-nums">{date.getDate()}</span>
@@ -564,9 +564,9 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
                               ? (lang === 'vi' ? `${slot.start} đã qua` : `${slot.start} passed`)
                               : (lang === 'vi' ? `${slot.start} không nằm trong lịch rảnh` : `${slot.start} unavailable`)
                       }
-                      className={`flex min-h-9 items-center justify-center rounded-lg px-1 text-[10px] font-extrabold tabular-nums transition focus:outline-none focus:ring-2 focus:ring-sky-300 ${
+                      className={`flex min-h-9 items-center justify-center rounded-lg px-1 text-[10px] font-extrabold tabular-nums transition focus:outline-none focus:ring-2 focus:ring-brand-300 ${
                         available
-                          ? 'border border-sky-300 bg-white text-sky-700 shadow-sm hover:-translate-y-0.5 hover:border-sky-500 hover:bg-sky-600 hover:text-white active:scale-[0.96]'
+                          ? 'border border-brand-300 bg-white text-brand-800 shadow-sm hover:-translate-y-0.5 hover:border-brand-500 hover:bg-brand-400 hover:text-brand-900 active:scale-[0.96]'
                           : booked
                             ? 'cursor-not-allowed border border-sky-100 bg-[repeating-linear-gradient(-45deg,#f8fbff_0,#f8fbff_3px,#e0f2fe_3px,#e0f2fe_5px)] text-sky-400 line-through decoration-2'
                             : past
@@ -598,7 +598,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
       </section>
 
       {teacher?.youtubeLink && /^https?:\/\//i.test(teacher.youtubeLink) && (
-        <a href={teacher.youtubeLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-sky-700 active:scale-[0.98]">
+        <a href={teacher.youtubeLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-brand-400 to-brand-500 px-4 py-2.5 text-sm font-bold text-brand-900 transition hover:brightness-105 active:scale-[0.98]">
           <PlayCircle className="h-4 w-4" />
           {lang === 'vi' ? 'Xem video giới thiệu' : 'Watch introduction video'}
           <ArrowUpRight className="h-4 w-4" />
@@ -1072,7 +1072,7 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
           {STUDENT_AVATARS.map((item) => {
             const active = avatarId === item || (!avatarId && item === '1')
-            return <button key={item} type="button" disabled={savingAvatar} onClick={() => { onChooseAvatar(item); setPickerOpen(false) }} className={`relative aspect-square overflow-hidden rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${active ? 'ring-4 ring-sky-500' : 'ring-1 ring-slate-200 hover:-translate-y-0.5 hover:ring-sky-300'}`} aria-label={`${lang === 'vi' ? 'Nhân vật' : 'Character'} ${item}`}><img src={studentAvatarUrl(item)} alt="" className="h-full w-full object-cover" />{active && <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-sky-600 text-white"><CheckCircle2 className="h-4 w-4" /></span>}</button>
+            return <button key={item} type="button" disabled={savingAvatar} onClick={() => { onChooseAvatar(item); setPickerOpen(false) }} className={`relative aspect-square overflow-hidden rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 ${active ? 'ring-4 ring-brand-500' : 'ring-1 ring-slate-200 hover:-translate-y-0.5 hover:ring-brand-300'}`} aria-label={`${lang === 'vi' ? 'Nhân vật' : 'Character'} ${item}`}><img src={studentAvatarUrl(item)} alt="" className="h-full w-full object-cover" />{active && <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900"><CheckCircle2 className="h-4 w-4" /></span>}</button>
           })}
         </div>
       </BottomSheet>
@@ -2094,7 +2094,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                       type="button"
                       disabled={!durationAvailable}
                       onClick={() => setProfileBookingDuration(minutes)}
-                      className={`min-h-11 rounded-xl border px-3 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-sky-300 ${profileBookingDuration === minutes ? 'border-sky-600 bg-sky-600 text-white' : durationAvailable ? 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50' : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'}`}
+                      className={`min-h-11 rounded-xl border px-3 text-sm font-black transition focus:outline-none focus:ring-2 focus:ring-brand-300 ${profileBookingDuration === minutes ? 'border-sky-600 bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900' : durationAvailable ? 'border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50' : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'}`}
                     >
                       {minutes} {lang === 'vi' ? 'phút' : 'minutes'}
                     </button>
@@ -2293,7 +2293,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center text-sm leading-6 text-amber-900">
                     {lang === 'vi' ? 'Nếu cần hỗ trợ khẩn cấp, vui lòng liên hệ trung tâm để được kiểm tra.' : 'For urgent support, please contact the center for assistance.'}
                   </div>
-                  <Button fullWidth className="bg-sky-600 hover:bg-sky-700" onClick={() => setCancellationDialog(null)}>
+                  <Button fullWidth className="bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105" onClick={() => setCancellationDialog(null)}>
                     {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
                   </Button>
                 </>
@@ -2541,7 +2541,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
                 href={roomLinkOf(nextBooking)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
+                className="px-3.5 py-2.5 bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105 text-xs font-bold rounded-xl shadow-md shadow-brand-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
               >
                 <Video className="w-3.5 h-3.5" />
                 {lang === 'vi' ? 'Vào lớp' : 'Join'}
@@ -2571,7 +2571,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
               href={student.classroomURL}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200 hover:shadow-sky-300 transition-all flex items-center gap-1.5 flex-shrink-0"
+              className="px-4 py-2.5 bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105 text-xs font-bold rounded-xl shadow-md shadow-brand-200 hover:shadow-brand-300 transition-all flex items-center gap-1.5 flex-shrink-0"
             >
               {lang === 'vi' ? 'Vào học ngay' : 'Join Class Now'}
               <ExternalLink className="w-3.5 h-3.5" />
@@ -2805,7 +2805,7 @@ export function LegacyBookingTab({ bookings, upcomingBookings, nextBooking, teac
                       onClick={() => setSelectedDayISO(isSelected ? null : cell.iso)}
                       className={`relative rounded-xl min-h-[52px] pt-1.5 pb-1 flex flex-col items-center transition-all duration-200 ${
                         isSelected
-                          ? 'bg-[#3BB8EB] shadow-md shadow-sky-200'
+                          ? 'bg-[#3BB8EB] shadow-md shadow-brand-200'
                           : isToday
                           ? 'bg-sky-50 ring-1 ring-[#3BB8EB]/40'
                           : dayBookings.length > 0
@@ -2948,7 +2948,7 @@ export function LegacyBookingTab({ bookings, upcomingBookings, nextBooking, teac
                 href={roomLinkOf(nextBooking)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3.5 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-sky-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
+                className="px-3.5 py-2.5 bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-xs font-bold rounded-xl shadow-md shadow-brand-200/60 transition-all flex items-center gap-1.5 flex-shrink-0 hover:-translate-y-0.5"
               >
                 <Video className="w-3.5 h-3.5" />
                 {lang === 'vi' ? 'Vào lớp' : 'Join'}
@@ -3122,7 +3122,7 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
                       <p className="text-[9px] font-bold leading-none text-slate-400">T{date.getMonth() + 1}</p>
                     </div>
 
-                    <button type="button" disabled={!lesson.teacherId} onClick={() => lesson.teacherId && onTeacherProfile(lesson.teacherId)} className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 disabled:cursor-default" aria-label={lang === 'vi' ? 'Xem hồ sơ gia sư' : 'View teacher profile'}>
+                    <button type="button" disabled={!lesson.teacherId} onClick={() => lesson.teacherId && onTeacherProfile(lesson.teacherId)} className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2 disabled:cursor-default" aria-label={lang === 'vi' ? 'Xem hồ sơ gia sư' : 'View teacher profile'}>
                       <TeacherAvatar name={nickname} photoURL={teacher?.photoURL} country={teacher?.country} size={42} />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-extrabold text-slate-950 transition-colors group-hover:text-sky-700">{nickname}</span>
@@ -3136,7 +3136,7 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
                       </span>
                     </button>
 
-                    <button type="button" onClick={onRebook} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2.5 text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.97]">
+                    <button type="button" onClick={onRebook} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2.5 text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.97]">
                       <RotateCcw className="h-3.5 w-3.5" />{lang === 'vi' ? 'Đặt lại' : 'Rebook'}
                     </button>
                   </div>
@@ -3218,7 +3218,7 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
                           })}
                         </div>
                         {!submittedTeacherRating && (
-                          <Button size="sm" loading={savingReview === lesson.id} disabled={!ratingDrafts[lesson.id] || !!savingReview} onClick={() => saveTeacherRating(lesson)} className="bg-sky-600 hover:bg-sky-700">
+                          <Button size="sm" loading={savingReview === lesson.id} disabled={!ratingDrafts[lesson.id] || !!savingReview} onClick={() => saveTeacherRating(lesson)} className="bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105">
                             {lang === 'vi' ? 'Gửi đánh giá' : 'Submit rating'}
                           </Button>
                         )}
@@ -3228,11 +3228,11 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
 
                   <div className="mt-3 grid grid-cols-2 gap-2.5">
                     {documentLink ? (
-                      <a href={documentLink} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2 text-center text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-300 active:scale-[0.98]"><BookOpen className="h-4 w-4" />{lang === 'vi' ? 'Ôn tập tài liệu' : 'Review materials'}</a>
+                      <a href={documentLink} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2 text-center text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.98]"><BookOpen className="h-4 w-4" />{lang === 'vi' ? 'Ôn tập tài liệu' : 'Review materials'}</a>
                     ) : (
                       <button type="button" disabled className="flex min-h-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 text-center text-[11px] font-bold text-slate-400"><BookOpen className="h-4 w-4" />{lang === 'vi' ? 'Chưa có tài liệu' : 'No materials'}</button>
                     )}
-                    <button type="button" onClick={() => onDetail(lesson)} disabled={!lesson.homework} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-2 text-center text-[11px] font-extrabold text-white transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"><ClipboardCheck className="h-4 w-4" />{lesson.homework ? (lang === 'vi' ? 'Xem bài tập' : 'View homework') : (lang === 'vi' ? 'Chưa có bài tập' : 'No homework')}</button>
+                    <button type="button" onClick={() => onDetail(lesson)} disabled={!lesson.homework} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-brand-400 to-brand-500 px-2 text-center text-[11px] font-extrabold text-brand-900 transition hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"><ClipboardCheck className="h-4 w-4" />{lesson.homework ? (lang === 'vi' ? 'Xem bài tập' : 'View homework') : (lang === 'vi' ? 'Chưa có bài tập' : 'No homework')}</button>
                   </div>
                 </article>
               </div>
@@ -3337,7 +3337,7 @@ function CoursesTab({ subjectPackages, bookings, monthlyData, durationData, insi
                       href={sub.curriculumLink.startsWith('http') ? sub.curriculumLink : `https://${sub.curriculumLink}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-3 w-full py-2 rounded-xl bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-[11px] font-bold transition-all duration-200 flex items-center justify-center gap-1.5 shadow-sm shadow-sky-200 active:scale-95"
+                      className="mt-3 w-full py-2 rounded-xl bg-[#3BB8EB] hover:bg-[#2da8db] text-white text-[11px] font-bold transition-all duration-200 flex items-center justify-center gap-1.5 shadow-sm shadow-brand-200 active:scale-95"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                       {lang === 'vi' ? 'Xem tài liệu học' : 'View Materials'}
