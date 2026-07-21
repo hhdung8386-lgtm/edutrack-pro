@@ -1087,7 +1087,7 @@ export function TeacherDetailPage() {
                     <span className="text-slate-700">{teacher.academicAwards}</span>
                   </div>
                 )}
-                {teacher.trainedAt123English && (
+                {teacher.trainedAt123English !== false && (
                   <div className="md:col-span-3">
                     <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
                       <CheckCircle2 className="w-3.5 h-3.5" />

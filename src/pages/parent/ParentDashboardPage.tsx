@@ -14,7 +14,6 @@ import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { WaveDivider } from '@/components/shared/WaveDivider'
-import { NotificationDrawer } from '@/components/shared/NotificationDrawer'
 import { normalizeTeacherCountryCode, TeacherAvatar } from '@/components/shared/TeacherAvatar'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -430,6 +429,22 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
           </div>
         </div>
         {teacher?.bio && <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-600">{teacher.bio}</p>}
+        {/* Chứng nhận hoàn thành đào tạo nội bộ — mặc định hiện cho mọi gia sư (trừ khi admin bỏ tick) */}
+        {teacher?.trainedAt123English !== false && (
+          <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+              <GraduationCap className="h-4.5 w-4.5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-black leading-snug text-emerald-800">
+                {lang === 'vi' ? 'Đã hoàn thành Chương trình Đào tạo Gia sư tại Nội Bộ Trung Tâm' : 'Completed the Center’s internal tutor training program'}
+              </p>
+              <p className="text-[11px] font-semibold text-emerald-600">
+                {lang === 'vi' ? 'Thời lượng đào tạo: 60 giờ' : 'Training duration: 60 hours'}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="grid gap-4">
@@ -649,6 +664,7 @@ interface TeacherLite {
   gender?: Teacher['gender']
   degreeType?: string
   university?: string
+  trainedAt123English?: boolean
   teachingYears?: number
   studentsTaughtCount?: number
   subjectNames?: string[]
@@ -825,16 +841,9 @@ function getCurrentLeaderboardMonth() {
   }
 }
 
-const STUDENT_AVATAR_SVGS: Record<string, string> = {
-  '1': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23FFC61A"/><circle cx="26" cy="26" r="12" fill="%23E6AB00"/><circle cx="74" cy="26" r="12" fill="%23E6AB00"/><circle cx="26" cy="26" r="6" fill="%23FFF2B2"/><circle cx="74" cy="26" r="6" fill="%23FFF2B2"/><circle cx="50" cy="58" r="18" fill="%23FFF8DC"/><ellipse cx="50" cy="52" rx="7" ry="5" fill="%235C3A00"/><path d="M 44 60 Q 50 67 56 60" stroke="%235C3A00" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="35" cy="44" r="5" fill="%233A2500"/><circle cx="65" cy="44" r="5" fill="%233A2500"/><circle cx="37" cy="42" r="2" fill="%23FFFFFF"/><circle cx="67" cy="42" r="2" fill="%23FFFFFF"/><circle cx="28" cy="52" r="5" fill="%23FF9F1C" opacity="0.6"/><circle cx="72" cy="52" r="5" fill="%23FF9F1C" opacity="0.6"/></svg>`,
-  '2': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%2338BDF8"/><polygon points="20,38 35,14 42,40" fill="%230284C7"/><polygon points="80,38 65,14 58,40" fill="%230284C7"/><polygon points="24,34 35,18 40,36" fill="%23BAE6FD"/><polygon points="76,34 65,18 60,36" fill="%23BAE6FD"/><path d="M 25,40 Q 50,25 75,40 L 50,85 Z" fill="%23FFFFFF"/><ellipse cx="50" cy="55" rx="6" ry="4" fill="%230F172A"/><circle cx="36" cy="45" r="4.5" fill="%230F172A"/><circle cx="64" cy="45" r="4.5" fill="%230F172A"/><circle cx="38" cy="43" r="1.5" fill="%23FFFFFF"/><circle cx="66" cy="43" r="1.5" fill="%23FFFFFF"/><path d="M 45 63 Q 50 68 55 63" stroke="%230F172A" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`,
-  '3': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%2334D399"/><ellipse cx="32" cy="24" rx="8" ry="20" fill="%23ECFDF5" stroke="%23059669" stroke-width="4"/><ellipse cx="68" cy="24" rx="8" ry="20" fill="%23ECFDF5" stroke="%23059669" stroke-width="4"/><ellipse cx="32" cy="24" rx="4" ry="12" fill="%23FBCFE8"/><ellipse cx="68" cy="24" rx="4" ry="12" fill="%23FBCFE8"/><ellipse cx="50" cy="60" rx="16" ry="12" fill="%23ECFDF5"/><ellipse cx="50" cy="54" rx="5" ry="3.5" fill="%23DB2777"/><path d="M 45 60 Q 50 66 55 60" stroke="%23059669" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="36" cy="46" r="4.5" fill="%23065F46"/><circle cx="64" cy="46" r="4.5" fill="%23065F46"/><circle cx="38" cy="44" r="1.5" fill="%23FFFFFF"/><circle cx="66" cy="44" r="1.5" fill="%23FFFFFF"/><circle cx="28" cy="54" r="5" fill="%23F472B6" opacity="0.6"/><circle cx="72" cy="54" r="5" fill="%23F472B6" opacity="0.6"/></svg>`,
-  '4': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23FB923C"/><circle cx="24" cy="28" r="10" fill="%23EA580C"/><circle cx="76" cy="28" r="10" fill="%23EA580C"/><circle cx="24" cy="28" r="5" fill="%23FFEDD5"/><circle cx="76" cy="28" r="5" fill="%23FFEDD5"/><path d="M 42 16 L 50 26 L 58 16 L 54 30 L 46 30 Z" fill="%23C2410C"/><ellipse cx="50" cy="58" rx="16" ry="12" fill="%23FFF7ED"/><polygon points="50,50 44,56 56,56" fill="%237C2D12"/><path d="M 44 60 Q 50 67 56 60" stroke="%237C2D12" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="35" cy="45" r="4.5" fill="%23431407"/><circle cx="65" cy="45" r="4.5" fill="%23431407"/><circle cx="37" cy="43" r="1.5" fill="%23FFFFFF"/><circle cx="67" cy="43" r="1.5" fill="%23FFFFFF"/><path d="M 22 45 L 30 47 M 78 45 L 70 47" stroke="%23C2410C" stroke-width="3" stroke-linecap="round"/></svg>`,
-  '5': `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23C084FC"/><circle cx="26" cy="24" r="13" fill="%231E1B4B"/><circle cx="74" cy="24" r="13" fill="%231E1B4B"/><circle cx="26" cy="24" r="6" fill="%23818CF8"/><circle cx="74" cy="24" r="6" fill="%23818CF8"/><ellipse cx="36" cy="46" rx="9" ry="11" fill="%231E1B4B"/><ellipse cx="64" cy="46" rx="9" ry="11" fill="%231E1B4B"/><circle cx="36" cy="46" r="4" fill="%23FFFFFF"/><circle cx="64" cy="46" r="4" fill="%23FFFFFF"/><circle cx="37" cy="45" r="2" fill="%231E1B4B"/><circle cx="65" cy="45" r="2" fill="%231E1B4B"/><ellipse cx="50" cy="62" rx="14" ry="10" fill="%23F5F3FF"/><ellipse cx="50" cy="57" rx="5" ry="3.5" fill="%23312E81"/><path d="M 45 63 Q 50 68 55 63" stroke="%23312E81" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`,
-}
-
+// Ảnh nhân vật cậu bé (PNG) — bản giao diện được duyệt. Đặt ở public/student-avatars/.
 function studentAvatarUrl(avatarId?: Student['profileAvatarId']) {
-  return STUDENT_AVATAR_SVGS[avatarId || '1'] || STUDENT_AVATAR_SVGS['1']
+  return `/student-avatars/${avatarId || '1'}.png`
 }
 
 // Chuỗi tuần học liên tiếp — tính thật từ ngày các buổi đã học, đếm ngược từ tuần
@@ -1344,6 +1353,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             gender: t.gender,
             degreeType: t.degreeType || undefined,
             university: t.university || undefined,
+            trainedAt123English: t.trainedAt123English,
             teachingYears: t.teachingYears,
             studentsTaughtCount: t.studentsTaughtCount,
             subjectNames: t.subjectNames || [],
@@ -1801,7 +1811,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   ]
 
   return (
-    <div className="min-h-screen bg-brand-50 font-quicksand">
+    <div className="min-h-screen bg-white font-quicksand">
       {/* Header vàng brand + dải lượn sóng ngăn cách với nội dung bên dưới */}
       <header className="sticky top-0 z-30 bg-gradient-to-b from-[#FFE04A] via-[#FFD32E] to-[#FFC61A] shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
         <div className="mx-auto max-w-2xl px-4 py-2.5">
@@ -1868,22 +1878,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                 </button>
               </div>
 
-              {/* Language toggle */}
-              <button
-                onClick={() => setLang(lang === 'vi' ? 'en' : 'vi')}
-                className="flex h-8 items-center gap-0.5 rounded-xl px-1.5 text-[10px] font-black text-amber-900/80 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97]"
-                title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                <span className="uppercase">{lang}</span>
-              </button>
-
-              {/* Notification bell */}
-              <NotificationDrawer targetType="students" targetId={student.id} />
             </div>
           </div>
         </div>
-        <WaveDivider height={32} />
+        <WaveDivider height={32} fill="#ffffff" />
       </header>
 
       <main className="mx-auto max-w-2xl px-4 pb-32 pt-5 sm:pt-6">

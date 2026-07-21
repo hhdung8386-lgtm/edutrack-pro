@@ -85,6 +85,8 @@ export interface Teacher {
   gender?: 'male' | 'female'
   teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
+  /** true = chỉ là Tester (ứng tuyển kiểm thử, không phải gia sư dạy thật) */
+  isTester?: boolean
   country?: string
   timezoneOffset?: number
   pointsPer25Minutes?: number

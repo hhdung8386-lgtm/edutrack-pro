@@ -68,26 +68,7 @@ export function RewardsTab({ student, lang }: { student: Student; lang: string }
 
   return (
     <div className="space-y-5 pb-4">
-      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 px-5 py-6 text-brand-900 shadow-[0_18px_45px_-25px_rgba(180,120,0,0.75)]">
-        <div className="absolute -right-10 -top-14 h-40 w-40 rounded-full bg-white/15 blur-2xl" />
-        <div className="relative flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold text-brand-900/75">{lang === 'vi' ? 'Điểm hiện có' : 'Available points'}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-300 text-amber-800 ring-4 ring-white/15"><Star className="h-5 w-5 fill-current" /></span>
-              <strong className="text-3xl font-black tabular-nums">{availablePoints.toLocaleString('vi-VN')}</strong>
-              <span className="text-brand-900/70">{lang === 'vi' ? 'sao' : 'stars'}</span>
-            </div>
-            <p className="mt-3 max-w-[250px] text-xs font-semibold leading-5 text-brand-900/75">
-              {lang === 'vi' ? 'Mỗi buổi học được duyệt sẽ cộng đúng số sao gia sư đánh giá.' : 'Each approved lesson adds the teacher rating to your balance.'}
-            </p>
-          </div>
-          <Gift className="h-16 w-16 text-white/90" strokeWidth={1.5} />
-        </div>
-        {pendingPoints > 0 && <p className="relative mt-3 text-xs font-semibold text-white/90">{pendingPoints} {lang === 'vi' ? 'sao đang chờ duyệt đổi quà' : 'stars reserved for pending requests'}</p>}
-      </section>
-
-      <div className="flex min-h-9 items-center justify-between gap-4 border-b border-slate-200/80 pb-3">
+      <div className="flex min-h-9 items-center justify-between gap-4">
         <h2 className="text-lg font-black leading-none tracking-tight text-slate-900">{lang === 'vi' ? 'Đổi quà' : 'Rewards'}</h2>
         <button onClick={() => setShowHistory(true)} className="flex shrink-0 items-center gap-1.5 text-xs font-bold leading-none text-slate-500 transition hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2">
           <History className="h-4 w-4" /> {lang === 'vi' ? 'Lịch sử đổi quà' : 'History'}

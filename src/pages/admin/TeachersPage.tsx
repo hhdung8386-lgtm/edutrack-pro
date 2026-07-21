@@ -26,6 +26,35 @@ const GRADE_STYLES: Record<TeacherGrade, { badge: string; dot: string }> = {
 
 const FILTER_GRADES: Array<'' | TeacherGrade> = ['', 'A', 'B', 'C', 'PH', 'SA']
 
+// Quốc gia của gia sư (lấy từ hồ sơ). Hiển thị cờ + tên gọn cho cột "Quốc gia".
+const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
+  VN: { flag: '🇻🇳', label: 'Việt Nam' },
+  PH: { flag: '🇵🇭', label: 'Philippines' },
+  US: { flag: '🇺🇸', label: 'Mỹ' },
+  US_EST: { flag: '🇺🇸', label: 'Mỹ (EST)' },
+  US_PST: { flag: '🇺🇸', label: 'Mỹ (PST)' },
+  GB: { flag: '🇬🇧', label: 'Anh' },
+  UK: { flag: '🇬🇧', label: 'Anh' },
+  AU: { flag: '🇦🇺', label: 'Úc' },
+  CA: { flag: '🇨🇦', label: 'Canada' },
+  ZA: { flag: '🇿🇦', label: 'Nam Phi' },
+  IN: { flag: '🇮🇳', label: 'Ấn Độ' },
+  JP: { flag: '🇯🇵', label: 'Nhật Bản' },
+  KR: { flag: '🇰🇷', label: 'Hàn Quốc' },
+}
+
+function CountryCell({ country }: { country?: string }) {
+  const code = (country || '').toUpperCase().trim()
+  const info = code ? COUNTRY_INFO[code] : undefined
+  if (!info) return <span className="text-slate-400 text-xs italic">Chưa cập nhật</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
+      <span className="text-base leading-none">{info.flag}</span>
+      {info.label}
+    </span>
+  )
+}
+
 function GradeSelector({ teacherId, currentGrade }: { teacherId: string; currentGrade?: TeacherGrade }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -172,6 +201,7 @@ export function TeachersPage() {
   const [search, setSearch] = useState(() => sessionStorage.getItem('teachers_search') || '')
   const [gradeFilter, setGradeFilter] = useState<'' | TeacherGrade>(() => (sessionStorage.getItem('teachers_gradeFilter') as '' | TeacherGrade) || '')
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'tutor' | 'tester'>(() => (sessionStorage.getItem('teachers_roleFilter') as 'all' | 'tutor' | 'tester') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
   const [branches, setBranches] = useState<Branch[]>([])
   const [showAdd, setShowAdd] = useState(false)
@@ -189,8 +219,9 @@ export function TeachersPage() {
     sessionStorage.setItem('teachers_gradeFilter', gradeFilter)
     sessionStorage.setItem('teachers_statusFilter', statusFilter)
     sessionStorage.setItem('teachers_branchFilter', branchFilter)
+    sessionStorage.setItem('teachers_roleFilter', roleFilter)
     sessionStorage.setItem('teachers_limitVal', String(limitVal))
-  }, [search, gradeFilter, statusFilter, branchFilter, limitVal])
+  }, [search, gradeFilter, statusFilter, branchFilter, roleFilter, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -290,8 +321,23 @@ export function TeachersPage() {
     const matchGrade = gradeFilter ? t.teacherGrade === gradeFilter : true
     const matchStatus = statusFilter === 'all' || t.status === statusFilter
     const matchBranch = branchFilter === 'all' || t.branchId === branchFilter
-    return matchSearch && matchGrade && matchStatus && matchBranch
+    const matchRole = roleFilter === 'all' || (roleFilter === 'tester' ? !!t.isTester : !t.isTester)
+    return matchSearch && matchGrade && matchStatus && matchBranch && matchRole
   })
+
+  const testerCount = teachers.filter((t) => t.isTester).length
+
+  // Chuyển đổi Gia sư <-> Tester (chỉ admin, ghi field isTester vào teacher doc)
+  const toggleTester = async (teacher: Teacher) => {
+    const next = !teacher.isTester
+    try {
+      await updateDoc(doc(db, 'teachers', teacher.id), { isTester: next })
+      setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? { ...t, isTester: next } : t)))
+      toast.success(next ? `Đã chuyển ${teacher.name} sang Tester` : `Đã chuyển ${teacher.name} về Gia sư`)
+    } catch (err: any) {
+      toast.error('Không thể chuyển đổi: ' + (err?.message || ''))
+    }
+  }
 
   const handleDelete = async () => {
     if (!deleteTeacher) return
@@ -362,6 +408,27 @@ export function TeachersPage() {
             ))}
           </div>
 
+          {/* Lọc theo vai trò: Gia sư dạy thật / Tester (ứng tuyển kiểm thử) */}
+          <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
+            {([
+              { key: 'all', label: 'Tất cả vai trò' },
+              { key: 'tutor', label: 'Gia sư' },
+              { key: 'tester', label: `Tester${testerCount ? ` (${testerCount})` : ''}` },
+            ] as const).map((role) => (
+              <button
+                key={role.key}
+                onClick={() => setRoleFilter(role.key)}
+                className={`flex-1 lg:flex-none px-3.5 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  roleFilter === role.key
+                    ? 'bg-white text-violet-600 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+              >
+                {role.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1 overflow-x-auto hide-scrollbar">
             {FILTER_GRADES.map((g) => (
               <button
@@ -423,7 +490,7 @@ export function TeachersPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Cấp độ', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -439,13 +506,16 @@ export function TeachersPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {teacher.photoURL ? (
-                            <img src={teacher.photoURL} alt={teacher.name} className="w-8 h-8 rounded-full object-cover" />
+                            <img src={teacher.photoURL} alt={teacher.name} className="w-8 h-8 aspect-square shrink-0 rounded-full object-cover" />
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-400">
+                            <div className="w-8 h-8 aspect-square shrink-0 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-400">
                               {teacher.name[0]}
                             </div>
                           )}
                           <span className="font-medium text-slate-700">{teacher.name}</span>
+                          {teacher.isTester && (
+                            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-500">
@@ -456,8 +526,8 @@ export function TeachersPage() {
                       <td className="px-4 py-3">
                         <span className="text-slate-600 font-medium">×{teacher.level}</span>
                       </td>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <GradeSelector teacherId={teacher.id} currentGrade={teacher.teacherGrade} />
+                      <td className="px-4 py-3">
+                        <CountryCell country={teacher.country} />
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-violet-600 font-semibold text-sm">
@@ -477,6 +547,13 @@ export function TeachersPage() {
                             <Eye className="w-4 h-4" />
                           </button>
                           <Button size="sm" variant="ghost" onClick={() => setEditTeacher(teacher)}>Sửa</Button>
+                          <button
+                            onClick={() => toggleTester(teacher)}
+                            className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 hover:bg-emerald-50' : 'text-violet-600 hover:bg-violet-50'}`}
+                            title={teacher.isTester ? 'Chuyển về Gia sư' : 'Chuyển sang Tester'}
+                          >
+                            {teacher.isTester ? '→ Gia sư' : '→ Tester'}
+                          </button>
                           <button
                             onClick={() => setDeleteTeacher(teacher)}
                             className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
@@ -511,13 +588,12 @@ export function TeachersPage() {
                       <span onClick={(e) => e.stopPropagation()}>
                         <StatusSelector teacherId={teacher.id} currentStatus={teacher.status} />
                       </span>
-                      {teacher.teacherGrade && (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${GRADE_STYLES[teacher.teacherGrade].badge}`}>
-                          Cấp {teacher.teacherGrade}
-                        </span>
+                      {teacher.isTester && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
                       )}
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
+                    <div className="mt-1"><CountryCell country={teacher.country} /></div>
                     <p className="text-xs text-slate-500 mt-1">
                       Ngày tạo: {teacher.createdAt?.seconds
                         ? new Date(teacher.createdAt.seconds * 1000).toLocaleDateString('vi-VN')
@@ -529,6 +605,12 @@ export function TeachersPage() {
                         ? ` · ${(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'`
                         : ''}
                     </p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleTester(teacher) }}
+                      className={`mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 bg-emerald-50' : 'text-violet-600 bg-violet-50'}`}
+                    >
+                      {teacher.isTester ? '→ Chuyển về Gia sư' : '→ Chuyển sang Tester'}
+                    </button>
                   </div>
                 </div>
               </Card>

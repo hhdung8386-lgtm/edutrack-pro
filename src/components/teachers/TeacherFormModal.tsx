@@ -91,7 +91,9 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [gpa, setGpa] = useState(teacher?.gpa || '')
   const [academicAwards, setAcademicAwards] = useState(teacher?.academicAwards || '')
   const [scholarship, setScholarship] = useState(teacher?.scholarship || '')
-  const [trainedAt123English, setTrainedAt123English] = useState(!!teacher?.trainedAt123English)
+  // Mặc định TICK sẵn (kể cả GV cũ chưa có field) — trung tâm đào tạo toàn bộ gia sư.
+  // Chỉ khi admin chủ động bỏ tick mới lưu false.
+  const [trainedAt123English, setTrainedAt123English] = useState(teacher?.trainedAt123English !== false)
   const [certUploadingIndex, setCertUploadingIndex] = useState<number | null>(null)
   const [certImageView, setCertImageView] = useState<string | null>(null)
 
