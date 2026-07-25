@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore'
+import { useSearchParams } from 'react-router-dom'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -9,7 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { formatVND, formatVietnameseDate, getCurrentMonth, VIETNAMESE_MONTHS } from '@/lib/constants'
-import { ChevronLeft, ChevronRight, History, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, History, ChevronDown, X } from 'lucide-react'
 import { format, subMonths, addMonths } from 'date-fns'
 
 function groupByDate(lessons: Lesson[]): [string, Lesson[]][] {
@@ -25,6 +26,9 @@ function groupByDate(lessons: Lesson[]): [string, Lesson[]][] {
 export function LessonHistoryPage() {
   const { teacherId } = useAuthStore()
   const { t, lang } = useLanguageStore()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const studentIdFilter = searchParams.get('studentId') || ''
+  const studentNameFilter = searchParams.get('studentName') || ''
   const [month, setMonth] = useState(getCurrentMonth())
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,12 +59,12 @@ export function LessonHistoryPage() {
     return onSnapshot(q, (snap) => {
       const docs = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Lesson))
-        .filter((l) => l.date >= `${month}-01` && l.date <= `${month}-31`)
+        .filter((l) => l.date >= `${month}-01` && l.date <= `${month}-31` && (!studentIdFilter || l.studentId === studentIdFilter))
       docs.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
       setLessons(docs)
       setLoading(false)
     })
-  }, [teacherId, month])
+  }, [teacherId, month, studentIdFilter])
 
   const approved = lessons.filter((l) => l.status === 'approved')
   const totalSalary = approved.reduce((sum, l) => sum + (l.salary || 0), 0)
@@ -71,8 +75,16 @@ export function LessonHistoryPage() {
     <div className="space-y-5 pt-2 lg:pt-6 max-w-2xl mx-auto animate-fade-in">
       <div className="bg-gradient-to-r from-[#3BB8EB] to-[#2196F3] rounded-2xl p-6 text-white shadow-lg shadow-sky-200/50 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
-        <h1 className="text-2xl font-bold relative z-10">{t('history.title')}</h1>
+        <h1 className="text-2xl font-bold relative z-10">{studentIdFilter ? (lang === 'vi' ? 'Lịch sử học của học viên' : 'Student learning history') : t('history.title')}</h1>
+        {studentIdFilter && <p className="relative z-10 mt-1 text-sm font-semibold text-white/90">{studentNameFilter || studentIdFilter}</p>}
       </div>
+
+      {studentIdFilter && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+          <p className="text-sm font-semibold text-sky-800">{lang === 'vi' ? `Đang lọc lịch sử của ${studentNameFilter || 'học viên đã chọn'}` : `Showing history for ${studentNameFilter || 'the selected student'}`}</p>
+          <button type="button" onClick={() => setSearchParams({})} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sky-700 hover:bg-sky-100" aria-label={lang === 'vi' ? 'Bỏ lọc học viên' : 'Clear student filter'}><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {/* Month selector */}
       <div className="flex items-center gap-3">
@@ -144,6 +156,15 @@ export function LessonHistoryPage() {
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">{t('history.comment')}</p>
                             <p className="text-slate-600">{lesson.comment}</p>
+                          </div>
+                        )}
+                        {(lesson.book || lesson.pages) && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-0.5">{lang === 'vi' ? 'Nội dung đã dạy' : 'Lesson coverage'}</p>
+                            <p className="text-slate-600">
+                              {lesson.book || (lang === 'vi' ? 'Chưa ghi giáo trình' : 'Book not recorded')}
+                              {lesson.pages ? ` - ${lang === 'vi' ? 'trang' : 'pages'} ${lesson.pages}` : ''}
+                            </p>
                           </div>
                         )}
                         {lesson.homework && (

@@ -16,6 +16,14 @@ import { WaveDivider } from '@/components/shared/WaveDivider'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 
+type TeacherNavItem = {
+  to: string
+  icon: typeof PenLine
+  labelKey: string
+  shortLabel: { vi: string; en: string }
+  badge?: number
+}
+
 export function TeacherLayout() {
   const { user, teacherId } = useAuthStore()
   const { lang, setLang, t } = useLanguageStore()
@@ -26,6 +34,7 @@ export function TeacherLayout() {
   const [profileMissingCount, setProfileMissingCount] = useState<number | null>(null)
   const [profileMissingFields, setProfileMissingFields] = useState<(keyof Teacher)[]>([])
   const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false)
+  const [pendingBookingCount, setPendingBookingCount] = useState(0)
   
   // Real-time clock and timezone states
   const [timezoneOffset, setTimezoneOffset] = useState<number>(7)
@@ -33,10 +42,11 @@ export function TeacherLayout() {
 
   // shortLabel: nhãn rút gọn cho bottom nav mobile — nhãn dài ("Lịch dạy của tôi")
   // bị xuống 2 dòng làm lệch cả thanh điều hướng
-  const navItems = [
+  const navItems: TeacherNavItem[] = [
     { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance', shortLabel: { vi: 'Điểm danh', en: 'Attendance' } },
     { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability', shortLabel: { vi: 'Lịch rảnh', en: 'Availability' } },
     { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Lịch dạy', en: 'Classes' } },
+    { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Yêu cầu', en: 'Requests' }, badge: pendingBookingCount },
     { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá', en: 'Reviews' } },
     { to: '/teacher/history', icon: History, labelKey: 'nav.history', shortLabel: { vi: 'Lịch sử', en: 'History' } },
     { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract', shortLabel: { vi: 'Hợp đồng', en: 'Contract' } },
@@ -142,7 +152,10 @@ export function TeacherLayout() {
 
   // Real-time booking schedules notification listener
   useEffect(() => {
-    if (!teacherId) return
+    if (!teacherId) {
+      setPendingBookingCount(0)
+      return
+    }
 
     // Request notification permission
     if ('Notification' in window && Notification.permission === 'default') {
@@ -159,6 +172,7 @@ export function TeacherLayout() {
     )
 
     const unsub = onSnapshot(q, (snap) => {
+      setPendingBookingCount(snap.docs.filter((item) => (item.data().teacherResponse || 'pending') === 'pending').length)
       snap.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const booking = { id: change.doc.id, ...change.doc.data() } as BookingRequest
@@ -210,6 +224,7 @@ export function TeacherLayout() {
             >
               <item.icon className="w-4 h-4 shrink-0" />
               {t(item.labelKey)}
+              {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
             </NavLink>
           ))}
         </nav>
@@ -329,6 +344,7 @@ export function TeacherLayout() {
               {({ isActive }) => (
                 <>
                   <item.icon className={`w-5 h-5 ${isActive ? 'text-brand-600' : ''}`} />
+                  {!!item.badge && <span className="absolute right-1 top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{item.badge}</span>}
                   <span className="leading-none">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
                   {isActive && (
                     <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-500 rounded-full" />

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore'
+import { useEffect, useMemo, useState } from 'react'
+import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { toast } from '@/stores/toastStore'
-import { ClipboardCheck, Search, Copy, Trash2, Edit3, X, ExternalLink } from 'lucide-react'
+import { ClipboardCheck, Search, Copy, Trash2, Edit3, X, ExternalLink, Check, Hourglass, XCircle, Wallet } from 'lucide-react'
+import { EVALUATION_FORM_LABELS, getCourseOptions, normalizeCourseLabel, normalizeSelectedCourseLevels, TUTOR_SKILL_OPTIONS, type EvaluationFormType } from '@/lib/evaluationOptions'
+import { EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY, formatMoney, getCurrentMonth } from '@/lib/constants'
+import { useAuthStore } from '@/stores/authStore'
 
 interface Evaluation {
   id: string
@@ -16,10 +19,13 @@ interface Evaluation {
   teacherName: string
   type: 'english' | 'other'
   skills: Record<string, number>
-  formType: 'adult_comm' | 'tutor' | 'kids_a' | 'kids_b' | 'academic'
+  lessonComment?: string
+  formType: EvaluationFormType
   selectedLevels: string[]
+  selectedCourseLevels?: Record<string, number>
   customLevelText?: string
   tutorSubjects?: Record<string, string>
+  tutorSkills?: string[]
   evaluationResult: 'direct' | 'more_advice' | 're_evaluate'
   sessionsPerWeek: number
   minutesPerSession: number
@@ -28,20 +34,23 @@ interface Evaluation {
   createdAt?: any
   updatedAt?: any
   imageUrl?: string
+  /** Phiếu cũ chưa có field này -> coi như 'pending' để admin duyệt, KHÔNG mất dữ liệu. */
+  status?: 'pending' | 'approved' | 'rejected'
+  approvedAt?: any
+  approvedBy?: string
+  rejectedReason?: string
+  /** Doc payroll đã tạo khi duyệt — dùng để chống cộng tiền 2 lần và để thu hồi. */
+  rewardPayrollId?: string
+  rewardAmount?: number
 }
+
+type EvalStatus = 'pending' | 'approved' | 'rejected'
+const evalStatusOf = (e: Evaluation): EvalStatus => e.status === 'approved' ? 'approved' : e.status === 'rejected' ? 'rejected' : 'pending'
 
 const RESULT_LABELS = {
   direct: 'Phù hợp đăng ký ngay',
   more_advice: 'Cần tư vấn thêm lộ trình',
   re_evaluate: 'Hẹn đánh giá lại sau',
-}
-
-const FORM_TITLES = {
-  adult_comm: 'Tiếng Anh giao tiếp người lớn',
-  tutor: 'Gia sư',
-  kids_a: 'Tiếng Anh trẻ em (Time to Talk)',
-  kids_b: 'Tiếng Anh trẻ em (Phonics/Smart Kids)',
-  academic: 'Tiếng Anh học thuật',
 }
 
 const DEFAULT_GOALS = {
@@ -87,51 +96,20 @@ const DEFAULT_CURRICULUM = {
   academic: 'Cambridge Standard Prep / IELTS Pathway',
 }
 
-const FORM_OPTIONS = {
-  adult_comm: [
-    'Basic English (Level 1–5)',
-    'Daily English (Level 3–5)',
-    'Topic Conversation (Level 2–6)',
-    'Business English (Level 4–6)',
-    'Free Talk',
-    'IPA Pronunciation (Level 1–3)'
-  ],
-  kids_a: [
-    'Basic English (Level 1–5)',
-    '123English Official Curriculum (Level 4–7)',
-    'Time to Talk (Level 3–5)',
-    'Writing Source (Level 2–4)',
-    'Reading (Level 3–4)'
-  ],
-  kids_b: [
-    'We Sing We Learn (Kindergarten)',
-    'Magic Phonics (Level 1–6)',
-    'Smart Kids (Starter – Level 9)',
-    'Good English - Storytelling (Level 1–9)',
-    'Starlight (Level 1–5)'
-  ],
-  academic: [
-    'Cambridge Starters',
-    'Cambridge Movers',
-    'Cambridge Flyers',
-    'Cambridge KET (A2 Key)',
-    'Cambridge PET (B1 Preliminary)',
-    'IELTS',
-    'TOEIC',
-    'Business English (4 Skills)'
-  ]
-}
-
 export default function AdminEvaluationsPage() {
+  const { user } = useAuthStore()
   const [evaluations, setEvaluations] = useState<Evaluation[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | EvalStatus>('pending')
+  const [processingId, setProcessingId] = useState<string | null>(null)
   
   const [showForm, setShowForm] = useState(false)
   const [editingEval, setEditingEval] = useState<Evaluation | null>(null)
 
   // Form State fields
   const [studentName, setStudentName] = useState('')
+  const [lessonComment, setLessonComment] = useState('')
   const [teacherName, setTeacherName] = useState('')
   const [subjectType, setSubjectType] = useState<'english' | 'other'>('english')
   
@@ -143,7 +121,9 @@ export default function AdminEvaluationsPage() {
 
   const [formType, setFormType] = useState<Evaluation['formType']>('adult_comm')
   const [selectedLevels, setSelectedLevels] = useState<string[]>([])
+  const [selectedCourseLevels, setSelectedCourseLevels] = useState<Record<string, number>>({})
   const [customLevelText, setCustomLevelText] = useState('')
+  const [tutorSkills, setTutorSkills] = useState<string[]>([])
   
   // Tutor fields
   const [tutorSubjects, setTutorSubjects] = useState<Record<string, string>>({
@@ -211,6 +191,7 @@ export default function AdminEvaluationsPage() {
       setProposedCurriculum(DEFAULT_CURRICULUM[formType])
       setPostCourseGoals(DEFAULT_GOALS[formType])
       setSelectedLevels([])
+      setSelectedCourseLevels({})
       setCustomLevelText('')
       
       // Auto adjust default duration per session based on selected formType recommendations
@@ -225,12 +206,15 @@ export default function AdminEvaluationsPage() {
   const handleOpenEdit = (evalDoc: Evaluation) => {
     setEditingEval(evalDoc)
     setStudentName(evalDoc.studentName)
+    setLessonComment(evalDoc.lessonComment || '')
     setTeacherName(evalDoc.teacherName || '')
     setSubjectType(evalDoc.type)
     setSkills({ ...skills, ...evalDoc.skills })
     setFormType(evalDoc.formType)
-    setSelectedLevels(evalDoc.selectedLevels || [])
+    setSelectedLevels((evalDoc.selectedLevels || []).map(normalizeCourseLabel))
+    setSelectedCourseLevels(normalizeSelectedCourseLevels(evalDoc.selectedCourseLevels))
     setCustomLevelText(evalDoc.customLevelText || '')
+    setTutorSkills(evalDoc.tutorSkills || [])
     setTutorSubjects(evalDoc.tutorSubjects || { moet: '', tichHop: '', nangCao: '', songNgu: '', quocTe: '', khac: '' })
     setEvaluationResult(evalDoc.evaluationResult)
     setSessionsPerWeek(evalDoc.sessionsPerWeek)
@@ -247,10 +231,26 @@ export default function AdminEvaluationsPage() {
       toast.error('Vui lòng nhập tên học viên')
       return
     }
+    if (lessonComment.trim().length < 100) {
+      toast.error('Nhận xét buổi học phải có ít nhất 100 ký tự')
+      return
+    }
     if (!editingEval) return
+    const courseMissingStartLevel = formType === 'tutor'
+      ? undefined
+      : getCourseOptions(formType).find((course) => (
+        selectedLevels.includes(course.label)
+        && course.levelOptions?.length
+        && selectedCourseLevels[course.label] === undefined
+      ))
+    if (courseMissingStartLevel) {
+      toast.error(`Vui lòng chọn cấp độ bắt đầu cho ${courseMissingStartLevel.label}`)
+      return
+    }
 
     const payload: Partial<Evaluation> = {
       studentName: studentName.trim(),
+      lessonComment: lessonComment.trim(),
       teacherName: teacherName.trim() || editingEval.teacherName,
       type: subjectType,
       skills: subjectType === 'english' 
@@ -274,8 +274,10 @@ export default function AdminEvaluationsPage() {
           },
       formType,
       selectedLevels: formType === 'tutor' ? [] : selectedLevels,
+      selectedCourseLevels: formType === 'tutor' ? {} : selectedCourseLevels,
       customLevelText: formType === 'tutor' ? '' : customLevelText,
       tutorSubjects: formType === 'tutor' ? tutorSubjects : {},
+      tutorSkills: formType === 'tutor' ? tutorSkills : [],
       evaluationResult,
       sessionsPerWeek,
       minutesPerSession,
@@ -312,10 +314,123 @@ export default function AdminEvaluationsPage() {
     toast.success('Đã sao chép link chia sẻ cho phụ huynh')
   }
 
-  const filtered = evaluations.filter(e => 
-    e.studentName.toLowerCase().includes(search.toLowerCase()) || 
-    (e.teacherName || '').toLowerCase().includes(search.toLowerCase())
-  )
+  /**
+   * Duyệt phiếu đánh giá -> cộng thưởng cho gia sư.
+   * Chạy trong transaction và kiểm tra lại trạng thái ngay trước khi ghi để
+   * KHÔNG BAO GIỜ cộng tiền hai lần (kể cả khi bấm nhanh nhiều lần / 2 tab).
+   * Khoản thưởng ghi vào `payroll` dạng 'adjustment' nên tự vào bảng lương tháng.
+   */
+  const handleApprove = async (evaluation: Evaluation) => {
+    if (!evaluation.teacherId) {
+      toast.error('Phiếu này không gắn với gia sư nào nên không thể cộng thưởng')
+      return
+    }
+    setProcessingId(evaluation.id)
+    try {
+      const teacherSnap = await getDoc(doc(db, 'teachers', evaluation.teacherId))
+      const teacherLevel = teacherSnap.exists() ? (teacherSnap.data()?.level ?? 1) : 1
+      const teacherName = evaluation.teacherName || (teacherSnap.exists() ? teacherSnap.data()?.name : '') || 'Gia sư'
+      const month = getCurrentMonth()
+
+      await runTransaction(db, async (tx) => {
+        const evalRef = doc(db, 'evaluations', evaluation.id)
+        const evalSnap = await tx.get(evalRef)
+        if (!evalSnap.exists()) throw new Error('EVAL_NOT_FOUND')
+        const current = evalSnap.data() as Evaluation
+        if (current.status === 'approved') throw new Error('ALREADY_APPROVED')
+
+        const payrollRef = doc(collection(db, 'payroll'))
+        tx.set(payrollRef, {
+          teacherId: evaluation.teacherId,
+          teacherName,
+          lessonId: '',
+          type: 'adjustment',
+          adjustmentNote: `Đánh giá học sinh mới: ${evaluation.studentName || 'Không rõ tên'}`,
+          amount: EVALUATION_REWARD_AMOUNT,
+          minutes: 0,
+          pricePerMinute: 0,
+          level: teacherLevel,
+          month,
+          currency: EVALUATION_REWARD_CURRENCY,
+          paid: false,
+          createdBy: user?.uid || 'admin',
+          evaluationId: evaluation.id,
+          createdAt: serverTimestamp(),
+        })
+
+        tx.update(evalRef, {
+          status: 'approved',
+          approvedAt: serverTimestamp(),
+          approvedBy: user?.uid || 'admin',
+          rewardPayrollId: payrollRef.id,
+          rewardAmount: EVALUATION_REWARD_AMOUNT,
+          rejectedReason: '',
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      toast.success(`Đã duyệt và cộng ${formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương tháng ${getCurrentMonth()} của ${teacherName}`)
+    } catch (err: any) {
+      console.error('approve evaluation failed', err)
+      if (err?.message === 'ALREADY_APPROVED') toast.warning('Phiếu này đã được duyệt trước đó — không cộng tiền lần nữa')
+      else if (err?.message === 'EVAL_NOT_FOUND') toast.error('Phiếu đánh giá không tồn tại')
+      else toast.error('Không thể duyệt phiếu, vui lòng thử lại')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  /** Từ chối phiếu (không cộng tiền). Nếu phiếu đã duyệt thì thu hồi khoản thưởng chưa thanh toán. */
+  const handleReject = async (evaluation: Evaluation) => {
+    const reason = window.prompt('Lý do từ chối phiếu đánh giá này?', evaluation.rejectedReason || '')
+    if (reason === null) return
+    setProcessingId(evaluation.id)
+    try {
+      // Nếu trước đó đã duyệt & cộng tiền -> chỉ thu hồi khi khoản đó CHƯA thanh toán.
+      if (evaluation.rewardPayrollId) {
+        const payrollRef = doc(db, 'payroll', evaluation.rewardPayrollId)
+        const paySnap = await getDoc(payrollRef)
+        if (paySnap.exists()) {
+          if (paySnap.data()?.paid === true) {
+            toast.error('Khoản thưởng của phiếu này đã được thanh toán — không thể thu hồi tự động. Vui lòng điều chỉnh thủ công ở trang Lương gia sư.')
+            setProcessingId(null)
+            return
+          }
+          await updateDoc(payrollRef, {
+            voided: true,
+            amount: 0,
+            voidedAt: serverTimestamp(),
+            voidedBy: user?.uid || 'admin',
+          })
+        }
+      }
+      await updateDoc(doc(db, 'evaluations', evaluation.id), {
+        status: 'rejected',
+        rejectedReason: reason.trim(),
+        rewardAmount: 0,
+        updatedAt: serverTimestamp(),
+      })
+      toast.success('Đã từ chối phiếu đánh giá')
+    } catch (err) {
+      console.error('reject evaluation failed', err)
+      toast.error('Không thể từ chối phiếu, vui lòng thử lại')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const statusCounts = useMemo(() => {
+    const c = { pending: 0, approved: 0, rejected: 0 }
+    evaluations.forEach((e) => { c[evalStatusOf(e)]++ })
+    return c
+  }, [evaluations])
+
+  const filtered = evaluations.filter(e => {
+    const matchSearch = e.studentName.toLowerCase().includes(search.toLowerCase()) ||
+      (e.teacherName || '').toLowerCase().includes(search.toLowerCase())
+    const matchStatus = statusFilter === 'all' || evalStatusOf(e) === statusFilter
+    return matchSearch && matchStatus
+  })
 
   if (loading) {
     return (
@@ -326,7 +441,7 @@ export default function AdminEvaluationsPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="evaluation-mobile-theme max-w-6xl mx-auto space-y-6">
       
       {/* Title Header */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -335,12 +450,14 @@ export default function AdminEvaluationsPage() {
           Quản lý đánh giá học sinh mới
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Xem, chỉnh sửa mọi thông tin đánh giá, sao chép link gửi phụ huynh và xóa các phiếu đánh giá cũ
+          Duyệt phiếu đánh giá của gia sư — mỗi phiếu được duyệt sẽ cộng{' '}
+          <span className="font-bold text-emerald-600">{formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)}</span>{' '}
+          vào bảng lương tháng của gia sư đó
         </p>
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <Input
           placeholder="Tìm theo tên học sinh hoặc giáo viên..."
           leftIcon={<Search className="w-4 h-4" />}
@@ -348,6 +465,29 @@ export default function AdminEvaluationsPage() {
           onChange={(e: any) => setSearch(e.target.value)}
           className="w-full max-w-md"
         />
+        <div className="flex flex-wrap gap-2">
+          {([
+            { key: 'pending' as const, label: 'Chờ duyệt', count: statusCounts.pending, cls: 'bg-amber-500 text-white', idle: 'text-amber-700 bg-amber-50 hover:bg-amber-100' },
+            { key: 'approved' as const, label: 'Đã duyệt', count: statusCounts.approved, cls: 'bg-emerald-600 text-white', idle: 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100' },
+            { key: 'rejected' as const, label: 'Từ chối', count: statusCounts.rejected, cls: 'bg-rose-600 text-white', idle: 'text-rose-700 bg-rose-50 hover:bg-rose-100' },
+            { key: 'all' as const, label: 'Tất cả', count: evaluations.length, cls: 'bg-slate-800 text-white', idle: 'text-slate-700 bg-slate-100 hover:bg-slate-200' },
+          ]).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setStatusFilter(tab.key)}
+              className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${statusFilter === tab.key ? tab.cls : tab.idle}`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
+        </div>
+        {statusCounts.pending > 0 && (
+          <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            Có {statusCounts.pending} phiếu chờ duyệt — tổng tiền sẽ cộng nếu duyệt hết:{' '}
+            {formatMoney(statusCounts.pending * EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)}
+          </p>
+        )}
       </div>
 
       {/* Main List */}
@@ -365,12 +505,27 @@ export default function AdminEvaluationsPage() {
                   <div>
                     <h3 className="font-extrabold text-slate-850 text-base">{item.studentName}</h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                      {FORM_TITLES[item.formType]}
+                      {EVALUATION_FORM_LABELS[item.formType]}
                     </p>
                   </div>
-                  <Badge variant={item.type === 'english' ? 'info' : 'warning'}>
-                    {item.type === 'english' ? 'Tiếng Anh' : 'Khác'}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Badge variant={item.type === 'english' ? 'info' : 'warning'}>
+                      {item.type === 'english' ? 'Tiếng Anh' : 'Khác'}
+                    </Badge>
+                    {(() => {
+                      const st = evalStatusOf(item)
+                      const meta = st === 'approved'
+                        ? { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', Icon: Check, text: 'Đã duyệt' }
+                        : st === 'rejected'
+                          ? { cls: 'bg-rose-50 text-rose-700 border-rose-200', Icon: XCircle, text: 'Từ chối' }
+                          : { cls: 'bg-amber-50 text-amber-700 border-amber-200', Icon: Hourglass, text: 'Chờ duyệt' }
+                      return (
+                        <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${meta.cls}`}>
+                          <meta.Icon className="w-3 h-3" />{meta.text}
+                        </span>
+                      )
+                    })()}
+                  </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-y-2 text-xs border-t border-slate-100 pt-4">
@@ -387,7 +542,55 @@ export default function AdminEvaluationsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-100">
+              {/* Khu vực duyệt & thưởng */}
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                {evalStatusOf(item) === 'approved' ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5" />
+                      Đã cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
+                    </p>
+                    <button
+                      type="button"
+                      disabled={processingId === item.id}
+                      onClick={() => handleReject(item)}
+                      className="text-[11px] font-bold text-rose-600 hover:underline disabled:opacity-50"
+                    >
+                      Huỷ duyệt
+                    </button>
+                  </div>
+                ) : evalStatusOf(item) === 'rejected' ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-rose-700 min-w-0 truncate">
+                      Đã từ chối{item.rejectedReason ? `: ${item.rejectedReason}` : ''}
+                    </p>
+                    <Button size="sm" loading={processingId === item.id} onClick={() => handleApprove(item)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl">
+                      <Check className="w-3.5 h-3.5 mr-1" />Duyệt lại
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-600">
+                      Duyệt để cộng <span className="font-bold text-emerald-600">{formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)}</span> cho gia sư
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={processingId === item.id}
+                        onClick={() => handleReject(item)}
+                        className="rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        Từ chối
+                      </button>
+                      <Button size="sm" loading={processingId === item.id} onClick={() => handleApprove(item)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl">
+                        <Check className="w-3.5 h-3.5 mr-1" />Duyệt
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">
                 <Button size="sm" variant="outline" onClick={() => copyShareLink(item.id)} className="gap-1 rounded-xl">
                   <Copy className="w-3.5 h-3.5" />
                   Link phụ huynh
@@ -419,8 +622,8 @@ export default function AdminEvaluationsPage() {
 
       {/* Slide-out Edit Form Overlay */}
       {showForm && editingEval && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-end">
-          <div className="w-full max-w-2xl bg-white h-full flex flex-col shadow-2xl animate-slide-left">
+        <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-end justify-center sm:items-stretch sm:justify-end">
+          <div className="evaluation-sheet w-full max-w-2xl h-full flex flex-col shadow-2xl animate-slide-left sm:rounded-l-[28px]">
             
             {/* Form Header */}
             <div className="p-6 border-b border-slate-200 flex justify-between items-center shrink-0">
@@ -438,7 +641,7 @@ export default function AdminEvaluationsPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-8">
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
               
               {/* Section 1: Học viên & Môn học */}
               <div className="space-y-4">
@@ -483,6 +686,24 @@ export default function AdminEvaluationsPage() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-600">Nhận xét buổi học</label>
+                  <textarea
+                    rows={4}
+                    required
+                    minLength={100}
+                    value={lessonComment}
+                    onChange={(event) => setLessonComment(event.target.value)}
+                    className="w-full resize-y rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300"
+                    placeholder="Ví dụ: Học viên tiếp thu tốt, chủ động giao tiếp và cần luyện thêm phát âm..."
+                  />
+                  <div className="flex items-center justify-between gap-3 text-[11px] font-semibold">
+                    <span className="text-slate-400">Tối thiểu 100 ký tự để nhận xét đủ rõ ràng.</span>
+                    <span className={lessonComment.trim().length >= 100 ? 'text-emerald-600' : 'text-amber-700'}>
+                      {lessonComment.trim().length}/100
+                    </span>
                   </div>
                 </div>
               </div>
@@ -566,10 +787,10 @@ export default function AdminEvaluationsPage() {
                   >
                     {subjectType === 'english' ? (
                       <>
-                        <option value="adult_comm">Tiếng Anh giao tiếp người lớn</option>
-                        <option value="kids_a">Tiếng Anh trẻ em A (Time to Talk)</option>
-                        <option value="kids_b">Tiếng Anh trẻ em B (Magic Phonics/Smart Kids)</option>
-                        <option value="academic">Tiếng Anh học thuật (IELTS/Cambridge)</option>
+                        <option value="adult_comm">{EVALUATION_FORM_LABELS.adult_comm}</option>
+                        <option value="kids_a">{EVALUATION_FORM_LABELS.kids_a}</option>
+                        <option value="kids_b">{EVALUATION_FORM_LABELS.kids_b}</option>
+                        <option value="academic">{EVALUATION_FORM_LABELS.academic}</option>
                       </>
                     ) : (
                       <option value="tutor">Gia sư các môn học khác</option>
@@ -582,6 +803,30 @@ export default function AdminEvaluationsPage() {
                   /* Tutor checklist & text inputs */
                   <div className="space-y-4 bg-slate-50/50 p-4 border border-slate-150 rounded-2xl">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cấu hình chi tiết Môn học Gia sư</p>
+
+                    <fieldset className="space-y-3">
+                      <legend className="text-xs font-bold text-slate-600">Kỹ năng cần tập trung</legend>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {TUTOR_SKILL_OPTIONS.map((skill) => {
+                          const isChecked = tutorSkills.includes(skill)
+                          return (
+                            <label key={skill} className="flex items-center gap-3 min-h-[46px] p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-indigo-50/40">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(event) => setTutorSkills((current) => (
+                                  event.target.checked
+                                    ? [...current, skill]
+                                    : current.filter((item) => item !== skill)
+                                ))}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                              />
+                              <span className="text-xs font-bold text-slate-700">{skill}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </fieldset>
                     
                     <div className="space-y-3">
                       {[
@@ -609,22 +854,60 @@ export default function AdminEvaluationsPage() {
                   <div className="space-y-4 bg-slate-50/50 p-4 border border-slate-150 rounded-2xl">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cấp độ/Level đề xuất</p>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {FORM_OPTIONS[formType].map((opt) => {
-                        const isChecked = selectedLevels.includes(opt)
+                    <div className="grid grid-cols-1 gap-3">
+                      {getCourseOptions(formType).map((option) => {
+                        const isChecked = selectedLevels.includes(option.label)
                         return (
-                          <label key={opt} className="flex items-center gap-3 p-3 bg-white border border-slate-150 rounded-xl cursor-pointer hover:bg-slate-50">
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedLevels([...selectedLevels, opt])
-                                else setSelectedLevels(selectedLevels.filter(x => x !== opt))
-                              }}
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-350 focus:ring-indigo-500"
-                            />
-                            <span className="text-xs font-bold text-slate-700">{opt}</span>
-                          </label>
+                          <div key={option.label} className="overflow-hidden bg-white border border-slate-200 rounded-xl">
+                            <label className="flex items-center gap-3 p-3 cursor-pointer hover:bg-amber-50/60">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedLevels((current) => [...current, option.label])
+                                  } else {
+                                    setSelectedLevels((current) => current.filter((item) => item !== option.label))
+                                    setSelectedCourseLevels((current) => {
+                                      const next = { ...current }
+                                      delete next[option.label]
+                                      return next
+                                    })
+                                  }
+                                }}
+                                className="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-400"
+                              />
+                              <span className="min-w-0 text-xs font-bold text-slate-700">{option.label}</span>
+                            </label>
+                            {isChecked && (
+                              <div className="px-4 pb-4 border-t border-amber-100">
+                                {option.description && <p className="pt-3 text-xs leading-5 text-slate-600">{option.description}</p>}
+                                {option.levelOptions?.length ? (
+                                  <div className="pt-3">
+                                    <p className="mb-2 text-xs font-bold text-slate-700">Chọn cấp độ bắt đầu đề xuất</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {option.levelOptions.map((level) => {
+                                        const isRecommended = selectedCourseLevels[option.label] === level.value
+                                        return (
+                                          <button
+                                            key={level.value}
+                                            type="button"
+                                            onClick={() => setSelectedCourseLevels((current) => ({ ...current, [option.label]: level.value }))}
+                                            className={`min-h-9 rounded-full border px-3 text-xs font-extrabold transition-colors ${isRecommended ? 'evaluation-primary' : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:bg-amber-50'}`}
+                                            aria-pressed={isRecommended}
+                                          >
+                                            {level.label}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="pt-3 text-xs font-medium text-slate-500">Giáo trình này không chia thành cấp độ khởi đầu riêng.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )
                       })}
                     </div>
@@ -669,6 +952,9 @@ export default function AdminEvaluationsPage() {
                       <option value={2}>02 buổi/tuần</option>
                       <option value={3}>03 buổi/tuần (Khuyến nghị)</option>
                       <option value={4}>04 buổi/tuần</option>
+                      <option value={5}>05 buổi/tuần</option>
+                      <option value={6}>06 buổi/tuần</option>
+                      <option value={7}>07 buổi/tuần</option>
                     </select>
                   </div>
 
@@ -684,15 +970,6 @@ export default function AdminEvaluationsPage() {
                       <option value={100}>100 phút</option>
                     </select>
                   </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-600">Giáo trình đề xuất</label>
-                  <Input 
-                    placeholder="Nhập tên giáo trình đề xuất..." 
-                    value={proposedCurriculum}
-                    onChange={(e: any) => setProposedCurriculum(e.target.value)}
-                  />
                 </div>
 
                 <div className="space-y-2">
@@ -755,11 +1032,11 @@ export default function AdminEvaluationsPage() {
             </form>
 
             {/* Form Footer */}
-            <div className="p-6 border-t border-slate-200 flex justify-end gap-2 shrink-0 bg-slate-50">
+            <div className="evaluation-sheet-footer p-4 sm:p-6 border-t border-slate-200 flex justify-end gap-2 shrink-0 bg-slate-50">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="rounded-2xl">
                 Hủy
               </Button>
-              <Button type="button" onClick={handleSave} className="rounded-2xl">
+              <Button type="button" onClick={handleSave} className="evaluation-primary rounded-2xl">
                 Lưu kết quả
               </Button>
             </div>

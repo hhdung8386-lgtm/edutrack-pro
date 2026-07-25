@@ -14,7 +14,7 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2 } from 'lucide-react'
-import { formatMoney, formatMoneyTotals, getCurrentMonth } from '@/lib/constants'
+import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
@@ -137,6 +137,13 @@ export function TeacherDetailPage() {
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reverting, setReverting] = useState(false)
+
+  // Chọn hàng loạt buổi dạy để đổi "Đã duyệt" -> "Chờ duyệt"
+  const [selectedLessonIds, setSelectedLessonIds] = useState<Set<string>>(new Set())
+  const [showBulkRevert, setShowBulkRevert] = useState(false)
+  const [showBulkApprove, setShowBulkApprove] = useState(false)
+  const [bulkApproving, setBulkApproving] = useState(false)
+  const [bulkReverting, setBulkReverting] = useState(false)
 
   useEffect(() => {
     setLessonDateFilter('')
@@ -370,10 +377,11 @@ export function TeacherDetailPage() {
   const handleUpdateLessonStatus = async (
     lesson: Lesson,
     targetStatus: 'approved' | 'pending' | 'rejected',
-    customRejectReason?: string
-  ) => {
+    customRejectReason?: string,
+    options?: { silent?: boolean }
+  ): Promise<boolean> => {
     const currentStatus = lesson.status
-    if (currentStatus === targetStatus) return
+    if (currentStatus === targetStatus) return true
 
     if (targetStatus === 'approved') {
       setApproving(true)
@@ -735,7 +743,7 @@ export function TeacherDetailPage() {
           createdAt: serverTimestamp(),
         })
 
-        toast.success(`Đã huỷ duyệt, trả lại ${lesson.minutes} phút cho học viên`)
+        if (!options?.silent) toast.success(`Đã huỷ duyệt, trả lại ${lesson.minutes} phút cho học viên`)
         setRevertingLesson(null)
         setRejectingLesson(null)
         setRejectReason('')
@@ -748,14 +756,16 @@ export function TeacherDetailPage() {
           updatedAt: serverTimestamp(),
         })
         await deleteDoc(doc(db, 'publicLessons', lesson.id)).catch(() => {})
-        toast.success(`Đã cập nhật trạng thái về ${targetStatus === 'pending' ? 'Chờ duyệt' : 'Từ chối'}`)
+        if (!options?.silent) toast.success(`Đã cập nhật trạng thái về ${targetStatus === 'pending' ? 'Chờ duyệt' : 'Từ chối'}`)
         setRejectingLesson(null)
         setRejectReason('')
       }
+      return true
     } catch (err: any) {
       console.error('[update-lesson-status]', err)
       const code = err?.code || ''
       const message = err?.message || ''
+      if (options?.silent) return false
       if (message === 'LESSON_NOT_FOUND') {
         toast.error('Buổi dạy không tồn tại, có thể đã bị xóa')
       } else if (message === 'STUDENT_NOT_FOUND') {
@@ -767,6 +777,7 @@ export function TeacherDetailPage() {
       } else {
         toast.error(`Cập nhật thất bại: ${code || message || 'Lỗi không xác định'}`)
       }
+      return false
     } finally {
       setApproving(false)
       setRejecting(false)
@@ -790,6 +801,61 @@ export function TeacherDetailPage() {
   const handleRevertToPending = async () => {
     if (!revertingLesson) return
     await handleUpdateLessonStatus(revertingLesson, 'pending')
+  }
+
+  // Đổi hàng loạt "Đã duyệt" -> "Chờ duyệt": chạy TUẦN TỰ từng buổi qua đúng
+  // luồng hoàn tác an toàn (trả phút cho học viên, vô hiệu bản ghi lương, gỡ
+  // buổi công khai, ghi admin log) để không lệch dữ liệu.
+  const handleBulkRevertToPending = async () => {
+    const targets = lessons.filter((l) => selectedLessonIds.has(l.id) && l.status === 'approved')
+    if (targets.length === 0) {
+      toast.warning('Không có buổi "Đã duyệt" nào trong số đã chọn')
+      setShowBulkRevert(false)
+      return
+    }
+    setBulkReverting(true)
+    let ok = 0
+    let failed = 0
+    try {
+      for (const lesson of targets) {
+        const success = await handleUpdateLessonStatus(lesson, 'pending', undefined, { silent: true })
+        if (success) ok++
+        else failed++
+      }
+      if (failed === 0) toast.success(`Đã chuyển ${ok} buổi về "Chờ duyệt"`)
+      else toast.warning(`Đã chuyển ${ok} buổi; ${failed} buổi lỗi — vui lòng kiểm tra lại`)
+      setSelectedLessonIds(new Set())
+    } finally {
+      setBulkReverting(false)
+      setShowBulkRevert(false)
+    }
+  }
+
+  // Duyệt hàng loạt: chạy TUẦN TỰ qua đúng luồng duyệt an toàn (trừ phút học viên,
+  // ghi bản ghi lương, cộng điểm thưởng…). Chỉ áp dụng buổi Chờ duyệt/Từ chối.
+  const handleBulkApprove = async () => {
+    const targets = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected'))
+    if (targets.length === 0) {
+      toast.warning('Không có buổi "Chờ duyệt" nào trong số đã chọn')
+      setShowBulkApprove(false)
+      return
+    }
+    setBulkApproving(true)
+    let ok = 0
+    let failed = 0
+    try {
+      for (const lesson of targets) {
+        const success = await handleUpdateLessonStatus(lesson, 'approved', undefined, { silent: true })
+        if (success) ok++
+        else failed++
+      }
+      if (failed === 0) toast.success(`Đã duyệt ${ok} buổi dạy`)
+      else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi lỗi (có thể học viên hết buổi) — vui lòng kiểm tra lại`)
+      setSelectedLessonIds(new Set())
+    } finally {
+      setBulkApproving(false)
+      setShowBulkApprove(false)
+    }
   }
 
   if (loading) return <LoadingSpinner />
@@ -890,8 +956,13 @@ export function TeacherDetailPage() {
   ], monthCurrency)
 
   // Monthly paid/unpaid payroll stats
-  const paidPayrollMonth = payrolls.filter(p => !p.voided && p.paid && (lessonMonth ? p.month === lessonMonth : true)).reduce((sum, p) => sum + p.amount, 0)
-  const unpaidPayrollMonth = payrolls.filter(p => !p.voided && !p.paid && (lessonMonth ? p.month === lessonMonth : true)).reduce((sum, p) => sum + p.amount, 0)
+  const paidPayrollList = payrolls.filter(p => !p.voided && p.paid && (lessonMonth ? p.month === lessonMonth : true))
+  const unpaidPayrollList = payrolls.filter(p => !p.voided && !p.paid && (lessonMonth ? p.month === lessonMonth : true))
+  const paidPayrollMonth = paidPayrollList.reduce((sum, p) => sum + p.amount, 0)
+  const unpaidPayrollMonth = unpaidPayrollList.reduce((sum, p) => sum + p.amount, 0)
+  // Gộp theo từng loại tiền tệ để gia sư nước ngoài không bị hiển thị nhầm ký hiệu "đ"
+  const paidPayrollMonthLabel = formatMoneyTotals(paidPayrollList.map(p => ({ amount: p.amount, currency: p.currency })), fallbackCurrency)
+  const unpaidPayrollMonthLabel = formatMoneyTotals(unpaidPayrollList.map(p => ({ amount: p.amount, currency: p.currency })), fallbackCurrency)
 
   const [mYear, mMon] = lessonMonth ? lessonMonth.split('-') : ['', '']
   const monthDisplayLabel = lessonMonth ? `${Number(mMon)}/${mYear}` : 'tất cả'
@@ -949,6 +1020,31 @@ export function TeacherDetailPage() {
     
     return matchMonth && matchSearch && matchDate && matchClass && matchTab
   })
+
+  // Chọn hàng loạt: có thể chọn buổi ở mọi trạng thái. Nút "Duyệt" chỉ tác động
+  // buổi Chờ duyệt/Từ chối, nút "Chuyển về Chờ duyệt" chỉ tác động buổi Đã duyệt.
+  const selectableLessons = filteredLessons
+  const allSelectableSelected = selectableLessons.length > 0 && selectableLessons.every((l) => selectedLessonIds.has(l.id))
+  const selectedApprovedCount = lessons.filter((l) => selectedLessonIds.has(l.id) && l.status === 'approved').length
+  const selectedPendingCount = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected')).length
+
+  const toggleLessonSelection = (lessonId: string) => {
+    setSelectedLessonIds((current) => {
+      const next = new Set(current)
+      if (next.has(lessonId)) next.delete(lessonId)
+      else next.add(lessonId)
+      return next
+    })
+  }
+
+  const toggleAllApprovedLessons = () => {
+    setSelectedLessonIds((current) => {
+      const next = new Set(current)
+      if (allSelectableSelected) selectableLessons.forEach((l) => next.delete(l.id))
+      else selectableLessons.forEach((l) => next.add(l.id))
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-5xl">
@@ -1108,7 +1204,7 @@ export function TeacherDetailPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
-                            {cert.category === 'foreign_language' ? 'Ngoại ngữ' : cert.category === 'pedagogical' ? 'Sư phạm' : 'Khác'}
+                            {cert.category === 'foreign_language' ? 'Năng lực chuyên môn' : cert.category === 'pedagogical' ? 'Sư phạm' : 'Khác'}
                           </span>
                           <h5 className="font-bold text-slate-800 text-sm mt-2">{cert.title || 'Chưa đặt tên'}</h5>
                         </div>
@@ -1345,6 +1441,14 @@ export function TeacherDetailPage() {
                   })
                   const unpaidMin = unpaidLessons.reduce((sum, l) => sum + l.minutes, 0)
                   const unpaidSalary = unpaidLessons.reduce((sum, l) => sum + (l.salary || 0), 0)
+                  // Mỗi học viên có thể học môn tính giá theo quốc gia khác nhau (VD môn
+                  // "Giáo Viên Philippines" trả bằng PHP). Phải lấy tiền tệ theo chính buổi
+                  // dạy của học viên đó, KHÔNG dùng chung tiền tệ của tháng đang lọc — nếu
+                  // không, lương PHP/USD sẽ bị hiển thị nhầm ký hiệu "đ".
+                  const unpaidLabel = formatMoneyTotals(
+                    unpaidLessons.map((l) => ({ amount: l.salary || 0, currency: l.currency })),
+                    studentLessons.find((l) => l.currency)?.currency || fallbackCurrency
+                  )
 
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer" onClick={() => navigate(`/admin/students/${s.id}`)}>
@@ -1486,14 +1590,14 @@ export function TeacherDetailPage() {
                               <div className="text-[11px] text-slate-400">{usedMin}'</div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className={`font-semibold ${s.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                              <div className={`font-semibold ${s.remainingSessions <= LOW_SESSION_THRESHOLD ? 'text-amber-500' : 'text-emerald-500'}`}>
                                 {s.remainingSessions}
                               </div>
                               <div className={`text-[11px] ${remainingMin <= 0 ? 'text-rose-400' : 'text-slate-400'}`}>{remainingMin}'</div>
                             </td>
                             <td className="px-4 py-3">
                               <div className={`font-semibold ${unpaidSalary > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                {unpaidSalary > 0 ? formatMoney(unpaidSalary, monthCurrency) : formatMoney(0, monthCurrency)}
+                                {unpaidLabel}
                               </div>
                               <div className="text-[11px] text-slate-400">{unpaidMin}'</div>
                             </td>
@@ -1725,6 +1829,42 @@ export function TeacherDetailPage() {
           </div>
         </div>
 
+        {selectedLessonIds.size > 0 && (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+              <CheckCircle2 className="h-5 w-5 text-amber-600" />
+              Đã chọn {selectedLessonIds.size} buổi ({selectedPendingCount} chờ duyệt · {selectedApprovedCount} đã duyệt)
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => setShowBulkApprove(true)}
+                loading={bulkApproving}
+                disabled={selectedPendingCount === 0}
+                className="min-h-[40px] bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-300"
+              >
+                <Check className="mr-1.5 h-4 w-4" />
+                Duyệt đã chọn
+              </Button>
+              <Button
+                onClick={() => setShowBulkRevert(true)}
+                loading={bulkReverting}
+                disabled={selectedApprovedCount === 0}
+                className="min-h-[40px] bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-300"
+              >
+                <Hourglass className="mr-1.5 h-4 w-4" />
+                Chuyển về "Chờ duyệt"
+              </Button>
+              <button
+                type="button"
+                onClick={() => setSelectedLessonIds(new Set())}
+                className="min-h-[40px] rounded-xl px-3 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900"
+              >
+                Bỏ chọn
+              </button>
+            </div>
+          </div>
+        )}
+
         {filteredLessons.length === 0 ? (
           <p className="text-center text-slate-500 text-sm py-8">Không có buổi dạy nào</p>
         ) : (
@@ -1732,6 +1872,17 @@ export function TeacherDetailPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
+                  <th className="w-11 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelectableSelected}
+                      ref={(element) => { if (element) element.indeterminate = !allSelectableSelected && selectedLessonIds.size > 0 }}
+                      onChange={toggleAllApprovedLessons}
+                      aria-label="Chọn tất cả buổi đang hiển thị"
+                      className="h-4 w-4 accent-amber-500"
+                      disabled={selectableLessons.length === 0}
+                    />
+                  </th>
                   {['NGÀY', 'HỌC VIÊN', 'MÔN', 'SÁCH', 'PHÚT', 'LƯƠNG TẠM TÍNH', 'TRẠNG THÁI DUYỆT', 'THANH TOÁN', 'THAO TÁC'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                   ))}
@@ -1747,6 +1898,15 @@ export function TeacherDetailPage() {
 
                   return (
                     <tr key={l.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedLessonIds.has(l.id)}
+                          onChange={() => toggleLessonSelection(l.id)}
+                          aria-label={`Chọn buổi dạy ngày ${l.date} của ${l.studentName}`}
+                          className="h-4 w-4 accent-amber-500"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{l.date}</td>
                       <td className="px-4 py-3">
                         <p className="text-slate-800 font-semibold">{l.studentName}</p>
@@ -1979,11 +2139,11 @@ export function TeacherDetailPage() {
               ) : null}
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Đã thanh toán (Gross):</span>
-                <span className="font-bold text-emerald-600">{formatMoney(paidPayrollMonth, monthCurrency)}</span>
+                <span className="font-bold text-emerald-600">{paidPayrollMonthLabel}</span>
               </div>
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Chưa thanh toán (Chờ trả - Gross):</span>
-                <span className="font-bold text-amber-500">{formatMoney(unpaidPayrollMonth, monthCurrency)}</span>
+                <span className="font-bold text-amber-500">{unpaidPayrollMonthLabel}</span>
               </div>
               {isVndMonth && approvedSalaryMonth > 2000000 && (
                 <div className="text-[10px] text-slate-400 italic border-t border-slate-200/30 pt-2 text-right">
@@ -2102,6 +2262,48 @@ export function TeacherDetailPage() {
                 </span>
               </div>
             )}
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {/* Bulk approve confirm */}
+      {showBulkApprove && (
+        <ConfirmDialog
+          open
+          onClose={() => !bulkApproving && setShowBulkApprove(false)}
+          onConfirm={handleBulkApprove}
+          title={`Duyệt ${selectedPendingCount} buổi dạy đã chọn?`}
+          confirmLabel={`Duyệt ${selectedPendingCount} buổi`}
+          loading={bulkApproving}
+        >
+          <div className="bg-white rounded-xl p-4 text-sm space-y-1.5">
+            <p className="text-slate-500 leading-relaxed">
+              Từng buổi sẽ được duyệt qua đúng quy trình: <span className="font-semibold text-slate-700">trừ số phút học</span> của học viên tương ứng và <span className="font-semibold text-slate-700">ghi nhận lương</span> cho gia sư. Các buổi đã duyệt trong lựa chọn sẽ được bỏ qua.
+            </p>
+            <p className="border-t border-slate-100 pt-2 text-xs text-slate-400">
+              Hệ thống xử lý lần lượt từng buổi để đảm bảo dữ liệu chính xác; buổi nào học viên đã hết phút sẽ bị bỏ qua và báo lại. Vui lòng không đóng trang khi đang chạy.
+            </p>
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {/* Bulk revert confirm */}
+      {showBulkRevert && (
+        <ConfirmDialog
+          open
+          onClose={() => !bulkReverting && setShowBulkRevert(false)}
+          onConfirm={handleBulkRevertToPending}
+          title={`Chuyển ${selectedApprovedCount} buổi về "Chờ duyệt"?`}
+          confirmLabel={`Chuyển ${selectedApprovedCount} buổi`}
+          loading={bulkReverting}
+        >
+          <div className="bg-white rounded-xl p-4 text-sm space-y-1.5">
+            <p className="text-slate-500 leading-relaxed">
+              Từng buổi sẽ được hoàn tác duyệt: <span className="font-semibold text-slate-700">trả lại số phút học</span> cho học viên tương ứng và <span className="font-semibold text-slate-700">vô hiệu hoá bản ghi lương</span> của gia sư. Các buổi chưa duyệt trong số đã chọn sẽ được bỏ qua.
+            </p>
+            <p className="border-t border-slate-100 pt-2 text-xs text-slate-400">
+              Hệ thống xử lý lần lượt từng buổi để đảm bảo dữ liệu chính xác — vui lòng không đóng trang khi đang chạy.
+            </p>
           </div>
         </ConfirmDialog>
       )}

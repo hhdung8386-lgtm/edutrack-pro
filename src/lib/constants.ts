@@ -144,3 +144,32 @@ export function openBase64InNewTab(dataUrl: string) {
     console.error('Lỗi khi mở file', e);
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Cảnh báo "sắp hết buổi" — dùng CHUNG cho mọi trang/vai trò
+// (admin, gia sư, trang theo dõi) để màu sắc & ngưỡng luôn khớp nhau.
+// ─────────────────────────────────────────────────────────────
+export const LOW_SESSION_THRESHOLD = 6
+
+export type SessionLevel = 'out' | 'low' | 'ok'
+
+/** Còn 0 buổi -> 'out'; còn 1..LOW_SESSION_THRESHOLD -> 'low'; nhiều hơn -> 'ok' */
+export function getSessionLevel(availableSessions: number): SessionLevel {
+  if (availableSessions <= 0) return 'out'
+  if (availableSessions <= LOW_SESSION_THRESHOLD) return 'low'
+  return 'ok'
+}
+
+export const SESSION_LEVEL_TEXT_CLASS: Record<SessionLevel, string> = {
+  out: 'text-rose-500',
+  low: 'text-amber-500',
+  ok: 'text-emerald-500',
+}
+
+// ─────────────────────────────────────────────────────────────
+// Thưởng cho mỗi phiếu "Đánh giá học sinh mới" được admin duyệt.
+// Ghi vào collection `payroll` dạng type='adjustment' nên tự động
+// cộng vào bảng lương tháng và đi theo luồng "Đã thanh toán" sẵn có.
+// ─────────────────────────────────────────────────────────────
+export const EVALUATION_REWARD_AMOUNT = 25000
+export const EVALUATION_REWARD_CURRENCY = 'VND'

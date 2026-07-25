@@ -1,16 +1,25 @@
 // Avatar giáo viên kèm huy hiệu quốc kỳ tròn (giống app học tiếng Anh 1-1).
 // GV chưa có ảnh sẽ fallback chữ cái đầu trên nền gradient.
 
-const FLAG_EMOJI_MAP: Record<string, string> = {
-  VN: '🇻🇳',
-  PH: '🇵🇭',
-  US: '🇺🇸',
-  GB: '🇬🇧',
-  UK: '🇬🇧',
-  AU: '🇦🇺',
-  CA: '🇨🇦',
-  ZA: '🇿🇦',
-  IN: '🇮🇳',
+import auFlagUrl from 'flag-icons/flags/4x3/au.svg'
+import caFlagUrl from 'flag-icons/flags/4x3/ca.svg'
+import gbFlagUrl from 'flag-icons/flags/4x3/gb.svg'
+import inFlagUrl from 'flag-icons/flags/4x3/in.svg'
+import phFlagUrl from 'flag-icons/flags/4x3/ph.svg'
+import usFlagUrl from 'flag-icons/flags/4x3/us.svg'
+import vnFlagUrl from 'flag-icons/flags/4x3/vn.svg'
+import zaFlagUrl from 'flag-icons/flags/4x3/za.svg'
+
+const FLAG_IMAGE_MAP: Record<string, string> = {
+  VN: vnFlagUrl,
+  PH: phFlagUrl,
+  US: usFlagUrl,
+  GB: gbFlagUrl,
+  UK: gbFlagUrl,
+  AU: auFlagUrl,
+  CA: caFlagUrl,
+  ZA: zaFlagUrl,
+  IN: inFlagUrl,
 }
 
 const AVATAR_GRADIENTS = [
@@ -44,7 +53,7 @@ export function normalizeTeacherCountryCode(country?: string): string {
 
 export function TeacherAvatar({ name, photoURL, country, size = 48, className = '' }: TeacherAvatarProps) {
   const code = country ? normalizeTeacherCountryCode(country) : undefined
-  const flagEmoji = code ? FLAG_EMOJI_MAP[code] : undefined
+  const flagImageUrl = code ? FLAG_IMAGE_MAP[code] : undefined
   const initial = (name || '?').trim().charAt(0).toUpperCase()
   const flagSize = Math.max(14, Math.round(size * 0.38))
 
@@ -65,13 +74,18 @@ export function TeacherAvatar({ name, photoURL, country, size = 48, className = 
           {initial}
         </div>
       )}
-      {flagEmoji && (
+      {flagImageUrl && (
         <span
-          className="absolute flex items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200 select-none overflow-hidden leading-none"
-          style={{ width: flagSize, height: flagSize, bottom: -2, right: -2, fontSize: Math.max(10, Math.round(flagSize * 0.75)) }}
+          className="absolute overflow-hidden rounded-full bg-white shadow-[0_2px_7px_rgba(15,23,42,0.22)] ring-2 ring-white select-none"
+          style={{ width: flagSize, height: flagSize, bottom: -2, right: -2 }}
           aria-label={country}
         >
-          {flagEmoji}
+          <img
+            src={flagImageUrl}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full scale-[1.08] object-cover"
+          />
         </span>
       )}
     </div>

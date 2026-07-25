@@ -19,7 +19,7 @@ import { StatusBadge } from '@/components/ui/Badge'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { formatVND, getToday, MINUTE_PRESETS } from '@/lib/constants'
+import { formatVND, getToday, MINUTE_PRESETS, LOW_SESSION_THRESHOLD } from '@/lib/constants'
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
@@ -52,6 +52,9 @@ export function AttendancePage() {
   const [student, setStudent] = useState<Student | null>(null)
   const [searching, setSearching] = useState(false)
   const [notFound, setNotFound] = useState(false)
+  // Học viên tra ra nhưng bị CHẶN điểm danh (hết buổi / bảo lưu) — giữ lại trên màn hình
+  // để gia sư & giáo vụ nhìn thấy rõ lý do, không bị trôi mất như toast.
+  const [blockedStudent, setBlockedStudent] = useState<{ name: string; code: string; reason: 'expired' | 'reserved' } | null>(null)
   const [selectedMinutes, setSelectedMinutes] = useState<number>(50)
   const [images, setImages] = useState<{ url: string; storageURL: string; uploading: boolean }[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -83,6 +86,7 @@ export function AttendancePage() {
     setSearching(true)
     setNotFound(false)
     setStudent(null)
+    setBlockedStudent(null)
 
     try {
       const q = query(collection(db, 'students'), where('code', '==', code.trim().toUpperCase()))
@@ -92,7 +96,16 @@ export function AttendancePage() {
       } else {
         const s = { id: snap.docs[0].id, ...snap.docs[0].data() } as Student
         if (s.status === 'reserved') {
-          toast.error('Học viên này đang trong thời gian bảo lưu, không thể điểm danh!')
+          setBlockedStudent({ name: s.name, code: s.code, reason: 'reserved' })
+          setSearching(false)
+          return
+        }
+        // CHẶN CỨNG: học viên đã hết buổi thì không được điểm danh dưới bất kỳ hình thức nào.
+        const totalRemainingMinutes = s.subjects && s.subjects.length > 0
+          ? s.subjects.reduce((sum, sub) => sum + (sub.remainingMinutes || 0), 0)
+          : (s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)))
+        if (s.status === 'expired' || totalRemainingMinutes <= 0) {
+          setBlockedStudent({ name: s.name, code: s.code, reason: 'expired' })
           setSearching(false)
           return
         }
@@ -231,10 +244,36 @@ export function AttendancePage() {
         return
       }
 
-      const [tSnap, sSnap] = await Promise.all([
+      const [tSnap, sSnap, freshStudentSnap] = await Promise.all([
         getDoc(doc(db, 'teachers', teacherId)),
         getDoc(doc(db, 'subjects', selectedSubjectId)),
+        getDoc(doc(db, 'students', student.id)),
       ])
+
+      // CHỐT CHẶN CUỐI: đọc lại hồ sơ học viên MỚI NHẤT ngay trước khi ghi,
+      // phòng trường hợp quỹ buổi vừa bị dùng hết ở nơi khác trong lúc gia sư
+      // đang mở form. Hết buổi -> từ chối mọi hình thức điểm danh.
+      if (!freshStudentSnap.exists()) {
+        toast.error('Không tìm thấy hồ sơ học viên')
+        return
+      }
+      const freshStudent = freshStudentSnap.data() as Student
+      if (freshStudent.status === 'reserved') {
+        toast.error('Học viên đang bảo lưu — không thể điểm danh.')
+        return
+      }
+      const freshSubjects = freshStudent.subjects && freshStudent.subjects.length > 0
+        ? freshStudent.subjects
+        : []
+      const freshPkg = freshSubjects.find(s => s.subjectId === selectedSubjectId)
+      const freshRemaining = freshPkg
+        ? (freshPkg.remainingMinutes || 0)
+        : (freshStudent.remainingMinutes ?? ((freshStudent.remainingSessions || 0) * (freshStudent.minutesPerSession || 50)))
+      if (freshStudent.status === 'expired' || freshRemaining <= 0) {
+        toast.error('Học viên đã HẾT BUỔI ở môn này — không thể điểm danh. Vui lòng báo phụ huynh nạp thêm buổi.')
+        return
+      }
+
       const teacher = tSnap.data()!
       const subject = sSnap.data()
 
@@ -332,7 +371,7 @@ export function AttendancePage() {
             autoCorrect="off"
           />
           {code && (
-            <button onClick={() => { setCode(''); setStudent(null); setNotFound(false) }}
+            <button onClick={() => { setCode(''); setStudent(null); setNotFound(false); setBlockedStudent(null) }}
               className="p-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               aria-label="Clear">
               <X className="w-5 h-5" />
@@ -344,6 +383,37 @@ export function AttendancePage() {
           {t('attendance.search')}
         </Button>
       </Card>
+
+      {/* Note cố định: học viên tìm thấy nhưng KHÔNG được điểm danh */}
+      {blockedStudent && (
+        <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-bold text-rose-700">
+                {blockedStudent.reason === 'expired'
+                  ? 'Học viên đã HẾT BUỔI — không thể điểm danh'
+                  : 'Học viên đang BẢO LƯU — không thể điểm danh'}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-rose-800">
+                {blockedStudent.name} <span className="font-mono text-xs">({blockedStudent.code})</span>
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-rose-600 font-semibold">
+                {blockedStudent.reason === 'expired'
+                  ? 'Học viên không còn buổi trong gói nên hệ thống không cho ghi nhận buổi dạy dưới bất kỳ hình thức nào. Vui lòng báo giáo vụ / phụ huynh nạp thêm buổi rồi điểm danh lại.'
+                  : 'Học viên đang trong thời gian bảo lưu. Vui lòng liên hệ giáo vụ để mở lại trước khi điểm danh.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => { setCode(''); setBlockedStudent(null) }}
+                className="mt-3 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50"
+              >
+                Tra mã học viên khác
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {notFound && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-center">
@@ -421,7 +491,7 @@ export function AttendancePage() {
                 <div className="text-right">
                   <p className={`text-3xl font-bold ${
                     isOutOfMinutes ? 'text-rose-500' :
-                    remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
+                    remainingSessions <= LOW_SESSION_THRESHOLD ? 'text-amber-500' : 'text-emerald-500'
                   }`}>{remainingSessions}</p>
                   <p className="text-xs text-slate-500">buổi còn lại (25p)</p>
                   <p className={`text-[11px] mt-0.5 ${isOutOfMinutes ? 'text-rose-500' : 'text-slate-400'}`}>
@@ -452,18 +522,23 @@ export function AttendancePage() {
               )}
             </Card>
 
-            {isOutOfMinutes && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 flex items-start gap-3 animate-pulse">
+            {isOutOfMinutes ? (
+              <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-5 flex items-start gap-3">
                 <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-rose-700">Cảnh báo: Hết quỹ phút học môn này!</p>
+                  <p className="font-bold text-rose-700">Học viên đã HẾT BUỔI — không thể điểm danh</p>
                   <p className="text-xs text-rose-600 mt-1 leading-normal font-semibold">
-                    Môn học được chọn đã hết thời lượng khả dụng (Còn lại 0 buổi / 0 phút). Hãy báo học viên liên hệ trung tâm để nạp thêm buổi.
+                    Môn học được chọn còn 0 buổi / 0 phút. Hệ thống không cho phép ghi nhận buổi dạy dưới bất kỳ hình thức nào
+                    (có mặt, vắng có phép hay vắng không phép). Vui lòng báo phụ huynh liên hệ trung tâm nạp thêm buổi.
                   </p>
+                  {subjects.length > 1 && (
+                    <p className="text-xs text-rose-700 mt-2 font-bold">
+                      Học viên còn môn khác — hãy chọn lại môn học phía trên nếu bạn dạy môn đó.
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
-
+            ) : (
             <form onSubmit={handleSubmit(onSubmit, onSubmitInvalid)} className="space-y-4">
               <div>
                 <label htmlFor="attendance-date" className="block text-sm font-medium text-slate-600 mb-1.5">{t('attendance.date')}</label>
@@ -582,6 +657,7 @@ export function AttendancePage() {
                 {t('attendance.submit')}
               </Button>
             </form>
+            )}
           </>
         )
       })()}

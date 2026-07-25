@@ -30,6 +30,7 @@ import {
 } from 'recharts'
 import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { rewardMonthKey } from '@/lib/rewards'
+import { parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -179,14 +180,14 @@ export function ParentDashboardPage() {
       lessons={result.lessons}
       bookings={result.bookings}
       onBack={reset}
-      onBookingCancelled={(bookingId, heldMinutes) => setResult((current) => current ? {
+      onBookingCancelled={(bookingId, patch) => setResult((current) => current ? {
         ...current,
-        student: { ...current.student, reservedMinutes: heldMinutes, heldMinutes },
+        student: { ...current.student, ...patch },
         bookings: current.bookings.filter((booking) => booking.id !== bookingId),
       } : current)}
-      onBookingCreated={(booking, heldMinutes) => setResult((current) => current ? {
+      onBookingCreated={(booking, patch) => setResult((current) => current ? {
         ...current,
-        student: { ...current.student, reservedMinutes: heldMinutes, heldMinutes },
+        student: { ...current.student, ...patch },
         bookings: [...current.bookings, booking],
       } : current)}
     />
@@ -468,7 +469,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl bg-sky-50/70 p-3 ring-1 ring-sky-100">
-              <p className="text-[11px] font-black uppercase tracking-wide text-sky-700">{lang === 'vi' ? 'Ngoại ngữ' : 'Language certificates'}</p>
+              <p className="text-[11px] font-black uppercase tracking-wide text-sky-700">{lang === 'vi' ? 'Năng lực chuyên môn' : 'Professional qualifications'}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {foreignLanguageCertificates.map((certificate, index) => <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-sky-800 ring-1 ring-sky-100">{certificate.title}</span>)}
                 {foreignLanguageCertificates.length === 0 && <span className="text-xs font-medium text-slate-500">{lang === 'vi' ? 'Đang cập nhật' : 'Updating'}</span>}
@@ -1109,8 +1110,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   lessons: Lesson[]
   bookings: BookingRequest[]
   onBack: () => void
-  onBookingCancelled: (bookingId: string, heldMinutes: number) => void
-  onBookingCreated: (booking: BookingRequest, heldMinutes: number) => void
+  onBookingCancelled: (bookingId: string, patch: Partial<Student>) => void
+  onBookingCreated: (booking: BookingRequest, patch: Partial<Student>) => void
 }) {
   const { lang, setLang } = useLanguageStore()
   const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
@@ -1132,7 +1133,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const [cancellationRequests, setCancellationRequests] = useState<BookingCancellationRequest[]>([])
   const [cancelReason, setCancelReason] = useState('')
   const [submittingCancellation, setSubmittingCancellation] = useState(false)
-  const [cancellationDialog, setCancellationDialog] = useState<{ booking: BookingRequest; mode: 'confirm' | 'blocked' } | null>(null)
+  const [cancellationDialog, setCancellationDialog] = useState<{ booking: BookingRequest; mode: 'confirm' | 'blocked' | 'rebook' } | null>(null)
   const [profileAvatarId, setProfileAvatarId] = useState<Student['profileAvatarId']>(student.profileAvatarId)
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [leaderboard, setLeaderboard] = useState<StudentLeaderboardEntry[]>([])
@@ -1218,6 +1219,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const openCancellationDialog = (booking: BookingRequest) => {
     if (!['pending', 'confirmed'].includes(booking.status)) return
 
+    // Còn buổi đã huỷ chưa đặt lại → cảnh báo, không cho huỷ tiếp.
+    if (student.pendingRebookBookingId) {
+      setSelectedParentBooking(null)
+      setCancelReason('')
+      setCancellationDialog({ booking, mode: 'rebook' })
+      return
+    }
+
     const startsAt = bookingStartTime(booking)
     const mode = booking.status === 'pending'
       ? 'confirm'
@@ -1240,7 +1249,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     setSubmittingCancellation(true)
     try {
       const pendingRequest = cancellationRequests.find((item) => item.bookingId === booking.id && item.status === 'pending')
-      const nextHeld = await runTransaction(db, async (tx) => {
+      const nextPatch = await runTransaction(db, async (tx): Promise<Partial<Student>> => {
         const bookingRef = doc(db, 'bookingRequests', booking.id)
         const studentRef = doc(db, 'students', student.id)
         const [bookingSnap, studentSnap] = await Promise.all([tx.get(bookingRef), tx.get(studentRef)])
@@ -1252,6 +1261,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
         if (!['pending', 'confirmed'].includes(currentBooking.status) || currentBooking.lessonId) throw new Error('BOOKING_ALREADY_PROCESSED')
         if (currentBooking.studentId !== student.id || currentBooking.studentCode !== student.code) throw new Error('STUDENT_MISMATCH')
+        // Chặn huỷ liên tục ở server: còn nghĩa vụ đặt lại thì không cho huỷ buổi khác.
+        if (currentStudent.pendingRebookBookingId) throw new Error('REBOOK_REQUIRED')
 
         const currentStartsAt = bookingStartTime(currentBooking)
         if (currentBooking.status === 'confirmed' && (!currentStartsAt || currentStartsAt.getTime() - Date.now() < 60 * 60 * 1000)) throw new Error('CANCELLATION_WINDOW_CLOSED')
@@ -1260,26 +1271,25 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
         if (points <= 0) throw new Error('INVALID_HELD_POINTS')
         const wasHolding = currentBooking.status === 'confirmed' || currentBooking.heldImmediately === true
-        if (wasHolding && currentHeld < points) throw new Error('INVALID_HELD_POINTS')
-        const heldAfterCancellation = wasHolding ? currentHeld - points : currentHeld
+        if (!wasHolding || currentHeld < points) throw new Error('INVALID_HELD_POINTS')
 
-        if (wasHolding) {
-          tx.update(studentRef, {
-            reservedMinutes: heldAfterCancellation,
-            heldMinutes: heldAfterCancellation,
-            lastSelfCancellationBookingId: currentBooking.id,
-            updatedAt: serverTimestamp(),
-          })
-        }
+        // GIỮ nguyên kim cương đã đặt (reserved không đổi) và ghi nhận nghĩa vụ đặt lại.
         tx.update(bookingRef, {
           status: 'released',
           releasedAt: serverTimestamp(),
           releasedBy: `student:${student.code}`,
-          heldMinutesAfterRelease: heldAfterCancellation,
+          heldMinutesAfterRelease: currentHeld,
           selfServiceCancelled: true,
           cancellationPolicyMinutes: currentBooking.status === 'confirmed' ? 60 : 0,
           cancellationReason: cancelReason.trim(),
           cancelledMinutes: currentBooking.requestedMinutes,
+          pendingRebook: true,
+          rebookHoldPoints: points,
+        })
+        tx.update(studentRef, {
+          pendingRebookBookingId: currentBooking.id,
+          pendingRebookPoints: points,
+          updatedAt: serverTimestamp(),
         })
         if (pendingRequest) {
           tx.update(doc(db, 'bookingCancellationRequests', pendingRequest.id), {
@@ -1289,20 +1299,25 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           })
         }
 
-        return heldAfterCancellation
+        return { reservedMinutes: currentHeld, heldMinutes: currentHeld, pendingRebookBookingId: currentBooking.id, pendingRebookPoints: points }
       })
 
-      onBookingCancelled(booking.id, nextHeld)
-      toast.success(booking.status === 'pending'
-        ? (lang === 'vi' ? 'Đã hủy yêu cầu đặt lịch và giải phóng khung giờ.' : 'Pending booking cancelled and the time slot is available again.')
-        : (lang === 'vi' ? `Đã hủy buổi học và hoàn ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương về quỹ khả dụng.` : `Class cancelled. ${getBookingPoints(booking, teacherMap[booking.teacherId])} diamonds are available again.`))
+      onBookingCancelled(booking.id, nextPatch)
+      toast.info(lang === 'vi'
+        ? `Đã huỷ buổi học. Kim cương đang được giữ — hãy đặt lại một buổi mới để hoàn tất.`
+        : `Class cancelled. Your diamonds are held — please rebook a session to complete.`)
       setCancelReason('')
       setCancellationDialog(null)
+      setTab('booking')
     } catch (error) {
       console.error('Automatic cancellation failed:', error)
       const code = error instanceof Error ? error.message : ''
       if (code === 'CANCELLATION_WINDOW_CLOSED') {
         setCancellationDialog({ booking, mode: 'blocked' })
+      } else if (code === 'REBOOK_REQUIRED') {
+        toast.warning(lang === 'vi' ? 'Bạn cần đặt lại buổi đã huỷ trước khi huỷ buổi tiếp theo.' : 'Please rebook your cancelled session before cancelling another.')
+        setCancellationDialog(null)
+        setTab('booking')
       } else if (code === 'BOOKING_ALREADY_PROCESSED') {
         toast.info(lang === 'vi' ? 'Buổi học này đã được xử lý trước đó.' : 'This class was already processed.')
         setCancellationDialog(null)
@@ -1670,6 +1685,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       const bookingPayload: BookingRequest = {
         id: bookingRef.id,
         status: 'pending' as const,
+        teacherResponse: 'pending',
         teacherId: profileTeacherId,
         teacherCode: teacher.code || '',
         teacherName: teacher.name || teacher.code || 'Gia sư',
@@ -1694,37 +1710,57 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         note: '',
         createdAt,
       }
-      const nextHeld = await runTransaction(db, async (tx) => {
+      const { heldAfterRequest, patch } = await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', student.id)
         const studentSnap = await tx.get(studentRef)
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
-
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+
+        // Nếu đang có nghĩa vụ đặt lại: buổi mới này DÙNG LẠI kim cương đã giữ, chỉ trừ thêm phần chênh lệch.
+        const rebookId = currentStudent.pendingRebookBookingId || ''
+        let reusablePoints = 0
+        if (rebookId) {
+          const rebookSnap = await tx.get(doc(db, 'bookingRequests', rebookId))
+          if (!rebookSnap.exists()) throw new Error('REBOOK_TARGET_MISSING')
+          reusablePoints = Number((rebookSnap.data() as BookingRequest).rebookHoldPoints || 0)
+        }
+
         const currentFund = getStudentPackageMinuteSummary(currentStudent)
         const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
         const currentAvailable = Math.max(0, currentFund.remainingMinutes - currentHeld)
-        if (currentAvailable < profileBookingPoints) throw new Error('NOT_ENOUGH_POINTS')
+        const extraNeeded = Math.max(0, profileBookingPoints - reusablePoints)
+        if (currentAvailable < extraNeeded) throw new Error('NOT_ENOUGH_POINTS')
 
-        const heldAfterRequest = currentHeld + profileBookingPoints
+        const heldAfter = currentHeld + profileBookingPoints - reusablePoints
         tx.update(studentRef, {
-          reservedMinutes: heldAfterRequest,
-          heldMinutes: heldAfterRequest,
+          reservedMinutes: heldAfter,
+          heldMinutes: heldAfter,
           lastBookingHoldRequestId: bookingRef.id,
+          ...(rebookId ? { pendingRebookBookingId: '', pendingRebookPoints: 0 } : {}),
           updatedAt: serverTimestamp(),
         })
         tx.set(bookingRef, {
           ...bookingPayload,
-          heldMinutesAfterRequest: heldAfterRequest,
+          heldMinutesAfterRequest: heldAfter,
           createdAt: serverTimestamp(),
         })
-        return heldAfterRequest
+        if (rebookId) {
+          tx.update(doc(db, 'bookingRequests', rebookId), {
+            pendingRebook: false,
+            rebookedAt: serverTimestamp(),
+            rebookedByBookingId: bookingRef.id,
+          })
+        }
+        const nextPatch: Partial<Student> = { reservedMinutes: heldAfter, heldMinutes: heldAfter }
+        if (rebookId) { nextPatch.pendingRebookBookingId = ''; nextPatch.pendingRebookPoints = 0 }
+        return { heldAfterRequest: heldAfter, patch: nextPatch }
       })
-      const createdBooking = { ...bookingPayload, heldMinutesAfterRequest: nextHeld }
+      const createdBooking = { ...bookingPayload, heldMinutesAfterRequest: heldAfterRequest }
       setTeacherScheduleBookings((current) => ({
         ...current,
         [profileTeacherId]: [...(current[profileTeacherId] || []), createdBooking],
       }))
-      onBookingCreated(createdBooking, nextHeld)
+      onBookingCreated(createdBooking, patch)
       setProfileBookingSlot(null)
       toast.success(lang === 'vi' ? `Đã giữ ${profileBookingPoints} kim cương và gửi lịch cho gia sư xác nhận.` : `${profileBookingPoints} diamonds are now held and the teacher has been asked to confirm.`)
     } catch (error) {
@@ -1917,6 +1953,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             onOpenTeacherProfile={setProfileTeacherId}
             onCancelBooking={openCancellationDialog}
             cancellationRequests={cancellationRequests}
+            rebookRequired={Boolean(student.pendingRebookBookingId)}
             onOpenHistory={() => setTab('history')}
             lang={lang}
             onPickTeacher={() => setShowTeacherSuggestions(true)}
@@ -2020,15 +2057,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         <BottomSheet
           open
           size="md"
+          mobileHeight="compact"
           onClose={() => setProfileTeacherId(null)}
           title={lang === 'vi' ? 'Hồ sơ gia sư' : 'Teacher Profile'}
-          footer={
-            <div className="flex justify-end">
-              <Button variant="ghost" onClick={() => setProfileTeacherId(null)}>
-                {lang === 'vi' ? 'Đóng' : 'Close'}
-              </Button>
-            </div>
-          }
         >
           <TeacherProfileContent
             teacher={teacherMap[profileTeacherId]}
@@ -2248,6 +2279,34 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           ? (lang === 'vi' ? 'Lớp học 1 kèm 1' : '1-on-1 class')
           : booking.subjectName
         const isBlocked = cancellationDialog.mode === 'blocked'
+        if (cancellationDialog.mode === 'rebook') {
+          return (
+            <Modal open size="sm" onClose={() => setCancellationDialog(null)}>
+              <div className="space-y-5 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-100 text-red-600">
+                  <Info className="h-7 w-7" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Chưa thể huỷ buổi này' : 'Cannot cancel yet'}</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
+                    {lang === 'vi'
+                      ? 'Bạn còn 1 buổi đã huỷ nhưng chưa đặt lại. Hãy đặt lại buổi đó trước khi huỷ buổi tiếp theo.'
+                      : 'You still have a cancelled session that has not been rebooked. Please rebook it before cancelling another one.'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
+                  {lang === 'vi'
+                    ? 'Kim cương của buổi đã huỷ đang được GIỮ để dành cho buổi đặt lại — không bị mất.'
+                    : 'The diamonds from your cancelled session are being HELD for the rebooking — nothing is lost.'}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button variant="outline" onClick={() => setCancellationDialog(null)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>
+                  <Button className="bg-red-500 text-white hover:bg-red-600 focus:ring-red-300" onClick={() => { setCancellationDialog(null); setTab('booking'); setShowTeacherSuggestions(true) }}>{lang === 'vi' ? 'Đặt lại ngay' : 'Rebook now'}</Button>
+                </div>
+              </div>
+            </Modal>
+          )
+        }
         return (
           <Modal open size="sm" onClose={() => !submittingCancellation && setCancellationDialog(null)}>
             <div className="space-y-5">
@@ -2304,9 +2363,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                     />
                   </div>
                   <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs leading-5 text-rose-700">
-                    {booking.status === 'pending'
-                      ? (lang === 'vi' ? `Yêu cầu chờ xác nhận sẽ được hủy ngay, khung giờ được mở lại và ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương đang giữ được hoàn về quỹ khả dụng.` : `The pending request is cancelled immediately, the slot reopens, and ${getBookingPoints(booking, teacherMap[booking.teacherId])} held diamonds become available again.`)
-                      : (lang === 'vi' ? `Hệ thống sẽ hủy ngay và hoàn ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương đang giữ về quỹ khả dụng. Thao tác này không thể hoàn tác.` : `The class is cancelled immediately and ${getBookingPoints(booking, teacherMap[booking.teacherId])} held diamonds become available again. This cannot be undone.`)}
+                    {lang === 'vi'
+                      ? `Hệ thống sẽ huỷ ngay và ${getBookingPoints(booking, teacherMap[booking.teacherId])} kim cương sẽ được GIỮ để bạn đặt lại một buổi mới (không hoàn về quỹ khả dụng). Bạn cần đặt lại trước khi huỷ buổi khác.`
+                      : `The class is cancelled immediately and ${getBookingPoints(booking, teacherMap[booking.teacherId])} diamonds are HELD for you to rebook a new session (not returned to your available balance). You must rebook before cancelling another class.`}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <Button variant="outline" disabled={submittingCancellation} onClick={() => setCancellationDialog(null)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>
@@ -2324,15 +2383,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         <BottomSheet
           open
           size="md"
+          mobileHeight="compact"
           onClose={() => setDetailLesson(null)}
           title={lang === 'vi' ? 'Chi tiết buổi học' : 'Lesson Details'}
-          footer={
-            <div className="flex justify-end">
-              <Button variant="ghost" onClick={() => setDetailLesson(null)}>
-                {lang === 'vi' ? 'Đóng' : 'Close'}
-              </Button>
-            </div>
-          }
         >
           <div className="mx-auto w-full max-w-xl space-y-5">
             <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2386,12 +2439,15 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                   <MessageSquareText className="h-4 w-4" />
                   {lang === 'vi' ? 'Nhận xét của gia sư' : 'Teacher Feedback'}
                 </p>
-                {detailLesson.report ? (
+                {(() => {
+                  // Buổi cũ chỉ có chuỗi nhận xét -> đọc ngược thành 3 mục cho đồng nhất
+                  const detailReport = detailLesson.report || parseLegacyLessonReport(detailLesson.comment || '')
+                  return detailReport ? (
                   <div className="space-y-3">
                     {[
-                      { label: lang === 'vi' ? 'Kiến thức' : 'Knowledge', value: detailLesson.report.knowledgeComment, done: detailLesson.report.knowledgeDone, icon: Lightbulb },
-                      { label: lang === 'vi' ? 'Hoạt động trên lớp' : 'Class activities', value: detailLesson.report.gamesComment, done: detailLesson.report.gamesDone, icon: PlayCircle },
-                      { label: lang === 'vi' ? 'Bài tập trên lớp' : 'Class exercises', value: detailLesson.report.exercisesComment, done: detailLesson.report.exercisesDone, icon: ClipboardCheck },
+                      { label: lang === 'vi' ? 'Kiến thức bài học' : 'Lesson knowledge', value: detailReport.knowledgeComment, done: detailReport.knowledgeDone, icon: Lightbulb },
+                      { label: lang === 'vi' ? 'Trò chơi tương tác' : 'Interactive games', value: detailReport.gamesComment, done: detailReport.gamesDone, icon: PlayCircle },
+                      { label: lang === 'vi' ? 'Bài tập luyện tập' : 'Practice exercises', value: detailReport.exercisesComment, done: detailReport.exercisesDone, icon: ClipboardCheck },
                     ].map((row) => {
                       const RowIcon = row.icon
                       return (
@@ -2407,7 +2463,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                     <span className="absolute bottom-1 left-0 top-1 w-[3px] rounded-full bg-emerald-400" />
                     <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{cleanLegacyFeedback(detailLesson.comment || '')}</p>
                   </div>
-                )}
+                )
+                })()}
               </div>
             )}
 
@@ -3094,15 +3151,17 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
             const subjectPackage = subjectPackages.find((item) => item.subjectId === lesson.subjectId)
             const rawDocumentLink = subjectPackage?.curriculumLink || ''
             const documentLink = rawDocumentLink ? (rawDocumentLink.startsWith('http') ? rawDocumentLink : `https://${rawDocumentLink}`) : ''
-            const report = lesson.report
+            // Buổi cũ chưa có `report` -> đọc ngược từ chuỗi nhận xét để hiển thị
+            // giống hệt buổi mới (tránh cảnh mỗi ngày hiện một kiểu).
+            const report = lesson.report || parseLegacyLessonReport(lesson.comment || '')
             const legacyFeedback = report ? '' : cleanLegacyFeedback(lesson.comment || '')
             const hasRating = typeof lesson.rating === 'number' && lesson.rating > 0
             const submittedTeacherRating = teacherReviews[lesson.id] || 0
             const selectedTeacherRating = submittedTeacherRating || ratingDrafts[lesson.id] || 0
             const reportRows = report ? [
-              { label: lang === 'vi' ? 'Kiến thức' : 'Knowledge', value: report.knowledgeComment, done: report.knowledgeDone },
-              { label: lang === 'vi' ? 'Hoạt động trên lớp' : 'Class activities', value: report.gamesComment, done: report.gamesDone },
-              { label: lang === 'vi' ? 'Bài tập trên lớp' : 'Class exercises', value: report.exercisesComment, done: report.exercisesDone },
+              { label: lang === 'vi' ? 'Kiến thức bài học' : 'Lesson knowledge', value: report.knowledgeComment, done: report.knowledgeDone },
+              { label: lang === 'vi' ? 'Trò chơi tương tác' : 'Interactive games', value: report.gamesComment, done: report.gamesDone },
+              { label: lang === 'vi' ? 'Bài tập luyện tập' : 'Practice exercises', value: report.exercisesComment, done: report.exercisesDone },
             ] : []
 
             return (

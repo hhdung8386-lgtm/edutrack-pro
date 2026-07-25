@@ -11,10 +11,11 @@ import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar } from 'lucide-react'
+import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar, Star, CheckSquare } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatMoney, formatPricePerMinute } from '@/lib/constants'
+import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
+import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 
 function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
   const safeUsedMinutes = Math.max(0, usedMinutes)
@@ -103,6 +104,9 @@ export function StudentDetailPage() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
   const [reApproveSubjectId, setReApproveSubjectId] = useState<string>('')
   const [changingSubjectLessonId, setChangingSubjectLessonId] = useState<string | null>(null)
+  const [selectedHistoryLessonIds, setSelectedHistoryLessonIds] = useState<Set<string>>(new Set())
+  const [bulkSubjectId, setBulkSubjectId] = useState('')
+  const [bulkChangingSubject, setBulkChangingSubject] = useState(false)
   const [historyFilters, setHistoryFilters] = useState({
     date: '',
     teacher: '',
@@ -247,7 +251,10 @@ export function StudentDetailPage() {
     }
   }
 
-  const futureBookings = useMemo(() => {
+  // A booking in either pending or confirmed state is still holding the student's fund.
+  // Keep this total separate from the "future" list: overdue, unattended bookings must
+  // remain visible in the total so the held fund never appears to disappear.
+  const heldBookings = useMemo(() => {
     const list = bookingRequests.filter((b: BookingRequest) => !b.lessonId)
     return [...list].sort((a: BookingRequest, b: BookingRequest) => {
       const dateA = a.requestedDate || ''
@@ -256,6 +263,21 @@ export function StudentDetailPage() {
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
   }, [bookingRequests])
+
+  const todayISO = useMemo(
+    () => new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0],
+    [],
+  )
+
+  const upcomingHeldBookings = useMemo(
+    () => heldBookings.filter((booking) => (booking.requestedDate || '') >= todayISO),
+    [heldBookings, todayISO],
+  )
+
+  const overdueHeldBookings = useMemo(
+    () => heldBookings.filter((booking) => booking.requestedDate && booking.requestedDate < todayISO),
+    [heldBookings, todayISO],
+  )
 
   const handleCancelSpecificBookings = async (targetBookings: BookingRequest[]) => {
     if (targetBookings.length === 0 || !student || !id) return
@@ -1043,6 +1065,11 @@ export function StudentDetailPage() {
     ? Math.min(100, Math.round((usedMinutesFund / totalMinutesFund) * 100))
     : 0
   const displayPrimarySubject = activeSubjects.find((subject) => subject.remainingMinutes > 0) || activeSubjects[0] || null
+  const totalBookedMinutes = bookingRequests
+    .filter((booking) => !booking.lessonId)
+    .reduce((sum, booking) => sum + (booking.requestedMinutes || 0), 0)
+  const availableDiamondBalance = Math.max(0, actualRemainingMinutes - totalBookedMinutes)
+  const rewardStarBalance = Number(student.rewardPoints || 0)
   const reconciledStudent = {
     ...student,
     subjects: activeSubjects,
@@ -1058,12 +1085,12 @@ export function StudentDetailPage() {
     status: actualRemainingMinutes <= 0 ? 'expired' : student.status,
   }
 
-  const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string) => {
-    if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return
+  const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string, silent = false): Promise<boolean> => {
+    if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return false
     const nextSubject = activeSubjects.find((subject) => subject.subjectId === nextSubjectId)
     if (!nextSubject) {
-      toast.error('Môn học được chọn không hợp lệ')
-      return
+      if (!silent) toast.error('Môn học được chọn không hợp lệ')
+      return false
     }
 
     setChangingSubjectLessonId(lesson.id)
@@ -1071,8 +1098,8 @@ export function StudentDetailPage() {
       const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lesson.id)))
       const activePayrolls = payrollSnap.docs.filter((payrollDoc) => !payrollDoc.data().voided)
       if (activePayrolls.some((payrollDoc) => payrollDoc.data().paid === true)) {
-        toast.warning('Lương buổi này đã thanh toán, không thể đổi môn học')
-        return
+        if (!silent) toast.warning('Lương buổi này đã thanh toán, không thể đổi môn học')
+        return false
       }
 
       const teacherLevel = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
@@ -1196,10 +1223,12 @@ export function StudentDetailPage() {
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã đổi sang ${nextSubject.subjectName} và cập nhật lương ${salary.toLocaleString('vi-VN')}đ`)
+      if (!silent) toast.success(`Đã đổi sang ${nextSubject.subjectName} và cập nhật lương ${salary.toLocaleString('vi-VN')}đ`)
+      return true
     } catch (error) {
       console.error(error)
-      toast.error(error instanceof Error ? error.message : 'Không thể đổi môn học')
+      if (!silent) toast.error(error instanceof Error ? error.message : 'Không thể đổi môn học')
+      return false
     } finally {
       setChangingSubjectLessonId(null)
     }
@@ -1223,6 +1252,58 @@ export function StudentDetailPage() {
       && (historyFilters.status === 'all' || lesson.status === historyFilters.status)
       && (historyFilters.action === 'all' || actionType === historyFilters.action)
   })
+
+  const allFilteredHistorySelected = filteredHistoryLessons.length > 0
+    && filteredHistoryLessons.every((lesson) => selectedHistoryLessonIds.has(lesson.id))
+
+  const toggleHistoryLesson = (lessonId: string) => {
+    setSelectedHistoryLessonIds((current) => {
+      const next = new Set(current)
+      if (next.has(lessonId)) next.delete(lessonId)
+      else next.add(lessonId)
+      return next
+    })
+  }
+
+  const toggleAllFilteredHistoryLessons = () => {
+    setSelectedHistoryLessonIds((current) => {
+      const next = new Set(current)
+      if (allFilteredHistorySelected) filteredHistoryLessons.forEach((lesson) => next.delete(lesson.id))
+      else filteredHistoryLessons.forEach((lesson) => next.add(lesson.id))
+      return next
+    })
+  }
+
+  const handleBulkChangeLessonSubject = async () => {
+    if (!bulkSubjectId || selectedHistoryLessonIds.size === 0) return
+    const nextSubject = activeSubjects.find((subject) => subject.subjectId === bulkSubjectId)
+    if (!nextSubject) {
+      toast.error('Vui lòng chọn giáo trình hợp lệ')
+      return
+    }
+    const selectedLessons = lessons.filter((lesson) => selectedHistoryLessonIds.has(lesson.id) && lesson.subjectId !== bulkSubjectId)
+    if (selectedLessons.length === 0) {
+      toast.warning('Các buổi đã chọn đang thuộc giáo trình này')
+      return
+    }
+    if (!window.confirm(`Đổi giáo trình của ${selectedLessons.length} buổi sang “${nextSubject.subjectName}”? Các buổi đã thanh toán sẽ được giữ nguyên.`)) return
+
+    setBulkChangingSubject(true)
+    let changed = 0
+    let skipped = 0
+    try {
+      for (const lesson of selectedLessons) {
+        const didChange = await handleChangeLessonSubject(lesson, bulkSubjectId, true)
+        if (didChange) changed += 1
+        else skipped += 1
+      }
+      if (changed > 0) toast.success(`Đã đổi giáo trình cho ${changed} buổi`)
+      if (skipped > 0) toast.warning(`${skipped} buổi không thể đổi (đã thanh toán hoặc dữ liệu không hợp lệ)`)
+      setSelectedHistoryLessonIds(new Set())
+    } finally {
+      setBulkChangingSubject(false)
+    }
+  }
 
   const trackingUrl = `${window.location.origin}/tracking?student=${student.code}`
 
@@ -1275,6 +1356,16 @@ export function StudentDetailPage() {
                   </a>
                 </div>
               )}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <div className="inline-flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900">
+                <DiamondPointsIcon className="h-4 w-4" />
+                <span>{availableDiamondBalance.toLocaleString('vi-VN')} kim cương khả dụng</span>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
+                <span>{rewardStarBalance.toLocaleString('vi-VN')} sao hiện có</span>
+              </div>
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -1390,25 +1481,25 @@ export function StudentDetailPage() {
                       <div>
                         <p className="font-bold text-slate-700 text-[13px]">{totalSessions25}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Tổng buổi</p>
-                        <p className="text-[9px] text-slate-400 mt-1 leading-none">{pkg.totalMinutes}p</p>
+                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-sky-600"><DiamondPointsIcon className="h-3 w-3" />{pkg.totalMinutes}</p>
                       </div>
                       <div>
                         <p className="font-bold text-indigo-500 text-[13px]">{usedSessions25}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã học</p>
-                        <p className="text-[9px] text-indigo-400 mt-1 leading-none">{pkg.usedMinutes}p</p>
+                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-indigo-400"><DiamondPointsIcon className="h-3 w-3" />{pkg.usedMinutes}</p>
                       </div>
                       <div>
                         <p className="font-bold text-amber-600 text-[13px]">{bookedSessions25}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã đặt</p>
-                        <p className="text-[9px] text-amber-500 mt-1 leading-none">{bookedMinutes}p</p>
+                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-amber-500"><DiamondPointsIcon className="h-3 w-3" />{bookedMinutes}</p>
                       </div>
                       <div>
-                        <p className={`font-bold text-[13px] ${availableSessions25 <= 0 ? 'text-rose-500' : availableSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                        <p className={`font-bold text-[13px] ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>
                           {availableSessions25}
                         </p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Khả dụng</p>
-                        <p className={`text-[9px] mt-1 leading-none ${availableMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
-                          {availableMinutes}p
+                        <p className={`mt-1 inline-flex items-center gap-1 text-[9px] leading-none ${availableMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+                          <DiamondPointsIcon className="h-3 w-3" />{availableMinutes}
                         </p>
                       </div>
                     </div>
@@ -1588,7 +1679,8 @@ export function StudentDetailPage() {
             Lịch học đã đặt
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Học viên này hiện có <strong>{futureBookings.length} ca học</strong> đã được giữ chỗ (gồm lịch sắp học và lịch chưa điểm danh).
+            Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
+            {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
           </p>
         </div>
         <Button
@@ -1630,12 +1722,42 @@ export function StudentDetailPage() {
             ))}
           </div>
         </div>
+        {selectedHistoryLessonIds.size > 0 && (
+          <div className="flex flex-col gap-3 border-b border-brand-100 bg-brand-50 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold text-brand-900">
+              <CheckSquare className="h-4 w-4 text-brand-700" />
+              Đã chọn {selectedHistoryLessonIds.size} buổi học
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={bulkSubjectId}
+                onChange={(event) => setBulkSubjectId(event.target.value)}
+                className="h-10 min-w-[230px] rounded-xl border border-brand-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-300"
+                aria-label="Chọn giáo trình mới"
+              >
+                <option value="">Chọn giáo trình mới</option>
+                {activeSubjects.map((subject) => (
+                  <option key={subject.subjectId} value={subject.subjectId}>
+                    {subject.subjectName} · {formatPricePerMinute(subject.pricePerMinute, subject.currency)}
+                  </option>
+                ))}
+              </select>
+              <Button onClick={handleBulkChangeLessonSubject} loading={bulkChangingSubject} disabled={!bulkSubjectId} className="h-10 text-xs">
+                Đổi giáo trình
+              </Button>
+              <button type="button" onClick={() => setSelectedHistoryLessonIds(new Set())} className="h-10 rounded-xl px-2 text-xs font-bold text-slate-600 hover:bg-white">
+                Bỏ chọn
+              </button>
+            </div>
+          </div>
+        )}
         {lessons.length === 0 ? (
           <p className="text-center text-slate-500 text-sm py-8">Chưa có buổi học nào</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1450px] table-fixed text-sm">
               <colgroup>
+                <col className="w-[48px]" />
                 <col className="w-[120px]" />
                 <col className="w-[150px]" />
                 <col className="w-[230px]" />
@@ -1648,11 +1770,22 @@ export function StudentDetailPage() {
               </colgroup>
               <thead className="border-b border-slate-200">
                 <tr>
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredHistorySelected}
+                      ref={(element) => { if (element) element.indeterminate = !allFilteredHistorySelected && selectedHistoryLessonIds.size > 0 }}
+                      onChange={toggleAllFilteredHistoryLessons}
+                      aria-label="Chọn tất cả buổi học đang hiển thị"
+                      className="h-4 w-4 accent-brand-600"
+                    />
+                  </th>
                   {['Ngày', 'Giáo viên', 'Môn học', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
                     <th key={h} className="text-left px-3 py-3 text-xs font-bold text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
                 <tr className="bg-slate-50/80 align-top">
+                  <th className="px-2 pb-3" />
                   <th className="px-2 pb-3">
                     <input type="date" value={historyFilters.date} onChange={(event) => setHistoryFilters((current) => ({ ...current, date: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium outline-none focus:border-indigo-400" />
                   </th>
@@ -1708,6 +1841,15 @@ export function StudentDetailPage() {
               <tbody className="divide-y divide-slate-700/50">
                 {filteredHistoryLessons.map((lesson) => (
                     <tr key={lesson.id} className="hover:bg-slate-100/20 transition-colors">
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedHistoryLessonIds.has(lesson.id)}
+                          onChange={() => toggleHistoryLesson(lesson.id)}
+                          aria-label={`Chọn buổi ngày ${lesson.date}`}
+                          className="h-4 w-4 accent-brand-600"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{lesson.date}</td>
                       <td className="px-4 py-3 text-slate-600">
                         {lesson.teacherId ? (
@@ -1810,7 +1952,7 @@ export function StudentDetailPage() {
                   ))}
                 {filteredHistoryLessons.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
                       Không có buổi học phù hợp với bộ lọc.
                     </td>
                   </tr>

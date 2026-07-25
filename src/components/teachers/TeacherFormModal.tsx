@@ -9,15 +9,18 @@ import {
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
 import { generateUniqueEnglishName } from '@/lib/nameGenerator'
-import { Teacher, Subject, TeacherCertificate } from '@/types'
+import { Teacher, Subject, TeacherCertificate, TeacherDirectoryCategory } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { Upload, X, Eye, GraduationCap } from 'lucide-react'
+import { Upload, X, Eye, GraduationCap, MonitorUp, MapPin, TestTube2 } from 'lucide-react'
 import { formatVietnameseNumberInput } from '@/lib/countryPricing'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
+import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib/points'
+import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
 
 interface Branch {
   id: string
@@ -44,7 +47,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onClose: () => void }) {
+export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' }: { teacher?: Teacher; onClose: () => void; defaultCategory?: TeacherDirectoryCategory }) {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(teacher?.subjectIds || [])
@@ -109,8 +112,15 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [teachingYears, setTeachingYears] = useState<string>(teacher?.teachingYears ? String(teacher.teachingYears) : '')
   const [studentsTaughtCount, setStudentsTaughtCount] = useState<string>(teacher?.studentsTaughtCount ? String(teacher.studentsTaughtCount) : '')
   const [bookingPriority, setBookingPriority] = useState<string>(teacher?.bookingPriority ? String(teacher.bookingPriority) : '0')
+  const [studentPointsPer25, setStudentPointsPer25] = useState<string>(String(getTeacherPointsPer25Minutes(teacher)))
   const [studentAgesTaught, setStudentAgesTaught] = useState(teacher?.studentAgesTaught || '')
-  const [teachingFormats, setTeachingFormats] = useState<string[]>(teacher?.teachingFormats || [])
+  const [teachingFormats, setTeachingFormats] = useState<string[]>(() => {
+    const savedFormats = teacher?.teachingFormats || []
+    if (savedFormats.length > 0) return savedFormats
+    if (teacher?.isTester || defaultCategory === 'tester') return []
+    return [defaultCategory]
+  })
+  const [isTester, setIsTester] = useState(teacher?.isTester ?? defaultCategory === 'tester')
   const [studentResults, setStudentResults] = useState(teacher?.studentResults || '')
   const [strengths, setStrengths] = useState<string[]>(teacher?.strengths || [])
   const [otherStrengths, setOtherStrengths] = useState(teacher?.otherStrengths || '')
@@ -120,6 +130,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   const [generatedCode, setGeneratedCode] = useState('')
 
   const isEdit = !!teacher
+  const certificateCompliance = getTeacherCertificateCompliance({ certificates })
 
   // Upload ảnh chứng chỉ lên Firebase Storage (thay vì nhét base64 vào Firestore —
   // base64 vừa làm phình document (nguy cơ vượt 1MB) vừa không mở/xem được ở tab mới)
@@ -269,6 +280,11 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
   }
 
   const onSubmit = async (data: FormData) => {
+    if (teachingFormats.length === 0 && !isTester) {
+      toast.error('Vui lòng chọn ít nhất một nhóm: online, offline hoặc tester')
+      return
+    }
+
     const countryMap: Record<string, number> = {
       VN: 7,
       PH: 8,
@@ -279,6 +295,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       US_PST: -8,
     }
     const timezoneOffset = countryMap[data.country || 'VN'] ?? 7
+    const normalizedStudentPoints = normalizePointsPer25Minutes(studentPointsPer25)
 
     try {
       const finalName = data.name?.trim() || ''
@@ -399,6 +416,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           code: newUsername || teacher.code,
           name: finalName || teacher.name,
           level: data.level,
+          pointsPer25Minutes: normalizedStudentPoints,
           bio: data.bio || '',
           country: data.country || 'VN',
           timezoneOffset,
@@ -407,6 +425,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           subjectNames,
           branchId: selectedBranchId || '',
           branchName: branch?.name || '',
+          isTester,
           ...interviewData,
           photoURL,
           updatedAt: serverTimestamp(),
@@ -462,6 +481,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           code,
           name: finalName || 'Gia sư mới',
           level: data.level,
+          pointsPer25Minutes: normalizedStudentPoints,
           bio: data.bio || '',
           country: data.country || 'VN',
           timezoneOffset,
@@ -470,6 +490,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
           subjectNames,
           branchId: selectedBranchId || '',
           branchName: branch?.name || '',
+          isTester,
           ...interviewData,
           photoURL,
           status: 'active',
@@ -532,6 +553,47 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
       }
     >
       <form id="teacher-form" className="space-y-4">
+
+        <div className="rounded-xl border border-brand-200 bg-white p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sm:max-w-[260px]">
+              <h4 className="text-sm font-bold text-slate-900">Phân loại hồ sơ</h4>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Có thể chọn nhiều nhóm. Gia sư sẽ xuất hiện ở tất cả trang tương ứng.</p>
+            </div>
+            <div className="grid w-full grid-cols-1 gap-1 rounded-xl bg-slate-100 p-1 sm:w-auto sm:min-w-[430px] sm:grid-cols-3">
+              {([
+                { value: 'online', label: 'Gia sư online', icon: MonitorUp, checked: teachingFormats.includes('online') },
+                { value: 'offline', label: 'Gia sư offline', icon: MapPin, checked: teachingFormats.includes('offline') },
+                { value: 'tester', label: 'Gia sư tester', icon: TestTube2, checked: isTester },
+              ] as const).map((option) => {
+                const Icon = option.icon
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition active:scale-[0.98] ${option.checked ? 'bg-brand-400 text-slate-950 shadow-sm' : 'text-slate-600 hover:bg-white'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={option.checked}
+                      onChange={(event) => {
+                        if (option.value === 'tester') {
+                          setIsTester(event.target.checked)
+                          return
+                        }
+                        setTeachingFormats((current) => event.target.checked
+                          ? [...new Set([...current, option.value])]
+                          : current.filter((format) => format !== option.value))
+                      }}
+                      className="h-4 w-4 rounded border-slate-400 text-amber-500 focus:ring-amber-400"
+                    />
+                    <Icon className="h-4 w-4" />
+                    <span className="whitespace-nowrap">{option.label}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        </div>
 
         {/* Account & Gender section */}
         <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-4">
@@ -714,6 +776,27 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
         </div>
 
         <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+          <label htmlFor="student-points-per-25" className="block text-sm font-semibold text-slate-700">
+            Chi phí quỹ học viên (kim cương / 25 phút)
+          </label>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Chỉ dùng để trừ kim cương phía học viên. Thời lượng dạy và lương gia sư vẫn tính theo đúng 25/50 phút thực tế.
+          </p>
+          <div className="mt-3 flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-200">
+            <input
+              id="student-points-per-25"
+              type="number"
+              min="1"
+              step="1"
+              value={studentPointsPer25}
+              onChange={(event) => setStudentPointsPer25(event.target.value)}
+              className="w-full bg-transparent text-sm font-semibold text-slate-900 outline-none"
+            />
+            <span className="flex items-center gap-1 whitespace-nowrap text-sm font-bold text-sky-700"><DiamondPointsIcon className="h-4 w-4 text-violet-600" /> / 25 phút</span>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-4">
           <label htmlFor="booking-priority" className="block text-sm font-semibold text-slate-700">
             Thứ tự ưu tiên gợi ý đặt lịch
           </label>
@@ -842,6 +925,18 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
               <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">2. Chứng chỉ</h4>
               <span className="text-xs text-slate-500 font-medium">Tổng số: {certificates.length}</span>
             </div>
+
+            <div className={`rounded-xl border p-3 ${certificateCompliance.isCertificateComplete ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+              <p className="text-xs font-extrabold text-slate-800">Ảnh chứng chỉ bắt buộc</p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className={`rounded-lg bg-white px-3 py-2 text-xs font-bold ring-1 ${certificateCompliance.hasForeignLanguageImage ? 'text-emerald-700 ring-emerald-200' : 'text-rose-700 ring-rose-200'}`}>
+                  Năng lực chuyên môn: {certificateCompliance.hasForeignLanguageImage ? 'Đã có ảnh' : 'Chưa có ảnh'}
+                </div>
+                <div className={`rounded-lg bg-white px-3 py-2 text-xs font-bold ring-1 ${certificateCompliance.hasPedagogicalImage ? 'text-emerald-700 ring-emerald-200' : 'text-rose-700 ring-rose-200'}`}>
+                  Sư phạm: {certificateCompliance.hasPedagogicalImage ? 'Đã có ảnh' : 'Chưa có ảnh'}
+                </div>
+              </div>
+            </div>
             
             <div className="space-y-4">
               {certificates.map((cert, index) => (
@@ -863,7 +958,7 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                         onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, category: e.target.value as any } : c))}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       >
-                        <option value="foreign_language">Ngoại ngữ</option>
+                        <option value="foreign_language">Năng lực chuyên môn</option>
                         <option value="pedagogical">Sư phạm</option>
                         <option value="other">Khác</option>
                       </select>
@@ -1070,29 +1165,6 @@ export function TeacherFormModal({ teacher, onClose }: { teacher?: Teacher; onCl
                   onChange={e => setStudentAgesTaught(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-2">Hình thức dạy chính</label>
-              <div className="flex gap-4">
-                {['online', 'offline'].map(format => (
-                  <label key={format} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 cursor-pointer capitalize">
-                    <input
-                      type="checkbox"
-                      checked={teachingFormats.includes(format)}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          setTeachingFormats(prev => [...prev, format])
-                        } else {
-                          setTeachingFormats(prev => prev.filter(x => x !== format))
-                        }
-                      }}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                    />
-                    {format === 'online' ? 'Online' : 'Offline'}
-                  </label>
-                ))}
               </div>
             </div>
 

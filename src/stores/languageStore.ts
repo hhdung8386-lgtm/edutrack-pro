@@ -13,6 +13,7 @@ const translations: Record<string, Record<Lang, string>> = {
   // TeacherLayout
   'nav.attendance': { vi: 'Điểm danh', en: 'Attendance' },
   'nav.history': { vi: 'Lịch sử', en: 'History' },
+  'nav.booking_requests': { vi: 'Yêu cầu lớp', en: 'Requests' },
   'nav.contract': { vi: 'Hợp đồng', en: 'Contract' },
   'nav.availability': { vi: 'Lịch rảnh', en: 'Availability' },
   'nav.schedules': { vi: 'Lịch dạy của tôi', en: 'My Schedules' },
@@ -88,6 +89,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'report.err_knowledge': { vi: 'Vui lòng nhập nhận xét mục Điểm kiến thức', en: 'Please enter a comment for Knowledge Point' },
   'report.err_games': { vi: 'Vui lòng nhập nhận xét mục Trò chơi', en: 'Please enter a comment for Games' },
   'report.err_exercises': { vi: 'Vui lòng nhập nhận xét mục Bài tập trên lớp', en: 'Please enter a comment for In-class Exercises' },
+  'report.err_too_short': { vi: 'Nhận xét quá ngắn — vui lòng viết tối thiểu 30 ký tự cho 3 mục để phụ huynh nắm được buổi học', en: 'Feedback is too short — please write at least 30 characters across the 3 sections' },
   'report.err_homework': { vi: 'Vui lòng nhập nội dung Bài tập về nhà', en: 'Please enter the homework content' },
   'report.err_rating': { vi: 'Vui lòng chấm điểm buổi học (4 hoặc 5 sao)', en: 'Please rate the lesson (4 or 5 stars)' },
 
@@ -119,7 +121,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'profile.pending': { vi: 'Chờ duyệt', en: 'Pending' },
   'profile.delete_cert': { vi: 'Xóa bằng cấp', en: 'Delete certificate' },
   'profile.cert_category': { vi: 'Loại bằng cấp *', en: 'Category *' },
-  'profile.cert_lang': { vi: 'Ngoại ngữ (IELTS/TOEIC...)', en: 'Foreign Language (IELTS/TOEIC...)' },
+  'profile.cert_lang': { vi: 'Năng lực chuyên môn (IELTS/TOEIC...)', en: 'Professional competency (IELTS/TOEIC...)' },
   'profile.cert_pedagogical': { vi: 'Nghiệp vụ sư phạm', en: 'Pedagogical Certificate' },
   'profile.cert_other': { vi: 'Khác', en: 'Other' },
   'profile.cert_status': { vi: 'Trạng thái duyệt', en: 'Approval Status' },

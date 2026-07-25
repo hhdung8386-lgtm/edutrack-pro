@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, BarChart2, FileText, Bell, Gift } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, CalendarCheck2, CalendarRange, BarChart2, FileText, Bell, Gift, MonitorUp, MapPin, TestTube2, AlertCircle, Calculator } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -13,11 +13,17 @@ import { NotificationDrawer } from '../shared/NotificationDrawer'
 
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
+  '/admin/students/fixed': 'Học viên cố định',
+  '/admin/students/flexible': 'Học viên linh hoạt',
   '/admin/students': 'Học viên',
+  '/admin/teachers/online': 'Gia sư online',
+  '/admin/teachers/offline': 'Gia sư offline',
+  '/admin/teachers/tester': 'Gia sư tester',
   '/admin/teachers': 'Gia sư',
   '/admin/teacher-availability': 'Lịch gia sư',
   '/admin/booking-schedules': 'Lịch xếp lớp',
   '/admin/future-bookings': 'Lịch học đã đặt',
+  '/admin/overdue-bookings': 'Ca học quá hạn',
   '/admin/bookings': 'Yêu cầu gia sư',
   '/admin/subjects': 'Môn học',
   '/admin/evaluations': 'Đánh giá học viên',
@@ -56,7 +62,7 @@ export function AdminLayout() {
   const mobileNavItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     role === 'teacher_manager'
-      ? { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' }
+      ? { to: '/admin/teachers/online', icon: GraduationCap, label: 'Gia sư' }
       : { to: '/admin/students', icon: Users, label: 'Học viên' },
     { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
   ]
@@ -65,10 +71,16 @@ export function AdminLayout() {
   const mobileMenuItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/students', icon: Users, label: 'Học viên' },
-    { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' },
+    { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
+    { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
+    { to: '/admin/teachers/online', icon: MonitorUp, label: 'Gia sư online' },
+    { to: '/admin/teachers/offline', icon: MapPin, label: 'Gia sư offline' },
+    { to: '/admin/teachers/tester', icon: TestTube2, label: 'Gia sư tester' },
     { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
     { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
     { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
+    { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
+    { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },
     { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', bookingBadge: true },
     { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
     { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },

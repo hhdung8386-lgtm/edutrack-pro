@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
   LogOut, FileText, CalendarClock, CalendarDays,
-  ChevronLeft, ChevronRight, Bell, Gift
+  ChevronLeft, ChevronRight, Bell, Gift, MonitorUp, MapPin, TestTube2, CalendarCheck2, CalendarRange, AlertCircle, Calculator
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,11 +12,17 @@ import { Logo } from '@/components/shared/Logo'
 
 const navItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/students', icon: Users, label: 'Học viên' },
-  { to: '/admin/teachers', icon: GraduationCap, label: 'Gia sư' },
+  { to: '/admin/students', icon: Users, label: 'Học viên', end: true },
+  { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định', studentSubgroup: true },
+  { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt', studentSubgroup: true },
+  { to: '/admin/teachers/online', icon: MonitorUp, label: 'Gia sư online', groupLabel: 'Gia sư' },
+  { to: '/admin/teachers/offline', icon: MapPin, label: 'Gia sư offline' },
+  { to: '/admin/teachers/tester', icon: TestTube2, label: 'Gia sư tester' },
   { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
   { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
   { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
+  { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
+  { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },
   { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', bookingBadge: true },
   { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
   { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
@@ -77,44 +83,52 @@ export function AdminSidebar({
       {/* Navigation */}
       <nav className={`flex-1 py-4 overflow-y-auto space-y-1 transition-all ${isCollapsed ? 'px-2' : 'px-3'}`}>
         {filteredNavItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            title={isCollapsed ? item.label : undefined}
-            className={({ isActive }) =>
-              `flex items-center rounded-lg text-sm font-medium transition-all duration-150 group relative
-              ${isCollapsed ? 'justify-center p-2.5 mx-auto w-11 h-11' : 'gap-3 px-3 py-2.5 mx-1'}
-              ${isActive
-                ? 'bg-brand-100 text-brand-800 border border-brand-300'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-white'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand-700' : 'text-slate-500 group-hover:text-slate-600'}`} />
-                {!isCollapsed && <span className="flex-1">{item.label}</span>}
-                {isCollapsed ? (
-                  ((item.hasBadge && pendingCount > 0) || (item.bookingBadge && pendingBookingCount > 0)) && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full" />
-                  )
-                ) : (
-                  <>
-                    {item.hasBadge && pendingCount > 0 && (
-                      <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                        {pendingCount > 99 ? '99+' : pendingCount}
-                      </span>
-                    )}
-                    {item.bookingBadge && pendingBookingCount > 0 && (
-                      <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                        {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
-                      </span>
-                    )}
-                  </>
-                )}
-              </>
+          <div key={item.to}>
+            {!isCollapsed && item.groupLabel && (
+              <div className="mx-4 mb-1 mt-3 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
+                <GraduationCap className="h-3.5 w-3.5" />
+                {item.groupLabel}
+              </div>
             )}
-          </NavLink>
+            <NavLink
+              to={item.to}
+              end={item.end}
+              title={isCollapsed ? item.label : undefined}
+              className={({ isActive }) =>
+                `flex items-center rounded-lg text-sm font-medium transition-all duration-150 group relative
+                ${isCollapsed ? 'justify-center p-2.5 mx-auto w-11 h-11' : `gap-3 py-2.5 mx-1 ${item.to.startsWith('/admin/teachers/') || item.studentSubgroup ? 'pl-6 pr-3' : 'px-3'}`}
+                ${isActive
+                  ? 'bg-brand-100 text-brand-800 border border-brand-300'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-white'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-brand-700' : 'text-slate-500 group-hover:text-slate-600'}`} />
+                  {!isCollapsed && <span className="flex-1">{item.label}</span>}
+                  {isCollapsed ? (
+                    ((item.hasBadge && pendingCount > 0) || (item.bookingBadge && pendingBookingCount > 0)) && (
+                      <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full" />
+                    )
+                  ) : (
+                    <>
+                      {item.hasBadge && pendingCount > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                          {pendingCount > 99 ? '99+' : pendingCount}
+                        </span>
+                      )}
+                      {item.bookingBadge && pendingBookingCount > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                          {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </NavLink>
+          </div>
         ))}
       </nav>
 

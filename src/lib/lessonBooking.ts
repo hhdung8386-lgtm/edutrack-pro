@@ -2,8 +2,18 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import { db } from '@/lib/firebase'
 import { BookingRequest } from '@/types'
 
+/**
+ * Số phút mà một ca đặt lịch ĐANG THỰC SỰ giữ của học viên.
+ *
+ * QUAN TRỌNG: ca đã 'released'/'rejected' thì hold đã được trả lại trước đó rồi.
+ * Nếu vẫn trả về số phút, luồng duyệt buổi dạy sẽ trừ hold LẦN THỨ HAI và ăn nhầm
+ * vào phần đang giữ của các ca khác. (resolveLessonBooking có thể khớp trúng ca đã
+ * huỷ vì nó tìm theo học viên + gia sư + ngày.)
+ */
 export function bookingHoldMinutes(booking: BookingRequest | null | undefined): number {
   if (!booking) return 0
+  const isHolding = booking.status === 'confirmed' || booking.status === 'pending'
+  if (!isHolding) return 0
   return Number(booking.requestedMinutes) || 0
 }
 

@@ -14,8 +14,11 @@ import { useAuthStore } from '@/stores/authStore'
 import { SystemNotification, Teacher, Student } from '@/types'
 import {
   Bell, Calendar, ClipboardList, ShieldAlert, Clock, MessageSquare,
-  Plus, Trash2, Users, Search, Check, Send, AlertTriangle, UserCheck
+  Plus, Trash2, Users, Search, Check, Send, AlertTriangle, UserCheck, FileWarning
 } from 'lucide-react'
+import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
+
+type TeacherProfileFilter = 'all' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile' | 'certificate_complete'
 
 const COLORS = [
   { key: 'indigo', bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', fill: 'bg-indigo-600', text: 'text-indigo-600' },
@@ -60,6 +63,7 @@ export function NotificationsPage() {
   const [managers, setManagers] = useState<any[]>([])
   const [loadingTargets, setLoadingTargets] = useState(false)
   const [targetSearch, setTargetSearch] = useState('')
+  const [teacherProfileFilter, setTeacherProfileFilter] = useState<TeacherProfileFilter>('all')
 
   // Load notification history
   useEffect(() => {
@@ -109,7 +113,12 @@ export function NotificationsPage() {
   useEffect(() => {
     setSelectedIds([])
     setTargetSearch('')
+    if (targetType !== 'teachers' || scope === 'all') setTeacherProfileFilter('all')
   }, [targetType, scope])
+
+  useEffect(() => {
+    setSelectedIds([])
+  }, [teacherProfileFilter])
 
   const handleToggleSelectId = (id: string) => {
     setSelectedIds(prev =>
@@ -175,6 +184,19 @@ export function NotificationsPage() {
     }
   }
 
+  const openMissingProfileReminder = () => {
+    setTitle('Bổ sung ảnh chứng chỉ bắt buộc')
+    setContent('Hồ sơ của Thầy/Cô hiện còn thiếu ảnh chứng chỉ Năng lực chuyên môn hoặc chứng chỉ Sư phạm. Vui lòng cập nhật đầy đủ hai loại chứng chỉ trong mục Hồ sơ để Trung tâm kiểm tra và bổ sung.')
+    setSelectedColor('amber')
+    setSelectedIcon('ClipboardList')
+    setTargetType('teachers')
+    setScope('specific')
+    setTeacherProfileFilter('missing_certificate')
+    setSelectedIds([])
+    setTargetSearch('')
+    setShowComposeModal(true)
+  }
+
   const handleDelete = async () => {
     if (!deleteNotify) return
     setDeleting(true)
@@ -194,7 +216,18 @@ export function NotificationsPage() {
   const getFilteredTargets = () => {
     const queryStr = targetSearch.trim().toLowerCase()
     if (targetType === 'teachers') {
-      return teachers.filter(t => t.name.toLowerCase().includes(queryStr) || t.code.toLowerCase().includes(queryStr))
+      return teachers.filter((teacher) => {
+        const matchSearch = teacher.name.toLowerCase().includes(queryStr) || teacher.code.toLowerCase().includes(queryStr)
+        const compliance = getTeacherCertificateCompliance(teacher)
+        const matchProfile = teacherProfileFilter === 'all'
+          || (teacherProfileFilter === 'missing_certificate' && !compliance.isCertificateComplete)
+          || (teacherProfileFilter === 'missing_foreign_language' && !compliance.hasForeignLanguageImage)
+          || (teacherProfileFilter === 'missing_pedagogical' && !compliance.hasPedagogicalImage)
+          || (teacherProfileFilter === 'missing_both' && !compliance.hasForeignLanguageImage && !compliance.hasPedagogicalImage)
+          || (teacherProfileFilter === 'missing_basic_profile' && missingTeacherFields(teacher).length > 0)
+          || (teacherProfileFilter === 'certificate_complete' && compliance.isCertificateComplete)
+        return matchSearch && matchProfile
+      })
     }
     if (targetType === 'students') {
       return students.filter(s => s.name.toLowerCase().includes(queryStr) || s.code.toLowerCase().includes(queryStr))
@@ -222,10 +255,16 @@ export function NotificationsPage() {
               <p className="mt-1 text-sm text-indigo-100">Gửi thông báo, nhắc lịch dạy học đến giáo viên, học viên hoặc quản lý.</p>
             </div>
           </div>
-          <Button onClick={() => setShowComposeModal(true)} variant="secondary" size="md" className="shrink-0 bg-white text-indigo-700 hover:bg-indigo-50 shadow-sm border-0 font-bold">
-            <Plus className="w-4 h-4 mr-1.5" />
-            Soạn thông báo
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button onClick={openMissingProfileReminder} size="md" className="w-full shrink-0 border-0 bg-brand-400 font-bold text-slate-950 shadow-sm hover:bg-brand-500 sm:w-auto">
+              <FileWarning className="w-4 h-4 mr-1.5" />
+              Nhắc bổ sung hồ sơ
+            </Button>
+            <Button onClick={() => setShowComposeModal(true)} variant="secondary" size="md" className="w-full shrink-0 bg-white text-indigo-700 hover:bg-indigo-50 shadow-sm border-0 font-bold sm:w-auto">
+              <Plus className="w-4 h-4 mr-1.5" />
+              Soạn thông báo
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -432,6 +471,27 @@ export function NotificationsPage() {
             {/* Specific targets checklist selection */}
             {scope === 'specific' && (
               <div className="space-y-2 border-t border-slate-100 pt-3">
+                {targetType === 'teachers' && (
+                  <div className="rounded-xl border border-brand-200 bg-brand-50 p-3">
+                    <label htmlFor="teacher-profile-filter" className="block text-xs font-extrabold text-slate-700">Lọc theo tình trạng hồ sơ</label>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">Chỉ chứng chỉ có ảnh đính kèm mới được tính là đã bổ sung.</p>
+                    <select
+                      id="teacher-profile-filter"
+                      value={teacherProfileFilter}
+                      onChange={(event) => setTeacherProfileFilter(event.target.value as TeacherProfileFilter)}
+                      className="mt-2 min-h-10 w-full rounded-lg border border-brand-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+                    >
+                      <option value="all">Tất cả gia sư</option>
+                      <option value="missing_certificate">Thiếu ít nhất 1 ảnh chứng chỉ</option>
+                      <option value="missing_foreign_language">Thiếu ảnh chứng chỉ Năng lực chuyên môn</option>
+                      <option value="missing_pedagogical">Thiếu ảnh chứng chỉ Sư phạm</option>
+                      <option value="missing_both">Thiếu cả 2 ảnh chứng chỉ</option>
+                      <option value="missing_basic_profile">Thiếu thông tin hồ sơ cơ bản</option>
+                      <option value="certificate_complete">Đã đủ 2 ảnh chứng chỉ</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <label className="block text-xs font-bold text-slate-500 uppercase">
                     Chọn người nhận ({selectedIds.length} đã chọn)
@@ -471,6 +531,7 @@ export function NotificationsPage() {
                       const name = item.name || item.username || item.email
                       const subText = item.code || item.email || ''
                       const isSelected = selectedIds.includes(id)
+                      const teacherCompliance = targetType === 'teachers' ? getTeacherCertificateCompliance(item as Teacher) : null
                       
                       return (
                         <button
@@ -487,6 +548,13 @@ export function NotificationsPage() {
                             <p className="text-xs font-bold truncate">{name}</p>
                             {subText && subText !== name && (
                               <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{subText}</p>
+                            )}
+                            {teacherCompliance && (
+                              <p className={`mt-1 text-[10px] font-bold ${teacherCompliance.isCertificateComplete ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {teacherCompliance.isCertificateComplete
+                                  ? 'Đã đủ ảnh Năng lực chuyên môn và Sư phạm'
+                                  : `Thiếu ảnh: ${teacherCompliance.missingCertificateLabels.join(', ')}`}
+                              </p>
                             )}
                           </div>
                           <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-all ${

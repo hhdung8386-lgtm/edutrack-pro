@@ -47,6 +47,8 @@ export interface Student {
   subjectName?: string
   branchId?: string
   branchName?: string
+  /** Nhóm vận hành do admin phân loại thủ công; hồ sơ cũ không có field này được hiểu là chưa phân loại. */
+  learningScheduleType?: 'unclassified' | 'fixed' | 'flexible'
   totalSessions: number
   usedSessions: number
   remainingSessions: number
@@ -56,6 +58,10 @@ export interface Student {
   remainingMinutes?: number
   reservedMinutes?: number
   heldMinutes?: number
+  /** Buổi học viên tự huỷ đang chờ đặt lại. Còn giá trị = học viên chưa được huỷ buổi tiếp theo. */
+  pendingRebookBookingId?: string
+  /** Số kim cương đang bị giữ cho nghĩa vụ đặt lại (dùng lại khi đặt buổi mới, không trừ thêm). */
+  pendingRebookPoints?: number
   status: 'active' | 'inactive' | 'expired' | 'reserved'
   subjects?: StudentSubject[]
   classroomURL?: string
@@ -127,6 +133,8 @@ export interface Teacher {
   youtubeLink?: string
   createdAt: Timestamp
 }
+
+export type TeacherDirectoryCategory = 'online' | 'offline' | 'tester'
 
 export interface TeacherCertificate {
   category: 'foreign_language' | 'pedagogical' | 'other'
@@ -201,6 +209,8 @@ export interface Lesson {
   approvedAt?: Timestamp
   approvedBy?: string
   bookingRequestId?: string
+  /** Đã nhả phần phút giữ chỗ của ca đặt lịch tương ứng hay chưa (chống nhả 2 lần). */
+  bookingHoldConsumed?: boolean
   createdAt: Timestamp
   updatedAt: Timestamp
   currency?: string
@@ -267,6 +277,17 @@ export interface BookingRequest {
   requestedPoints?: number
   pointsPer25Minutes?: number
   teacherConfirmationDeadlineAt?: Timestamp
+  /** Phản hồi trực tiếp của gia sư trước khi học vụ xử lý yêu cầu. */
+  teacherResponse?: 'pending' | 'accepted' | 'declined'
+  teacherRespondedAt?: Timestamp
+  teacherRespondedBy?: string
+  /** Buổi bị học viên tự huỷ nhưng kim cương vẫn được GIỮ, chờ đặt lại (không hoàn về khả dụng). */
+  pendingRebook?: boolean
+  /** Số kim cương đang giữ cho nghĩa vụ đặt lại của buổi này. */
+  rebookHoldPoints?: number
+  /** Đã hoàn thành nghĩa vụ: đặt lại bằng buổi mới nào. */
+  rebookedAt?: Timestamp
+  rebookedByBookingId?: string
 }
 
 export interface AdminLog {
@@ -346,15 +367,20 @@ export interface BookingCancellationRequest {
   resolvedBy?: string
 }
 
+export type RewardCategory = 'all' | 'study' | 'stationery' | 'supplies' | 'card' | 'other'
+
 export interface RewardGift {
   id: string
   name: string
+  category: Exclude<RewardCategory, 'all'>
   points: number
   imageURL?: string
   description?: string
   status: 'active' | 'inactive'
   featured?: boolean
-  stock?: number
+  stock: number
+  createdAt?: Timestamp
+  updatedAt?: Timestamp
 }
 
 export interface RewardRedemption {
@@ -369,21 +395,25 @@ export interface RewardRedemption {
   status: 'pending' | 'approved' | 'fulfilled' | 'rejected' | 'shipped' | 'delivered' | 'cancelled'
   shippingAddress?: string
   notes?: string
+  note?: string
+  reviewedAt?: Timestamp
+  reviewedBy?: string
 }
 
 export interface PaymentSettings {
   bankName: string
-  bankAccountNo: string
-  bankAccountName: string
+  accountName: string
+  accountNumber: string
+  qrImageURL: string
+  bankAccountNo?: string
+  bankAccountName?: string
   qrTemplate?: string
   contactPhone?: string
   contactZalo?: string
   guideVideoUrl?: string
   transferPrefix?: string
-  qrImageURL?: string
-  accountName?: string
-  accountNumber?: string
   supportNote?: string
+  updatedAt?: Timestamp
 }
 
 export interface TopUpPackage {
@@ -396,8 +426,12 @@ export interface TopUpPackage {
   totalMinutes: number
   status: 'active' | 'inactive'
   featured?: boolean
-  subjectId?: string
-  subjectName?: string
+  subjectId: string
+  subjectName: string
+  validityDays?: number
+  description?: string
+  createdAt?: Timestamp
+  updatedAt?: Timestamp
 }
 
 export interface TopUpRequest {
@@ -407,10 +441,16 @@ export interface TopUpRequest {
   studentName: string
   packageId: string
   packageName: string
+  subjectId: string
+  subjectName: string
   price: number
   currency: string
   totalMinutes: number
-  createdAt: Timestamp
+  sessions: number
+  transferContent: string
+  createdAt?: Timestamp
   status: 'pending' | 'approved' | 'rejected'
   rejectedReason?: string
+  reviewedAt?: Timestamp
+  reviewedBy?: string
 }

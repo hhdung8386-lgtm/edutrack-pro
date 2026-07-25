@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
+import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -317,10 +319,13 @@ export function BookingSchedulesPage() {
       return
     }
 
+    // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) vì một số booking cũ có
+    // requestedWeekStart sai lệch với requestedDate → nếu lọc theo weekStart sẽ bị bỏ sót,
+    // ca đã đặt không hiện trong bảng lịch dù vẫn nằm trong "Lịch đã đặt". findBookingForCell
+    // đối chiếu theo requestedDate nên vẫn hiển thị đúng ô/ngày.
     const q = query(
       collection(db, 'bookingRequests'),
-      where('teacherId', '==', selectedTeacherId),
-      where('requestedWeekStart', '==', weekStartISO)
+      where('teacherId', '==', selectedTeacherId)
     )
 
     const unsub = onSnapshot(q, (snap) => {
@@ -331,7 +336,7 @@ export function BookingSchedulesPage() {
     })
 
     return unsub
-  }, [selectedTeacherId, weekStartISO])
+  }, [selectedTeacherId])
 
   // Fetch selected student's active booking requests for subject-specific available minutes calculation
   useEffect(() => {
@@ -611,7 +616,7 @@ export function BookingSchedulesPage() {
       .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
     const availableSubjectMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSubject)
     if (!isRecurring && availableSubjectMinutes < totalRequired) {
-      toast.error('Học viên không đủ phút khả dụng cho môn học này để xếp lịch!')
+      toast.error('Học viên không đủ kim cương khả dụng cho môn học này để xếp lịch!')
       return
     }
 
@@ -1604,29 +1609,48 @@ export function BookingSchedulesPage() {
 
                   const totalRequired = selectedSlots.length * duration
                   const isEnough = availableForSubject >= totalRequired
+                  // Kim cương phải tính theo đơn giá của chính gia sư đang xếp lịch
+                  // (gia sư khác nhau có thể tốn số kim cương khác nhau cho cùng 1 buổi).
+                  const requiredPoints = selectedSlots.length * calculateLessonPoints(
+                    duration,
+                    getTeacherPointsPer25Minutes(teachers.find((t) => t.id === selectedTeacherId))
+                  )
                   const subjectFutureBookings = selectedStudentBookings
                     .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
                     .sort((a, b) => (a.requestedDate || '').localeCompare(b.requestedDate || ''))
 
                   return (
-                    <div className="flex items-center justify-between text-xs border-t border-slate-200/50 pt-2 flex-wrap gap-2">
-                      <div>
-                        <span className="text-slate-500 font-semibold">Khả dụng: </span>
-                        <span className={`font-bold ${isEnough ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {availableForSubject} phút
-                        </span>
+                    <div className="text-xs border-t border-slate-200/50 pt-2 space-y-2">
+                      {/* Admin xem đủ 3 đơn vị: buổi / kim cương / phút.
+                          (Học viên nhìn theo kim cương, gia sư check-in theo phút.) */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Khả dụng</p>
+                          <p className={`mt-0.5 font-bold ${isEnough ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {Math.floor(availableForSubject / 25)} buổi
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600">
+                            <DiamondPointsIcon className="h-3 w-3" />{availableForSubject} kim cương
+                          </p>
+                          <p className="text-[11px] font-semibold text-slate-500">{availableForSubject} phút</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Yêu cầu</p>
+                          <p className="mt-0.5 font-bold text-slate-800">
+                            {Math.round((totalRequired / 25) * 10) / 10} buổi
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600">
+                            <DiamondPointsIcon className="h-3 w-3" />{requiredPoints} kim cương
+                          </p>
+                          <p className="text-[11px] font-semibold text-slate-500">{totalRequired} phút</p>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-slate-500 font-semibold">Yêu cầu: </span>
-                        <span className="font-bold text-slate-800">
-                          {totalRequired} phút
-                        </span>
-                      </div>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                       {!isEnough && (
                         <div className="w-full space-y-1 mt-1 bg-rose-50 p-2.5 rounded-lg border border-rose-100 text-rose-500 font-medium">
                           <div className="flex items-center gap-1.5 font-bold">
                             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span>Học viên không đủ phút khả dụng để xếp lịch!</span>
+                            <span>Học viên không đủ kim cương khả dụng để xếp lịch!</span>
                           </div>
                           {bookedMinutesForSubject > 0 && (
                             <>
@@ -1648,6 +1672,7 @@ export function BookingSchedulesPage() {
                           )}
                         </div>
                       )}
+                      </div>
                     </div>
                   )
                 })()}

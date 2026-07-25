@@ -20,6 +20,7 @@ export function TopUpTab({ student, lang }: { student: Student; lang: string }) 
   const [packagesLoading, setPackagesLoading] = useState(true)
   const [copyingQr, setCopyingQr] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showPayment, setShowPayment] = useState(false)
 
   useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snap) => {
     setSettings(snap.exists() ? snap.data() as PaymentSettings : null)
@@ -126,117 +127,143 @@ export function TopUpTab({ student, lang }: { student: Student; lang: string }) 
     } finally { setSubmitting(false) }
   }
 
+  const sessions25 = (totalMin: number) => Math.round(totalMin / 25)
+
   return (
     <div className="space-y-5 pb-4">
-      <section>
-        <div className="flex items-start justify-between gap-3 px-1">
-          <div>
-            <h2 className="text-xl font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Ví học' : 'Learning wallet'}</h2>
-            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{lang === 'vi' ? 'Quản lý quỹ kim cương, sao và các ưu đãi của bạn.' : 'Manage your diamond balance, stars and benefits.'}</p>
+      {/* Hero: kim cương khả dụng + nút Nạp kim cương */}
+      <section className="relative overflow-hidden rounded-[26px] border border-sky-100 bg-gradient-to-br from-[#f4faff] via-white to-[#eaf6ff] p-5 shadow-[0_20px_45px_-34px_rgba(2,132,199,0.65)]">
+        <div className="relative z-10 max-w-[62%]">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+            {lang === 'vi' ? 'Kim cương khả dụng' : 'Available diamonds'}
+          </p>
+          <div className="mt-1 flex items-end gap-2">
+            <strong className="text-5xl font-black leading-none tracking-[-0.05em] tabular-nums text-sky-600">{availableMinutes.toLocaleString('vi-VN')}</strong>
+            <DiamondPointsIcon className="mb-1 h-6 w-6" />
           </div>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Kim cương' : 'Diamonds'}</p>
           <button
             type="button"
-            onClick={() => setShowHistory(true)}
-            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-sky-100 bg-white px-3 text-[11px] font-extrabold text-sky-700 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.98]"
+            onClick={() => setShowPayment(true)}
+            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-gradient-to-b from-brand-400 to-brand-500 px-5 text-sm font-black text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
           >
-            <History className="h-4 w-4" />
-            {lang === 'vi' ? 'Lịch sử giao dịch' : 'Transaction history'}
-            <ChevronRight className="h-3.5 w-3.5" />
+            + {lang === 'vi' ? 'Nạp kim cương' : 'Top up diamonds'}
           </button>
         </div>
-
-        <div className="mt-4 rounded-[26px] border border-sky-100 bg-gradient-to-br from-[#f3f8ff] via-white to-[#eef8ff] p-4 shadow-[0_20px_45px_-34px_rgba(2,132,199,0.65)] sm:p-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-              <WalletCards className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-sm font-bold text-slate-700">{lang === 'vi' ? 'Kim cương trong gói' : 'Diamonds in your package'}</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{lang === 'vi' ? 'Cập nhật theo dữ liệu học và lịch đã đặt' : 'Updated from lessons and reserved classes'}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid items-end gap-4 sm:grid-cols-[auto_1fr]">
-            <div>
-              <div className="flex items-end gap-2">
-                <strong className="text-4xl font-black leading-none tracking-[-0.05em] tabular-nums text-slate-950 sm:text-5xl">{availableMinutes.toLocaleString('vi-VN')}</strong>
-                <DiamondPointsIcon className="mb-0.5 h-5 w-5 text-violet-600" />
-              </div>
-              <p className="mt-2 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Kim cương còn lại' : 'Available diamonds'}</p>
-            </div>
-            <div className="pb-1">
-              <div className="flex justify-end">
-                <span className="rounded-xl bg-white px-3 py-1.5 text-xs font-black tabular-nums text-sky-700 ring-1 ring-sky-100">{usedPercent}% {lang === 'vi' ? 'hoàn thành' : 'completed'}</span>
-              </div>
-              <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-200/80" aria-label={lang === 'vi' ? 'Tiến độ sử dụng kim cương' : 'Diamond balance progress'}>
-                <span className="h-full bg-sky-600" style={{ width: `${usedPercent}%` }} />
-                <span className="h-full bg-amber-400" style={{ width: `${heldPercent}%` }} />
-                <span className="h-full bg-emerald-400" style={{ width: `${availablePercent}%` }} />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 rounded-2xl bg-white px-2 py-4 ring-1 ring-slate-200/80">
-            <WalletMetric value={usedMinutes} label={lang === 'vi' ? 'Đã học' : 'Completed'} color="text-sky-700" lang={lang} />
-            <WalletMetric value={heldMinutes} label={lang === 'vi' ? 'Đã đặt' : 'Reserved'} color="text-amber-600" lang={lang} />
-            <WalletMetric value={totalMinutes} label={lang === 'vi' ? 'Tổng' : 'Total'} color="text-emerald-600" lang={lang} />
-          </div>
+        {/* Trang trí cụm kim cương xanh (thay ảnh mascot) */}
+        <div className="pointer-events-none absolute -right-4 -top-2 z-0 opacity-90">
+          <DiamondPointsIcon className="absolute right-16 top-6 h-8 w-8 rotate-6" />
+          <DiamondPointsIcon className="absolute right-4 top-2 h-16 w-16 -rotate-6" />
+          <DiamondPointsIcon className="absolute right-24 top-16 h-6 w-6" />
+          <DiamondPointsIcon className="absolute right-8 top-24 h-11 w-11 rotate-12" />
+          <DiamondPointsIcon className="absolute right-28 top-28 h-7 w-7 -rotate-12" />
         </div>
       </section>
 
-      <div className="flex items-center justify-between border-b border-slate-200/80 px-1 pb-3">
-        <div>
-          <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Nạp gói học' : 'Top up a package'}</h2>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Chọn gói phù hợp và thanh toán bằng chuyển khoản.' : 'Choose a package and pay by bank transfer.'}</p>
-        </div>
+      {/* Đã đặt / Đã học */}
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={() => setShowHistory(true)} className="flex items-center gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-slate-200 transition hover:ring-brand-300 active:scale-[0.99]">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600"><WalletCards className="h-5 w-5" /></span>
+          <span className="min-w-0">
+            <span className="block text-xs font-bold text-slate-500">{lang === 'vi' ? 'Kim cương đã đặt' : 'Reserved diamonds'}</span>
+            <span className="mt-0.5 flex items-center gap-1 text-lg font-black tabular-nums text-slate-900">{heldMinutes.toLocaleString('vi-VN')}<DiamondPointsIcon className="h-4 w-4" /></span>
+          </span>
+        </button>
+        <button type="button" onClick={() => setShowHistory(true)} className="flex items-center gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300 active:scale-[0.99]">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600"><History className="h-5 w-5" /></span>
+          <span className="min-w-0">
+            <span className="block text-xs font-bold text-slate-500">{lang === 'vi' ? 'Kim cương đã học' : 'Used diamonds'}</span>
+            <span className="mt-0.5 flex items-center gap-1 text-lg font-black tabular-nums text-slate-900">{usedMinutes.toLocaleString('vi-VN')}<DiamondPointsIcon className="h-4 w-4" /></span>
+          </span>
+        </button>
+      </div>
+
+      {/* Nạp kim cương — chọn gói */}
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Nạp kim cương' : 'Top up diamonds'}</h2>
       </div>
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng nạp tiền đang chờ Admin hoàn tất quyền dữ liệu.' : 'Top-up is waiting for Admin to finish data permissions.'}</div>}
       {packagesLoading ? <PackageSkeleton /> : packages.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-12 text-center"><CreditCard className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">{lang === 'vi' ? 'Admin chưa mở gói nạp tiền' : 'No top-up packages available'}</p></div> : (
-        <div className="space-y-3">
-          {packages.map((pkg) => <button key={pkg.id} onClick={() => setSelectedId(pkg.id)} className={`w-full rounded-2xl bg-white p-4 text-left transition ${selectedId === pkg.id ? 'ring-2 ring-sky-600 shadow-[0_12px_35px_-22px_rgba(2,132,199,.72)]' : 'ring-1 ring-slate-200 hover:ring-brand-300'}`}>
-            <div className="flex items-start gap-3"><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selectedId === pkg.id ? 'border-sky-600 bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900' : 'border-slate-300'}`}>{selectedId === pkg.id && <Check className="h-3.5 w-3.5" />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-2"><p className="font-black text-slate-900">{pkg.name}</p><strong className="text-lg font-black text-sky-700 tabular-nums">{formatMoney(pkg.price, pkg.currency)}</strong></div><div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-600"><span className="rounded-lg bg-slate-100 px-2 py-1">{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'}</span><span className="rounded-lg bg-slate-100 px-2 py-1">{pkg.minutesPerSession} {lang === 'vi' ? 'phút/buổi' : 'min/session'}</span><span className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-violet-700"><DiamondPointsIcon className="h-3.5 w-3.5" />{pkg.totalMinutes.toLocaleString('vi-VN')}</span></div></div></div>
-          </button>)}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {packages.map((pkg, idx) => {
+            const active = selectedId === pkg.id
+            return (
+              <button key={pkg.id} onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }} className={`relative flex flex-col items-center rounded-2xl bg-white p-4 pt-5 text-center transition ${active ? 'ring-2 ring-sky-600 shadow-[0_12px_35px_-22px_rgba(2,132,199,.72)]' : 'ring-1 ring-slate-200 hover:ring-brand-300'}`}>
+                {pkg.featured && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-black text-amber-900 shadow-sm">{lang === 'vi' ? 'Phổ biến' : 'Popular'}</span>}
+                {!pkg.featured && idx === packages.length - 1 && packages.length > 1 && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-rose-400 px-2.5 py-0.5 text-[10px] font-black text-white shadow-sm">{lang === 'vi' ? 'Tiết kiệm nhất' : 'Best value'}</span>}
+                <DiamondPointsIcon className="h-9 w-9" />
+                <span className="mt-2 flex items-center gap-1 text-2xl font-black tabular-nums text-slate-900">{pkg.totalMinutes.toLocaleString('vi-VN')}<DiamondPointsIcon className="h-5 w-5" /></span>
+                <span className="mt-1 text-sm font-black text-sky-700 tabular-nums">{formatMoney(pkg.price, pkg.currency)}</span>
+                <span className="mt-2 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">≈ {sessions25(pkg.totalMinutes)} {lang === 'vi' ? 'buổi học' : 'sessions'}</span>
+              </button>
+            )
+          })}
         </div>
       )}
+      <p className="flex items-start gap-1.5 px-1 text-[11px] font-semibold leading-5 text-slate-500">
+        <span className="mt-0.5">ⓘ</span>
+        {lang === 'vi' ? 'Ghi chú: 25 kim cương ≈ 1 buổi học 25 phút với gia sư Việt Nam/Philippines.' : 'Note: 25 diamonds ≈ one 25-minute lesson with a Vietnam/Philippines teacher.'}
+      </p>
 
-      {settingsLoading ? <PaymentSkeleton /> : !settings?.qrImageURL ? <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Admin chưa cấu hình mã QR thanh toán.' : 'Payment QR has not been configured.'}</div> : (
-        <section className="rounded-2xl bg-[#eef6ff] p-4 ring-1 ring-blue-100">
-          <h3 className="flex items-center gap-2 font-black text-slate-900"><QrCode className="h-5 w-5 text-sky-600" />{lang === 'vi' ? 'Thanh toán chuyển khoản' : 'Bank transfer'}</h3>
-          <div className="mt-4 grid gap-5 sm:grid-cols-[224px_1fr] sm:items-center">
-            <PaymentQrImage
-              src={settings.qrImageURL}
-              alt={lang === 'vi' ? 'Mã QR thanh toán' : 'Payment QR code'}
-              lang={lang}
-              onCopy={copyQrImage}
-              copying={copyingQr}
-            />
-            <div className="space-y-3 text-sm">
-              <InfoRow label={lang === 'vi' ? 'Ngân hàng' : 'Bank'} value={settings.bankName} />
-              <InfoRow label={lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'} value={settings.accountName || ''} />
-              <InfoRow label={lang === 'vi' ? 'Số tài khoản' : 'Account number'} value={settings.accountNumber || ''} copy={() => copy(settings.accountNumber || '')} />
-              <InfoRow label={lang === 'vi' ? 'Nội dung chuyển khoản' : 'Transfer content'} value={transferContent} accent copy={() => copy(transferContent)} />
+      {/* Lịch sử nạp & sử dụng (preview) */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Lịch sử nạp & sử dụng' : 'Top-up & usage history'}</h2>
+        <button type="button" onClick={() => setShowHistory(true)} className="inline-flex items-center gap-0.5 text-xs font-extrabold text-sky-700 transition hover:text-sky-800">{lang === 'vi' ? 'Xem tất cả' : 'View all'}<ChevronRight className="h-3.5 w-3.5" /></button>
+      </div>
+      <div className="space-y-2.5">
+        {requests.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center"><History className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-2 text-sm font-semibold text-slate-500">{lang === 'vi' ? 'Chưa có giao dịch nạp gói.' : 'No top-up transactions yet.'}</p></div>
+        ) : requests.slice().sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)).slice(0, 4).map((request) => (
+          <div key={request.id} className="flex items-center gap-3 rounded-2xl bg-white p-3.5 ring-1 ring-slate-200">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><DiamondPointsIcon className="h-4 w-4" /></span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-black text-slate-900">{lang === 'vi' ? 'Nạp kim cương' : 'Top up'} – {request.packageName}</p>
+              <p className="text-[11px] font-semibold text-slate-500">{request.createdAt?.toDate ? request.createdAt.toDate().toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') : ''}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="flex items-center justify-end gap-1 text-sm font-black tabular-nums text-emerald-600">+{request.totalMinutes.toLocaleString('vi-VN')}<DiamondPointsIcon className="h-3.5 w-3.5" /></p>
+              <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-black ${request.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : request.status === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{request.status === 'approved' ? (lang === 'vi' ? 'Đã duyệt' : 'Approved') : request.status === 'rejected' ? (lang === 'vi' ? 'Từ chối' : 'Rejected') : (lang === 'vi' ? 'Chờ duyệt' : 'Pending')}</span>
             </div>
           </div>
-        </section>
-      )}
+        ))}
+      </div>
 
-      <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200"><h3 className="font-black text-slate-900">{lang === 'vi' ? 'Cách xác nhận' : 'How confirmation works'}</h3><ol className="mt-3 space-y-2 text-sm leading-5 text-slate-600"><li>1. {lang === 'vi' ? 'Chọn đúng gói học.' : 'Select a package.'}</li><li>2. {lang === 'vi' ? 'Quét QR và nhập đúng nội dung chuyển khoản.' : 'Scan QR and use the exact transfer content.'}</li><li>3. {lang === 'vi' ? 'Bấm gửi xác nhận; Admin kiểm tra trước khi cộng kim cương.' : 'Submit confirmation; Admin verifies before adding diamonds.'}</li></ol></div>
-      {settings?.supportNote && (
-        <section className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 ring-1 ring-sky-100">
-              <Headphones className="h-4.5 w-4.5" />
-            </span>
-            <div>
-              <h3 className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Hỗ trợ nạp tiền' : 'Top-up support'}</h3>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{settings.supportNote.replace(/[–—]/g, '-')}</p>
+      {/* MODAL: bấm "Nạp kim cương" mới hiện thanh toán chuyển khoản */}
+      {showPayment && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 backdrop-blur-sm sm:items-center" onClick={() => setShowPayment(false)}>
+          <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:rounded-[28px]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="flex items-center gap-2 text-base font-black text-slate-900"><QrCode className="h-5 w-5 text-sky-600" />{lang === 'vi' ? 'Thanh toán chuyển khoản' : 'Bank transfer'}</h3>
+              <button type="button" onClick={() => setShowPayment(false)} className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              {selected && (
+                <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-4 py-3 ring-1 ring-sky-100">
+                  <span className="text-sm font-black text-slate-800">{selected.name}</span>
+                  <span className="flex items-center gap-2 text-sm font-black text-sky-700"><span className="tabular-nums">{formatMoney(selected.price, selected.currency)}</span></span>
+                </div>
+              )}
+              {settingsLoading ? <PaymentSkeleton /> : !settings?.qrImageURL ? <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Admin chưa cấu hình mã QR thanh toán.' : 'Payment QR has not been configured.'}</div> : (
+                <>
+                  <PaymentQrImage src={settings.qrImageURL} alt={lang === 'vi' ? 'Mã QR thanh toán' : 'Payment QR code'} lang={lang} onCopy={copyQrImage} copying={copyingQr} />
+                  <div className="space-y-3 text-sm">
+                    <InfoRow label={lang === 'vi' ? 'Ngân hàng' : 'Bank'} value={settings.bankName} />
+                    <InfoRow label={lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'} value={settings.accountName || ''} />
+                    <InfoRow label={lang === 'vi' ? 'Số tài khoản' : 'Account number'} value={settings.accountNumber || ''} copy={() => copy(settings.accountNumber || '')} />
+                    <InfoRow label={lang === 'vi' ? 'Nội dung chuyển khoản' : 'Transfer content'} value={transferContent} accent copy={() => copy(transferContent)} />
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><h4 className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Cách xác nhận' : 'How confirmation works'}</h4><ol className="mt-2 space-y-1.5 text-xs leading-5 text-slate-600"><li>1. {lang === 'vi' ? 'Quét QR hoặc chuyển khoản theo thông tin trên.' : 'Scan the QR or transfer using the details above.'}</li><li>2. {lang === 'vi' ? 'Nhập ĐÚNG nội dung chuyển khoản.' : 'Use the EXACT transfer content.'}</li><li>3. {lang === 'vi' ? 'Bấm gửi xác nhận; Admin kiểm tra rồi cộng kim cương.' : 'Submit; Admin verifies before adding diamonds.'}</li></ol></div>
+                </>
+              )}
+            </div>
+            <div className="border-t border-slate-100 p-4">
+              <Button fullWidth size="lg" onClick={submit} loading={submitting} disabled={!selected || !settings?.qrImageURL || pending} className="bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105 focus:ring-brand-300">
+                {pending ? <><Clock3 className="h-4 w-4" />{lang === 'vi' ? 'Đang chờ Admin xác nhận' : 'Waiting for Admin'}</> : lang === 'vi' ? 'Tôi đã chuyển khoản' : 'I have transferred'}
+              </Button>
             </div>
           </div>
-        </section>
+        </div>
       )}
-      <Button fullWidth size="lg" onClick={submit} loading={submitting} disabled={!selected || !settings?.qrImageURL || pending} className="bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 hover:brightness-105 focus:ring-brand-300">
-        {pending ? <><Clock3 className="h-4 w-4" />{lang === 'vi' ? 'Đang chờ Admin xác nhận' : 'Waiting for Admin'}</> : lang === 'vi' ? 'Tôi đã chuyển khoản' : 'I have transferred'}
-      </Button>
 
       {showHistory && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm" onClick={() => setShowHistory(false)}>

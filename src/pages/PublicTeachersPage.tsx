@@ -700,6 +700,7 @@ function TeacherBookingPage({
     try {
       await addDoc(collection(db, 'bookingRequests'), {
         status: 'pending',
+        teacherResponse: 'pending',
         teacherId: teacher.id,
         teacherCode: teacher.code,
         teacherName: teacher.name,

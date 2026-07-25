@@ -11,7 +11,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
 import { uploadTeacherPhoto, uploadLessonImage, deleteUploadedImage, uploadErrorMessage } from '@/lib/imageUploader'
-import { missingTeacherFields } from '@/lib/teacherProfile'
+import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
@@ -156,6 +156,7 @@ export function ProfilePage() {
     bankAccountName,
   }
   const missing = missingTeacherFields(draftProfile)
+  const certificateCompliance = getTeacherCertificateCompliance({ certificates })
   const isMissing = (key: string) => missing.includes(key as keyof Teacher)
   // Viền đỏ ngay ô còn thiếu khi đã bấm lưu (hoặc khi bị bắt buộc hoàn thiện)
   const errCls = (key: string) =>
@@ -782,6 +783,20 @@ export function ProfilePage() {
               Bằng cấp & Chứng chỉ (Certificates)
             </h3>
             <span className="text-xs text-slate-500 font-medium">Tổng số: {certificates.length}</span>
+          </div>
+
+          <div className={`mb-4 rounded-xl border p-3 ${certificateCompliance.isCertificateComplete ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+            <p className="text-xs font-extrabold text-slate-800">
+              {lang === 'vi' ? 'Hai ảnh chứng chỉ bắt buộc' : 'Two required certificate images'}
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className={`rounded-lg bg-white px-3 py-2 text-xs font-bold ring-1 ${certificateCompliance.hasForeignLanguageImage ? 'text-emerald-700 ring-emerald-200' : 'text-rose-700 ring-rose-200'}`}>
+                {lang === 'vi' ? 'Năng lực chuyên môn' : 'Professional competency'}: {certificateCompliance.hasForeignLanguageImage ? (lang === 'vi' ? 'Đã có ảnh' : 'Image uploaded') : (lang === 'vi' ? 'Chưa có ảnh' : 'Image missing')}
+              </div>
+              <div className={`rounded-lg bg-white px-3 py-2 text-xs font-bold ring-1 ${certificateCompliance.hasPedagogicalImage ? 'text-emerald-700 ring-emerald-200' : 'text-rose-700 ring-rose-200'}`}>
+                {lang === 'vi' ? 'Sư phạm' : 'Pedagogical'}: {certificateCompliance.hasPedagogicalImage ? (lang === 'vi' ? 'Đã có ảnh' : 'Image uploaded') : (lang === 'vi' ? 'Chưa có ảnh' : 'Image missing')}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">

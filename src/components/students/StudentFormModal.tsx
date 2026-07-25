@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -17,16 +17,25 @@ interface Branch {
   status: string
 }
 
-const schema = z.object({
+// Khi TẠO MỚI: bắt buộc có SĐT + email phụ huynh.
+// Khi SỬA hồ sơ cũ: giữ tuỳ chọn để admin không bị chặn khi chỉnh các hồ sơ
+// đã tồn tại từ trước chưa kịp bổ sung liên hệ (tránh phải bịa dữ liệu giả).
+const makeSchema = (requireContact: boolean) => z.object({
   code: z.string().min(1, 'Mã học viên không được để trống').toUpperCase(),
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
-  parentPhone: z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
-  email: z.string().email('Email không hợp lệ (VD: phuhuynh@gmail.com)').optional().or(z.literal('')),
+  parentPhone: requireContact
+    ? z.string().min(1, 'Vui lòng nhập SĐT phụ huynh').regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)')
+    : z.string().regex(/^(0[3-9]\d{8})$/, 'SĐT không hợp lệ (VD: 0901234567)').optional().or(z.literal('')),
+  email: requireContact
+    ? z.string().min(1, 'Vui lòng nhập email phụ huynh').email('Email không hợp lệ (VD: phuhuynh@gmail.com)')
+    : z.string().email('Email không hợp lệ (VD: phuhuynh@gmail.com)').optional().or(z.literal('')),
   branchId: z.string().optional(),
+  // Chỉ còn 2 nhóm: cố định (mặc định) hoặc linh hoạt. Hồ sơ cũ chưa phân loại được hiểu là cố định.
+  learningScheduleType: z.enum(['fixed', 'flexible']).default('fixed'),
   classroomURL: z.string().optional().or(z.literal('')),
 })
 
-type FormData = z.infer<typeof schema>
+type FormData = z.infer<ReturnType<typeof makeSchema>>
 
 const DEFAULT_BRANCH_KEYWORD = 'binh tan'
 
@@ -47,7 +56,8 @@ export function StudentFormModal({ student, onClose }: Props) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [generatedCode, setGeneratedCode] = useState('')
   const isEdit = !!student
-  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const schema = useMemo(() => makeSchema(!isEdit), [isEdit])
+  const { register, handleSubmit, setValue, getValues, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: student
       ? {
@@ -56,10 +66,13 @@ export function StudentFormModal({ student, onClose }: Props) {
           parentPhone: student.parentPhone,
           email: student.email || '',
           branchId: student.branchId || '',
+          // Chưa phân loại được hiểu là cố định
+          learningScheduleType: student.learningScheduleType === 'flexible' ? 'flexible' : 'fixed',
           classroomURL: student.classroomURL || '',
         }
-      : { code: '', branchId: '', classroomURL: '', email: '' },
+      : { code: '', branchId: '', learningScheduleType: 'fixed', classroomURL: '', email: '' },
   })
+  const scheduleType = watch('learningScheduleType')
 
   useEffect(() => {
     if (!isEdit && !generatedCode) {
@@ -102,6 +115,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           email: data.email?.trim() || '',
           branchId: data.branchId || '',
           branchName: branch?.name || '',
+          learningScheduleType: data.learningScheduleType,
           classroomURL: data.classroomURL || '',
           updatedAt: serverTimestamp(),
         })
@@ -117,6 +131,7 @@ export function StudentFormModal({ student, onClose }: Props) {
           subjectName: '',
           branchId: data.branchId || '',
           branchName: branch?.name || '',
+          learningScheduleType: data.learningScheduleType,
           totalSessions: 0,
           usedSessions: 0,
           remainingSessions: 0,
@@ -154,6 +169,29 @@ export function StudentFormModal({ student, onClose }: Props) {
       }
     >
       <form id="student-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+        {/* Phân loại học viên: 2 nút tick giống form gia sư */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+          {([
+            { value: 'fixed', label: 'Học viên cố định' },
+            { value: 'flexible', label: 'Học viên linh hoạt' },
+          ] as const).map((option) => {
+            const checked = scheduleType === option.value
+            return (
+              <label
+                key={option.value}
+                className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition active:scale-[0.98] ${checked ? 'bg-brand-400 text-slate-950 shadow-sm' : 'text-slate-600 hover:bg-white'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => setValue('learningScheduleType', option.value, { shouldDirty: true })}
+                  className="h-4 w-4 rounded border-slate-400 text-amber-500 focus:ring-amber-400"
+                />
+                <span className="whitespace-nowrap">{option.label}</span>
+              </label>
+            )
+          })}
+        </div>
         <div>
           <Input
             label="Mã học viên *"
@@ -174,18 +212,23 @@ export function StudentFormModal({ student, onClose }: Props) {
           {...register('name')}
         />
         <Input
-          label="SĐT phụ huynh"
+          label={isEdit ? 'SĐT phụ huynh' : 'SĐT phụ huynh *'}
           placeholder="0901234567"
           error={errors.parentPhone?.message}
           {...register('parentPhone')}
         />
         <Input
-          label="Email phụ huynh"
+          label={isEdit ? 'Email phụ huynh' : 'Email phụ huynh *'}
           type="email"
-          placeholder="phuhuynh@gmail.com (không bắt buộc)"
+          placeholder={isEdit ? 'phuhuynh@gmail.com' : 'phuhuynh@gmail.com (bắt buộc)'}
           error={errors.email?.message}
           {...register('email')}
         />
+        {isEdit && (!watch('parentPhone') || !watch('email')) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs leading-5 text-amber-800">
+            Hồ sơ này còn thiếu {!watch('parentPhone') && !watch('email') ? 'SĐT và email' : !watch('parentPhone') ? 'SĐT' : 'email'} phụ huynh — nên bổ sung để liên hệ và gửi thông báo.
+          </div>
+        )}
         <Input
           label="Link phòng học"
           placeholder="https://zoom.us/j/... hoặc link MS Teams, Meet"

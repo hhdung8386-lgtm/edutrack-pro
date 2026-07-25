@@ -41,6 +41,18 @@ const hasLink = (val: string) => {
 const wordCount = (val: string) => val.trim().split(/\s+/).filter(Boolean).length
 
 /** Trả về key lỗi i18n đầu tiên, hoặc null nếu hợp lệ. Chỉ gọi khi học viên có mặt. */
+/** Số ký tự tối thiểu cho phần nhận xét (gộp 3 mục) — chống nhận xét hời hợt. */
+export const MIN_REPORT_CHARS = 30
+
+/** Tổng số ký tự thực (đã bỏ khoảng trắng thừa) của 3 mục nhận xét. */
+export function lessonReportCharCount(d: Pick<LessonReportDraft, 'knowledgeComment' | 'gamesComment' | 'exercisesComment'>): number {
+  return [d.knowledgeComment, d.gamesComment, d.exercisesComment]
+    .map((v) => (v || '').trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join(' ')
+    .length
+}
+
 export function validateLessonReport(d: LessonReportDraft): string | null {
   if (!d.pages.trim()) return 'report.err_pages_required'
   if (wordCount(d.pages) > 20) return 'report.err_pages_words'
@@ -48,6 +60,9 @@ export function validateLessonReport(d: LessonReportDraft): string | null {
   if (!d.knowledgeComment.trim()) return 'report.err_knowledge'
   if (!d.gamesComment.trim()) return 'report.err_games'
   if (!d.exercisesComment.trim()) return 'report.err_exercises'
+  // Bắt buộc nhận xét đủ chi tiết: tổng 3 mục tối thiểu MIN_REPORT_CHARS ký tự,
+  // tránh tình trạng gia sư ghi hời hợt kiểu "good", "none".
+  if (lessonReportCharCount(d) < MIN_REPORT_CHARS) return 'report.err_too_short'
   if (!d.homework.trim()) return 'report.err_homework'
   if (d.rating !== 4 && d.rating !== 5) return 'report.err_rating'
   return null
@@ -77,5 +92,68 @@ export function lessonReportFields(d: LessonReportDraft) {
       exercisesDone: d.exercisesDone,
       exercisesComment: d.exercisesComment.trim(),
     },
+  }
+}
+
+/**
+ * Đọc NGƯỢC phần nhận xét dạng chữ (do composeLessonComment sinh ra ở các buổi cũ,
+ * hoặc gia sư gõ theo mẫu tương tự) thành cấu trúc 3 mục.
+ *
+ * Mục đích: các buổi CŨ chưa có field `report` vẫn hiển thị đẹp và thống nhất với
+ * buổi mới ở cổng phụ huynh, thay vì đổ ra một khối chữ thô.
+ * CHỈ dùng cho hiển thị — không ghi đè dữ liệu gốc.
+ */
+export function parseLegacyLessonReport(comment: string): {
+  pages: string
+  knowledgeDone: boolean
+  knowledgeComment: string
+  gamesDone: boolean
+  gamesComment: string
+  exercisesDone: boolean
+  exercisesComment: string
+} | null {
+  if (!comment || !comment.trim()) return null
+
+  // 1️⃣ -> "1." để bắt được cả hai kiểu ghi
+  const text = comment.replace(/([123])️?⃣/gu, '$1.')
+
+  const pick = (patterns: RegExp[]): { value: string; done: boolean } | null => {
+    for (const re of patterns) {
+      const m = text.match(re)
+      if (m) {
+        const value = (m[2] || '').trim()
+        if (value) return { value, done: /[✓✔]/.test(m[1] || '') }
+      }
+    }
+    return null
+  }
+
+  const knowledge = pick([
+    /(?:^|\n)\s*1\.\s*(?:Điểm\s+)?ki[eế]n\s*th[uứ]c([^:\n]*):\s*([^\n]*)/iu,
+    /(?:^|\n)\s*ki[eế]n\s*th[uứ]c\s*b[aà]i\s*h[oọ]c([^:\n]*):\s*([^\n]*)/iu,
+  ])
+  const games = pick([
+    /(?:^|\n)\s*2\.\s*tr[oò]\s*ch[oơ]i([^:\n]*):\s*([^\n]*)/iu,
+    /(?:^|\n)\s*(?:tr[oò]\s*ch[oơ]i\s*t[uư][oơ]ng\s*t[aá]c|ho[aạ]t\s*đ[oộ]ng\s*tr[eê]n\s*l[oớ]p)([^:\n]*):\s*([^\n]*)/iu,
+  ])
+  const exercises = pick([
+    /(?:^|\n)\s*3\.\s*b[aà]i\s*t[aậ]p([^:\n]*):\s*([^\n]*)/iu,
+    /(?:^|\n)\s*b[aà]i\s*t[aậ]p\s*(?:luy[eệ]n\s*t[aậ]p|tr[eê]n\s*l[oớ]p)([^:\n]*):\s*([^\n]*)/iu,
+  ])
+
+  // Không nhận dạng được mục nào -> trả null để giữ nguyên cách hiển thị cũ
+  if (!knowledge && !games && !exercises) return null
+
+  // Cho phép ký tự trang trí (emoji 📖) đứng trước nhãn
+  const pagesMatch = text.match(/(?:^|\n)[^\n:]{0,4}?(?:Trang\s*h[oọ]c|N[oộ]i\s*dung\s*h[oọ]c)\s*:\s*([^\n]*)/iu)
+
+  return {
+    pages: (pagesMatch?.[1] || '').trim(),
+    knowledgeDone: knowledge?.done ?? false,
+    knowledgeComment: knowledge?.value || '',
+    gamesDone: games?.done ?? false,
+    gamesComment: games?.value || '',
+    exercisesDone: exercises?.done ?? false,
+    exercisesComment: exercises?.value || '',
   }
 }

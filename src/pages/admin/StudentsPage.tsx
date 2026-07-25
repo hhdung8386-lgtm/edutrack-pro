@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, getDocs, getCountFromServer, deleteDoc, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, getDocs, deleteDoc, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -12,20 +12,64 @@ import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { Users, Plus, Search, Eye, UserX, MoreVertical, Building2, Trash2 } from 'lucide-react'
+import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
+
+/**
+ * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
+ * Đây mới là thước đo "sắp hết buổi -> cần nạp thêm".
+ * (Không dùng "buổi khả dụng" vì học viên đặt kín lịch sẽ có khả dụng = 0
+ *  nhưng quỹ vẫn còn nhiều -> báo nhầm.)
+ */
+function remainingSessionsOf(s: Student): number {
+  const mps = s.minutesPerSession || 50
+  const remainingMins = s.remainingMinutes ?? (s.remainingSessions * mps)
+  return Math.floor(Math.max(0, remainingMins) / 25)
+}
+
+/** Đang học nhưng quỹ buổi trong gói đã xuống thấp -> cảnh báo "Sắp hết buổi". */
+function isRunningLow(s: Student): boolean {
+  return s.status === 'active' && getSessionLevel(remainingSessionsOf(s)) === 'low'
+}
 
 interface Branch { id: string; name: string; status: string }
 
-export function StudentsPage() {
+// Trang có 3 chế độ: 'all' (tất cả học viên), 'fixed', 'flexible'.
+// QUY ƯỚC QUAN TRỌNG: học viên CHƯA phân loại (field trống hoặc 'unclassified')
+// được tính là HỌC VIÊN CỐ ĐỊNH mặc định — không cần ghi đè dữ liệu hàng loạt.
+type StudentGroupView = 'all' | 'fixed' | 'flexible'
+
+const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: string; emptyDescription: string }> = {
+  all: {
+    title: 'Tất cả học viên',
+    emptyTitle: 'Chưa có học viên',
+    emptyDescription: 'Bấm “Thêm học viên” để tạo hồ sơ đầu tiên.',
+  },
+  fixed: {
+    title: 'Học viên cố định',
+    emptyTitle: 'Chưa có học viên cố định',
+    emptyDescription: 'Học viên mới mặc định thuộc nhóm cố định; chọn “Học viên linh hoạt” trong hồ sơ để chuyển nhóm.',
+  },
+  flexible: {
+    title: 'Học viên linh hoạt',
+    emptyTitle: 'Chưa có học viên linh hoạt',
+    emptyDescription: 'Chọn “Học viên linh hoạt” trong hồ sơ để đưa học viên vào danh sách này.',
+  },
+}
+
+export function StudentsPage({ learningScheduleType = 'all' }: { learningScheduleType?: StudentGroupView }) {
   const navigate = useNavigate()
+  const storagePrefix = `students_${learningScheduleType}`
+  const pageMeta = STUDENT_GROUP_META[learningScheduleType]
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState(() => sessionStorage.getItem('students_search') || '')
-  const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('students_statusFilter') || 'all')
-  const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('students_branchFilter') || 'all')
-  const [subjectFilter, setSubjectFilter] = useState<string>(() => sessionStorage.getItem('students_subjectFilter') || 'all')
-  const [sortBy, setSortBy] = useState<string>(() => sessionStorage.getItem('students_sortBy') || 'newest')
+  const [search, setSearch] = useState(() => sessionStorage.getItem(`${storagePrefix}_search`) || '')
+  // Mặc định mở tab "Đang học" — nhóm admin cần nhìn thường xuyên nhất.
+  const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem(`${storagePrefix}_statusFilter`) || 'active')
+  const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem(`${storagePrefix}_branchFilter`) || 'all')
+  const [subjectFilter, setSubjectFilter] = useState<string>(() => sessionStorage.getItem(`${storagePrefix}_subjectFilter`) || 'all')
+  const [sortBy, setSortBy] = useState<string>(() => sessionStorage.getItem(`${storagePrefix}_sortBy`) || 'newest')
   const [branches, setBranches] = useState<Branch[]>([])
   const [subjects, setSubjects] = useState<{ id: string; name: string }[]>([])
   const [showAdd, setShowAdd] = useState(false)
@@ -33,35 +77,38 @@ export function StudentsPage() {
   const [addSessions, setAddSessions] = useState<Student | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
+  const [bulkScheduleType, setBulkScheduleType] = useState<'fixed' | 'flexible'>('fixed')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  // Mặc định tải TẤT CẢ hồ sơ để không ai tưởng "mất" học viên; admin có thể giảm để nhẹ máy.
   const [limitVal, setLimitVal] = useState<number>(() => {
-    const stored = sessionStorage.getItem('students_limitVal')
-    return stored ? Number(stored) : 20
+    const stored = sessionStorage.getItem(`${storagePrefix}_limitVal`)
+    return stored ? Number(stored) : 0
   })
-  const [totalStudents, setTotalStudents] = useState<number | null>(null)
 
   // Sync filters to sessionStorage
   useEffect(() => {
-    sessionStorage.setItem('students_search', search)
-    sessionStorage.setItem('students_statusFilter', statusFilter)
-    sessionStorage.setItem('students_branchFilter', branchFilter)
-    sessionStorage.setItem('students_subjectFilter', subjectFilter)
-    sessionStorage.setItem('students_sortBy', sortBy)
-    sessionStorage.setItem('students_limitVal', String(limitVal))
-  }, [search, statusFilter, branchFilter, subjectFilter, sortBy, limitVal])
+    sessionStorage.setItem(`${storagePrefix}_search`, search)
+    sessionStorage.setItem(`${storagePrefix}_statusFilter`, statusFilter)
+    sessionStorage.setItem(`${storagePrefix}_branchFilter`, branchFilter)
+    sessionStorage.setItem(`${storagePrefix}_subjectFilter`, subjectFilter)
+    sessionStorage.setItem(`${storagePrefix}_sortBy`, sortBy)
+    sessionStorage.setItem(`${storagePrefix}_limitVal`, String(limitVal))
+  }, [search, statusFilter, branchFilter, subjectFilter, sortBy, limitVal, storagePrefix])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
     const handleScroll = () => {
-      sessionStorage.setItem('students_scroll', String(window.scrollY))
+      sessionStorage.setItem(`${storagePrefix}_scroll`, String(window.scrollY))
     }
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+  }, [storagePrefix])
 
   // Restore scroll position once data loading has completed
   useEffect(() => {
     if (!loading && students.length > 0) {
-      const savedScroll = sessionStorage.getItem('students_scroll')
+      const savedScroll = sessionStorage.getItem(`${storagePrefix}_scroll`)
       if (savedScroll) {
         const scrollTimer = setTimeout(() => {
           window.scrollTo(0, Number(savedScroll))
@@ -69,12 +116,13 @@ export function StudentsPage() {
         return () => clearTimeout(scrollTimer)
       }
     }
-  }, [loading, students])
+  }, [loading, students, storagePrefix])
 
   useEffect(() => {
     setLoading(true)
-    const q = limitVal > 0
-      ? query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(limitVal))
+    const effectiveLimit = limitVal
+    const q = effectiveLimit > 0
+      ? query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(effectiveLimit))
       : query(collection(db, 'students'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(
       q,
@@ -89,13 +137,7 @@ export function StudentsPage() {
       }
     )
     return unsub
-  }, [limitVal])
-
-  useEffect(() => {
-    getCountFromServer(collection(db, 'students'))
-      .then((snap) => setTotalStudents(snap.data().count))
-      .catch((err) => console.error('Error counting students:', err))
-  }, [])
+  }, [limitVal, learningScheduleType])
 
   useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
@@ -122,17 +164,43 @@ export function StudentsPage() {
   }, [])
 
   const filtered = students.filter((s) => {
+    // Chưa phân loại (field trống/'unclassified') được tính là CỐ ĐỊNH.
+    const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
+    const matchScheduleType = learningScheduleType === 'all' || normalizedGroup === learningScheduleType
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.code.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = statusFilter === 'all' ? s.status !== 'reserved' : s.status === statusFilter
+    // "Tất cả" nghĩa là TẤT CẢ, kể cả hồ sơ bảo lưu — trước đây ẩn bảo lưu khiến
+    // tổng số lệch với Dashboard và gây hiểu nhầm là mất dữ liệu.
+    // Tab "Hết buổi" gộp luôn học viên SẮP hết buổi (còn <= LOW_SESSION_THRESHOLD)
+    // để admin chủ động nhắc phụ huynh nạp thêm trước khi đứt buổi.
+    const matchStatus = statusFilter === 'all'
+      ? true
+      : statusFilter === 'expired'
+        ? (s.status === 'expired' || isRunningLow(s))
+        : s.status === statusFilter
     const matchBranch = branchFilter === 'all' || s.branchId === branchFilter
     // Học viên có thể học nhiều gói môn -> khớp gói chính hoặc bất kỳ gói nào
     const matchSubject = subjectFilter === 'all'
       || s.subjectId === subjectFilter
       || (s.subjects || []).some(sub => sub.subjectId === subjectFilter)
-    return matchSearch && matchStatus && matchBranch && matchSubject
+    return matchScheduleType && matchSearch && matchStatus && matchBranch && matchSubject
   })
+
+  // Thống kê theo nhóm đang xem (chưa áp bộ lọc tìm kiếm/trạng thái) để đối chiếu
+  // với Dashboard — giúp thấy rõ tổng hồ sơ tách theo từng trạng thái.
+  const groupStudents = students.filter((s) => {
+    const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
+    return learningScheduleType === 'all' || normalizedGroup === learningScheduleType
+  })
+  const groupBreakdown = {
+    total: groupStudents.length,
+    active: groupStudents.filter((s) => s.status === 'active').length,
+    reserved: groupStudents.filter((s) => s.status === 'reserved').length,
+    expired: groupStudents.filter((s) => s.status === 'expired').length,
+    inactive: groupStudents.filter((s) => s.status === 'inactive').length,
+    runningLow: groupStudents.filter(isRunningLow).length,
+  }
 
   // 'newest' giữ nguyên thứ tự Firestore (createdAt desc)
   const sorted = sortBy === 'name_asc'
@@ -140,6 +208,51 @@ export function StudentsPage() {
     : sortBy === 'name_desc'
       ? [...filtered].sort((a, b) => b.name.localeCompare(a.name, 'vi'))
       : filtered
+
+  const allVisibleSelected = sorted.length > 0 && sorted.every((student) => selectedStudentIds.has(student.id))
+
+  const toggleStudentSelection = (studentId: string) => {
+    setSelectedStudentIds((current) => {
+      const next = new Set(current)
+      if (next.has(studentId)) next.delete(studentId)
+      else next.add(studentId)
+      return next
+    })
+  }
+
+  const toggleAllVisibleStudents = () => {
+    setSelectedStudentIds((current) => {
+      const next = new Set(current)
+      if (allVisibleSelected) sorted.forEach((student) => next.delete(student.id))
+      else sorted.forEach((student) => next.add(student.id))
+      return next
+    })
+  }
+
+  const handleBulkClassification = async () => {
+    if (selectedStudentIds.size === 0) return
+    setBulkUpdating(true)
+    try {
+      const ids = Array.from(selectedStudentIds)
+      for (let offset = 0; offset < ids.length; offset += 450) {
+        const batch = writeBatch(db)
+        ids.slice(offset, offset + 450).forEach((studentId) => {
+          batch.update(doc(db, 'students', studentId), {
+            learningScheduleType: bulkScheduleType,
+            updatedAt: serverTimestamp(),
+          })
+        })
+        await batch.commit()
+      }
+      toast.success(`Đã phân loại ${ids.length} học viên`)
+      setSelectedStudentIds(new Set())
+    } catch (error) {
+      console.error('Error bulk classifying students:', error)
+      toast.error('Không thể phân loại hàng loạt. Vui lòng thử lại.')
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
 
   const handleDelete = async () => {
     if (!deleteStudent) return
@@ -180,10 +293,22 @@ export function StudentsPage() {
       {/* Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Học viên</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{pageMeta.title}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Đã tải {students.length}{totalStudents !== null ? ` / ${totalStudents}` : ''} học viên
+            Đang hiển thị <span className="font-semibold text-slate-700">{filtered.length}</span>
+            {filtered.length !== groupBreakdown.total && <> / {groupBreakdown.total}</>} học viên
+            {limitVal > 0 && <span className="text-amber-600"> · chỉ tải {limitVal} hồ sơ mới nhất</span>}
           </p>
+          {!loading && groupBreakdown.total > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span>Tổng hồ sơ: <span className="font-semibold text-slate-700">{groupBreakdown.total}</span></span>
+              <span className="text-emerald-600">Đang học: {groupBreakdown.active}</span>
+              <span className="text-amber-600">Sắp hết buổi: {groupBreakdown.runningLow}</span>
+              <span className="text-sky-600">Bảo lưu: {groupBreakdown.reserved}</span>
+              <span className="text-rose-500">Hết buổi: {groupBreakdown.expired}</span>
+              <span className="text-slate-500">Tạm dừng: {groupBreakdown.inactive}</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => setShowAdd(true)} className="shadow-sm">
@@ -192,6 +317,36 @@ export function StudentsPage() {
           </Button>
         </div>
       </div>
+
+      {selectedStudentIds.size > 0 && (
+        <div className="sticky top-16 z-20 flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-brand-900">
+            <CheckSquare className="h-5 w-5 text-brand-700" />
+            Đã chọn {selectedStudentIds.size} học viên
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={bulkScheduleType}
+              onChange={(event) => setBulkScheduleType(event.target.value as 'fixed' | 'flexible')}
+              className="min-h-[40px] rounded-xl border border-brand-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-300"
+              aria-label="Chọn phân loại học viên"
+            >
+              <option value="fixed">Học viên cố định</option>
+              <option value="flexible">Học viên linh hoạt</option>
+            </select>
+            <Button onClick={handleBulkClassification} loading={bulkUpdating} className="min-h-[40px]">
+              Phân loại đã chọn
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSelectedStudentIds(new Set())}
+              className="min-h-[40px] rounded-xl px-3 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900"
+            >
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -203,7 +358,7 @@ export function StudentsPage() {
           className="w-full lg:max-w-md"
         />
         <div className="flex gap-3 items-center flex-wrap">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+          {<label className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <span className="whitespace-nowrap">Số học viên</span>
             <select
               value={limitVal}
@@ -216,9 +371,10 @@ export function StudentsPage() {
               ))}
               <option value={0}>Tất cả</option>
             </select>
-          </label>
+          </label>}
           <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
-            {['all', 'active', 'inactive', 'expired', 'reserved'].map((s) => (
+            {/* Thứ tự ưu tiên: Đang học trước, "Tất cả" đẩy ra sau cùng */}
+            {['active', 'inactive', 'expired', 'reserved', 'all'].map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
@@ -277,8 +433,8 @@ export function StudentsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Users className="w-8 h-8" />}
-          title="Không tìm thấy học viên"
-          description="Thêm học viên mới hoặc thay đổi bộ lọc"
+          title={search || statusFilter !== 'all' || branchFilter !== 'all' || subjectFilter !== 'all' ? 'Không tìm thấy học viên' : pageMeta.emptyTitle}
+          description={search || statusFilter !== 'all' || branchFilter !== 'all' || subjectFilter !== 'all' ? 'Thêm học viên mới hoặc thay đổi bộ lọc' : pageMeta.emptyDescription}
           action={{ label: 'Thêm học viên', onClick: () => setShowAdd(true) }}
         />
       ) : (
@@ -289,7 +445,17 @@ export function StudentsPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên học viên', 'Ngày tạo', 'Môn học', 'Chi nhánh', 'Buổi còn lại', 'Trạng thái', 'Hành động'].map((h) => (
+                    <th className="w-11 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        ref={(element) => { if (element) element.indeterminate = !allVisibleSelected && selectedStudentIds.size > 0 }}
+                        onChange={toggleAllVisibleStudents}
+                        aria-label="Chọn tất cả học viên đang hiển thị"
+                        className="h-4 w-4 accent-brand-600"
+                      />
+                    </th>
+                    {['Mã', 'Tên học viên', 'Ngày tạo', 'Buổi khả dụng', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -299,13 +465,23 @@ export function StudentsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {sorted.map((student) => {
                     const mps = student.minutesPerSession || 50;
-                    const totalMins = student.totalMinutes ?? (student.totalSessions * mps);
                     const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
-                    const totalSessions25 = Math.floor(totalMins / 25);
-                    const remainingSessions25 = Math.floor(remainingMins / 25);
+                    const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
+                    const availableMins = Math.max(0, remainingMins - heldMins);
+                    const availableSessions25 = Math.floor(availableMins / 25);
+                    const runningLow = isRunningLow(student);
 
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedStudentIds.has(student.id)}
+                            onChange={() => toggleStudentSelection(student.id)}
+                            aria-label={`Chọn học viên ${student.name}`}
+                            className="h-4 w-4 accent-brand-600"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
                             {student.code}
@@ -315,47 +491,44 @@ export function StudentsPage() {
                         <td className="px-4 py-3 text-slate-500">
                           {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{student.subjectName || '—'}</td>
-                        <td className="px-4 py-3">
-                          {student.branchName ? (
-                            <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
-                              <Building2 className="w-3 h-3" />
-                              {student.branchName}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">—</span>
-                          )}
-                        </td>
                         <td className="px-4 py-3">
                           <div className="leading-tight">
                             <div>
-                              <span className={`font-semibold ${
-                                remainingSessions25 < 0 ? 'text-rose-600' :
-                                remainingSessions25 === 0 ? 'text-rose-500' :
-                                remainingSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'
-                              }`}>
-                                {remainingSessions25}
+                              <span className={`font-semibold ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>
+                                {availableSessions25}
                               </span>
-                              <span className="text-slate-500 text-xs"> / {totalSessions25} buổi</span>
+                              <span className="text-slate-500 text-xs"> buổi</span>
                             </div>
                             <div className="text-[11px] text-slate-400 mt-0.5">
-                              <span className={remainingMins <= 0 ? 'text-rose-300' : ''}>{remainingMins}</span>
-                              <span> / {totalMins} phút</span>
+                              <span className={availableMins <= 0 ? 'text-rose-300' : ''}>{availableMins}</span>
+                              <span> phút</span>
+                              {heldMins > 0 && <span className="ml-1">(đã giữ {heldMins}p)</span>}
                             </div>
                           </div>
                         </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={student.status} />
+                        {runningLow
+                          ? <span
+                              title={`Còn ${remainingSessionsOf(student)} buổi trong gói (gồm cả buổi đã đặt lịch) — nên nhắc phụ huynh nạp thêm`}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-600"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                              Sắp hết buổi
+                            </span>
+                          : <StatusBadge status={student.status} />}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => navigate(`/admin/students/${student.id}`)}
+                          <a
+                            href={`/admin/students/${student.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="p-1.5 text-slate-500 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="Xem chi tiết"
+                            title="Mở chi tiết ở tab mới"
+                            aria-label={`Mở chi tiết học viên ${student.name} ở tab mới`}
                           >
                             <Eye className="w-4 h-4" />
-                          </button>
+                          </a>
                           <button
                             onClick={() => setAddSessions(student)}
                             className="px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors whitespace-nowrap"
@@ -391,38 +564,46 @@ export function StudentsPage() {
             {sorted.map((student) => {
               const mps = student.minutesPerSession || 50;
               const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
-              const remainingSessions25 = Math.floor(remainingMins / 25);
+              const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
+              const availableMins = Math.max(0, remainingMins - heldMins);
+              const availableSessions25 = Math.floor(availableMins / 25);
 
               return (
                 <Card key={student.id} hover onClick={() => navigate(`/admin/students/${student.id}`)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudentIds.has(student.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => toggleStudentSelection(student.id)}
+                          aria-label={`Chọn học viên ${student.name}`}
+                          className="h-4 w-4 accent-brand-600"
+                        />
                         <span className="font-mono text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">
                           {student.code}
                         </span>
-                        <StatusBadge status={student.status} />
+                        {isRunningLow(student)
+                          ? <span
+                              title={`Còn ${remainingSessionsOf(student)} buổi trong gói (gồm cả buổi đã đặt lịch) — nên nhắc phụ huynh nạp thêm`}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-600"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                              Sắp hết buổi
+                            </span>
+                          : <StatusBadge status={student.status} />}
                       </div>
                       <p className="font-semibold text-slate-900">{student.name}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {student.subjectName} · {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
+                        {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
                       </p>
-                      {student.branchName && (
-                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-0.5">
-                          <Building2 className="w-2.5 h-2.5" />
-                          {student.branchName}
-                        </span>
-                      )}
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className={`text-xl font-bold ${
-                        remainingSessions25 < 0 ? 'text-rose-600' :
-                        remainingSessions25 === 0 ? 'text-rose-500' :
-                        remainingSessions25 <= 3 ? 'text-amber-500' : 'text-emerald-500'
-                      }`}>{remainingSessions25}</p>
-                      <p className="text-xs text-slate-500">buổi còn</p>
-                      <p className={`text-[11px] mt-0.5 ${remainingMins <= 0 ? 'text-rose-300' : 'text-slate-400'}`}>
-                        {remainingMins} phút
+                      <p className={`text-xl font-bold ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>{availableSessions25}</p>
+                      <p className="text-xs text-slate-500">buổi khả dụng</p>
+                      <p className={`text-[11px] mt-0.5 ${availableMins <= 0 ? 'text-rose-300' : 'text-slate-400'}`}>
+                        {availableMins} phút
                       </p>
                     </div>
                   </div>

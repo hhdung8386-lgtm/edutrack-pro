@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { toast } from '@/stores/toastStore'
 import { ClipboardCheck, Plus, Copy, Trash2, Edit3, X, ExternalLink } from 'lucide-react'
+import { EVALUATION_FORM_LABELS, getCourseOptions, normalizeCourseLabel, normalizeSelectedCourseLevels, TUTOR_SKILL_OPTIONS, type EvaluationFormType } from '@/lib/evaluationOptions'
+import { EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY, formatMoney } from '@/lib/constants'
 
 interface Evaluation {
   id: string
@@ -17,10 +19,13 @@ interface Evaluation {
   teacherName: string
   type: 'english' | 'other'
   skills: Record<string, number>
-  formType: 'adult_comm' | 'tutor' | 'kids_a' | 'kids_b' | 'academic'
+  lessonComment?: string
+  formType: EvaluationFormType
   selectedLevels: string[]
+  selectedCourseLevels?: Record<string, number>
   customLevelText?: string
   tutorSubjects?: Record<string, string>
+  tutorSkills?: string[]
   evaluationResult: 'direct' | 'more_advice' | 're_evaluate'
   sessionsPerWeek: number
   minutesPerSession: number
@@ -29,20 +34,19 @@ interface Evaluation {
   createdAt?: any
   updatedAt?: any
   imageUrl?: string
+  /** Phiếu cũ chưa có field này -> hiểu là đang chờ admin duyệt. */
+  status?: 'pending' | 'approved' | 'rejected'
+  rejectedReason?: string
+  rewardAmount?: number
 }
+
+type EvalStatus = 'pending' | 'approved' | 'rejected'
+const evalStatusOf = (e: Evaluation): EvalStatus => e.status === 'approved' ? 'approved' : e.status === 'rejected' ? 'rejected' : 'pending'
 
 const RESULT_LABELS = {
   direct: 'Phù hợp đăng ký ngay',
   more_advice: 'Cần tư vấn thêm lộ trình',
   re_evaluate: 'Hẹn đánh giá lại sau',
-}
-
-const FORM_TITLES = {
-  adult_comm: 'Tiếng Anh giao tiếp người lớn',
-  tutor: 'Gia sư',
-  kids_a: 'Tiếng Anh trẻ em (Time to Talk)',
-  kids_b: 'Tiếng Anh trẻ em (Phonics/Smart Kids)',
-  academic: 'Tiếng Anh học thuật',
 }
 
 const DEFAULT_GOALS = {
@@ -88,41 +92,6 @@ const DEFAULT_CURRICULUM = {
   academic: 'Cambridge Standard Prep / IELTS Pathway',
 }
 
-const FORM_OPTIONS = {
-  adult_comm: [
-    'Basic English (Level 1–5)',
-    'Daily English (Level 3–5)',
-    'Topic Conversation (Level 2–6)',
-    'Business English (Level 4–6)',
-    'Free Talk',
-    'IPA Pronunciation (Level 1–3)'
-  ],
-  kids_a: [
-    'Basic English (Level 1–5)',
-    '123English Official Curriculum (Level 4–7)',
-    'Time to Talk (Level 3–5)',
-    'Writing Source (Level 2–4)',
-    'Reading (Level 3–4)'
-  ],
-  kids_b: [
-    'We Sing We Learn (Kindergarten)',
-    'Magic Phonics (Level 1–6)',
-    'Smart Kids (Starter – Level 9)',
-    'Good English - Storytelling (Level 1–9)',
-    'Starlight (Level 1–5)'
-  ],
-  academic: [
-    'Cambridge Starters',
-    'Cambridge Movers',
-    'Cambridge Flyers',
-    'Cambridge KET (A2 Key)',
-    'Cambridge PET (B1 Preliminary)',
-    'IELTS',
-    'TOEIC',
-    'Business English (4 Skills)'
-  ]
-}
-
 export default function TeacherEvaluationsPage() {
   const { user, teacherId } = useAuthStore()
   const [evaluations, setEvaluations] = useState<Evaluation[]>([])
@@ -132,6 +101,7 @@ export default function TeacherEvaluationsPage() {
 
   // Form State fields
   const [studentName, setStudentName] = useState('')
+  const [lessonComment, setLessonComment] = useState('')
   const [subjectType, setSubjectType] = useState<'english' | 'other'>('english')
   
   // Skills 1 to 9
@@ -142,7 +112,9 @@ export default function TeacherEvaluationsPage() {
 
   const [formType, setFormType] = useState<Evaluation['formType']>('adult_comm')
   const [selectedLevels, setSelectedLevels] = useState<string[]>([])
+  const [selectedCourseLevels, setSelectedCourseLevels] = useState<Record<string, number>>({})
   const [customLevelText, setCustomLevelText] = useState('')
+  const [tutorSkills, setTutorSkills] = useState<string[]>([])
   
   // Tutor fields
   const [tutorSubjects, setTutorSubjects] = useState<Record<string, string>>({
@@ -211,7 +183,9 @@ export default function TeacherEvaluationsPage() {
       setProposedCurriculum(DEFAULT_CURRICULUM[formType])
       setPostCourseGoals(DEFAULT_GOALS[formType])
       setSelectedLevels([])
+      setSelectedCourseLevels({})
       setCustomLevelText('')
+      setTutorSkills([])
       
       // Auto adjust default duration per session based on selected formType recommendations
       if (formType === 'kids_a' || formType === 'kids_b') {
@@ -225,6 +199,7 @@ export default function TeacherEvaluationsPage() {
   const handleOpenCreate = () => {
     setEditingEval(null)
     setStudentName('')
+    setLessonComment('')
     setSubjectType('english')
     setSkills({
       listening: 5, speaking: 5, reading: 5, pronunciation: 5, vocabulary: 5, grammar: 5, communication: 5,
@@ -232,7 +207,9 @@ export default function TeacherEvaluationsPage() {
     })
     setFormType('adult_comm')
     setSelectedLevels([])
+    setSelectedCourseLevels({})
     setCustomLevelText('')
+    setTutorSkills([])
     setTutorSubjects({ moet: '', tichHop: '', nangCao: '', songNgu: '', quocTe: '', khac: '' })
     setEvaluationResult('direct')
     setSessionsPerWeek(3)
@@ -246,11 +223,14 @@ export default function TeacherEvaluationsPage() {
   const handleOpenEdit = (evalDoc: Evaluation) => {
     setEditingEval(evalDoc)
     setStudentName(evalDoc.studentName)
+    setLessonComment(evalDoc.lessonComment || '')
     setSubjectType(evalDoc.type)
     setSkills({ ...skills, ...evalDoc.skills })
     setFormType(evalDoc.formType)
-    setSelectedLevels(evalDoc.selectedLevels || [])
+    setSelectedLevels((evalDoc.selectedLevels || []).map(normalizeCourseLabel))
+    setSelectedCourseLevels(normalizeSelectedCourseLevels(evalDoc.selectedCourseLevels))
     setCustomLevelText(evalDoc.customLevelText || '')
+    setTutorSkills(evalDoc.tutorSkills || [])
     setTutorSubjects(evalDoc.tutorSubjects || { moet: '', tichHop: '', nangCao: '', songNgu: '', quocTe: '', khac: '' })
     setEvaluationResult(evalDoc.evaluationResult)
     setSessionsPerWeek(evalDoc.sessionsPerWeek)
@@ -267,9 +247,25 @@ export default function TeacherEvaluationsPage() {
       toast.error('Vui lòng nhập tên học viên')
       return
     }
+    if (lessonComment.trim().length < 100) {
+      toast.error('Nhận xét buổi học phải có ít nhất 100 ký tự')
+      return
+    }
+    const courseMissingStartLevel = formType === 'tutor'
+      ? undefined
+      : getCourseOptions(formType).find((course) => (
+        selectedLevels.includes(course.label)
+        && course.levelOptions?.length
+        && selectedCourseLevels[course.label] === undefined
+      ))
+    if (courseMissingStartLevel) {
+      toast.error(`Vui lòng chọn cấp độ bắt đầu cho ${courseMissingStartLevel.label}`)
+      return
+    }
 
     const payload: Partial<Evaluation> = {
       studentName: studentName.trim(),
+      lessonComment: lessonComment.trim(),
       type: subjectType,
       skills: subjectType === 'english' 
         ? {
@@ -292,8 +288,10 @@ export default function TeacherEvaluationsPage() {
           },
       formType,
       selectedLevels: formType === 'tutor' ? [] : selectedLevels,
+      selectedCourseLevels: formType === 'tutor' ? {} : selectedCourseLevels,
       customLevelText: formType === 'tutor' ? '' : customLevelText,
       tutorSubjects: formType === 'tutor' ? tutorSubjects : {},
+      tutorSkills: formType === 'tutor' ? tutorSkills : [],
       evaluationResult,
       sessionsPerWeek,
       minutesPerSession,
@@ -316,9 +314,11 @@ export default function TeacherEvaluationsPage() {
           ...payload,
           teacherId,
           teacherName,
+          // Phiếu mới luôn chờ admin duyệt; duyệt xong hệ thống cộng thưởng vào lương.
+          status: 'pending',
           createdAt: serverTimestamp(),
         })
-        toast.success('Đã tạo phiếu đánh giá thành công')
+        toast.success('Đã gửi phiếu đánh giá — chờ admin duyệt để được cộng thưởng')
       }
       setShowForm(false)
     } catch (err) {
@@ -328,6 +328,13 @@ export default function TeacherEvaluationsPage() {
   }
 
   const handleDelete = async (id: string) => {
+    // Phiếu đã duyệt đã phát sinh khoản thưởng trong bảng lương -> không cho gia sư
+    // tự xoá, tránh để lại bản ghi lương mồ côi không đối chiếu được.
+    const target = evaluations.find((e) => e.id === id)
+    if (target && evalStatusOf(target) === 'approved') {
+      toast.warning('Phiếu đã được duyệt và đã cộng thưởng nên không thể xoá. Vui lòng liên hệ admin nếu cần điều chỉnh.')
+      return
+    }
     if (!confirm('Bạn có chắc chắn muốn xóa phiếu đánh giá này?')) return
     try {
       await deleteDoc(doc(db, 'evaluations', id))
@@ -353,21 +360,24 @@ export default function TeacherEvaluationsPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="evaluation-mobile-theme max-w-6xl mx-auto space-y-6">
       
       {/* Title Header */}
-      <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <ClipboardCheck className="w-6 h-6 text-indigo-600" />
+      <div className="flex flex-col items-stretch gap-4 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 rounded-3xl border border-slate-200 shadow-sm">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <ClipboardCheck className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 shrink-0" />
             Đánh giá học sinh mới
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs leading-5 text-slate-500 mt-1">
             Quản lý và thiết lập biểu đồ năng lực kèm đề xuất lộ trình học cho học sinh mới
           </p>
+          <p className="mt-2 inline-block rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold leading-5 text-emerald-700">
+            Mỗi phiếu đánh giá được admin duyệt sẽ được cộng {formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương của bạn
+          </p>
         </div>
-        <Button onClick={handleOpenCreate} className="rounded-2xl gap-1">
-          <Plus className="w-4 h-4" />
+        <Button onClick={handleOpenCreate} fullWidth className="evaluation-primary min-h-12 shrink-0 rounded-2xl px-5 font-bold whitespace-nowrap sm:w-auto sm:min-h-[44px]">
+          <Plus className="w-5 h-5" />
           Tạo đánh giá mới
         </Button>
       </div>
@@ -390,13 +400,38 @@ export default function TeacherEvaluationsPage() {
                   <div>
                     <h3 className="font-extrabold text-slate-850 text-base">{item.studentName}</h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                      {FORM_TITLES[item.formType]}
+                      {EVALUATION_FORM_LABELS[item.formType]}
                     </p>
                   </div>
                   <Badge variant={item.type === 'english' ? 'info' : 'warning'}>
                     {item.type === 'english' ? 'Tiếng Anh' : 'Khác'}
                   </Badge>
                 </div>
+
+                {/* Trạng thái duyệt & tiền thưởng */}
+                {(() => {
+                  const st = evalStatusOf(item)
+                  if (st === 'approved') return (
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <p className="text-xs font-bold text-emerald-700">
+                        ✓ Đã duyệt — cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
+                      </p>
+                    </div>
+                  )
+                  if (st === 'rejected') return (
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                      <p className="text-xs font-bold text-rose-700">Bị từ chối{item.rejectedReason ? `: ${item.rejectedReason}` : ''}</p>
+                      <p className="text-[11px] text-rose-600 mt-0.5">Bạn có thể chỉnh sửa và liên hệ admin duyệt lại.</p>
+                    </div>
+                  )
+                  return (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                      <p className="text-xs font-bold text-amber-700">
+                        Chờ admin duyệt — được cộng {formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} sau khi duyệt
+                      </p>
+                    </div>
+                  )
+                })()}
 
                 <div className="mt-4 grid grid-cols-2 gap-y-2 text-xs border-t border-slate-100 pt-4">
                   <span className="text-slate-400">Kết quả đề xuất:</span>
@@ -441,8 +476,8 @@ export default function TeacherEvaluationsPage() {
 
       {/* Slide-out Form Overlay */}
       {showForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-end">
-          <div className="w-full max-w-2xl bg-white h-full flex flex-col shadow-2xl animate-slide-left">
+        <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-end justify-center sm:items-stretch sm:justify-end">
+          <div className="evaluation-sheet w-full max-w-2xl h-full flex flex-col shadow-2xl animate-slide-left sm:rounded-l-[28px]">
             
             {/* Form Header */}
             <div className="p-6 border-b border-slate-200 flex justify-between items-center shrink-0">
@@ -460,7 +495,7 @@ export default function TeacherEvaluationsPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-8">
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
               
               {/* Section 1: Học viên & Môn học */}
               <div className="space-y-4">
@@ -497,6 +532,24 @@ export default function TeacherEvaluationsPage() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-600">Nhận xét buổi học</label>
+                  <textarea
+                    rows={4}
+                    required
+                    minLength={100}
+                    value={lessonComment}
+                    onChange={(event) => setLessonComment(event.target.value)}
+                    className="w-full resize-y rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300"
+                    placeholder="Ví dụ: Học viên tiếp thu tốt, chủ động giao tiếp và cần luyện thêm phát âm..."
+                  />
+                  <div className="flex items-center justify-between gap-3 text-[11px] font-semibold">
+                    <span className="text-slate-400">Tối thiểu 100 ký tự để nhận xét đủ rõ ràng.</span>
+                    <span className={lessonComment.trim().length >= 100 ? 'text-emerald-600' : 'text-amber-700'}>
+                      {lessonComment.trim().length}/100
+                    </span>
                   </div>
                 </div>
               </div>
@@ -580,10 +633,10 @@ export default function TeacherEvaluationsPage() {
                   >
                     {subjectType === 'english' ? (
                       <>
-                        <option value="adult_comm">Tiếng Anh giao tiếp người lớn</option>
-                        <option value="kids_a">Tiếng Anh trẻ em A (Time to Talk)</option>
-                        <option value="kids_b">Tiếng Anh trẻ em B (Magic Phonics/Smart Kids)</option>
-                        <option value="academic">Tiếng Anh học thuật (IELTS/Cambridge)</option>
+                        <option value="adult_comm">{EVALUATION_FORM_LABELS.adult_comm}</option>
+                        <option value="kids_a">{EVALUATION_FORM_LABELS.kids_a}</option>
+                        <option value="kids_b">{EVALUATION_FORM_LABELS.kids_b}</option>
+                        <option value="academic">{EVALUATION_FORM_LABELS.academic}</option>
                       </>
                     ) : (
                       <option value="tutor">Gia sư các môn học khác</option>
@@ -596,6 +649,30 @@ export default function TeacherEvaluationsPage() {
                   /* Tutor checklist & text inputs */
                   <div className="space-y-4 bg-slate-50/50 p-4 border border-slate-150 rounded-2xl">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cấu hình chi tiết Môn học Gia sư</p>
+
+                    <fieldset className="space-y-3">
+                      <legend className="text-xs font-bold text-slate-600">Kỹ năng cần tập trung</legend>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {TUTOR_SKILL_OPTIONS.map((skill) => {
+                          const isChecked = tutorSkills.includes(skill)
+                          return (
+                            <label key={skill} className="flex items-center gap-3 min-h-[46px] p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-indigo-50/40">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(event) => setTutorSkills((current) => (
+                                  event.target.checked
+                                    ? [...current, skill]
+                                    : current.filter((item) => item !== skill)
+                                ))}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                              />
+                              <span className="text-xs font-bold text-slate-700">{skill}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </fieldset>
                     
                     <div className="space-y-3">
                       {[
@@ -623,22 +700,60 @@ export default function TeacherEvaluationsPage() {
                   <div className="space-y-4 bg-slate-50/50 p-4 border border-slate-150 rounded-2xl">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cấp độ/Level đề xuất</p>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {FORM_OPTIONS[formType].map((opt) => {
-                        const isChecked = selectedLevels.includes(opt)
+                    <div className="grid grid-cols-1 gap-3">
+                      {getCourseOptions(formType).map((option) => {
+                        const isChecked = selectedLevels.includes(option.label)
                         return (
-                          <label key={opt} className="flex items-center gap-3 p-3 bg-white border border-slate-150 rounded-xl cursor-pointer hover:bg-slate-50">
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedLevels([...selectedLevels, opt])
-                                else setSelectedLevels(selectedLevels.filter(x => x !== opt))
-                              }}
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-350 focus:ring-indigo-500"
-                            />
-                            <span className="text-xs font-bold text-slate-700">{opt}</span>
-                          </label>
+                          <div key={option.label} className="overflow-hidden bg-white border border-slate-200 rounded-xl">
+                            <label className="flex items-center gap-3 p-3 cursor-pointer hover:bg-amber-50/60">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedLevels((current) => [...current, option.label])
+                                  } else {
+                                    setSelectedLevels((current) => current.filter((item) => item !== option.label))
+                                    setSelectedCourseLevels((current) => {
+                                      const next = { ...current }
+                                      delete next[option.label]
+                                      return next
+                                    })
+                                  }
+                                }}
+                                className="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-400"
+                              />
+                              <span className="min-w-0 text-xs font-bold text-slate-700">{option.label}</span>
+                            </label>
+                            {isChecked && (
+                              <div className="px-4 pb-4 border-t border-amber-100">
+                                {option.description && <p className="pt-3 text-xs leading-5 text-slate-600">{option.description}</p>}
+                                {option.levelOptions?.length ? (
+                                  <div className="pt-3">
+                                    <p className="mb-2 text-xs font-bold text-slate-700">Chọn cấp độ bắt đầu đề xuất</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {option.levelOptions.map((level) => {
+                                        const isRecommended = selectedCourseLevels[option.label] === level.value
+                                        return (
+                                          <button
+                                            key={level.value}
+                                            type="button"
+                                            onClick={() => setSelectedCourseLevels((current) => ({ ...current, [option.label]: level.value }))}
+                                            className={`min-h-9 rounded-full border px-3 text-xs font-extrabold transition-colors ${isRecommended ? 'evaluation-primary' : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:bg-amber-50'}`}
+                                            aria-pressed={isRecommended}
+                                          >
+                                            {level.label}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="pt-3 text-xs font-medium text-slate-500">Giáo trình này không chia thành cấp độ khởi đầu riêng.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )
                       })}
                     </div>
@@ -683,6 +798,9 @@ export default function TeacherEvaluationsPage() {
                       <option value={2}>02 buổi/tuần</option>
                       <option value={3}>03 buổi/tuần (Khuyến nghị)</option>
                       <option value={4}>04 buổi/tuần</option>
+                      <option value={5}>05 buổi/tuần</option>
+                      <option value={6}>06 buổi/tuần</option>
+                      <option value={7}>07 buổi/tuần</option>
                     </select>
                   </div>
 
@@ -698,15 +816,6 @@ export default function TeacherEvaluationsPage() {
                       <option value={100}>100 phút</option>
                     </select>
                   </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-600">Giáo trình đề xuất</label>
-                  <Input 
-                    placeholder="Nhập tên giáo trình đề xuất..." 
-                    value={proposedCurriculum}
-                    onChange={(e: any) => setProposedCurriculum(e.target.value)}
-                  />
                 </div>
 
                 <div className="space-y-2">
@@ -769,11 +878,11 @@ export default function TeacherEvaluationsPage() {
             </form>
 
             {/* Form Footer */}
-            <div className="p-6 border-t border-slate-200 flex justify-end gap-2 shrink-0 bg-slate-50">
+            <div className="evaluation-sheet-footer p-4 sm:p-6 border-t border-slate-200 flex justify-end gap-2 shrink-0 bg-slate-50">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="rounded-2xl">
                 Hủy
               </Button>
-              <Button type="button" onClick={handleSave} className="rounded-2xl">
+              <Button type="button" onClick={handleSave} className="evaluation-primary rounded-2xl">
                 Lưu kết quả
               </Button>
             </div>

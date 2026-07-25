@@ -30,3 +30,41 @@ export function missingTeacherFields(t: Partial<Teacher> | null | undefined): (k
 export function isTeacherProfileComplete(t: Partial<Teacher> | null | undefined): boolean {
   return missingTeacherFields(t).length === 0
 }
+
+export type TeacherCertificateCompliance = {
+  hasForeignLanguageImage: boolean
+  hasPedagogicalImage: boolean
+  isCertificateComplete: boolean
+  missingCertificateLabels: string[]
+}
+
+/**
+ * Kiểm tra quy định ảnh chứng chỉ dành cho Admin.
+ * Chỉ tính là đã bổ sung khi chứng chỉ đúng nhóm, chưa bị hủy và có fileURL.
+ * Các trường IELTS/TOEIC/Sư phạm dạng chữ cũ không thay thế cho ảnh chứng chỉ.
+ */
+export function getTeacherCertificateCompliance(
+  teacher: Partial<Teacher> | null | undefined,
+): TeacherCertificateCompliance {
+  const certificates = teacher?.certificates || []
+  const hasImage = (category: 'foreign_language' | 'pedagogical') => certificates.some((certificate) => (
+    certificate.category === category
+    && !certificate.voided
+    && typeof certificate.fileURL === 'string'
+    && certificate.fileURL.trim().length > 0
+  ))
+
+  const hasForeignLanguageImage = hasImage('foreign_language')
+  const hasPedagogicalImage = hasImage('pedagogical')
+  const missingCertificateLabels = [
+    ...(!hasForeignLanguageImage ? ['Năng lực chuyên môn'] : []),
+    ...(!hasPedagogicalImage ? ['Sư phạm'] : []),
+  ]
+
+  return {
+    hasForeignLanguageImage,
+    hasPedagogicalImage,
+    isCertificateComplete: missingCertificateLabels.length === 0,
+    missingCertificateLabels,
+  }
+}

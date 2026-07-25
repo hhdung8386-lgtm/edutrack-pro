@@ -25,6 +25,7 @@ export function FutureBookingsPage() {
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
+  const [cancelProgress, setCancelProgress] = useState<{ done: number; total: number } | null>(null)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
   const [confirmTargets, setConfirmTargets] = useState<BookingRequest[] | null>(null)
 
@@ -68,11 +69,13 @@ export function FutureBookingsPage() {
     return unsub
   }, [])
 
-  // Load all confirmed booking requests
+  // Load every booking that is still holding the student's fund. Pending requests
+  // reserve the fund immediately too, so excluding them would make this screen
+  // disagree with the student detail balance.
   useEffect(() => {
     const q = query(
       collection(db, 'bookingRequests'),
-      where('status', '==', 'confirmed')
+      where('status', 'in', ['confirmed', 'pending'])
     )
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
@@ -82,12 +85,52 @@ export function FutureBookingsPage() {
     return unsub
   }, [])
 
+  // Ngày hôm nay theo giờ Việt Nam (GMT+7)
+  const todayISO = useMemo(
+    () => new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0],
+    []
+  )
+
+  /**
+   * Ca đã QUÁ HẠN: ngày học đã trôi qua mà gia sư không điểm danh (không có lessonId)
+   * nhưng ca vẫn ở trạng thái 'confirmed' -> vẫn ĐANG GIỮ phút của học viên.
+   * Đây là nguyên nhân khiến học viên bị "treo" quỹ buổi mà không dùng được.
+   */
+  const overdueBookings = useMemo(
+    () => bookings.filter((b) => b.requestedDate && !b.lessonId && b.requestedDate < todayISO),
+    [bookings, todayISO]
+  )
+
+  const overdueStats = useMemo(() => ({
+    count: overdueBookings.length,
+    minutes: overdueBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0),
+    students: new Set(overdueBookings.map((b) => b.studentId).filter(Boolean)).size,
+  }), [overdueBookings])
+
+  const selectedStudentHeldBookings = useMemo(
+    () => bookings.filter((booking) =>
+      !booking.lessonId && (selectedStudentId === 'all' || booking.studentId === selectedStudentId),
+    ),
+    [bookings, selectedStudentId],
+  )
+
+  const selectedStudentOverdueBookings = useMemo(
+    () => selectedStudentHeldBookings.filter((booking) =>
+      Boolean(booking.requestedDate) && (booking.requestedDate || '') < todayISO,
+    ),
+    [selectedStudentHeldBookings, todayISO],
+  )
+
   // Filter and sort bookings client-side
   const futureBookings = useMemo(() => {
     const filtered = bookings.filter((b) => {
       // 1. Must not be taught yet
       const isUnattended = b.requestedDate && !b.lessonId
       if (!isUnattended) return false
+
+      // 1b. Trang này là "Tương lai" -> chỉ hiện ca từ hôm nay trở đi.
+      //     Ca quá hạn được tách riêng ở khối cảnh báo phía trên.
+      if ((b.requestedDate || '') < todayISO) return false
 
       // 2. Student filter
       const matchesStudent = selectedStudentId === 'all' || b.studentId === selectedStudentId
@@ -125,7 +168,7 @@ export function FutureBookingsPage() {
       if (dateA !== dateB) return dateA.localeCompare(dateB)
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
-  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks])
+  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks, todayISO])
 
   // Handle student filter change
   const handleStudentChange = (studentId: string) => {
@@ -158,7 +201,10 @@ export function FutureBookingsPage() {
       // Run a transaction per student to update their minutes and documents safely.
       // Chunk large selections to stay under Firestore's 500-writes-per-transaction limit.
       const CHUNK_SIZE = 400
-      for (const [studentId, allStudentBookings] of Object.entries(bookingsByStudent)) {
+      const studentEntries = Object.entries(bookingsByStudent)
+      setCancelProgress({ done: 0, total: studentEntries.length })
+      let processedStudents = 0
+      for (const [studentId, allStudentBookings] of studentEntries) {
         for (let i = 0; i < allStudentBookings.length; i += CHUNK_SIZE) {
         const studentBookings = allStudentBookings.slice(i, i + CHUNK_SIZE)
         const totalMinutesToRefund = studentBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
@@ -232,6 +278,8 @@ export function FutureBookingsPage() {
           })
         })
         }
+        processedStudents++
+        setCancelProgress({ done: processedStudents, total: studentEntries.length })
       }
 
       toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả phút cho học viên tương ứng.`)
@@ -239,9 +287,10 @@ export function FutureBookingsPage() {
       setConfirmTargets(null)
     } catch (err: any) {
       console.error('Cancel bookings failed:', err)
-      toast.error(`Gặp lỗi khi hủy các ca học đã chọn${err?.message ? `: ${err.message}` : ''}`)
+      toast.error(`Gặp lỗi khi hủy các ca học đã chọn${err?.message ? `: ${err.message}` : ''}. Các ca đã xử lý xong vẫn được lưu, bạn có thể bấm lại để tiếp tục phần còn lại.`)
     } finally {
       setCancelling(false)
+      setCancelProgress(null)
     }
   }
 
@@ -261,9 +310,54 @@ export function FutureBookingsPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900">Lịch học đã đặt (Tương lai)</h1>
-          <p className="text-sm text-slate-500">Quản lý và hủy lịch học đã giữ chỗ của học viên</p>
+          <p className="text-sm text-slate-500">Quản lý lịch từ hôm nay trở đi. Ca quá hạn chưa điểm danh được tách riêng để số quỹ luôn rõ ràng.</p>
         </div>
       </div>
+
+      {/* Cảnh báo ca học đã quá hạn nhưng vẫn đang giữ phút của học viên */}
+      {overdueStats.count > 0 && (
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-900">
+                  Có {overdueStats.count} ca học đã QUÁ HẠN mà chưa được điểm danh
+                </p>
+                <p className="text-sm text-amber-800 mt-1 leading-relaxed">
+                  Các ca này đã qua ngày học nhưng vẫn giữ chỗ, khiến{' '}
+                  <span className="font-bold">{overdueStats.minutes.toLocaleString('vi-VN')} phút</span> của{' '}
+                  <span className="font-bold">{overdueStats.students} học viên</span> bị treo, không đặt lịch mới được.
+                </p>
+                <p className="text-xs text-amber-700 mt-1.5 font-semibold">
+                  Huỷ các ca này sẽ <span className="underline">hoàn lại toàn bộ số phút</span> cho học viên — không mất buổi nào.
+                </p>
+                {cancelProgress && (
+                  <div className="mt-3">
+                    <p className="text-xs font-bold text-amber-900">
+                      Đang xử lý {cancelProgress.done}/{cancelProgress.total} học viên — vui lòng không đóng trang…
+                    </p>
+                    <div className="mt-1.5 h-2 w-full max-w-md overflow-hidden rounded-full bg-amber-200">
+                      <div
+                        className="h-full bg-amber-500 transition-all duration-300"
+                        style={{ width: `${cancelProgress.total ? Math.round((cancelProgress.done / cancelProgress.total) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <Button
+              onClick={() => setConfirmTargets(overdueBookings)}
+              loading={cancelling}
+              className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Huỷ & hoàn phút ({overdueStats.count} ca)
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Filter and stats card */}
       <Card>
@@ -381,9 +475,16 @@ export function FutureBookingsPage() {
 
           {/* Stats Bar */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-            <span className="text-xs font-medium text-slate-500">
-              Bộ lọc: {futureBookings.length} ca học phù hợp
-            </span>
+            <div className="text-xs font-medium text-slate-500">
+              {selectedStudentId === 'all' ? (
+                <>Bộ lọc: {futureBookings.length} ca học phù hợp</>
+              ) : (
+                <>
+                  Học viên này đang giữ <strong className="text-slate-700">{selectedStudentHeldBookings.length} ca</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
+                  {selectedStudentOverdueBookings.length > 0 && <>; <strong className="text-amber-700">{selectedStudentOverdueBookings.length} ca quá hạn</strong> nằm ở cảnh báo phía trên</>}.
+                </>
+              )}
+            </div>
             <div className="bg-slate-50 border border-slate-200/50 rounded-xl px-4 py-2.5 flex gap-6">
               <div>
                 <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Tổng số ca</span>

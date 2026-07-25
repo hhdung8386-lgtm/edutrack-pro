@@ -182,17 +182,20 @@ export function BookingRequestsPage() {
 
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
-        const minutes = Number(requestNow.requestedMinutes) || 0
+        const heldAmount = Number(requestNow.requestedPoints ?? requestNow.requestedMinutes) || 0
+        const holdAlreadyApplied = requestNow.heldImmediately === true
 
-        if (fund.available < minutes) throw new Error('NOT_ENOUGH_MINUTES')
+        if (holdAlreadyApplied ? fund.held < heldAmount : fund.available < heldAmount) throw new Error('NOT_ENOUGH_MINUTES')
 
-        const nextHeld = fund.held + minutes
+        const nextHeld = holdAlreadyApplied ? fund.held : fund.held + heldAmount
 
-        tx.update(studentRef, {
-          reservedMinutes: nextHeld,
-          heldMinutes: nextHeld,
-          updatedAt: serverTimestamp(),
-        })
+        if (!holdAlreadyApplied) {
+          tx.update(studentRef, {
+            reservedMinutes: nextHeld,
+            heldMinutes: nextHeld,
+            updatedAt: serverTimestamp(),
+          })
+        }
 
         tx.update(requestRef, {
           status: 'confirmed',
@@ -210,7 +213,7 @@ export function BookingRequestsPage() {
           changes: {
             studentId: confirming.studentId,
             teacherId: confirming.teacherId,
-            heldMinutesAdded: minutes,
+            heldMinutesAdded: holdAlreadyApplied ? 0 : heldAmount,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
@@ -299,8 +302,8 @@ export function BookingRequestsPage() {
 
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
-        const minutes = Number(requestNow.requestedMinutes) || 0
-        const nextHeld = Math.max(0, fund.held - minutes)
+        const heldAmount = Number(requestNow.requestedPoints ?? requestNow.requestedMinutes) || 0
+        const nextHeld = Math.max(0, fund.held - heldAmount)
 
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
@@ -323,7 +326,7 @@ export function BookingRequestsPage() {
           targetId: releasing.id,
           changes: {
             studentId: releasing.studentId,
-            releasedMinutes: minutes,
+            releasedMinutes: heldAmount,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
@@ -424,7 +427,10 @@ export function BookingRequestsPage() {
           {filtered.map((request) => {
             const student = students[request.studentId]
             const fund = student ? getStudentMinuteFund(student) : null
-            const canConfirm = request.status === 'pending' && !!fund && fund.available >= request.requestedMinutes
+            const teacherReady = request.teacherResponse === undefined || request.teacherResponse === 'accepted'
+            const requestedHold = Number(request.requestedPoints ?? request.requestedMinutes) || 0
+            const hasEnoughMinutes = !!fund && (request.heldImmediately ? fund.held >= requestedHold : fund.available >= requestedHold)
+            const canConfirm = request.status === 'pending' && teacherReady && hasEnoughMinutes
 
             return (
               <article key={request.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -432,6 +438,9 @@ export function BookingRequestsPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusPill status={request.status} />
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${request.teacherResponse === 'accepted' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : request.teacherResponse === 'declined' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+                        {request.teacherResponse === 'accepted' ? 'Gia sư đã xác nhận' : request.teacherResponse === 'declined' ? 'Gia sư đã từ chối' : 'Chờ gia sư phản hồi'}
+                      </span>
                       <span className="text-xs font-medium text-slate-400">{formatDate(request.createdAt)}</span>
                     </div>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -485,7 +494,12 @@ export function BookingRequestsPage() {
                       <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-500">Đang tải quỹ phút...</p>
                     )}
 
-                    {request.status === 'pending' && fund && !canConfirm && (
+                    {request.status === 'pending' && !teacherReady && (
+                      <p className={`mt-3 rounded-xl px-3 py-2 text-xs font-semibold ${request.teacherResponse === 'declined' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {request.teacherResponse === 'declined' ? 'Gia sư đã từ chối yêu cầu này.' : 'Đang chờ gia sư xác nhận nhận lớp.'}
+                      </p>
+                    )}
+                    {request.status === 'pending' && fund && teacherReady && !hasEnoughMinutes && (
                       <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
                         Khả dụng không đủ {request.requestedMinutes} phút để giữ chỗ.
                       </p>

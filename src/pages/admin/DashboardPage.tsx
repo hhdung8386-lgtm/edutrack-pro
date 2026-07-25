@@ -46,6 +46,7 @@ export function DashboardPage() {
   const [todayLessons, setTodayLessons] = useState<Lesson[]>([])
   const [pendingLessons, setPendingLessons] = useState<Lesson[]>([])
   const [studentCount, setStudentCount] = useState(0)
+  const [totalStudentCount, setTotalStudentCount] = useState(0)
   const [teacherCount, setTeacherCount] = useState(0)
   const [chartData, setChartData] = useState<{ month: string; count: number }[]>([])
   const [approvingLesson, setApprovingLesson] = useState<Lesson | null>(null)
@@ -184,6 +185,12 @@ export function DashboardPage() {
       .then((snap) => setStudentCount(snap.data().count))
       .catch(() => setStudentCount(0))
 
+    // Tổng TOÀN BỘ hồ sơ học viên (kể cả bảo lưu/hết buổi) — hiển thị kèm để
+    // không ai tưởng "mất" học viên khi so với số Đang học.
+    getCountFromServer(collection(db, 'students'))
+      .then((snap) => setTotalStudentCount(snap.data().count))
+      .catch(() => setTotalStudentCount(0))
+
     getCountFromServer(query(collection(db, 'teachers'), where('status', '==', 'active')))
       .then((snap) => setTeacherCount(snap.data().count))
       .catch(() => setTeacherCount(0))
@@ -247,8 +254,9 @@ export function DashboardPage() {
           pulse={pendingCount > 0}
         />
         <KpiCard
-          title="Học viên active"
+          title="Học viên đang học"
           value={studentCount}
+          sub={totalStudentCount > 0 ? `Tổng hồ sơ: ${totalStudentCount} (gồm bảo lưu, hết buổi)` : undefined}
           icon={Users}
           color="text-emerald-400"
         />

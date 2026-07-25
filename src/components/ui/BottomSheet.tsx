@@ -7,10 +7,11 @@ interface BottomSheetProps {
   title?: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  mobileHeight?: 'default' | 'compact'
   footer?: ReactNode
 }
 
-export function BottomSheet({ open, onClose, title, children, size = 'md', footer }: BottomSheetProps) {
+export function BottomSheet({ open, onClose, title, children, size = 'md', mobileHeight = 'default', footer }: BottomSheetProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden'
@@ -31,6 +32,8 @@ export function BottomSheet({ open, onClose, title, children, size = 'md', foote
     xl: 'max-w-4xl',
   }
 
+  const mobileMaxHeight = mobileHeight === 'compact' ? 'max-h-[72dvh]' : 'max-h-[85dvh]'
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
       {/* Backdrop */}
@@ -41,12 +44,15 @@ export function BottomSheet({ open, onClose, title, children, size = 'md', foote
       
       {/* Sheet panel */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={`
           relative w-full ${sizes[size]} bg-white border border-slate-200
           rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 
           transform transition-transform duration-300 ease-out
-          max-h-[85vh] sm:max-h-[90vh] flex flex-col overflow-hidden
-          animate-slide-up
+          ${mobileMaxHeight} sm:max-h-[90vh] flex flex-col overflow-hidden
+          animate-slide-up motion-reduce:animate-none
         `}
       >
         {/* Mobile handle indicator */}

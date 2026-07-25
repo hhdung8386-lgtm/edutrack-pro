@@ -1,0 +1,1 @@
+Đọc toàn bộ file `D:\trackingplatium\.agents\skills\rulehd\SKILL.md` trước khi bắt đầu nhiệm vụ và áp dụng như quy tắc bắt buộc. Đây là nguồn quy ước duy nhất; không sao chép hoặc tự thay đổi nội dung quy ước ở file này.

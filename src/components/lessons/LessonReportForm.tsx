@@ -1,6 +1,6 @@
 import { Star } from 'lucide-react'
 import { useLanguageStore } from '@/stores/languageStore'
-import { LessonReportDraft } from './lessonReport'
+import { LessonReportDraft, lessonReportCharCount, MIN_REPORT_CHARS } from './lessonReport'
 
 /**
  * UI form báo cáo buổi học có cấu trúc (mẫu mới):
@@ -112,6 +112,32 @@ export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
         placeholder={t('report.exercises_placeholder')}
         commentLabel={t('report.section_comment')}
       />
+
+      {/* Bộ đếm ký tự: nhận xét 3 mục phải đủ dài, tránh ghi hời hợt */}
+      {(() => {
+        const count = lessonReportCharCount(value)
+        const ok = count >= MIN_REPORT_CHARS
+        return (
+          <div className={`rounded-xl border px-3.5 py-2.5 ${ok ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+            <p className={`text-xs font-bold ${ok ? 'text-emerald-700' : 'text-amber-800'}`}>
+              {ok
+                ? `✓ Nhận xét đã đủ chi tiết (${count} ký tự)`
+                : `Nhận xét còn quá ngắn: ${count}/${MIN_REPORT_CHARS} ký tự — cần thêm ${MIN_REPORT_CHARS - count} ký tự nữa`}
+            </p>
+            {!ok && (
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+                Hãy mô tả cụ thể con học được gì, chơi trò gì, làm bài tập nào — phụ huynh đọc nhận xét này để theo dõi con.
+              </p>
+            )}
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white">
+              <div
+                className={`h-full transition-all ${ok ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                style={{ width: `${Math.min(100, Math.round((count / MIN_REPORT_CHARS) * 100))}%` }}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Bài tập về nhà */}
       <div className="space-y-2">

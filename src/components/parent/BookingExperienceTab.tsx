@@ -9,6 +9,7 @@ import {
   Clock,
   History,
   Phone,
+  RefreshCw,
   Star,
   Video,
 } from 'lucide-react'
@@ -53,6 +54,8 @@ interface BookingExperienceTabProps {
   recommendationsError: boolean
   onRetryRecommendations: () => void
   onOpenHistory: () => void
+  /** Còn buổi đã huỷ chưa đặt lại → khoá nút Huỷ ở mọi buổi khác. */
+  rebookRequired?: boolean
   lang: string
 }
 
@@ -96,6 +99,7 @@ function ScheduleCard({
   subjectPackage,
   roomLink,
   cancellationPending,
+  rebookRequired,
   onDetail,
   onTeacherProfile,
   onCancel,
@@ -106,6 +110,7 @@ function ScheduleCard({
   subjectPackage?: StudentSubject
   roomLink: string
   cancellationPending: boolean
+  rebookRequired?: boolean
   onDetail: () => void
   onTeacherProfile: () => void
   onCancel: () => void
@@ -149,8 +154,10 @@ function ScheduleCard({
                     <button
                       type="button"
                       onClick={onCancel}
-                      className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950 active:scale-[0.98]"
-                      title={cancellationPending ? (lang === 'vi' ? 'Chuyển yêu cầu cũ sang hủy tự động' : 'Process the previous request automatically') : undefined}
+                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition active:scale-[0.98] ${rebookRequired ? 'text-red-500 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'}`}
+                      title={rebookRequired
+                        ? (lang === 'vi' ? 'Bạn cần đặt lại buổi đã huỷ trước khi huỷ buổi tiếp theo' : 'Rebook your cancelled session before cancelling another')
+                        : cancellationPending ? (lang === 'vi' ? 'Chuyển yêu cầu cũ sang hủy tự động' : 'Process the previous request automatically') : undefined}
                     >
                       {lang === 'vi' ? 'Hủy buổi' : 'Cancel'}
                     </button>
@@ -210,6 +217,7 @@ export function BookingExperienceTab({
   recommendationsError,
   onRetryRecommendations,
   onOpenHistory,
+  rebookRequired,
   lang,
 }: BookingExperienceTabProps) {
   const todayISO = localISO(new Date())
@@ -292,12 +300,36 @@ export function BookingExperienceTab({
       subjectPackage={subjectPackages.find((item) => item.subjectId === booking.subjectId)}
       roomLink={roomLinkOf(booking)}
       cancellationPending={pendingCancellationIds.has(booking.id)}
+      rebookRequired={rebookRequired}
       onDetail={() => onSelectBooking(booking)}
       onTeacherProfile={() => onOpenTeacherProfile(booking.teacherId)}
       onCancel={() => onCancelBooking(booking)}
       lang={lang}
     />
   )
+
+  const rebookBanner = rebookRequired ? (
+    <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-900 shadow-[0_10px_30px_-18px_rgba(220,38,38,0.6)]">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+        <RefreshCw className="h-4.5 w-4.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-black text-red-700">{lang === 'vi' ? 'Bạn còn 1 buổi cần đặt lại' : 'You have 1 session to rebook'}</p>
+        <p className="mt-0.5 text-xs font-semibold leading-5 text-red-800/90">
+          {lang === 'vi'
+            ? 'Kim cương đang được giữ. Hãy chọn khung giờ để đặt lại — sau khi đặt xong bạn mới có thể huỷ buổi khác.'
+            : 'Your diamonds are held. Pick a slot to rebook — you can cancel other sessions again once you do.'}
+        </p>
+        <button
+          type="button"
+          onClick={onPickTeacher}
+          className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-red-500 px-3.5 text-xs font-black text-white shadow-sm shadow-red-200 transition hover:bg-red-600 active:scale-[0.98]"
+        >
+          {lang === 'vi' ? 'Đặt lại ngay' : 'Rebook now'}
+        </button>
+      </div>
+    </div>
+  ) : null
 
   if (showRecommendations) {
     return (
@@ -429,6 +461,7 @@ export function BookingExperienceTab({
 
   return (
     <div className="space-y-5">
+      {rebookBanner}
       <div className="flex items-center justify-between gap-3 px-1">
         <div>
           <h2 className="text-lg font-extrabold tracking-tight text-slate-950">{lang === 'vi' ? 'Lịch học của bạn' : 'Your schedule'}</h2>

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Payroll, Teacher, Lesson } from '@/types'
+import { Payroll, Teacher, Lesson, Student, StudentSubject } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { formatVND, getCurrentMonth, formatMoney, formatPricePerMinute } from '@/lib/constants'
-import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2 } from 'lucide-react'
+import { formatVND, getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute } from '@/lib/constants'
+import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2 } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
@@ -22,6 +22,8 @@ export function PayrollPage() {
   const [paying, setPaying] = useState(false)
   const [search, setSearch] = useState('')
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [selectedLessonPayrollIds, setSelectedLessonPayrollIds] = useState<Set<string>>(new Set())
+  const [returningToPending, setReturningToPending] = useState(false)
 
   const prevMonth = () => {
     const d = new Date(month + '-01')
@@ -86,18 +88,30 @@ export function PayrollPage() {
   const teacherPayrolls = teachers.map((t) => {
     const tPayrolls = payrolls.filter((p) => p.teacherId === t.id)
     if (tPayrolls.length === 0) return null
+    // Một gia sư có thể có nhiều loại tiền (VD lương dạy bằng PHP + thưởng đánh giá bằng VND).
+    // Khi đó KHÔNG được cộng gộp thành một con số — phải tách theo từng loại tiền.
+    const currencySet = new Set(tPayrolls.map((p) => (p.currency || 'VND').toUpperCase()))
     return {
       teacher: t,
       payrolls: tPayrolls,
       total: tPayrolls.reduce((s, p) => s + p.amount, 0),
       minutes: tPayrolls.reduce((s, p) => s + p.minutes, 0),
       paid: tPayrolls.every((p) => p.paid),
+      isMixedCurrency: currencySet.size > 1,
+      totalLabel: formatMoneyTotals(tPayrolls.map((p) => ({ amount: p.amount, currency: p.currency })), 'VND'),
     }
-  }).filter(Boolean) as { teacher: Teacher; payrolls: Payroll[]; total: number; minutes: number; paid: boolean }[]
+  }).filter(Boolean) as { teacher: Teacher; payrolls: Payroll[]; total: number; minutes: number; paid: boolean; isMixedCurrency: boolean; totalLabel: string }[]
 
   const filteredTeacherPayrolls = teacherPayrolls.filter(tp => 
     tp.teacher.name.toLowerCase().includes(search.toLowerCase())
   )
+
+  const selectableApprovedPayrolls = payrolls.filter((payroll) => {
+    if (payroll.type === 'adjustment' || payroll.paid || !payroll.lessonId) return false
+    return lessons.find((lesson) => lesson.id === payroll.lessonId)?.status === 'approved'
+  })
+  const allApprovedLessonsSelected = selectableApprovedPayrolls.length > 0
+    && selectableApprovedPayrolls.every((payroll) => selectedLessonPayrollIds.has(payroll.id))
 
   // Chưa trả (trong danh sách đang lọc) — dùng cho "Chọn tất cả"
   const unpaidTeacherIds = filteredTeacherPayrolls.filter((tp) => !tp.paid).map((tp) => tp.teacher.id)
@@ -170,6 +184,170 @@ export function PayrollPage() {
     }
   }
 
+  const moveApprovedLessonToPending = async (lessonId: string): Promise<boolean> => {
+    try {
+      const lessonRef = doc(db, 'lessons', lessonId)
+      const lessonSnap = await getDoc(lessonRef)
+      if (!lessonSnap.exists()) return false
+      const lesson = { id: lessonSnap.id, ...lessonSnap.data() } as Lesson
+      if (lesson.status !== 'approved') return false
+
+      const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
+      const activePayrollRefs = payrollSnap.docs.filter((item) => !item.data().voided).map((item) => item.ref)
+      if (activePayrollRefs.length === 0) return false
+
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', lesson.studentId)
+        const [currentLessonSnap, studentSnap, ...currentPayrollSnaps] = await Promise.all([
+          tx.get(lessonRef),
+          tx.get(studentRef),
+          ...activePayrollRefs.map((ref) => tx.get(ref)),
+        ])
+        if (!currentLessonSnap.exists() || !studentSnap.exists()) throw new Error('Dữ liệu buổi học hoặc học viên không còn tồn tại')
+        const currentLesson = currentLessonSnap.data() as Lesson
+        if (currentLesson.status !== 'approved') throw new Error('Buổi học đã được xử lý trước đó')
+        if (currentPayrollSnaps.some((payroll) => payroll.exists() && payroll.data()?.paid === true && !payroll.data()?.voided)) {
+          throw new Error('Lương buổi này đã thanh toán')
+        }
+
+        const studentData = studentSnap.data() as Student
+        let updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
+          ? studentData.subjects.map((subject) => ({ ...subject }))
+          : studentData.subjectId
+            ? [{
+                subjectId: studentData.subjectId,
+                subjectName: studentData.subjectName || 'Chưa rõ',
+                totalSessions: studentData.totalSessions || 0,
+                usedSessions: studentData.usedSessions || 0,
+                remainingSessions: studentData.remainingSessions || 0,
+                minutesPerSession: studentData.minutesPerSession || 50,
+                totalMinutes: studentData.totalMinutes ?? ((studentData.totalSessions || 0) * (studentData.minutesPerSession || 50)),
+                usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
+                remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
+                pricePerMinute: currentLesson.pricePerMinute || 0,
+              }]
+            : []
+
+        const subjectIndex = updatedSubjects.findIndex((subject) => subject.subjectId === currentLesson.subjectId)
+        if (subjectIndex === -1) throw new Error('Không tìm thấy gói giáo trình của buổi học')
+        const subject = updatedSubjects[subjectIndex]
+        const usedMinutes = Math.max(0, subject.usedMinutes - currentLesson.minutes)
+        const minutesPerSession = subject.minutesPerSession || 50
+        const usedSessionsRaw = usedMinutes / minutesPerSession
+        updatedSubjects[subjectIndex] = {
+          ...subject,
+          usedMinutes,
+          remainingMinutes: Math.max(0, subject.totalMinutes - usedMinutes),
+          usedSessions: Math.abs(usedSessionsRaw - Math.round(usedSessionsRaw)) < 0.001 ? Math.round(usedSessionsRaw) : Math.round(usedSessionsRaw * 100) / 100,
+          remainingSessions: Math.floor(Math.max(0, subject.totalMinutes - usedMinutes) / minutesPerSession),
+        }
+
+        const totalSessions = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.totalSessions, 0)
+        const usedSessions = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.usedSessions, 0)
+        const remainingSessions = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.remainingSessions, 0)
+        const totalMinutes = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.totalMinutes, 0)
+        const usedMinutesTotal = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.usedMinutes, 0)
+        const remainingMinutes = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.remainingMinutes, 0)
+        const primarySubject = updatedSubjects[0]
+
+        tx.update(lessonRef, {
+          status: 'pending',
+          salary: 0,
+          approvedAt: null,
+          approvedBy: null,
+          rejectedReason: null,
+          sessionsBeforeApproval: 0,
+          sessionsAfterApproval: 0,
+          minutesBeforeApproval: 0,
+          minutesAfterApproval: 0,
+          updatedAt: serverTimestamp(),
+        })
+        tx.update(studentRef, {
+          subjects: updatedSubjects,
+          totalSessions,
+          usedSessions,
+          remainingSessions,
+          totalMinutes,
+          usedMinutes: usedMinutesTotal,
+          remainingMinutes,
+          subjectId: primarySubject?.subjectId || '',
+          subjectName: primarySubject?.subjectName || '',
+          minutesPerSession: primarySubject?.minutesPerSession || 50,
+          status: remainingMinutes <= 0 ? 'expired' : 'active',
+          updatedAt: serverTimestamp(),
+        })
+        tx.delete(doc(db, 'publicLessons', lessonId))
+        currentPayrollSnaps.forEach((payroll) => {
+          if (payroll.exists() && !payroll.data()?.voided) {
+            tx.update(payroll.ref, {
+              voided: true,
+              amount: 0,
+              voidedAt: serverTimestamp(),
+              voidedBy: user?.uid || '',
+            })
+          }
+        })
+      })
+      return true
+    } catch (error) {
+      console.error('Error returning lesson to pending:', error)
+      return false
+    }
+  }
+
+  const togglePayrollLesson = (payrollId: string) => {
+    setSelectedLessonPayrollIds((current) => {
+      const next = new Set(current)
+      if (next.has(payrollId)) next.delete(payrollId)
+      else next.add(payrollId)
+      return next
+    })
+  }
+
+  const toggleAllApprovedLessons = () => {
+    setSelectedLessonPayrollIds((current) => {
+      const next = new Set(current)
+      if (allApprovedLessonsSelected) selectableApprovedPayrolls.forEach((payroll) => next.delete(payroll.id))
+      else selectableApprovedPayrolls.forEach((payroll) => next.add(payroll.id))
+      return next
+    })
+  }
+
+  const handleBulkReturnToPending = async () => {
+    const selectedPayrolls = payrolls.filter((payroll) => selectedLessonPayrollIds.has(payroll.id))
+    const lessonIds = Array.from(new Set(selectedPayrolls.map((payroll) => payroll.lessonId).filter(Boolean)))
+    if (lessonIds.length === 0) return
+    if (!window.confirm(`Chuyển ${lessonIds.length} buổi đã duyệt về chờ duyệt? Hệ thống sẽ hoàn lại phút cho học viên và bỏ các dòng lương chưa thanh toán.`)) return
+
+    setReturningToPending(true)
+    let changed = 0
+    let skipped = 0
+    try {
+      for (const lessonId of lessonIds) {
+        if (await moveApprovedLessonToPending(lessonId)) changed += 1
+        else skipped += 1
+      }
+      if (changed > 0) {
+        await addDoc(collection(db, 'adminLogs'), {
+          adminId: user?.uid || '',
+          action: 'BULK_RETURN_LESSONS_TO_PENDING',
+          targetType: 'payroll',
+          targetId: month,
+          changes: { month, lessonIds: lessonIds.slice(0, 100), count: changed },
+          createdAt: serverTimestamp(),
+        })
+        toast.success(`Đã chuyển ${changed} buổi về chờ duyệt`)
+      }
+      if (skipped > 0) toast.warning(`${skipped} buổi không thể chuyển do đã thanh toán hoặc đã được xử lý`)
+      setSelectedLessonPayrollIds(new Set())
+    } catch (error) {
+      console.error('Error bulk returning lessons to pending:', error)
+      toast.error('Không thể chuyển hàng loạt. Vui lòng thử lại.')
+    } finally {
+      setReturningToPending(false)
+    }
+  }
+
   const exportCSV = () => {
     const rows = [
       ['Giáo viên', 'Level', 'Môn', 'Phút', 'Giá/phút', 'Lương'],
@@ -198,6 +376,12 @@ export function PayrollPage() {
             <Button variant="primary" onClick={handleMarkPaid} loading={paying}>
               <CheckSquare className="w-4 h-4" />
               Đánh dấu đã trả ({selected.size})
+            </Button>
+          )}
+          {selectedLessonPayrollIds.size > 0 && (
+            <Button variant="outline" onClick={handleBulkReturnToPending} loading={returningToPending} className="border-amber-300 text-amber-700 hover:bg-amber-50">
+              <Undo2 className="w-4 h-4" />
+              Chuyển chờ duyệt ({selectedLessonPayrollIds.size})
             </Button>
           )}
           <Button variant="outline" onClick={exportCSV}>
@@ -239,6 +423,26 @@ export function PayrollPage() {
         </p>
       </Card>
 
+      {selectableApprovedPayrolls.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-3">
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-amber-950">
+            <input
+              type="checkbox"
+              checked={allApprovedLessonsSelected}
+              ref={(element) => { if (element) element.indeterminate = !allApprovedLessonsSelected && selectedLessonPayrollIds.size > 0 }}
+              onChange={toggleAllApprovedLessons}
+              className="h-4 w-4 accent-amber-600"
+            />
+            Chọn các buổi đã duyệt, chưa thanh toán ({selectableApprovedPayrolls.length})
+          </label>
+          {selectedLessonPayrollIds.size > 0 && (
+            <span className="text-xs font-bold text-amber-800">
+              Đã chọn {selectedLessonPayrollIds.size} buổi — sẽ hoàn phút và chuyển về chờ duyệt
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Select all */}
       {filteredTeacherPayrolls.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3">
@@ -264,7 +468,7 @@ export function PayrollPage() {
 
       {/* Per teacher */}
       <div className="space-y-3">
-        {filteredTeacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid }) => (
+        {filteredTeacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid, isMixedCurrency, totalLabel }) => (
           <Card key={teacher.id} padding="none">
             <div
               className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-100/20 transition-colors"
@@ -316,6 +520,10 @@ export function PayrollPage() {
                   {paid ? 'Đã trả' : 'Chưa trả'}
                 </Badge>
                 {(() => {
+                  // Nhiều loại tiền -> hiển thị tách riêng, không gộp thành 1 số sai.
+                  if (isMixedCurrency) {
+                    return <p className="text-emerald-400 font-semibold text-sm">{totalLabel}</p>
+                  }
                   const teacherCurrency = tp[0]?.currency || 'VND'
                   const isVND = teacherCurrency === 'VND'
                   if (isVND && total > 2000000) {
@@ -344,6 +552,7 @@ export function PayrollPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-200/50">
+                      <th className="w-10 px-3 py-2.5" />
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Học sinh</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Ngày</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Phút</th>
@@ -356,8 +565,20 @@ export function PayrollPage() {
                     {/* Nhóm 1: các buổi học (điểm danh) */}
                     {tp.filter((p) => p.type !== 'adjustment').map((p) => {
                       const lesson = lessons.find(l => l.id === p.lessonId)
+                      const isSelectable = !!lesson && lesson.status === 'approved' && !p.paid
                       return (
                         <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
+                          <td className="px-3 py-2.5">
+                            {isSelectable && (
+                              <input
+                                type="checkbox"
+                                checked={selectedLessonPayrollIds.has(p.id)}
+                                onChange={() => togglePayrollLesson(p.id)}
+                                aria-label={`Chọn buổi học của ${lesson.studentName}`}
+                                className="h-4 w-4 accent-amber-600"
+                              />
+                            )}
+                          </td>
                           <td className="px-5 py-2.5 text-slate-700 font-medium">{lesson?.studentName || '—'}</td>
                           <td className="px-5 py-2.5 text-slate-600">{lesson?.date || '—'}</td>
                           <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
@@ -377,7 +598,7 @@ export function PayrollPage() {
                       return (
                         <>
                           <tr className="bg-slate-100/70 border-t border-slate-200">
-                            <td colSpan={6} className="px-5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            <td colSpan={7} className="px-5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                               Điều chỉnh lương
                               {bonusTotal > 0 && <span className="ml-2 text-emerald-600 normal-case">· Thưởng +{formatMoney(bonusTotal, tp[0]?.currency)}</span>}
                               {dedTotal < 0 && <span className="ml-2 text-rose-500 normal-case">· Khấu trừ {formatMoney(dedTotal, tp[0]?.currency)}</span>}
@@ -387,7 +608,7 @@ export function PayrollPage() {
                             const isBonus = p.amount >= 0
                             return (
                               <tr key={p.id} className={`border-b border-slate-200/30 ${isBonus ? 'bg-emerald-50/40' : 'bg-rose-50/40'}`}>
-                                <td colSpan={5} className="px-5 py-2.5">
+                                <td colSpan={6} className="px-5 py-2.5">
                                   <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md mr-2 ${isBonus ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
                                     {isBonus ? <Gift className="w-3 h-3" /> : <MinusCircle className="w-3 h-3" />}
                                     {isBonus ? 'Thưởng' : 'Khấu trừ'}
@@ -415,25 +636,33 @@ export function PayrollPage() {
                     })()}
 
                     {(() => {
+                      if (isMixedCurrency) {
+                        return (
+                          <tr className="bg-emerald-50/10 text-emerald-600 border-t border-slate-200">
+                            <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Tổng cộng thực nhận (nhiều loại tiền):</td>
+                            <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{totalLabel}</td>
+                          </tr>
+                        )
+                      }
                       const teacherCurrency = tp[0]?.currency || 'VND'
                       const isVND = teacherCurrency === 'VND'
                       if (isVND && total > 2000000) {
                         return (
                           <>
                             <tr className="bg-slate-50/50">
-                              <td colSpan={5} className="px-5 py-2 text-right text-slate-500 font-medium">Tổng cộng trước thuế (Gross):</td>
+                              <td colSpan={6} className="px-5 py-2 text-right text-slate-500 font-medium">Tổng cộng trước thuế (Gross):</td>
                               <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatVND(total)}</td>
                             </tr>
                             <tr className="bg-rose-50/20 text-rose-500">
-                              <td colSpan={5} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân (10%):</td>
+                              <td colSpan={6} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân (10%):</td>
                               <td className="px-5 py-2 text-right font-bold">-{formatVND(total * 0.1)}</td>
                             </tr>
                             <tr className="bg-emerald-50/20 text-emerald-600 border-t border-slate-200">
-                              <td colSpan={5} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
+                              <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
                               <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatVND(total * 0.9)}</td>
                             </tr>
                             <tr>
-                              <td colSpan={6} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
+                              <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
                                 * Thu nhập tháng vượt quá 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN theo quy định.
                               </td>
                             </tr>
@@ -442,7 +671,7 @@ export function PayrollPage() {
                       }
                       return (
                         <tr className="bg-emerald-50/10 text-emerald-600 border-t border-slate-200">
-                          <td colSpan={5} className="px-5 py-2.5 text-right font-semibold">Tổng cộng thực nhận:</td>
+                          <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Tổng cộng thực nhận:</td>
                           <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatMoney(total, teacherCurrency)}</td>
                         </tr>
                       )

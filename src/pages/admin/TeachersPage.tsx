@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, limit, onSnapshot } from 'firebase/firestore'
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, onSnapshot, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Teacher } from '@/types'
+import { Teacher, TeacherDirectoryCategory } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
@@ -10,21 +10,45 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, Building2 } from 'lucide-react'
+import { BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { getTeacherPointsPer25Minutes } from '@/lib/points'
+import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 
-type TeacherGrade = 'A' | 'B' | 'C' | 'PH' | 'SA'
+type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 interface Branch { id: string; name: string; status: string }
 
-const GRADE_STYLES: Record<TeacherGrade, { badge: string; dot: string }> = {
-  A: { badge: 'bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200', dot: 'bg-amber-400' },
-  B: { badge: 'bg-sky-100 text-sky-700 border-sky-300 hover:bg-sky-200', dot: 'bg-sky-400' },
-  C: { badge: 'bg-violet-100 text-violet-700 border-violet-300 hover:bg-violet-200', dot: 'bg-violet-400' },
-  PH: { badge: 'bg-rose-100 text-rose-700 border-rose-300 hover:bg-rose-200', dot: 'bg-rose-400' },
-  SA: { badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 hover:bg-emerald-200', dot: 'bg-emerald-400' },
+async function commitTeacherUpdates(teacherIds: string[], values: Record<string, unknown>) {
+  for (let index = 0; index < teacherIds.length; index += 450) {
+    const batch = writeBatch(db)
+    teacherIds.slice(index, index + 450).forEach((teacherId) => {
+      batch.update(doc(db, 'teachers', teacherId), values)
+    })
+    await batch.commit()
+  }
 }
 
-const FILTER_GRADES: Array<'' | TeacherGrade> = ['', 'A', 'B', 'C', 'PH', 'SA']
+const DIRECTORY_CONFIG = {
+  online: {
+    title: 'Gia sư online',
+    singular: 'gia sư online',
+    description: 'Quản lý gia sư dạy trực tuyến và hồ sơ chưa phân loại từ hệ thống cũ.',
+    icon: MonitorUp,
+  },
+  offline: {
+    title: 'Gia sư offline',
+    singular: 'gia sư offline',
+    description: 'Quản lý gia sư có nhận lớp trực tiếp tại trung tâm hoặc theo khu vực.',
+    icon: MapPin,
+  },
+  tester: {
+    title: 'Gia sư tester',
+    singular: 'tester',
+    description: 'Quản lý hồ sơ kiểm thử tách biệt với đội ngũ gia sư đang nhận lớp.',
+    icon: TestTube2,
+  },
+} satisfies Record<TeacherDirectoryCategory, { title: string; singular: string; description: string; icon: typeof GraduationCap }>
 
 // Quốc gia của gia sư (lấy từ hồ sơ). Hiển thị cờ + tên gọn cho cột "Quốc gia".
 const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
@@ -52,76 +76,6 @@ function CountryCell({ country }: { country?: string }) {
       <span className="text-base leading-none">{info.flag}</span>
       {info.label}
     </span>
-  )
-}
-
-function GradeSelector({ teacherId, currentGrade }: { teacherId: string; currentGrade?: TeacherGrade }) {
-  const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const handleSelect = async (grade: TeacherGrade) => {
-    setOpen(false)
-    if (grade === currentGrade) return
-    setSaving(true)
-    try {
-      await updateDoc(doc(db, 'teachers', teacherId), { teacherGrade: grade })
-    } catch {
-      toast.error('Lỗi khi cập nhật cấp độ')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="relative inline-block" ref={ref}>
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
-        disabled={saving}
-        className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
-          currentGrade
-            ? GRADE_STYLES[currentGrade].badge
-            : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
-        } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-        aria-label="Chọn cấp độ giáo viên"
-      >
-        {currentGrade ? (
-          <>
-            <span className={`w-1.5 h-1.5 rounded-full ${GRADE_STYLES[currentGrade].dot}`} />
-            Cấp {currentGrade}
-          </>
-        ) : (
-          'Chọn cấp'
-        )}
-        <ChevronDown className="w-3 h-3 opacity-60" />
-      </button>
-
-      {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px]">
-          {(['A', 'B', 'C', 'PH', 'SA'] as TeacherGrade[]).map((g) => (
-            <button
-              key={g}
-              onClick={() => handleSelect(g)}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${
-                currentGrade === g ? 'bg-slate-50' : ''
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${GRADE_STYLES[g].dot}`} />
-              <span className={`${GRADE_STYLES[g].badge.split(' ')[1]}`}>Cấp {g}</span>
-              {currentGrade === g && <span className="ml-auto text-emerald-500">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -193,21 +147,51 @@ function StatusSelector({ teacherId, currentStatus }: { teacherId: string; curre
   )
 }
 
-export function TeachersPage() {
+function CertificateComplianceCell({ teacher, onEdit, compact = false }: { teacher: Teacher; onEdit: () => void; compact?: boolean }) {
+  const compliance = getTeacherCertificateCompliance(teacher)
+
+  return (
+    <div className={`flex ${compact ? 'flex-wrap items-center' : 'min-w-[190px] flex-col items-start'} gap-1.5`}>
+      <div className="flex flex-wrap gap-1.5">
+        <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold ring-1 ${compliance.hasForeignLanguageImage ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+          {compliance.hasForeignLanguageImage ? <BookOpenCheck className="h-3.5 w-3.5" /> : <FileWarning className="h-3.5 w-3.5" />}
+          Năng lực chuyên môn
+        </span>
+        <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold ring-1 ${compliance.hasPedagogicalImage ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+          {compliance.hasPedagogicalImage ? <BookOpenCheck className="h-3.5 w-3.5" /> : <FileWarning className="h-3.5 w-3.5" />}
+          Sư phạm
+        </span>
+      </div>
+      {!compliance.isCertificateComplete && (
+        <button type="button" onClick={onEdit} className="min-h-8 rounded-lg px-2 text-[11px] font-extrabold text-brand-900 underline decoration-brand-300 underline-offset-2 hover:bg-brand-50 active:scale-[0.98]">
+          Bổ sung hồ sơ
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function TeachersPage({ category = 'online' }: { category?: TeacherDirectoryCategory }) {
   const navigate = useNavigate()
+  const directory = DIRECTORY_CONFIG[category]
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
   const [minutesMap, setMinutesMap] = useState<Record<string, number>>({})
   const [search, setSearch] = useState(() => sessionStorage.getItem('teachers_search') || '')
-  const [gradeFilter, setGradeFilter] = useState<'' | TeacherGrade>(() => (sessionStorage.getItem('teachers_gradeFilter') as '' | TeacherGrade) || '')
+  const [countryFilter, setCountryFilter] = useState<string>(() => sessionStorage.getItem('teachers_countryFilter') || 'all')
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
-  const [roleFilter, setRoleFilter] = useState<'all' | 'tutor' | 'tester'>(() => (sessionStorage.getItem('teachers_roleFilter') as 'all' | 'tutor' | 'tester') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
+  const [profileFilter, setProfileFilter] = useState<ProfileFilter>(() => (sessionStorage.getItem('teachers_profileFilter') as ProfileFilter) || 'all')
   const [branches, setBranches] = useState<Branch[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
   const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([])
+  const [bulkPoints, setBulkPoints] = useState(25)
+  const [savingPoints, setSavingPoints] = useState(false)
+  const [bulkCategories, setBulkCategories] = useState<TeacherDirectoryCategory[]>([])
+  const [savingCategories, setSavingCategories] = useState(false)
   const [limitVal, setLimitVal] = useState<number>(() => {
     const stored = sessionStorage.getItem('teachers_limitVal')
     return stored ? Number(stored) : 20
@@ -216,12 +200,12 @@ export function TeachersPage() {
   // Sync filters to sessionStorage
   useEffect(() => {
     sessionStorage.setItem('teachers_search', search)
-    sessionStorage.setItem('teachers_gradeFilter', gradeFilter)
+    sessionStorage.setItem('teachers_countryFilter', countryFilter)
     sessionStorage.setItem('teachers_statusFilter', statusFilter)
     sessionStorage.setItem('teachers_branchFilter', branchFilter)
-    sessionStorage.setItem('teachers_roleFilter', roleFilter)
+    sessionStorage.setItem('teachers_profileFilter', profileFilter)
     sessionStorage.setItem('teachers_limitVal', String(limitVal))
-  }, [search, gradeFilter, statusFilter, branchFilter, roleFilter, limitVal])
+  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -246,9 +230,7 @@ export function TeachersPage() {
   }, [loading, teachers])
 
   useEffect(() => {
-    const q = limitVal > 0
-      ? query(collection(db, 'teachers'), limit(limitVal))
-      : query(collection(db, 'teachers'))
+    const q = query(collection(db, 'teachers'))
     setLoading(true)
 
     const unsub = onSnapshot(
@@ -270,7 +252,7 @@ export function TeachersPage() {
     return () => {
       unsub()
     }
-  }, [limitVal])
+  }, [])
 
   useEffect(() => {
     if (teachers.length === 0) return
@@ -314,26 +296,66 @@ export function TeachersPage() {
       })
   }, [])
 
-  const filtered = teachers.filter((t) => {
+  const matchesDirectory = (teacher: Teacher) => {
+    const formats = teacher.teachingFormats || []
+    return category === 'tester'
+      ? !!teacher.isTester
+      : category === 'offline'
+        ? formats.includes('offline')
+        : formats.includes('online') || (formats.length === 0 && !teacher.isTester)
+  }
+
+  const directoryTeachers = teachers.filter(matchesDirectory)
+  const countryOptions = Array.from(new Set(directoryTeachers.map((teacher) => (teacher.country || '').toUpperCase().trim() || 'missing')))
+    .sort((a, b) => {
+      const aLabel = a === 'missing' ? 'Chưa cập nhật' : COUNTRY_INFO[a]?.label || a
+      const bLabel = b === 'missing' ? 'Chưa cập nhật' : COUNTRY_INFO[b]?.label || b
+      return aLabel.localeCompare(bLabel, 'vi')
+    })
+
+  const filtered = directoryTeachers.filter((t) => {
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
       t.code.toLowerCase().includes(search.toLowerCase())
-    const matchGrade = gradeFilter ? t.teacherGrade === gradeFilter : true
+    const teacherCountry = (t.country || '').toUpperCase().trim() || 'missing'
+    const matchCountry = countryFilter === 'all' || teacherCountry === countryFilter
     const matchStatus = statusFilter === 'all' || t.status === statusFilter
     const matchBranch = branchFilter === 'all' || t.branchId === branchFilter
-    const matchRole = roleFilter === 'all' || (roleFilter === 'tester' ? !!t.isTester : !t.isTester)
-    return matchSearch && matchGrade && matchStatus && matchBranch && matchRole
+    const certificates = getTeacherCertificateCompliance(t)
+    const matchProfile = profileFilter === 'all'
+      || (profileFilter === 'certificate_complete' && certificates.isCertificateComplete)
+      || (profileFilter === 'missing_certificate' && !certificates.isCertificateComplete)
+      || (profileFilter === 'missing_foreign_language' && !certificates.hasForeignLanguageImage)
+      || (profileFilter === 'missing_pedagogical' && !certificates.hasPedagogicalImage)
+      || (profileFilter === 'missing_both' && !certificates.hasForeignLanguageImage && !certificates.hasPedagogicalImage)
+      || (profileFilter === 'missing_basic_profile' && missingTeacherFields(t).length > 0)
+    return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile
   })
 
-  const testerCount = teachers.filter((t) => t.isTester).length
+  const visibleTeachers = limitVal > 0 ? filtered.slice(0, limitVal) : filtered
 
-  // Chuyển đổi Gia sư <-> Tester (chỉ admin, ghi field isTester vào teacher doc)
+  const profileCounts = directoryTeachers.reduce((counts, teacher) => {
+    const compliance = getTeacherCertificateCompliance(teacher)
+    if (compliance.isCertificateComplete) counts.complete += 1
+    if (!compliance.hasForeignLanguageImage) counts.missingForeign += 1
+    if (!compliance.hasPedagogicalImage) counts.missingPedagogical += 1
+    if (!compliance.hasForeignLanguageImage && !compliance.hasPedagogicalImage) counts.missingBoth += 1
+    return counts
+  }, { complete: 0, missingForeign: 0, missingPedagogical: 0, missingBoth: 0 })
+
+  const directoryCounts: Record<TeacherDirectoryCategory, number> = {
+    online: teachers.filter((t) => t.teachingFormats?.includes('online') || ((t.teachingFormats || []).length === 0 && !t.isTester)).length,
+    offline: teachers.filter((t) => t.teachingFormats?.includes('offline')).length,
+    tester: teachers.filter((t) => !!t.isTester).length,
+  }
+
+  // Bật/tắt vai trò Tester độc lập với nhóm Online/Offline.
   const toggleTester = async (teacher: Teacher) => {
     const next = !teacher.isTester
     try {
       await updateDoc(doc(db, 'teachers', teacher.id), { isTester: next })
       setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? { ...t, isTester: next } : t)))
-      toast.success(next ? `Đã chuyển ${teacher.name} sang Tester` : `Đã chuyển ${teacher.name} về Gia sư`)
+      toast.success(next ? `Đã thêm ${teacher.name} vào nhóm Tester` : `Đã bỏ ${teacher.name} khỏi nhóm Tester`)
     } catch (err: any) {
       toast.error('Không thể chuyển đổi: ' + (err?.message || ''))
     }
@@ -353,18 +375,143 @@ export function TeachersPage() {
     }
   }
 
+  const handleTeacherPointsChange = async (teacherId: string, points: number) => {
+    const normalizedPoints = Math.max(1, Math.round(Number(points) || 25))
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), { pointsPer25Minutes: normalizedPoints })
+      toast.success(`Đã cập nhật ${normalizedPoints} kim cương cho mỗi 25 phút`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Không cập nhật được chi phí kim cương')
+    }
+  }
+
+  const handleBulkPointsUpdate = async () => {
+    if (selectedTeacherIds.length === 0) return
+    const normalizedPoints = Math.max(1, Math.round(Number(bulkPoints) || 25))
+    const selectedCount = selectedTeacherIds.length
+    setSavingPoints(true)
+    try {
+      await commitTeacherUpdates(selectedTeacherIds, { pointsPer25Minutes: normalizedPoints })
+      setBulkPoints(normalizedPoints)
+      setSelectedTeacherIds([])
+      toast.success(`Đã gán ${normalizedPoints} kim cương/25 phút cho ${selectedCount} gia sư`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Không cập nhật được chi phí kim cương hàng loạt')
+    } finally {
+      setSavingPoints(false)
+    }
+  }
+
+  const handleBulkCategoryUpdate = async () => {
+    if (selectedTeacherIds.length === 0) return
+    if (bulkCategories.length === 0) {
+      toast.error('Vui lòng chọn ít nhất một nhóm gia sư')
+      return
+    }
+
+    const selectedCount = selectedTeacherIds.length
+    const teachingFormats = bulkCategories.filter((item) => item !== 'tester')
+    const isTester = bulkCategories.includes('tester')
+    setSavingCategories(true)
+    try {
+      await commitTeacherUpdates(selectedTeacherIds, { teachingFormats, isTester })
+      setSelectedTeacherIds([])
+      toast.success(`Đã cập nhật nhóm cho ${selectedCount} gia sư`)
+    } catch (error) {
+      console.error(error)
+      toast.error('Không cập nhật được nhóm gia sư hàng loạt')
+    } finally {
+      setSavingCategories(false)
+    }
+  }
+
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Giáo viên</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{teachers.length} giáo viên</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-800 ring-1 ring-brand-200">
+            <directory.icon className="h-5 w-5" strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-xl font-extrabold text-slate-900 sm:text-2xl">{directory.title}</h1>
+            <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">{directory.description}</p>
+          </div>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
+        <Button onClick={() => setShowAdd(true)} className="shrink-0">
           <Plus className="w-4 h-4" />
-          Thêm giáo viên
+          <span className="hidden sm:inline">Thêm {directory.singular}</span>
+          <span className="sm:hidden">Thêm mới</span>
         </Button>
       </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {(Object.keys(DIRECTORY_CONFIG) as TeacherDirectoryCategory[]).map((key) => {
+          const item = DIRECTORY_CONFIG[key]
+          const ItemIcon = item.icon
+          const active = key === category
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => navigate(`/admin/teachers/${key}`)}
+              className={`flex min-h-[68px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition active:scale-[0.99] ${active ? 'border-brand-300 bg-brand-50 text-slate-950 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-brand-200 hover:bg-brand-50/50'}`}
+            >
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? 'bg-brand-400 text-slate-950' : 'bg-slate-100 text-slate-500'}`}>
+                <ItemIcon className="h-5 w-5" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-extrabold">{item.title}</span>
+                <span className="mt-0.5 block text-xs font-semibold text-slate-500">{directoryCounts[key]} hồ sơ</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <section className="rounded-2xl border border-brand-200 bg-white p-4 shadow-sm" aria-labelledby="certificate-audit-title">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="certificate-audit-title" className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+              <FileWarning className="h-5 w-5 text-brand-700" />
+              Kiểm tra ảnh chứng chỉ bắt buộc
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Mỗi gia sư cần ảnh chứng chỉ Năng lực chuyên môn và ảnh chứng chỉ Sư phạm.</p>
+          </div>
+          {profileFilter !== 'all' && (
+            <button type="button" onClick={() => setProfileFilter('all')} className="min-h-9 self-start rounded-xl px-3 text-xs font-bold text-brand-800 hover:bg-brand-50 active:scale-[0.98] sm:self-auto">
+              Xóa lọc hồ sơ
+            </button>
+          )}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {([
+            { key: 'certificate_complete', label: 'Đủ 2 ảnh', count: profileCounts.complete, icon: BadgeCheck, tone: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+            { key: 'missing_foreign_language', label: 'Thiếu năng lực chuyên môn', count: profileCounts.missingForeign, icon: FileWarning, tone: 'border-amber-200 bg-amber-50 text-amber-900' },
+            { key: 'missing_pedagogical', label: 'Thiếu Sư phạm', count: profileCounts.missingPedagogical, icon: FileWarning, tone: 'border-orange-200 bg-orange-50 text-orange-900' },
+            { key: 'missing_both', label: 'Thiếu cả hai', count: profileCounts.missingBoth, icon: FileWarning, tone: 'border-rose-200 bg-rose-50 text-rose-800' },
+          ] as const).map((item) => {
+            const Icon = item.icon
+            const active = profileFilter === item.key
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setProfileFilter(active ? 'all' : item.key)}
+                aria-pressed={active}
+                className={`flex min-h-[72px] items-center gap-3 rounded-xl border p-3 text-left transition active:scale-[0.98] ${item.tone} ${active ? 'ring-2 ring-brand-400 ring-offset-1' : 'hover:brightness-[0.98]'}`}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="min-w-0">
+                  <strong className="block text-xl font-black tabular-nums">{item.count}</strong>
+                  <span className="block text-[11px] font-bold leading-4 sm:text-xs">{item.label}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
 
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -408,55 +555,19 @@ export function TeachersPage() {
             ))}
           </div>
 
-          {/* Lọc theo vai trò: Gia sư dạy thật / Tester (ứng tuyển kiểm thử) */}
-          <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
-            {([
-              { key: 'all', label: 'Tất cả vai trò' },
-              { key: 'tutor', label: 'Gia sư' },
-              { key: 'tester', label: `Tester${testerCount ? ` (${testerCount})` : ''}` },
-            ] as const).map((role) => (
-              <button
-                key={role.key}
-                onClick={() => setRoleFilter(role.key)}
-                className={`flex-1 lg:flex-none px-3.5 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                  roleFilter === role.key
-                    ? 'bg-white text-violet-600 shadow-sm ring-1 ring-black/5'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-                }`}
-              >
-                {role.label}
-              </button>
+          <select
+            value={countryFilter}
+            onChange={(event) => setCountryFilter(event.target.value)}
+            className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+            aria-label="Lọc gia sư theo quốc gia"
+          >
+            <option value="all">Tất cả quốc gia</option>
+            {countryOptions.map((code) => (
+              <option key={code} value={code}>
+                {code === 'missing' ? 'Chưa cập nhật quốc gia' : COUNTRY_INFO[code]?.label || code}
+              </option>
             ))}
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1 overflow-x-auto hide-scrollbar">
-            {FILTER_GRADES.map((g) => (
-              <button
-                key={g === '' ? 'all' : g}
-                onClick={() => setGradeFilter(g)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                  gradeFilter === g
-                    ? g === ''
-                      ? 'bg-white text-slate-800 shadow-sm'
-                      : `bg-white shadow-sm ${
-                          g === 'A'
-                            ? 'text-amber-700'
-                            : g === 'B'
-                            ? 'text-sky-700'
-                            : g === 'C'
-                            ? 'text-violet-700'
-                            : g === 'PH'
-                            ? 'text-rose-700'
-                            : 'text-emerald-700'
-                        }`
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-                aria-label={g === '' ? 'Tất cả cấp' : `Lọc cấp ${g}`}
-              >
-                {g === '' ? 'Tất cả cấp' : `Cấp ${g}`}
-              </button>
-            ))}
-          </div>
+          </select>
 
           {branches.length > 0 && (
             <select
@@ -471,16 +582,64 @@ export function TeachersPage() {
               ))}
             </select>
           )}
+
+          <select
+            value={profileFilter}
+            onChange={(event) => setProfileFilter(event.target.value as ProfileFilter)}
+            className="min-h-[40px] rounded-xl border border-brand-200 bg-brand-50 px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+            aria-label="Lọc tình trạng hồ sơ và chứng chỉ"
+          >
+            <option value="all">Tất cả hồ sơ</option>
+            <option value="certificate_complete">Đủ 2 ảnh chứng chỉ</option>
+            <option value="missing_certificate">Thiếu ít nhất 1 ảnh chứng chỉ</option>
+            <option value="missing_foreign_language">Thiếu ảnh năng lực chuyên môn</option>
+            <option value="missing_pedagogical">Thiếu ảnh Sư phạm</option>
+            <option value="missing_both">Thiếu cả 2 ảnh</option>
+            <option value="missing_basic_profile">Thiếu thông tin hồ sơ cơ bản</option>
+          </select>
         </div>
       </div>
+
+      {selectedTeacherIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3">
+          <span className="text-sm font-bold text-sky-900">Đã chọn {selectedTeacherIds.length} gia sư</span>
+          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-sky-200 bg-white p-1" aria-label="Chọn nhóm gia sư cần áp dụng hàng loạt">
+            {(['online', 'offline', 'tester'] as TeacherDirectoryCategory[]).map((item) => {
+              const checked = bulkCategories.includes(item)
+              return (
+                <label key={item} className={`flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition ${checked ? 'bg-brand-400 text-slate-950' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => setBulkCategories((current) => event.target.checked
+                      ? [...current, item]
+                      : current.filter((categoryItem) => categoryItem !== item))}
+                    className="h-3.5 w-3.5 rounded border-slate-400 text-amber-500 focus:ring-amber-400"
+                  />
+                  {item === 'online' ? 'Online' : item === 'offline' ? 'Offline' : 'Tester'}
+                </label>
+              )
+            })}
+          </div>
+          <Button size="sm" onClick={handleBulkCategoryUpdate} loading={savingCategories} disabled={bulkCategories.length === 0} title="Thay nhóm hiện tại bằng các nhóm đã chọn">
+            Cập nhật nhóm
+          </Button>
+          <label className="flex min-h-10 items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 text-sm font-bold text-slate-800">
+            <input type="number" min="1" step="1" value={bulkPoints} onChange={(event) => setBulkPoints(Number(event.target.value))} className="w-20 bg-transparent outline-none" aria-label="Kim cương học viên cho mỗi 25 phút" />
+            <span className="flex items-center gap-1 whitespace-nowrap text-slate-500"><DiamondPointsIcon className="h-4 w-4 text-violet-600" /> / 25 phút</span>
+          </label>
+          <Button size="sm" onClick={handleBulkPointsUpdate} loading={savingPoints}>Áp dụng kim cương</Button>
+          <button type="button" onClick={() => setSelectedTeacherIds([])} className="min-h-10 px-3 text-sm font-semibold text-slate-600">Bỏ chọn</button>
+        </div>
+      )}
 
       {loading ? (
         <Card padding="none"><TableSkeleton /></Card>
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<GraduationCap className="w-8 h-8" />}
-          title="Không tìm thấy giáo viên"
-          action={{ label: 'Thêm giáo viên', onClick: () => setShowAdd(true) }}
+          title={`Không tìm thấy ${directory.singular}`}
+          action={{ label: `Thêm ${directory.singular}`, onClick: () => setShowAdd(true) }}
         />
       ) : (
         <>
@@ -490,14 +649,16 @@ export function TeachersPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
-                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
+                    <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
+                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
-                  {filtered.map((teacher) => (
+                  {visibleTeachers.map((teacher) => (
                     <tr key={teacher.id} className="hover:bg-slate-100/20 transition-colors">
+                      <td className="px-4 py-3"><input type="checkbox" aria-label={`Chọn ${teacher.name}`} checked={selectedTeacherIds.includes(teacher.id)} onChange={(event) => setSelectedTeacherIds((current) => event.target.checked ? [...new Set([...current, teacher.id])] : current.filter((id) => id !== teacher.id))} /></td>
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
                           {teacher.code}
@@ -526,6 +687,25 @@ export function TeachersPage() {
                       <td className="px-4 py-3">
                         <span className="text-slate-600 font-medium">×{teacher.level}</span>
                       </td>
+                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                        <label className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-sky-700">
+                          <input
+                            key={`${teacher.id}-${getTeacherPointsPer25Minutes(teacher)}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            defaultValue={getTeacherPointsPer25Minutes(teacher)}
+                            onBlur={(event) => handleTeacherPointsChange(teacher.id, Number(event.target.value))}
+                            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+                            className="w-14 bg-transparent text-right outline-none"
+                            aria-label={`Kim cương học viên cho mỗi 25 phút của ${teacher.name}`}
+                          />
+                          <DiamondPointsIcon className="h-4 w-4 text-violet-600" />
+                        </label>
+                      </td>
+                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                        <CertificateComplianceCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
+                      </td>
                       <td className="px-4 py-3">
                         <CountryCell country={teacher.country} />
                       </td>
@@ -550,9 +730,9 @@ export function TeachersPage() {
                           <button
                             onClick={() => toggleTester(teacher)}
                             className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 hover:bg-emerald-50' : 'text-violet-600 hover:bg-violet-50'}`}
-                            title={teacher.isTester ? 'Chuyển về Gia sư' : 'Chuyển sang Tester'}
+                            title={teacher.isTester ? 'Bỏ khỏi nhóm Tester' : 'Thêm vào nhóm Tester'}
                           >
-                            {teacher.isTester ? '→ Gia sư' : '→ Tester'}
+                            {teacher.isTester ? 'Bỏ Tester' : 'Thêm Tester'}
                           </button>
                           <button
                             onClick={() => setDeleteTeacher(teacher)}
@@ -572,7 +752,7 @@ export function TeachersPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map((teacher) => (
+            {visibleTeachers.map((teacher) => (
               <Card key={teacher.id} hover onClick={() => navigate(`/admin/teachers/${teacher.id}`)}>
                 <div className="flex items-center gap-3">
                   {teacher.photoURL ? (
@@ -594,6 +774,9 @@ export function TeachersPage() {
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
                     <div className="mt-1"><CountryCell country={teacher.country} /></div>
+                    <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+                      <CertificateComplianceCell teacher={teacher} compact onEdit={() => setEditTeacher(teacher)} />
+                    </div>
                     <p className="text-xs text-slate-500 mt-1">
                       Ngày tạo: {teacher.createdAt?.seconds
                         ? new Date(teacher.createdAt.seconds * 1000).toLocaleDateString('vi-VN')
@@ -605,11 +788,28 @@ export function TeachersPage() {
                         ? ` · ${(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'`
                         : ''}
                     </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                      <label className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600">
+                        <span>Chi phí học viên</span>
+                        <input
+                          key={`mobile-${teacher.id}-${getTeacherPointsPer25Minutes(teacher)}`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          defaultValue={getTeacherPointsPer25Minutes(teacher)}
+                          onBlur={(event) => handleTeacherPointsChange(teacher.id, Number(event.target.value))}
+                          onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+                          className="w-12 bg-transparent text-right font-bold text-sky-700 outline-none"
+                          aria-label={`Kim cương học viên cho mỗi 25 phút của ${teacher.name}`}
+                        />
+                        <span className="flex items-center gap-1 text-sky-700"><DiamondPointsIcon className="h-4 w-4 text-violet-600" />/25 phút</span>
+                      </label>
+                    </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleTester(teacher) }}
                       className={`mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 bg-emerald-50' : 'text-violet-600 bg-violet-50'}`}
                     >
-                      {teacher.isTester ? '→ Chuyển về Gia sư' : '→ Chuyển sang Tester'}
+                      {teacher.isTester ? 'Bỏ khỏi Tester' : 'Thêm vào Tester'}
                     </button>
                   </div>
                 </div>
@@ -617,7 +817,7 @@ export function TeachersPage() {
             ))}
           </div>
 
-          {limitVal > 0 && teachers.length >= limitVal && (
+          {limitVal > 0 && visibleTeachers.length < filtered.length && (
             <div className="flex justify-center mt-6">
               <Button variant="outline" onClick={() => setLimitVal((prev) => prev + 20)}>
                 Xem thêm
@@ -627,8 +827,8 @@ export function TeachersPage() {
         </>
       )}
 
-      {showAdd && <TeacherFormModal onClose={() => setShowAdd(false)} />}
-      {editTeacher && <TeacherFormModal teacher={editTeacher} onClose={() => setEditTeacher(null)} />}
+      {showAdd && <TeacherFormModal defaultCategory={category} onClose={() => setShowAdd(false)} />}
+      {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category} onClose={() => setEditTeacher(null)} />}
       <ConfirmDialog
         open={!!deleteTeacher}
         onClose={() => setDeleteTeacher(null)}

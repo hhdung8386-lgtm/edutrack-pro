@@ -31,12 +31,16 @@ const ContractsPage = lazy(() => import('@/pages/admin/ContractsPage').then(m =>
 const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPage'))
 const NotificationsPage = lazy(() => import('@/pages/admin/NotificationsPage').then(m => ({ default: m.NotificationsPage })))
 const FutureBookingsPage = lazy(() => import('@/pages/admin/FutureBookingsPage').then(m => ({ default: m.FutureBookingsPage })))
+const OverdueBookingsPage = lazy(() => import('@/pages/admin/OverdueBookingsPage').then(m => ({ default: m.OverdueBookingsPage })))
+const QuotaReconcilePage = lazy(() => import('@/pages/admin/QuotaReconcilePage').then(m => ({ default: m.QuotaReconcilePage })))
+const StudentExperiencePage = lazy(() => import('@/pages/admin/StudentExperiencePage').then(m => ({ default: m.StudentExperiencePage })))
 
 // Lazy loaded Teacher Pages
 const TeacherContractPage = lazy(() => import('@/pages/teacher/TeacherContractPage').then(m => ({ default: m.TeacherContractPage })))
 const AttendancePage = lazy(() => import('@/pages/teacher/AttendancePage').then(m => ({ default: m.AttendancePage })))
 const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage').then(m => ({ default: m.LessonHistoryPage })))
 const TeacherSchedulesPage = lazy(() => import('@/pages/teacher/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
+const TeacherBookingRequestsPage = lazy(() => import('@/pages/teacher/BookingRequestsPage').then(m => ({ default: m.TeacherBookingRequestsPage })))
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const TeacherEvaluationsPage = lazy(() => import('@/pages/teacher/TeacherEvaluationsPage'))
 const TeacherAvailabilityEditPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
@@ -112,13 +116,20 @@ function App() {
             }
           >
             <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="students" element={<StudentsPage />} />
+            <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
+            <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
+            <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
-            <Route path="teachers" element={<TeachersPage />} />
+            <Route path="teachers" element={<Navigate to="online" replace />} />
+            <Route path="teachers/online" element={<TeachersPage category="online" />} />
+            <Route path="teachers/offline" element={<TeachersPage category="offline" />} />
+            <Route path="teachers/tester" element={<TeachersPage category="tester" />} />
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
+            <Route path="overdue-bookings" element={<OverdueBookingsPage />} />
+            <Route path="quota-reconcile" element={<QuotaReconcilePage />} />
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="bookings" element={<BookingRequestsPage />} />
@@ -127,6 +138,7 @@ function App() {
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="evaluations" element={<AdminEvaluationsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="student-experience" element={<StudentExperiencePage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route index element={<Navigate to="dashboard" replace />} />
           </Route>
@@ -154,6 +166,7 @@ function App() {
             <Route path="attendance" element={<AttendancePage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="schedules" element={<TeacherSchedulesPage />} />
+            <Route path="booking-requests" element={<TeacherBookingRequestsPage />} />
             <Route path="evaluations" element={<TeacherEvaluationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="availability" element={<TeacherAvailabilityEditPage />} />

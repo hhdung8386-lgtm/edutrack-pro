@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -144,6 +145,7 @@ interface ImageUpload {
 }
 
 export function BookingSchedulesPage() {
+  const navigate = useNavigate()
   const { teacherId } = useAuthStore()
   const { lang, t } = useLanguageStore()
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
@@ -297,10 +299,12 @@ export function BookingSchedulesPage() {
   useEffect(() => {
     if (!teacherId) return
 
+    // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) — một số booking cũ có
+    // requestedWeekStart lệch với requestedDate nên nếu lọc theo weekStart sẽ bị mất khỏi
+    // bảng lịch dù đã đặt. findBookingForCell/localBookings đối chiếu theo requestedDate.
     const q = query(
       collection(db, 'bookingRequests'),
-      where('teacherId', '==', teacherId),
-      where('requestedWeekStart', '==', weekStartISO)
+      where('teacherId', '==', teacherId)
     )
 
     const unsub = onSnapshot(q, (snap) => {
@@ -327,7 +331,7 @@ export function BookingSchedulesPage() {
     })
 
     return unsub
-  }, [teacherId, weekStartISO])
+  }, [teacherId])
 
   const isCellOpen = (day: DayOfWeek, start: string) => {
     const startMinute = timeToMinutes(start)
@@ -709,7 +713,22 @@ export function BookingSchedulesPage() {
           }}
           title={t('sched.info')}
           footer={
-            <div className="flex gap-3 justify-end w-full">
+            <div className="flex w-full flex-wrap items-center justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    studentId: selectedBooking.studentId,
+                    studentName: selectedBooking.studentName,
+                  })
+                  setShowDetailModal(false)
+                  setSelectedBooking(null)
+                  navigate(`/teacher/history?${params.toString()}`)
+                }}
+              >
+                <History className="h-4 w-4" />
+                {lang === 'vi' ? 'Xem lịch sử học' : 'View learning history'}
+              </Button>
               {!selectedBooking.lessonId && (() => {
                 const student = students[selectedBooking.studentId]
                 if (student?.status === 'reserved') {
