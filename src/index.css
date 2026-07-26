@@ -1,10 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
 
 @import 'tailwindcss';
 
 @theme {
   --font-quicksand: 'Quicksand', sans-serif;
-  --font-jakarta: 'Plus Jakarta Sans', sans-serif;
+  --font-jakarta: 'Quicksand', sans-serif;
+  --font-sans: 'Quicksand', sans-serif;
 
   /* Bảng màu thương hiệu 123English (vàng) — sinh ra bg-brand-*, text-brand-*,
      border-brand-*, from-brand-*... dùng chung cho header, nav, nút ở mọi trang.
@@ -29,7 +30,7 @@
 
   body {
     @apply bg-slate-50 text-slate-900;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Quicksand', sans-serif;
   }
 
   html {
@@ -42,7 +43,8 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 font-sans;
+    @apply bg-slate-50 text-slate-900;
+    font-family: 'Quicksand', sans-serif;
     width: 100%;
     min-width: 0;
     overflow-x: clip;
