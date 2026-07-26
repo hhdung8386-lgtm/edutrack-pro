@@ -6,6 +6,8 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
+import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
 interface ApproveModalProps {
   lesson: Lesson
@@ -85,6 +87,16 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         return
       }
 
+      const matchedBooking = await resolveLessonBooking({
+        id: lesson.id,
+        bookingRequestId: lesson.bookingRequestId,
+        studentId: lesson.studentId,
+        teacherId: lesson.teacherId,
+        date: lesson.date,
+        minutes: lesson.minutes,
+        subjectId: lesson.subjectId,
+      })
+
       await runTransaction(
         db,
         async (tx) => {
@@ -100,9 +112,16 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           if (!studentSnap.exists()) throw new Error('Học viên không tồn tại')
 
           const studentData = studentSnap.data() as Student
-
-          const teacherSnap = await tx.get(doc(db, 'teachers', lesson.teacherId))
+          const lessonNow = lessonSnap.data() as Lesson
+          const bookingRef = matchedBooking ? doc(db, 'bookingRequests', matchedBooking.id) : null
+          const [teacherSnap, bookingSnap] = await Promise.all([
+            tx.get(doc(db, 'teachers', lesson.teacherId)),
+            bookingRef ? tx.get(bookingRef) : Promise.resolve(null),
+          ])
           const teacherData = teacherSnap.data()
+          const bookingNow = bookingSnap?.exists()
+            ? ({ id: bookingSnap.id, ...bookingSnap.data() } as typeof matchedBooking)
+            : null
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const teacherCountry = teacherData?.country || 'VN'
@@ -121,6 +140,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           }
 
           const currency = chosenSubjectPkg.currency || 'VND'
+          const lessonPoints = bookingNow
+            ? getBookingPoints(bookingNow, teacherData)
+            : getLessonPoints(lessonNow, teacherData)
           const salary = calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
           const month = lesson.date.slice(0, 7)
 
@@ -153,7 +175,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           }
 
           const subPkg = updatedSubjects[sIdx]
-          const newSubUsedMinutes = subPkg.usedMinutes + lesson.minutes
+          if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
+            throw new Error('NOT_ENOUGH_POINTS')
+          }
+          const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
           const subUsedSessionsRaw = subMps > 0 ? newSubUsedMinutes / subMps : 0
@@ -182,7 +207,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           // Deduct heldMinutes (previously reservedMinutes or heldMinutes)
           const prevHeldMinutes = Number(studentData.reservedMinutes ?? studentData.heldMinutes ?? 0) || 0
-          const newHeldMinutes = Math.max(0, prevHeldMinutes - lesson.minutes)
+          const heldPointsToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow, teacherData)
+          const newHeldMinutes = Math.max(0, prevHeldMinutes - heldPointsToRelease)
 
           tx.update(lessonRef, {
             status: 'approved',
@@ -192,14 +218,20 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             teacherLevel,
             pricePerMinute,
             currency,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
             minutesAfterApproval: newSubRemainingMinutes,
+            ...(bookingNow ? { bookingRequestId: bookingNow.id } : {}),
+            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
             updatedAt: serverTimestamp(),
           })
+
+          if (bookingRef && bookingNow) tx.update(bookingRef, { lessonId: lesson.id })
 
           tx.update(studentRef, {
             subjects: updatedSubjects,
@@ -237,6 +269,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             subjectName: chosenSubjectPkg.subjectName,
             date: lesson.date,
             minutes: lesson.minutes,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: lesson.comment || '',
             homework: lesson.homework || '',
             book: lesson.book || '',
@@ -273,6 +307,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               status: { from: 'pending', to: 'approved' },
               salary,
               minutesDeducted: lesson.minutes,
+              pointsDeducted: lessonPoints,
+              heldPointsReleased: heldPointsToRelease,
               subjectId: chosenSubjectPkg.subjectId,
               subjectName: chosenSubjectPkg.subjectName,
             },
@@ -287,7 +323,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
     } catch (err: any) {
       console.error(err)
       const code = err?.code || ''
-      if (code === 'resource-exhausted' || code === 'unavailable') {
+      if (err?.message === 'NOT_ENOUGH_POINTS') {
+        toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
+      } else if (code === 'resource-exhausted' || code === 'unavailable') {
         toast.error('Hệ thống đang bận, vui lòng thử lại sau ít giây')
       } else {
         toast.error('Duyệt thất bại, vui lòng thử lại')

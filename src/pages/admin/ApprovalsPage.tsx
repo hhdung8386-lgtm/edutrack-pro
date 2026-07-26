@@ -18,6 +18,8 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle } from 'lucide-react'
+import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -201,6 +203,16 @@ export function ApprovalsPage() {
         return
       }
 
+      const matchedBooking = await resolveLessonBooking({
+        id: approvingLesson.id,
+        bookingRequestId: approvingLesson.bookingRequestId,
+        studentId: approvingLesson.studentId,
+        teacherId: approvingLesson.teacherId,
+        date: approvingLesson.date,
+        minutes: approvingLesson.minutes,
+        subjectId: approvingLesson.subjectId,
+      })
+
       await runTransaction(
         db,
         async (tx) => {
@@ -220,8 +232,15 @@ export function ApprovalsPage() {
 
           const studentData = studentSnap.data() as Student
 
-          const teacherSnap = await tx.get(doc(db, 'teachers', approvingLesson.teacherId))
+          const bookingRef = matchedBooking ? doc(db, 'bookingRequests', matchedBooking.id) : null
+          const [teacherSnap, bookingSnap] = await Promise.all([
+            tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
+            bookingRef ? tx.get(bookingRef) : Promise.resolve(null),
+          ])
           const teacherData = teacherSnap.data()
+          const bookingNow = bookingSnap?.exists()
+            ? ({ id: bookingSnap.id, ...bookingSnap.data() } as typeof matchedBooking)
+            : null
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const teacherCountry = teacherData?.country || 'VN'
@@ -241,6 +260,9 @@ export function ApprovalsPage() {
 
           const currency = chosenSubjectPkg.currency || 'VND'
           const lessonMinutes = Number(approvingLesson.minutes) || 0
+          const lessonPoints = bookingNow
+            ? getBookingPoints(bookingNow, teacherData)
+            : getLessonPoints(lessonNow, teacherData)
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (approvingLesson.date || '').slice(0, 7)
 
@@ -273,7 +295,10 @@ export function ApprovalsPage() {
           }
 
           const subPkg = updatedSubjects[sIdx]
-          const newSubUsedMinutes = subPkg.usedMinutes + lessonMinutes
+          if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
+            throw new Error('NOT_ENOUGH_POINTS')
+          }
+          const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
           const subUsedSessionsRaw = subMps > 0 ? newSubUsedMinutes / subMps : 0
@@ -302,7 +327,8 @@ export function ApprovalsPage() {
 
           // Deduct heldMinutes (previously reservedMinutes or heldMinutes)
           const prevHeldMinutes = Number(studentData.reservedMinutes ?? studentData.heldMinutes ?? 0) || 0
-          const newHeldMinutes = Math.max(0, prevHeldMinutes - lessonMinutes)
+          const heldPointsToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow, teacherData)
+          const newHeldMinutes = Math.max(0, prevHeldMinutes - heldPointsToRelease)
 
           tx.update(lessonRef, {
             status: 'approved',
@@ -312,13 +338,19 @@ export function ApprovalsPage() {
             teacherLevel,
             pricePerMinute,
             currency,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
             minutesAfterApproval: newSubRemainingMinutes,
+            ...(bookingNow ? { bookingRequestId: bookingNow.id } : {}),
+            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
           })
+
+          if (bookingRef && bookingNow) tx.update(bookingRef, { lessonId: approvingLesson.id })
 
           tx.update(studentRef, {
             subjects: updatedSubjects,
@@ -356,6 +388,8 @@ export function ApprovalsPage() {
             subjectName: chosenSubjectPkg.subjectName,
             date: approvingLesson.date,
             minutes: lessonMinutes,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: approvingLesson.comment || '',
             homework: approvingLesson.homework || '',
             book: approvingLesson.book || '',
@@ -394,6 +428,8 @@ export function ApprovalsPage() {
               subjectName: chosenSubjectPkg.subjectName,
               lessonDate: approvingLesson.date,
               lessonMinutes,
+              lessonPoints,
+              heldPointsReleased: heldPointsToRelease,
               salary,
               pricePerMinute,
               teacherLevel,
@@ -418,6 +454,8 @@ export function ApprovalsPage() {
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
         setApprovingLesson(null)
+      } else if (message === 'NOT_ENOUGH_POINTS') {
+        toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'permission-denied') {
         toast.error('Bạn không có quyền duyệt buổi dạy này')
       } else if (code === 'resource-exhausted' || code === 'unavailable') {

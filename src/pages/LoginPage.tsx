@@ -9,6 +9,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
+import { OutcomeHighlights } from '@/components/landing/OutcomeHighlights'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -193,11 +194,11 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen flex flex-col font-sans lg:overflow-hidden bg-[#F8FAFC]">
+    <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-[#F8FAFC]">
       <PublicNav />
 
       {/* Main Content - two column layout */}
-      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-2 lg:min-h-0">
+      <main className="flex flex-col lg:grid lg:min-h-[calc(100vh-69px)] lg:grid-cols-2">
         {/* Left Side: Layered hero - text on top, image below */}
         <div className="relative hidden lg:flex flex-col justify-between overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f9fb 0%, #eef1f5 100%)' }}>
           {/* Image at bottom-right, z-index: 1 */}
@@ -266,7 +267,7 @@ export function LoginPage() {
         {/* Right Side: Cards */}
         <div className="bg-[#F8FAFC] flex flex-col lg:justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 lg:py-12 space-y-4 lg:overflow-y-auto">
           {/* Card: Tra cứu */}
-          <div className="relative rounded-2xl border border-slate-100/60 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          <div id="tra-cuu" className="relative scroll-mt-24 rounded-2xl border border-slate-100/60 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             <div className="absolute top-5 right-5 flex gap-1">
               <div className="w-1 h-1 rounded-full bg-amber-200" />
               <div className="w-1 h-1 rounded-full bg-amber-200" />
@@ -357,6 +358,8 @@ export function LoginPage() {
           </div>
         </div>
       </main>
+
+      <OutcomeHighlights />
 
       {/* Compact Footer */}
       <PublicFooter />

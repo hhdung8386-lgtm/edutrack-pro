@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { BookingRequest } from '@/types'
+import { BookingRequest, Teacher } from '@/types'
+import { getBookingPoints } from '@/lib/points'
 
 /**
  * Số phút mà một ca đặt lịch ĐANG THỰC SỰ giữ của học viên.
@@ -10,12 +11,21 @@ import { BookingRequest } from '@/types'
  * vào phần đang giữ của các ca khác. (resolveLessonBooking có thể khớp trúng ca đã
  * huỷ vì nó tìm theo học viên + gia sư + ngày.)
  */
-export function bookingHoldMinutes(booking: BookingRequest | null | undefined): number {
+export function bookingHoldPoints(
+  booking: BookingRequest | null | undefined,
+  teacher?: Partial<Teacher> | null,
+): number {
   if (!booking) return 0
   const isHolding = booking.status === 'confirmed' || booking.status === 'pending'
   if (!isHolding) return 0
-  return Number(booking.requestedMinutes) || 0
+  return getBookingPoints(booking, teacher)
 }
+
+/**
+ * Tên cũ được giữ lại để các màn hình chưa đổi tên field vẫn tương thích.
+ * Giá trị trả về là KIM CƯƠNG đang giữ, không phải thời lượng của ca học.
+ */
+export const bookingHoldMinutes = bookingHoldPoints
 
 export async function resolveLessonBooking(lesson: {
   id: string

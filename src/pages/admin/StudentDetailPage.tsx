@@ -16,6 +16,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
 function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
   const safeUsedMinutes = Math.max(0, usedMinutes)
@@ -125,7 +126,8 @@ export function StudentDetailPage() {
     teacherLevel: Record<string, number>
     teacherUid: Record<string, string>
     teacherCountry: Record<string, string>
-  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {}, teacherCountry: {} })
+    teacherPoints: Record<string, number>
+  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {}, teacherCountry: {}, teacherPoints: {} })
   const [recalcLesson, setRecalcLesson] = useState<{
     lesson: Lesson
     newPrice: number
@@ -189,7 +191,7 @@ export function StudentDetailPage() {
       }))),
       Promise.all(teacherIds.map(tid => getDoc(doc(db, 'teachers', tid)).then(t => {
         const data = t.data()
-        return [tid, data?.level ?? 1, data?.uid ?? '', data?.country ?? 'VN'] as const
+        return [tid, data?.level ?? 1, data?.uid ?? '', data?.country ?? 'VN', data?.pointsPer25Minutes ?? 25] as const
       }))),
     ]).then(([subjs, tchrs]) => {
       if (cancelled) return
@@ -198,12 +200,14 @@ export function StudentDetailPage() {
       const teacherLevel: Record<string, number> = {}
       const teacherUid: Record<string, string> = {}
       const teacherCountry: Record<string, string> = {}
-      tchrs.forEach(([k, lv, uid, country]) => {
+      const teacherPoints: Record<string, number> = {}
+      tchrs.forEach(([k, lv, uid, country, points]) => {
         teacherLevel[k] = lv as number
         teacherUid[k] = uid as string
         teacherCountry[k] = country as string
+        teacherPoints[k] = Number(points) || 25
       })
-      setLiveRates({ subjectPrice, teacherLevel, teacherUid, teacherCountry })
+      setLiveRates({ subjectPrice, teacherLevel, teacherUid, teacherCountry, teacherPoints })
     })
     return () => { cancelled = true }
   }, [lessons.length, student?.subjectId])
@@ -284,13 +288,13 @@ export function StudentDetailPage() {
     
     const confirmMessage = targetBookings.length === 1
       ? `Hủy ca học ngày ${targetBookings[0].requestedDate} lúc ${targetBookings[0].requestedStart}?`
-      : `Bạn có chắc chắn muốn hủy ${targetBookings.length} ca học đã chọn và hoàn lại số phút?`
+      : `Bạn có chắc chắn muốn hủy ${targetBookings.length} ca học đã chọn và hoàn lại kim cương đang giữ?`
       
     if (!window.confirm(confirmMessage)) return
     
     setCancellingSpecific(true)
     try {
-      const totalMinutesToRefund = targetBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+      const totalPointsToRefund = targetBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
       
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', id)
@@ -299,7 +303,7 @@ export function StudentDetailPage() {
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+        const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
 
         // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
         // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
@@ -329,13 +333,13 @@ export function StudentDetailPage() {
             studentName: studentData.name,
             cancelledCount: targetBookings.length,
             cancelledIds: targetBookings.map(b => b.id),
-            refundedMinutes: totalMinutesToRefund,
+            refundedPoints: totalPointsToRefund,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả ${totalMinutesToRefund} phút về quỹ học viên.`)
+      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả ${totalPointsToRefund} kim cương về quỹ học viên.`)
       setSelectedBookingIds([])
     } catch (err) {
       console.error('Cancel specific bookings failed:', err)
@@ -347,7 +351,7 @@ export function StudentDetailPage() {
 
   const handleSuspendStudent = async () => {
     if (!id || !student) return
-    if (!window.confirm(`Bạn có chắc chắn muốn bảo lưu học viên ${student.name} không? Hệ thống sẽ tự động hủy tất cả lịch học trong tương lai của học viên này và hoàn trả lại số phút về tài khoản.`)) return
+    if (!window.confirm(`Bạn có chắc chắn muốn bảo lưu học viên ${student.name} không? Hệ thống sẽ tự động hủy tất cả lịch học trong tương lai và hoàn kim cương đang giữ về quỹ khả dụng.`)) return
     
     setActioning(true)
     try {
@@ -364,7 +368,7 @@ export function StudentDetailPage() {
       
       // Filter future bookings
       const futureBookings = bookings.filter(b => b.requestedDate && b.requestedDate >= todayISO)
-      const totalMinutesToRefund = futureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+      const totalPointsToRefund = futureBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', id)
@@ -373,7 +377,7 @@ export function StudentDetailPage() {
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+        const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
 
         // Update student status & refund minutes
         tx.update(studentRef, {
@@ -403,14 +407,14 @@ export function StudentDetailPage() {
             studentName: studentData.name,
             refundedBookingCount: futureBookings.length,
             refundedBookingIds: futureBookings.map(b => b.id),
-            refundedMinutes: totalMinutesToRefund,
+            refundedPoints: totalPointsToRefund,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Học viên ${student.name} đã được chuyển sang trạng thái bảo lưu. Đã tự động hủy ${futureBookings.length} ca học trong tương lai và hoàn trả ${totalMinutesToRefund} phút.`)
+      toast.success(`Học viên ${student.name} đã được chuyển sang trạng thái bảo lưu. Đã hủy ${futureBookings.length} ca tương lai và hoàn trả ${totalPointsToRefund} kim cương.`)
     } catch (err) {
       console.error('Suspend student failed:', err)
       toast.error('Gặp lỗi khi bảo lưu học viên')
@@ -527,7 +531,11 @@ export function StudentDetailPage() {
         }]
       : []
 
-  const sumMinutes = (ls: Lesson[]) => ls.reduce((acc, l) => acc + (l.minutes || 0), 0)
+  const lessonFundPoints = (lesson: Lesson) => getLessonPoints(
+    lesson,
+    { pointsPer25Minutes: liveRates.teacherPoints[lesson.teacherId] },
+  )
+  const sumMinutes = (ls: Lesson[]) => ls.reduce((acc, l) => acc + lessonFundPoints(l), 0)
   const sessionCount = (minutes: number, minutesPerSession: number) => {
     const raw = minutesPerSession > 0 ? minutes / minutesPerSession : 0
     return Math.abs(raw - Math.round(raw)) < 0.001
@@ -539,7 +547,7 @@ export function StudentDetailPage() {
   const rejectedMinutes = sumMinutes(rejectedLessons)
   const approvedMinutesBySubject = approvedLessons.reduce<Record<string, number>>((acc, lesson) => {
     if (!lesson.subjectId) return acc
-    acc[lesson.subjectId] = (acc[lesson.subjectId] || 0) + (lesson.minutes || 0)
+    acc[lesson.subjectId] = (acc[lesson.subjectId] || 0) + lessonFundPoints(lesson)
     return acc
   }, {})
   // Find all approved minutes of subjects that do not have a package
@@ -735,6 +743,7 @@ export function StudentDetailPage() {
       }
 
       const payrollIds = payrollSnap.docs.map((d) => d.id)
+      const reversingPoints = lessonFundPoints(reversingLesson)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', student.id)
@@ -764,7 +773,7 @@ export function StudentDetailPage() {
         const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === reversingLesson.subjectId)
         if (sIdx !== -1) {
           const subPkg = updatedSubjects[sIdx]
-          const subUsedMinutes = Math.max(0, subPkg.usedMinutes - reversingLesson.minutes)
+          const subUsedMinutes = Math.max(0, subPkg.usedMinutes - reversingPoints)
           const subRemainingMinutes = subPkg.totalMinutes - subUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
           const subUsedSessionsRaw = subMps > 0 ? subUsedMinutes / subMps : 0
@@ -841,7 +850,7 @@ export function StudentDetailPage() {
         targetId: reversingLesson.id,
         changes: {
           lessonDate: reversingLesson.date,
-          restoredMinutes: reversingLesson.minutes,
+          restoredPoints: reversingPoints,
           voidedPayrolls: payrollIds.length,
           voidedSalary: reversingLesson.salary || 0,
           subjectId: reversingLesson.subjectId,
@@ -850,7 +859,7 @@ export function StudentDetailPage() {
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã huỷ duyệt, trả lại ${reversingLesson.minutes} phút cho học viên`)
+      toast.success(`Đã huỷ duyệt, trả lại ${reversingPoints} kim cương cho học viên`)
       setReversingLesson(null)
     } catch (err) {
       console.error(err)
@@ -883,6 +892,7 @@ export function StudentDetailPage() {
           const tData = tSnap.data()
           const teacherLevel = (reApprovingLesson.teacherLevel ?? tData?.level ?? 1) || 1
           const teacherCountry = tData?.country || 'VN'
+          const lessonPoints = getLessonPoints(reApprovingLesson, tData)
 
           let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
           if (chosenSubjectPkg.countryPrices) {
@@ -931,7 +941,10 @@ export function StudentDetailPage() {
           }
 
           const subPkg = updatedSubjects[sIdx]
-          const newSubUsedMinutes = subPkg.usedMinutes + reApprovingLesson.minutes
+          if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
+            throw new Error('NOT_ENOUGH_POINTS')
+          }
+          const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
           const subUsedSessionsRaw = subMps > 0 ? newSubUsedMinutes / subMps : 0
@@ -967,6 +980,8 @@ export function StudentDetailPage() {
             teacherLevel,
             pricePerMinute,
             currency,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(reApprovingLesson.pointsPer25Minutes ?? tData?.pointsPer25Minutes) || 25,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
@@ -1005,6 +1020,8 @@ export function StudentDetailPage() {
             subjectName: chosenSubjectPkg.subjectName,
             date: reApprovingLesson.date,
             minutes: reApprovingLesson.minutes,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(reApprovingLesson.pointsPer25Minutes ?? tData?.pointsPer25Minutes) || 25,
             comment: reApprovingLesson.comment || '',
             homework: reApprovingLesson.homework || '',
             book: reApprovingLesson.book || '',
@@ -1038,14 +1055,14 @@ export function StudentDetailPage() {
         targetId: reApprovingLesson.id,
         changes: {
           lessonDate: reApprovingLesson.date,
-          deductedMinutes: reApprovingLesson.minutes,
+          deductedPoints: lessonFundPoints(reApprovingLesson),
           subjectId: chosenSubjectPkg.subjectId,
           subjectName: chosenSubjectPkg.subjectName,
         },
         createdAt: serverTimestamp(),
       })
 
-      toast.success(`Đã duyệt lại môn ${chosenSubjectPkg.subjectName}, trừ ${reApprovingLesson.minutes} phút`)
+      toast.success(`Đã duyệt lại môn ${chosenSubjectPkg.subjectName}, trừ ${lessonFundPoints(reApprovingLesson)} kim cương`)
       setReApprovingLesson(null)
     } catch (err) {
       console.error(err)
@@ -1065,10 +1082,10 @@ export function StudentDetailPage() {
     ? Math.min(100, Math.round((usedMinutesFund / totalMinutesFund) * 100))
     : 0
   const displayPrimarySubject = activeSubjects.find((subject) => subject.remainingMinutes > 0) || activeSubjects[0] || null
-  const totalBookedMinutes = bookingRequests
+  const totalBookedPoints = bookingRequests
     .filter((booking) => !booking.lessonId)
-    .reduce((sum, booking) => sum + (booking.requestedMinutes || 0), 0)
-  const availableDiamondBalance = Math.max(0, actualRemainingMinutes - totalBookedMinutes)
+    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+  const availableDiamondBalance = Math.max(0, actualRemainingMinutes - totalBookedPoints)
   const rewardStarBalance = Number(student.rewardPoints || 0)
   const reconciledStudent = {
     ...student,
@@ -1107,6 +1124,7 @@ export function StudentDetailPage() {
       const salary = lesson.status === 'approved'
         ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel)
         : 0
+      const lessonPoints = lessonFundPoints(lesson)
 
       await runTransaction(db, async (tx) => {
         const lessonRef = doc(db, 'lessons', lesson.id)
@@ -1132,19 +1150,19 @@ export function StudentDetailPage() {
           if (newIndex === -1) throw new Error(`Không tìm thấy gói môn ${nextSubject.subjectName}`)
 
           const availableForNewSubject = updatedSubjects[newIndex].remainingMinutes || 0
-          if (availableForNewSubject < lesson.minutes) {
-            throw new Error(`Môn ${nextSubject.subjectName} không đủ ${lesson.minutes} phút khả dụng`)
+          if (availableForNewSubject < lessonPoints) {
+            throw new Error(`Môn ${nextSubject.subjectName} không đủ ${lessonPoints} kim cương khả dụng`)
           }
 
           updatedSubjects[oldIndex] = withUsedMinutes(
             updatedSubjects[oldIndex],
-            updatedSubjects[oldIndex].usedMinutes - lesson.minutes,
+            updatedSubjects[oldIndex].usedMinutes - lessonPoints,
           )
           sessionsBeforeApproval = updatedSubjects[newIndex].remainingSessions
           minutesBeforeApproval = updatedSubjects[newIndex].remainingMinutes
           updatedSubjects[newIndex] = withUsedMinutes(
             updatedSubjects[newIndex],
-            updatedSubjects[newIndex].usedMinutes + lesson.minutes,
+            updatedSubjects[newIndex].usedMinutes + lessonPoints,
           )
           sessionsAfterApproval = updatedSubjects[newIndex].remainingSessions
           minutesAfterApproval = updatedSubjects[newIndex].remainingMinutes
@@ -1402,13 +1420,13 @@ export function StudentDetailPage() {
             <div className="flex-1 text-sm">
               <p className="font-semibold text-amber-800">Dữ liệu học viên đang lệch với lịch sử buổi học</p>
               <p className="text-amber-700 mt-1 leading-relaxed">
-                Hệ thống lưu: <strong>{storedUsedSessions} buổi ({storedUsedMinutes} phút)</strong> đã học.
-                {' '}Nhưng thực tế trong lịch sử chỉ có <strong>{actualUsedSessions} buổi đã duyệt ({actualUsedMinutes} phút)</strong>.
+                Hệ thống lưu: <strong>{storedUsedSessions} buổi ({storedUsedMinutes} kim cương)</strong> đã học.
+                {' '}Nhưng thực tế trong lịch sử chỉ có <strong>{actualUsedSessions} buổi đã duyệt ({actualUsedMinutes} kim cương)</strong>.
               </p>
               {orphanMinutes > 0 && (
                 <p className="text-amber-700 bg-amber-100/60 rounded-lg p-2.5 mt-2 font-medium leading-relaxed border border-amber-200/50">
-                  ⚠️ Phát hiện <strong>{orphanMinutes} phút</strong> học ở môn không thuộc gói đăng ký của học viên (môn khác).
-                  Hệ thống đã tự động khấu trừ số phút này vào các gói hiện có. Bấm nút dưới để đồng bộ vĩnh viễn vào cơ sở dữ liệu.
+                  Phát hiện <strong>{orphanMinutes} kim cương</strong> đã dùng ở môn không thuộc gói đăng ký của học viên.
+                  Hệ thống đã tự động khấu trừ số kim cương này vào các gói hiện có. Bấm nút dưới để đồng bộ vĩnh viễn vào cơ sở dữ liệu.
                 </p>
               )}
               <p className="text-amber-600/80 text-xs mt-1.5">
@@ -1469,12 +1487,12 @@ export function StudentDetailPage() {
                 {(() => {
                   const totalSessions25 = Math.floor(pkg.totalMinutes / 25)
                   const usedSessions25 = Math.floor(pkg.usedMinutes / 25)
-                  const bookedMinutes = bookingRequests
+                  const bookedPoints = bookingRequests
                     .filter((b) => b.subjectId === pkg.subjectId && !b.lessonId)
-                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-                  const bookedSessions25 = Math.floor(bookedMinutes / 25)
-                  const availableMinutes = Math.max(0, pkg.remainingMinutes - bookedMinutes)
-                  const availableSessions25 = Math.floor(availableMinutes / 25)
+                    .reduce((sum, b) => sum + getBookingPoints(b), 0)
+                  const bookedSessions = bookingRequests.filter((b) => b.subjectId === pkg.subjectId && !b.lessonId).length
+                  const availablePoints = Math.max(0, pkg.remainingMinutes - bookedPoints)
+                  const availableSessions25 = Math.floor(availablePoints / 25)
 
                   return (
                     <div className="grid grid-cols-4 gap-1.5 text-center bg-slate-50 rounded-xl p-3 mb-4 text-xs">
@@ -1489,17 +1507,17 @@ export function StudentDetailPage() {
                         <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-indigo-400"><DiamondPointsIcon className="h-3 w-3" />{pkg.usedMinutes}</p>
                       </div>
                       <div>
-                        <p className="font-bold text-amber-600 text-[13px]">{bookedSessions25}</p>
+                        <p className="font-bold text-amber-600 text-[13px]">{bookedSessions}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã đặt</p>
-                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-amber-500"><DiamondPointsIcon className="h-3 w-3" />{bookedMinutes}</p>
+                        <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-amber-500"><DiamondPointsIcon className="h-3 w-3" />{bookedPoints}</p>
                       </div>
                       <div>
                         <p className={`font-bold text-[13px] ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>
                           {availableSessions25}
                         </p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Khả dụng</p>
-                        <p className={`mt-1 inline-flex items-center gap-1 text-[9px] leading-none ${availableMinutes <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
-                          <DiamondPointsIcon className="h-3 w-3" />{availableMinutes}
+                        <p className={`mt-1 inline-flex items-center gap-1 text-[9px] leading-none ${availablePoints <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
+                          <DiamondPointsIcon className="h-3 w-3" />{availablePoints}
                         </p>
                       </div>
                     </div>

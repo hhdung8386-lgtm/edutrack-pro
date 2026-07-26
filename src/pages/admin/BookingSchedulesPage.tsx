@@ -10,7 +10,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
-import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -363,7 +363,7 @@ export function BookingSchedulesPage() {
           if (!pkg) return 0
           const booked = list
             .filter((b) => b.subjectId === subjectId && !b.lessonId)
-            .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+            .reduce((sum, b) => sum + getBookingPoints(b), 0)
           return Math.max(0, (pkg.remainingMinutes || 0) - booked)
         }
         setSelectedSubjectId((currentId) => {
@@ -610,12 +610,14 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const totalRequired = selectedSlots.length * duration
-    const bookedMinutesForSubject = selectedStudentBookings
+    const pointsPer25Minutes = getTeacherPointsPer25Minutes(selectedTeacher)
+    const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
+    const totalRequiredPoints = selectedSlots.length * pointsPerLesson
+    const bookedPointsForSubject = selectedStudentBookings
       .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
-      .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-    const availableSubjectMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSubject)
-    if (!isRecurring && availableSubjectMinutes < totalRequired) {
+      .reduce((sum, b) => sum + getBookingPoints(b), 0)
+    const availableSubjectPoints = Math.max(0, sub.remainingMinutes - bookedPointsForSubject)
+    if (!isRecurring && availableSubjectPoints < totalRequiredPoints) {
       toast.error('Học viên không đủ kim cương khả dụng cho môn học này để xếp lịch!')
       return
     }
@@ -648,7 +650,7 @@ export function BookingSchedulesPage() {
         // Cap by the selected subject package's available minutes (remaining - already booked).
         // Do NOT use the student's global fund here: one exhausted/negative package must not
         // block scheduling on another package that still has minutes.
-        const maxSessions = Math.floor(availableSubjectMinutes / duration)
+        const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
         let sessionsScheduled = 0
         let weekIndex = 0
         while (sessionsScheduled < maxSessions) {
@@ -697,9 +699,9 @@ export function BookingSchedulesPage() {
         )
       )
       const studentBookingsList = bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
-      const latestHeldMinutes = studentBookingsList
+      const latestHeldPoints = studentBookingsList
         .filter((b) => !b.lessonId)
-        .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+        .reduce((sum, b) => sum + getBookingPoints(b), 0)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
@@ -707,24 +709,24 @@ export function BookingSchedulesPage() {
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
-        const fund = getStudentMinuteFund(currentStudent, latestHeldMinutes)
+        const fund = getStudentMinuteFund(currentStudent, latestHeldPoints)
 
         const subInDb = currentStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
         if (!subInDb) throw new Error('SUBJECT_NOT_FOUND')
 
-        const bookedMinutesForSubject = studentBookingsList
+        const bookedPointsForSubject = studentBookingsList
           .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
-          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-        const availableSubjectMinutes = Math.max(0, subInDb.remainingMinutes - bookedMinutesForSubject)
+          .reduce((sum, b) => sum + getBookingPoints(b), 0)
+        const availableSubjectPoints = Math.max(0, subInDb.remainingMinutes - bookedPointsForSubject)
 
         let totalRequired = 0
         let bookingsToCreate: any[] = []
 
         if (!isRecurring) {
-          totalRequired = selectedSlots.length * duration
+          totalRequired = selectedSlots.length * pointsPerLesson
           // Gate on the selected subject package only. The global fund can be dragged to 0
           // by another exhausted/over-drawn package and must not block this package.
-          if (availableSubjectMinutes < totalRequired) {
+          if (availableSubjectPoints < totalRequired) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
           totalScheduled = selectedSlots.length
@@ -750,6 +752,8 @@ export function BookingSchedulesPage() {
               requestedStart: slot.time,
               requestedEnd: minutesToTime(endMin),
               requestedMinutes: duration,
+              requestedPoints: pointsPerLesson,
+              pointsPer25Minutes,
               adminNote: 'Xếp lịch trực tiếp từ bảng admin',
               classroomURL: currentStudent.classroomURL || '',
               createdAt: serverTimestamp(),
@@ -758,7 +762,7 @@ export function BookingSchedulesPage() {
             })
           }
         } else {
-          const maxSessions = Math.floor(availableSubjectMinutes / duration)
+          const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
           if (maxSessions === 0) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
@@ -802,6 +806,8 @@ export function BookingSchedulesPage() {
                 requestedStart: slot.time,
                 requestedEnd: minutesToTime(endMin),
                 requestedMinutes: duration,
+                requestedPoints: pointsPerLesson,
+                pointsPer25Minutes,
                 adminNote: 'Xếp lịch định kỳ từ bảng admin',
                 classroomURL: currentStudent.classroomURL || '',
                 createdAt: serverTimestamp(),
@@ -814,7 +820,7 @@ export function BookingSchedulesPage() {
             weekIndex++
           }
 
-          totalRequired = sessionsScheduled * duration
+          totalRequired = sessionsScheduled * pointsPerLesson
           totalScheduled = sessionsScheduled
         }
 
@@ -893,12 +899,12 @@ export function BookingSchedulesPage() {
       }
 
       // Group bookings by studentId
-      const studentRefunds: Record<string, { minutes: number; bookings: BookingRequest[] }> = {}
+      const studentRefunds: Record<string, { points: number; bookings: BookingRequest[] }> = {}
       for (const booking of bookingsToCancel) {
         if (!studentRefunds[booking.studentId]) {
-          studentRefunds[booking.studentId] = { minutes: 0, bookings: [] }
+          studentRefunds[booking.studentId] = { points: 0, bookings: [] }
         }
-        studentRefunds[booking.studentId].minutes += booking.requestedMinutes
+        studentRefunds[booking.studentId].points += getBookingPoints(booking)
         studentRefunds[booking.studentId].bookings.push(booking)
       }
 
@@ -911,8 +917,8 @@ export function BookingSchedulesPage() {
 
           const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-          const refundMinutes = studentRefunds[studentId].minutes
-          const nextHeld = Math.max(0, currentHeld - refundMinutes)
+          const refundPoints = studentRefunds[studentId].points
+          const nextHeld = Math.max(0, currentHeld - refundPoints)
 
           tx.update(studentRef, {
             reservedMinutes: nextHeld,
@@ -936,14 +942,14 @@ export function BookingSchedulesPage() {
             bookingIds: selectedBookingIds,
             refundSummary: Object.entries(studentRefunds).map(([id, info]) => ({
               studentId: id,
-              refundMinutes: info.minutes,
+              refundPoints: info.points,
             })),
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Đã hủy thành công ${bookingsToCancel.length} ca xếp lớp và hoàn trả phút cho học viên!`)
+      toast.success(`Đã hủy thành công ${bookingsToCancel.length} ca xếp lớp và hoàn trả kim cương cho học viên.`)
       setSelectedBookingIds([])
       setShowCancelBatchModal(false)
     } catch (error) {
@@ -975,8 +981,8 @@ export function BookingSchedulesPage() {
 
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
-        const minutes = Number(requestNow.requestedMinutes) || 0
-        const nextHeld = Math.max(0, fund.held - minutes)
+        const points = getBookingPoints(requestNow)
+        const nextHeld = Math.max(0, fund.held - points)
 
         // Restore student minute balance
         tx.update(studentRef, {
@@ -1001,14 +1007,14 @@ export function BookingSchedulesPage() {
           targetId: selectedBooking.id,
           changes: {
             studentId: selectedBooking.studentId,
-            releasedMinutes: minutes,
+            releasedPoints: points,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success('Đã nhả giữ chỗ & khôi phục quỹ phút thành công')
+      toast.success('Đã nhả giữ chỗ và khôi phục quỹ kim cương thành công')
       setShowDetailModal(false)
       setSelectedBooking(null)
     } catch (error: any) {
@@ -1022,7 +1028,7 @@ export function BookingSchedulesPage() {
   const handleCancelBookingById = async (bookingId: string) => {
     const booking = studentFutureBookings.find(b => b.id === bookingId)
     if (!booking) return
-    if (!window.confirm(`Bạn có chắc chắn muốn hủy ca học ngày ${booking.requestedDate} (${booking.requestedStart} - ${booking.requestedEnd}) không? Số phút sẽ được hoàn trả.`)) return
+    if (!window.confirm(`Bạn có chắc chắn muốn hủy ca học ngày ${booking.requestedDate} (${booking.requestedStart} - ${booking.requestedEnd}) không? ${getBookingPoints(booking)} kim cương sẽ được hoàn về quỹ khả dụng.`)) return
 
     try {
       await runTransaction(db, async (tx) => {
@@ -1032,7 +1038,7 @@ export function BookingSchedulesPage() {
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - (booking.requestedMinutes || 0))
+        const nextHeld = Math.max(0, currentHeld - getBookingPoints(booking))
 
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
@@ -1058,11 +1064,11 @@ export function BookingSchedulesPage() {
   const handleCancelAllStudentBookings = async () => {
     if (studentFutureBookings.length === 0) return
     const studentName = selectedBooking?.studentName || 'học viên'
-    if (!window.confirm(`⚠️ BẠN CÓ CHẮC CHẮN muốn hủy TOÀN BỘ ${studentFutureBookings.length} ca học trong tương lai của học viên ${studentName} không? Toàn bộ số phút của các ca này sẽ được hoàn trả.`)) return
+    if (!window.confirm(`Bạn có chắc chắn muốn hủy toàn bộ ${studentFutureBookings.length} ca học trong tương lai của học viên ${studentName} không? Toàn bộ kim cương đang giữ của các ca này sẽ được hoàn về quỹ khả dụng.`)) return
 
     setCancellingAll(true)
     try {
-      const totalMinutesToRefund = studentFutureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+      const totalPointsToRefund = studentFutureBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const studentId = selectedBooking!.studentId
 
       await runTransaction(db, async (tx) => {
@@ -1072,7 +1078,7 @@ export function BookingSchedulesPage() {
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+        const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
 
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
@@ -1090,7 +1096,7 @@ export function BookingSchedulesPage() {
       })
 
       setStudentFutureBookings([])
-      toast.success(`Đã hủy toàn bộ ${studentFutureBookings.length} ca học của học viên và hoàn trả ${totalMinutesToRefund} phút.`)
+      toast.success(`Đã hủy toàn bộ ${studentFutureBookings.length} ca học của học viên và hoàn trả ${totalPointsToRefund} kim cương.`)
       setShowDetailModal(false)
       setSelectedBooking(null)
     } catch (err) {
@@ -1602,19 +1608,18 @@ export function BookingSchedulesPage() {
                 {/* Minute Balance Fund Info */}
                 {(() => {
                   const activeSubPkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
-                  const bookedMinutesForSubject = selectedStudentBookings
+                  const bookedPointsForSubject = selectedStudentBookings
                     .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
-                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-                  const availableForSubject = activeSubPkg ? Math.max(0, activeSubPkg.remainingMinutes - bookedMinutesForSubject) : 0
+                    .reduce((sum, b) => sum + getBookingPoints(b), 0)
+                  const availableForSubject = activeSubPkg ? Math.max(0, activeSubPkg.remainingMinutes - bookedPointsForSubject) : 0
 
-                  const totalRequired = selectedSlots.length * duration
-                  const isEnough = availableForSubject >= totalRequired
                   // Kim cương phải tính theo đơn giá của chính gia sư đang xếp lịch
                   // (gia sư khác nhau có thể tốn số kim cương khác nhau cho cùng 1 buổi).
-                  const requiredPoints = selectedSlots.length * calculateLessonPoints(
-                    duration,
-                    getTeacherPointsPer25Minutes(teachers.find((t) => t.id === selectedTeacherId))
-                  )
+                  const selectedRate = getTeacherPointsPer25Minutes(selectedTeacher)
+                  const pointsForOneLesson = calculateLessonPoints(duration, selectedRate)
+                  const requiredPoints = selectedSlots.length * pointsForOneLesson
+                  const totalDurationMinutes = selectedSlots.length * duration
+                  const isEnough = availableForSubject >= requiredPoints
                   const subjectFutureBookings = selectedStudentBookings
                     .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
                     .sort((a, b) => (a.requestedDate || '').localeCompare(b.requestedDate || ''))
@@ -1627,22 +1632,22 @@ export function BookingSchedulesPage() {
                         <div className="rounded-lg bg-slate-50 p-2">
                           <p className="text-[10px] font-bold uppercase text-slate-400">Khả dụng</p>
                           <p className={`mt-0.5 font-bold ${isEnough ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {Math.floor(availableForSubject / 25)} buổi
+                            {pointsForOneLesson > 0 ? Math.floor(availableForSubject / pointsForOneLesson) : 0} buổi
                           </p>
                           <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600">
                             <DiamondPointsIcon className="h-3 w-3" />{availableForSubject} kim cương
                           </p>
-                          <p className="text-[11px] font-semibold text-slate-500">{availableForSubject} phút</p>
+                          <p className="text-[11px] font-semibold text-slate-500">Giá gia sư: {selectedRate} kim cương / 25 phút</p>
                         </div>
                         <div className="rounded-lg bg-slate-50 p-2">
                           <p className="text-[10px] font-bold uppercase text-slate-400">Yêu cầu</p>
                           <p className="mt-0.5 font-bold text-slate-800">
-                            {Math.round((totalRequired / 25) * 10) / 10} buổi
+                            {selectedSlots.length} buổi
                           </p>
                           <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600">
                             <DiamondPointsIcon className="h-3 w-3" />{requiredPoints} kim cương
                           </p>
-                          <p className="text-[11px] font-semibold text-slate-500">{totalRequired} phút</p>
+                          <p className="text-[11px] font-semibold text-slate-500">{totalDurationMinutes} phút học</p>
                         </div>
                       </div>
                       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1652,10 +1657,10 @@ export function BookingSchedulesPage() {
                             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                             <span>Học viên không đủ kim cương khả dụng để xếp lịch!</span>
                           </div>
-                          {bookedMinutesForSubject > 0 && (
+                          {bookedPointsForSubject > 0 && (
                             <>
                               <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
-                                * Đã có {bookedMinutesForSubject} phút ({Math.floor(bookedMinutesForSubject / 25)} buổi) được đặt lịch trong tương lai. Vui lòng hủy các ca tương lai này hoặc nạp thêm buổi học.
+                                * Đã có {bookedPointsForSubject} kim cương đang được giữ cho {subjectFutureBookings.length} ca tương lai. Vui lòng hủy các ca này hoặc nạp thêm kim cương.
                               </p>
                               {subjectFutureBookings.length > 0 && (
                                 <div className="mt-2 text-[10px] pl-5 space-y-1 text-slate-500 max-h-[120px] overflow-y-auto border-t border-rose-100 pt-1.5 font-semibold">
@@ -1689,15 +1694,16 @@ export function BookingSchedulesPage() {
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
                     >
                       {studentSubjects.map((sub) => {
-                        const bookedMinutesForSub = selectedStudentBookings
+                        const bookedPointsForSub = selectedStudentBookings
                           .filter((b) => b.subjectId === sub.subjectId && !b.lessonId)
-                          .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
-                        const availMinutes = Math.max(0, sub.remainingMinutes - bookedMinutesForSub)
-                        const availSessions = Math.floor(availMinutes / (sub.minutesPerSession || 25))
-                        const bookedSessions = Math.floor(bookedMinutesForSub / (sub.minutesPerSession || 25))
+                          .reduce((sum, b) => sum + getBookingPoints(b), 0)
+                        const availablePoints = Math.max(0, sub.remainingMinutes - bookedPointsForSub)
+                        const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
+                        const availSessions = pointsForOneLesson > 0 ? Math.floor(availablePoints / pointsForOneLesson) : 0
+                        const bookedSessions = selectedStudentBookings.filter((b) => b.subjectId === sub.subjectId && !b.lessonId).length
                         return (
                           <option key={sub.subjectId} value={sub.subjectId}>
-                            {sub.subjectName} (Còn {availSessions}b / {availMinutes}m khả dụng - Đã đặt {bookedSessions}b)
+                            {sub.subjectName} (Còn {availSessions} buổi / {availablePoints} kim cương - Đã đặt {bookedSessions} buổi)
                           </option>
                         )
                       })}
@@ -1732,9 +1738,10 @@ export function BookingSchedulesPage() {
                   const pkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
                   const bookedForSubject = selectedStudentBookings
                     .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
-                    .reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+                    .reduce((sum, b) => sum + getBookingPoints(b), 0)
                   const availableForSubject = pkg ? Math.max(0, (pkg.remainingMinutes || 0) - bookedForSubject) : 0
-                  const maxSessions = Math.floor(availableForSubject / duration)
+                  const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
+                  const maxSessions = pointsForOneLesson > 0 ? Math.floor(availableForSubject / pointsForOneLesson) : 0
                   const slotsPerWeek = Math.max(1, selectedSlots.length)
                   const maxWeeks = Math.ceil(maxSessions / slotsPerWeek)
                   return (

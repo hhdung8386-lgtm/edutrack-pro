@@ -30,7 +30,9 @@ export function getLessonPoints(
   teacher?: Partial<Teacher> | null,
 ): number {
   const storedPoints = Number(lesson.points)
-  if (Number.isFinite(storedPoints) && storedPoints >= 0) return storedPoints
+  if (lesson.points !== null && lesson.points !== undefined && Number.isFinite(storedPoints) && storedPoints >= 0) {
+    return storedPoints
+  }
 
   const rate = lesson.pointsPer25Minutes ?? teacher?.pointsPer25Minutes
   return calculateLessonPoints(lesson.minutes, normalizePointsPer25Minutes(rate))
@@ -41,7 +43,14 @@ export function getBookingPoints(
   teacher?: Partial<Teacher> | null,
 ): number {
   const storedPoints = Number(booking.requestedPoints)
-  if (Number.isFinite(storedPoints) && storedPoints >= 0) return storedPoints
+  if (
+    booking.requestedPoints !== null
+    && booking.requestedPoints !== undefined
+    && Number.isFinite(storedPoints)
+    && storedPoints >= 0
+  ) {
+    return storedPoints
+  }
 
   const rate = booking.pointsPer25Minutes ?? teacher?.pointsPer25Minutes
   return calculateLessonPoints(booking.requestedMinutes, normalizePointsPer25Minutes(rate))

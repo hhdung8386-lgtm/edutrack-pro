@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  addDoc,
   collection,
   doc,
   DocumentData,
@@ -10,8 +9,10 @@ import {
   limit as firestoreLimit,
   query,
   QueryDocumentSnapshot,
+  runTransaction,
   serverTimestamp,
   startAfter,
+  Timestamp,
   where,
 } from 'firebase/firestore'
 import {
@@ -38,6 +39,7 @@ import { PublicNav } from '@/components/layout/PublicNav'
 import { db } from '@/lib/firebase'
 import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
+import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -631,7 +633,9 @@ function TeacherBookingPage({
   }, [duration, teacher?.availability, teacherBookings])
   const selectedSchedule = scheduleOptions.find((option) => `${option.dateISO}|${option.day}|${option.start}|${option.end}` === selectedSlot)
   const fund = student ? getStudentMinuteFund(student) : null
-  const canAfford = !fund || fund.available >= duration
+  const pointsPer25Minutes = getTeacherPointsPer25Minutes(teacher)
+  const requestedPoints = calculateLessonPoints(duration, pointsPer25Minutes)
+  const canAfford = !fund || fund.available >= requestedPoints
   const highlights = teacher ? buildHighlights(teacher) : []
   const strengths = teacher ? (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 4) : []
 
@@ -692,13 +696,33 @@ function TeacherBookingPage({
     }
 
     if (!canAfford) {
-      toast.warning('Quỹ phút khả dụng chưa đủ cho khung giờ đã chọn.')
+      toast.warning(`Quỹ kim cương khả dụng chưa đủ ${requestedPoints} kim cương để đặt gia sư này.`)
       return
     }
 
     setSubmitting(true)
     try {
-      await addDoc(collection(db, 'bookingRequests'), {
+      const bookingRef = doc(collection(db, 'bookingRequests'))
+      const createdAt = Timestamp.now()
+      const teacherConfirmationDeadlineAt = Timestamp.fromMillis(createdAt.toMillis() + 3 * 60 * 60 * 1000)
+
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', student.id)
+        const studentSnap = await tx.get(studentRef)
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentFund = getStudentMinuteFund(currentStudent)
+        if (currentFund.available < requestedPoints) throw new Error('NOT_ENOUGH_POINTS')
+        const heldAfter = currentFund.held + requestedPoints
+
+        tx.update(studentRef, {
+          reservedMinutes: heldAfter,
+          heldMinutes: heldAfter,
+          lastBookingHoldRequestId: bookingRef.id,
+          updatedAt: serverTimestamp(),
+        })
+        tx.set(bookingRef, {
         status: 'pending',
         teacherResponse: 'pending',
         teacherId: teacher.id,
@@ -716,17 +740,27 @@ function TeacherBookingPage({
         requestedStart: selectedSchedule.start,
         requestedEnd: selectedSchedule.end,
         requestedMinutes: duration,
-        availableMinutesAtRequest: fund?.available ?? 0,
-        heldMinutesAtRequest: fund?.held ?? 0,
+        requestedPoints,
+        pointsPer25Minutes,
+        availableMinutesAtRequest: currentFund.available,
+        heldMinutesAtRequest: currentFund.held,
+        heldMinutesAfterRequest: heldAfter,
+        heldImmediately: true,
+        teacherConfirmationDeadlineAt,
         note: note.trim(),
         createdAt: serverTimestamp(),
+      })
       })
 
       toast.success('Đã gửi yêu cầu. Học vụ sẽ kiểm tra và xác nhận lịch.')
       onClose()
     } catch (error) {
       console.error('Error submitting booking request:', error)
-      toast.error('Chưa gửi được yêu cầu. Có thể cần cập nhật quyền ghi bookingRequests trên Firebase.')
+      if ((error as Error)?.message === 'NOT_ENOUGH_POINTS') {
+        toast.error('Quỹ kim cương khả dụng không còn đủ cho lịch này.')
+      } else {
+        toast.error('Chưa gửi được yêu cầu đặt lịch. Vui lòng thử lại.')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -883,9 +917,9 @@ function TeacherBookingPage({
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                       {[
-                        ['Số phút hiện có', fund.total],
+                        ['Tổng kim cương', fund.total],
                         ['Đã sử dụng', fund.used],
-                        ['Đã giữ chỗ', fund.held],
+                        ['Đang giữ chỗ', fund.held],
                         ['Khả dụng', fund.available],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl bg-white p-3">
@@ -896,7 +930,7 @@ function TeacherBookingPage({
                     </div>
                     {!canAfford && (
                       <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                        Quỹ phút khả dụng chưa đủ cho {duration} phút. Hãy chọn thời lượng ngắn hơn hoặc liên hệ học vụ.
+                        Quỹ khả dụng chưa đủ {requestedPoints} kim cương cho {duration} phút với gia sư này.
                       </p>
                     )}
                   </div>
@@ -938,8 +972,8 @@ function TeacherBookingPage({
                             </div>
                           </div>
                         </div>
-                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">2</span>Nhập mã học viên ở phía trên để kiểm tra quỹ phút.</p>
-                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">3</span>Confirm the points: <span className="text-xl font-black text-[#c34d3f]">{duration} phút</span></p>
+                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">2</span>Nhập mã học viên ở phía trên để kiểm tra quỹ kim cương.</p>
+                        <p className="text-sm font-bold text-slate-700"><span className="mr-2 rounded-full bg-slate-200 px-2 py-1 text-xs">3</span>Chi phí: <span className="text-xl font-black text-[#c34d3f]">{requestedPoints} kim cương</span> <span className="text-xs text-slate-500">({pointsPer25Minutes}/25 phút)</span></p>
                       </div>
                     </div>
                   )}

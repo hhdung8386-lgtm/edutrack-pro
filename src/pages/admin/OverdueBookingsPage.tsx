@@ -15,6 +15,7 @@ import {
   ArrowLeft, AlertCircle, Search, Download, ExternalLink, Link2, RotateCcw,
   Hourglass, CheckCircle2, XCircle, HelpCircle, Users,
 } from 'lucide-react'
+import { getBookingPoints } from '@/lib/points'
 
 /**
  * Chẩn đoán vì sao một ca đã đặt bị quá hạn mà chưa được điểm danh.
@@ -35,7 +36,7 @@ const DIAGNOSIS_META: Record<Diagnosis, {
     label: 'Gia sư đã điểm danh — CHỜ DUYỆT',
     short: 'Chờ duyệt',
     desc: 'Gia sư đã nộp báo cáo buổi dạy cho ngày này nhưng admin chưa duyệt.',
-    advice: 'KHÔNG hoàn phút. Hãy vào trang Duyệt buổi dạy để duyệt — hệ thống sẽ tự trừ phút và nhả giữ chỗ đúng quy trình.',
+    advice: 'Không hoàn kim cương. Hãy vào trang Duyệt buổi dạy để duyệt; hệ thống sẽ tự trừ kim cương và nhả giữ chỗ đúng quy trình.',
     badge: 'bg-amber-100 text-amber-700 border-amber-200',
     chip: 'bg-amber-500',
     icon: Hourglass,
@@ -53,7 +54,7 @@ const DIAGNOSIS_META: Record<Diagnosis, {
     label: 'Buổi dạy bị TỪ CHỐI',
     short: 'Bị từ chối',
     desc: 'Gia sư có nộp báo cáo cho ngày này nhưng đã bị admin từ chối.',
-    advice: 'Buổi học không được tính. Nên hoàn phút giữ chỗ về cho học viên.',
+    advice: 'Buổi học không được tính. Nên hoàn kim cương giữ chỗ về cho học viên.',
     badge: 'bg-rose-100 text-rose-700 border-rose-200',
     chip: 'bg-rose-500',
     icon: XCircle,
@@ -62,7 +63,7 @@ const DIAGNOSIS_META: Record<Diagnosis, {
     label: 'KHÔNG có báo cáo buổi dạy nào',
     short: 'Chưa điểm danh',
     desc: 'Không tìm thấy buổi dạy nào của học viên này trong ngày đó — nhiều khả năng lớp không diễn ra hoặc gia sư quên điểm danh.',
-    advice: 'Xác minh với gia sư. Nếu lớp không diễn ra thì hoàn phút cho học viên.',
+    advice: 'Xác minh với gia sư. Nếu lớp không diễn ra thì hoàn kim cương cho học viên.',
     badge: 'bg-slate-100 text-slate-700 border-slate-200',
     chip: 'bg-slate-400',
     icon: HelpCircle,
@@ -246,7 +247,7 @@ export function OverdueBookingsPage() {
       })
   }, [diagnosed, diagnosisFilter, teacherFilter, fromDate, toDate, searchQuery, teacherNicks])
 
-  const filteredMinutes = filtered.reduce((s, d) => s + (d.booking.requestedMinutes || 0), 0)
+  const filteredPoints = filtered.reduce((s, d) => s + getBookingPoints(d.booking), 0)
   const selectedItems = filtered.filter((d) => selectedIds.includes(d.booking.id))
   const allFilteredSelected = filtered.length > 0 && filtered.every((d) => selectedIds.includes(d.booking.id))
 
@@ -270,14 +271,14 @@ export function OverdueBookingsPage() {
         const CHUNK = 300
         for (let i = 0; i < list.length; i += CHUNK) {
           const chunk = list.slice(i, i + CHUNK)
-          const minutes = chunk.reduce((s, it) => s + (it.booking.requestedMinutes || 0), 0)
+          const points = chunk.reduce((s, it) => s + getBookingPoints(it.booking), 0)
           await runTransaction(db, async (tx) => {
             const sRef = doc(db, 'students', studentId)
             const sSnap = await tx.get(sRef)
             if (sSnap.exists()) {
               const sd = sSnap.data() as Student
               const cur = sd.reservedMinutes ?? sd.heldMinutes ?? 0
-              const next = Math.max(0, cur - minutes)
+              const next = Math.max(0, cur - points)
               // Chỉ nhả phần GIỮ CHỖ. Không cộng vào remainingMinutes vì lúc đặt
               // lịch hệ thống chỉ giữ chứ chưa trừ quỹ -> cộng thêm sẽ hoàn khống.
               tx.update(sRef, { reservedMinutes: next, heldMinutes: next, updatedAt: serverTimestamp() })
@@ -299,7 +300,7 @@ export function OverdueBookingsPage() {
                 studentName: chunk[0]?.booking.studentName || '',
                 count: chunk.length,
                 bookingIds: chunk.map((c) => c.booking.id),
-                releasedMinutes: minutes,
+                releasedPoints: points,
                 diagnoses: chunk.map((c) => c.diagnosis),
               },
               createdAt: serverTimestamp(),
@@ -310,12 +311,12 @@ export function OverdueBookingsPage() {
         setProgress({ done, total: entries.length })
       }
 
-      toast.success(`Đã hoàn phút giữ chỗ cho ${items.length} ca học.`)
+      toast.success(`Đã hoàn kim cương giữ chỗ cho ${items.length} ca học.`)
       setSelectedIds([])
       setConfirmRelease(null)
     } catch (err: any) {
       console.error('release overdue failed', err)
-      toast.error(`Lỗi khi hoàn phút${err?.message ? `: ${err.message}` : ''}. Phần đã xử lý vẫn được lưu, bấm lại để tiếp tục.`)
+      toast.error(`Lỗi khi hoàn kim cương${err?.message ? `: ${err.message}` : ''}. Phần đã xử lý vẫn được lưu, bấm lại để tiếp tục.`)
     } finally {
       setProcessing(false)
       setProgress(null)
@@ -347,7 +348,7 @@ export function OverdueBookingsPage() {
 
             const lessonData = lSnap.data() as Lesson
             // Nếu lúc duyệt đã nhả giữ chỗ rồi thì không nhả lần nữa.
-            const holdToRelease = lessonData.bookingHoldConsumed === true ? 0 : (it.booking.requestedMinutes || 0)
+            const holdToRelease = lessonData.bookingHoldConsumed === true ? 0 : getBookingPoints(it.booking)
             if (holdToRelease > 0 && sSnap.exists()) {
               const sd = sSnap.data() as Student
               const cur = sd.reservedMinutes ?? sd.heldMinutes ?? 0
@@ -365,7 +366,7 @@ export function OverdueBookingsPage() {
                 studentName: it.booking.studentName || '',
                 lessonId: lesson.id,
                 lessonDate: lesson.date,
-                releasedHoldMinutes: holdToRelease,
+                releasedHoldPoints: holdToRelease,
               },
               createdAt: serverTimestamp(),
             })
@@ -426,14 +427,14 @@ export function OverdueBookingsPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900">Rà soát ca học quá hạn</h1>
-          <p className="text-sm text-slate-500">Xem rõ từng ca đang vướng gì trước khi quyết định hoàn phút</p>
+          <p className="text-sm text-slate-500">Xem rõ từng ca đang vướng gì trước khi quyết định hoàn kim cương</p>
         </div>
       </div>
 
       {/* KPI */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card><p className="text-xs font-semibold text-slate-500 uppercase">Ca quá hạn</p><p className="text-2xl font-bold text-slate-900 mt-1">{diagnosed.length}</p></Card>
-        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Phút đang treo</p><p className="text-2xl font-bold text-amber-600 mt-1">{diagnosed.reduce((s, d) => s + (d.booking.requestedMinutes || 0), 0).toLocaleString('vi-VN')}</p></Card>
+        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Kim cương đang treo</p><p className="text-2xl font-bold text-amber-600 mt-1">{diagnosed.reduce((s, d) => s + getBookingPoints(d.booking), 0).toLocaleString('vi-VN')}</p></Card>
         <Card><p className="text-xs font-semibold text-slate-500 uppercase">Học viên</p><p className="text-2xl font-bold text-sky-600 mt-1">{new Set(diagnosed.map((d) => d.booking.studentId)).size}</p></Card>
         <Card><p className="text-xs font-semibold text-slate-500 uppercase">Gia sư</p><p className="text-2xl font-bold text-violet-600 mt-1">{new Set(diagnosed.map((d) => d.booking.teacherId)).size}</p></Card>
       </div>
@@ -519,7 +520,7 @@ export function OverdueBookingsPage() {
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
           <p className="text-sm text-slate-600">
             Đang hiện <span className="font-bold text-slate-900">{filtered.length}</span> ca ·{' '}
-            <span className="font-bold text-amber-600">{filteredMinutes.toLocaleString('vi-VN')} phút</span>
+            <span className="font-bold text-amber-600">{filteredPoints.toLocaleString('vi-VN')} kim cương</span>
           </p>
           <Button variant="outline" onClick={exportCSV} disabled={filtered.length === 0}>
             <Download className="w-4 h-4 mr-2" />Xuất CSV
@@ -535,7 +536,7 @@ export function OverdueBookingsPage() {
               Đã chọn {selectedIds.length} ca
               {selectedItems.some((d) => d.diagnosis === 'pending_lesson') && (
                 <span className="ml-2 font-semibold text-amber-700">
-                  ({selectedItems.filter((d) => d.diagnosis === 'pending_lesson').length} ca đang chờ duyệt sẽ được bỏ qua khi hoàn phút)
+                  ({selectedItems.filter((d) => d.diagnosis === 'pending_lesson').length} ca đang chờ duyệt sẽ được bỏ qua khi hoàn kim cương)
                 </span>
               )}
             </div>
@@ -551,7 +552,7 @@ export function OverdueBookingsPage() {
                 disabled={selectedReleasable.length === 0}
                 className="bg-amber-500 hover:bg-amber-600 text-white"
               >
-                <RotateCcw className="w-4 h-4 mr-2" />Hoàn phút ({selectedReleasable.length})
+                <RotateCcw className="w-4 h-4 mr-2" />Hoàn kim cương ({selectedReleasable.length})
               </Button>
               <button type="button" onClick={() => setSelectedIds([])} className="px-3 text-sm font-semibold text-slate-600 hover:text-slate-900">
                 Bỏ chọn
@@ -669,7 +670,7 @@ export function OverdueBookingsPage() {
                               onClick={() => setConfirmRelease([d])}
                               className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
                             >
-                              <RotateCcw className="w-3 h-3" />Hoàn phút
+                              <RotateCcw className="w-3 h-3" />Hoàn kim cương
                             </button>
                           )}
                         </div>
@@ -687,7 +688,7 @@ export function OverdueBookingsPage() {
         <AlertCircle className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
         <p>
           <span className="font-bold text-slate-800">Lưu ý về tiền/quỹ:</span> khi đặt lịch hệ thống chỉ <span className="font-semibold">GIỮ CHỖ</span> chứ chưa trừ quỹ.
-          Vì vậy "Hoàn phút" chỉ nhả phần giữ chỗ đang treo, <span className="font-semibold">không cộng khống</span> buổi cho học viên.
+          Vì vậy "Hoàn kim cương" chỉ nhả phần giữ chỗ đang treo, <span className="font-semibold">không cộng khống</span> buổi cho học viên.
           Buổi học chỉ thực sự bị trừ khi admin duyệt báo cáo của gia sư. Mọi thao tác đều được ghi vào Nhật ký admin.
         </p>
       </div>
@@ -696,14 +697,14 @@ export function OverdueBookingsPage() {
         open={!!confirmRelease}
         onClose={() => { if (!processing) setConfirmRelease(null) }}
         onConfirm={() => { if (confirmRelease) releaseHolds(confirmRelease) }}
-        title={`Hoàn phút giữ chỗ cho ${confirmRelease?.length ?? 0} ca học?`}
+        title={`Hoàn kim cương giữ chỗ cho ${confirmRelease?.length ?? 0} ca học?`}
         description={
           confirmRelease && confirmRelease.length === 1
             ? `Ca ngày ${confirmRelease[0].booking.requestedDate} của học viên ${confirmRelease[0].booking.studentName} — chẩn đoán: ${DIAGNOSIS_META[confirmRelease[0].diagnosis].short}.`
-            : `${confirmRelease?.length ?? 0} ca sẽ được huỷ giữ chỗ và hoàn ${(confirmRelease ?? []).reduce((s, d) => s + (d.booking.requestedMinutes || 0), 0).toLocaleString('vi-VN')} phút về quỹ khả dụng của các học viên tương ứng.`
+            : `${confirmRelease?.length ?? 0} ca sẽ được huỷ giữ chỗ và hoàn ${(confirmRelease ?? []).reduce((s, d) => s + getBookingPoints(d.booking), 0).toLocaleString('vi-VN')} kim cương về quỹ khả dụng của các học viên tương ứng.`
         }
         consequence="Chỉ nhả phần giữ chỗ, không cộng khống buổi. Ca học sẽ được giải phóng khỏi lịch gia sư và ghi vào nhật ký admin."
-        confirmLabel="Xác nhận hoàn phút"
+        confirmLabel="Xác nhận hoàn kim cương"
         confirmVariant="danger"
         loading={processing}
       />

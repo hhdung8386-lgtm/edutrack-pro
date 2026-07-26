@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, AlertCircle, Search, Download, Calculator, CalendarX2, CheckCircle2, Wrench } from 'lucide-react'
+import { getBookingPoints } from '@/lib/points'
 
 /**
  * ĐỐI SOÁT QUỸ BUỔI
@@ -94,15 +95,15 @@ export function QuotaReconcilePage() {
     const out: Row[] = []
     students.forEach((s) => {
       const list = byStudent.get(s.id) || []
-      const actualHeld = list.reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
+      const actualHeld = list.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const storedHeld = s.reservedMinutes ?? s.heldMinutes ?? 0
       // Quỹ còn lại tính từ các gói môn (chuẩn nhất), không phụ thuộc field có thể thiếu
       const remainingMinutes = getStudentPackageMinuteSummary(s).remainingMinutes
-      const pastHeld = list.filter((b) => (b.requestedDate || '') < todayISO).reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
+      const pastHeld = list.filter((b) => (b.requestedDate || '') < todayISO).reduce((sum, b) => sum + getBookingPoints(b), 0)
       const futureList = list
         .filter((b) => (b.requestedDate || '') >= todayISO)
         .sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || '')) // xa nhất trước
-      const futureHeld = futureList.reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
+      const futureHeld = futureList.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const drift = storedHeld - actualHeld
       const overByActual = actualHeld - remainingMinutes
 
@@ -189,7 +190,7 @@ export function QuotaReconcilePage() {
         try { await recalcOne(row); ok++ } catch (e) { console.error(e); failed++ }
         setProgress({ done: ok + failed, total: targets.length })
       }
-      if (failed === 0) toast.success(`Đã tính lại số phút đang giữ cho ${ok} học viên`)
+      if (failed === 0) toast.success(`Đã tính lại số kim cương đang giữ cho ${ok} học viên`)
       else toast.warning(`Đã tính lại ${ok} học viên; ${failed} lỗi — vui lòng thử lại`)
       setSelectedIds([])
     } finally {
@@ -207,7 +208,7 @@ export function QuotaReconcilePage() {
     for (const b of row.futureBookings) {
       if (freed >= need) break
       toCancel.push(b)
-      freed += Number(b.requestedMinutes) || 0
+      freed += getBookingPoints(b)
     }
     if (toCancel.length === 0) return 0
 
@@ -282,7 +283,7 @@ export function QuotaReconcilePage() {
 
   const exportCSV = () => {
     const rowsCsv = [
-      ['Mã HV', 'Học viên', 'Quỹ còn lại (phút)', 'Đang giữ (hồ sơ)', 'Đang giữ (lịch thực tế)', 'Lệch số liệu', 'Vượt quỹ', 'Giữ bởi ca quá hạn', 'Giữ bởi lịch tương lai', 'Xử lý đề xuất'],
+      ['Mã HV', 'Học viên', 'Quỹ còn lại (kim cương)', 'Đang giữ (hồ sơ)', 'Đang giữ (lịch thực tế)', 'Lệch số liệu', 'Vượt quỹ', 'Giữ bởi ca quá hạn', 'Giữ bởi lịch tương lai', 'Xử lý đề xuất'],
       ...filtered.map((r) => [
         r.student.code, r.student.name, r.remainingMinutes, r.storedHeld, r.actualHeld, r.drift,
         Math.max(0, r.overByActual), r.pastHeld, r.futureHeld,
@@ -316,7 +317,7 @@ export function QuotaReconcilePage() {
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Hồ sơ cần xử lý</p><p className="mt-1 text-2xl font-bold text-slate-900">{stats.total}</p></Card>
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Sai số liệu</p><p className="mt-1 text-2xl font-bold text-sky-600">{driftRows.length}</p></Card>
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Đặt vượt quỹ thật</p><p className="mt-1 text-2xl font-bold text-rose-600">{stats.overBooked}</p></Card>
-        <Card><p className="text-xs font-semibold uppercase text-slate-500">Tổng phút vượt</p><p className="mt-1 text-2xl font-bold text-amber-600">{stats.overMinutes.toLocaleString('vi-VN')}</p></Card>
+        <Card><p className="text-xs font-semibold uppercase text-slate-500">Kim cương vượt quỹ</p><p className="mt-1 text-2xl font-bold text-amber-600">{stats.overMinutes.toLocaleString('vi-VN')}</p></Card>
       </div>
 
       {/* Hướng dẫn xử lý */}
@@ -455,20 +456,20 @@ export function QuotaReconcilePage() {
                       <Link to={`/admin/students/${r.student.id}`} className="font-semibold text-indigo-600 hover:underline">{r.student.name}</Link>
                       <p className="font-mono text-xs text-slate-500">{r.student.code}</p>
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-700">{r.remainingMinutes}p</td>
+                    <td className="px-3 py-3 font-semibold text-slate-700">{r.remainingMinutes}</td>
                     <td className="px-3 py-3">
-                      <span className={r.drift !== 0 ? 'font-bold text-sky-600' : 'text-slate-700'}>{r.storedHeld}p</span>
-                      {r.drift !== 0 && <p className="text-[11px] font-bold text-sky-600">lệch {r.drift > 0 ? '+' : ''}{r.drift}p</p>}
+                      <span className={r.drift !== 0 ? 'font-bold text-sky-600' : 'text-slate-700'}>{r.storedHeld}</span>
+                      {r.drift !== 0 && <p className="text-[11px] font-bold text-sky-600">lệch {r.drift > 0 ? '+' : ''}{r.drift}</p>}
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-700">{r.actualHeld}p</td>
+                    <td className="px-3 py-3 font-semibold text-slate-700">{r.actualHeld}</td>
                     <td className="px-3 py-3">
                       {r.overByActual > 0
-                        ? <span className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 border border-rose-200">+{r.overByActual}p</span>
+                        ? <span className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 border border-rose-200">+{r.overByActual}</span>
                         : <span className="text-xs font-semibold text-emerald-600">Đủ</span>}
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-600">
-                      <p>Quá hạn: <span className="font-bold text-amber-600">{r.pastHeld}p</span></p>
-                      <p>Tương lai: <span className="font-bold text-slate-800">{r.futureHeld}p</span> ({r.futureBookings.length} ca)</p>
+                      <p>Quá hạn: <span className="font-bold text-amber-600">{r.pastHeld} kim cương</span></p>
+                      <p>Tương lai: <span className="font-bold text-slate-800">{r.futureHeld} kim cương</span> ({r.futureBookings.length} ca)</p>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-1.5">
@@ -498,7 +499,7 @@ export function QuotaReconcilePage() {
         <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
         <p>
           <span className="font-bold text-slate-800">An toàn dữ liệu:</span> "Tính lại" chỉ sửa con số <span className="font-semibold">đang giữ chỗ</span> cho khớp
-          lịch thật, <span className="font-semibold">không đụng tới tổng buổi hay số buổi đã học</span>. "Huỷ bớt lịch" chỉ huỷ ca ở tương lai và nhả đúng số phút
+          lịch thật, <span className="font-semibold">không đụng tới tổng buổi hay số buổi đã học</span>. "Huỷ bớt lịch" chỉ huỷ ca ở tương lai và nhả đúng số kim cương
           giữ chỗ tương ứng. Mọi thao tác đều ghi vào Nhật ký admin.
         </p>
       </div>
@@ -507,8 +508,8 @@ export function QuotaReconcilePage() {
         open={confirmRecalcAll}
         onClose={() => { if (!processing) setConfirmRecalcAll(false) }}
         onConfirm={() => handleRecalc(driftRows)}
-        title={`Tính lại số phút đang giữ cho ${driftRows.length} học viên?`}
-        description="Hệ thống đặt lại số phút đang giữ chỗ đúng bằng tổng các ca đang thực sự giữ (pending + đã xác nhận, chưa điểm danh)."
+        title={`Tính lại số kim cương đang giữ cho ${driftRows.length} học viên?`}
+        description="Hệ thống đặt lại số kim cương đang giữ đúng bằng tổng chi phí các ca đang thực sự giữ (pending + đã xác nhận, chưa điểm danh)."
         consequence="Không huỷ lớp nào, không thay đổi tổng buổi hay số buổi đã học."
         confirmLabel="Tính lại"
         loading={processing}
@@ -520,9 +521,9 @@ export function QuotaReconcilePage() {
         onConfirm={() => { if (confirmCancel) handleCancelFuture(confirmCancel) }}
         title="Huỷ bớt lịch tương lai cho khớp quỹ?"
         description={confirmCancel
-          ? `${confirmCancel.student.name} đang giữ ${confirmCancel.actualHeld}p nhưng chỉ còn ${confirmCancel.remainingMinutes}p. Hệ thống sẽ huỷ các ca XA NHẤT trước cho tới khi vừa đủ khớp (cần giải phóng ${confirmCancel.overByActual}p).`
+          ? `${confirmCancel.student.name} đang giữ ${confirmCancel.actualHeld} kim cương nhưng chỉ còn ${confirmCancel.remainingMinutes} kim cương. Hệ thống sẽ huỷ các ca xa nhất trước cho tới khi vừa đủ khớp (cần giải phóng ${confirmCancel.overByActual} kim cương).`
           : ''}
-        consequence="Chỉ huỷ ca ở tương lai và nhả số phút giữ chỗ tương ứng. Ca đã học và tổng buổi giữ nguyên."
+        consequence="Chỉ huỷ ca ở tương lai và nhả số kim cương giữ chỗ tương ứng. Ca đã học và tổng buổi giữ nguyên."
         confirmLabel="Huỷ bớt lịch"
         confirmVariant="danger"
         loading={processing}
@@ -534,7 +535,7 @@ export function QuotaReconcilePage() {
         onClose={() => { if (!processing) setConfirmBulkRecalc(null) }}
         onConfirm={() => { if (confirmBulkRecalc) handleRecalc(confirmBulkRecalc) }}
         title={`Tính lại số liệu cho ${confirmBulkRecalc?.length ?? 0} học viên đã chọn?`}
-        description="Chỉ áp dụng cho các học viên bị SAI SỐ LIỆU trong lựa chọn. Hệ thống đặt lại số phút đang giữ đúng bằng lịch thực tế."
+        description="Chỉ áp dụng cho các học viên bị sai số liệu trong lựa chọn. Hệ thống đặt lại số kim cương đang giữ đúng bằng chi phí lịch thực tế."
         consequence="Không huỷ lớp nào, không thay đổi tổng buổi hay số buổi đã học."
         confirmLabel="Tính lại"
         loading={processing}
@@ -546,8 +547,8 @@ export function QuotaReconcilePage() {
         onClose={() => { if (!processing) setConfirmBulkCancel(null) }}
         onConfirm={() => { if (confirmBulkCancel) handleBulkCancelFuture(confirmBulkCancel) }}
         title={`Huỷ bớt lịch tương lai cho ${confirmBulkCancel?.length ?? 0} học viên đã chọn?`}
-        description={`Chỉ áp dụng cho các học viên ĐẶT VƯỢT QUỸ trong lựa chọn. Mỗi em sẽ bị huỷ các ca XA NHẤT trước cho vừa đủ khớp quỹ (tổng cần giải phóng khoảng ${(confirmBulkCancel ?? []).reduce((s, r) => s + Math.max(0, r.overByActual), 0).toLocaleString('vi-VN')} phút).`}
-        consequence="Chỉ huỷ ca ở tương lai và nhả số phút giữ chỗ tương ứng. Ca đã học và tổng buổi giữ nguyên. Ghi vào Nhật ký admin."
+        description={`Chỉ áp dụng cho các học viên đặt vượt quỹ trong lựa chọn. Mỗi em sẽ bị huỷ các ca xa nhất trước cho vừa đủ khớp quỹ (tổng cần giải phóng khoảng ${(confirmBulkCancel ?? []).reduce((s, r) => s + Math.max(0, r.overByActual), 0).toLocaleString('vi-VN')} kim cương).`}
+        consequence="Chỉ huỷ ca ở tương lai và nhả số kim cương giữ chỗ tương ứng. Ca đã học và tổng buổi giữ nguyên. Ghi vào Nhật ký admin."
         confirmLabel="Huỷ bớt lịch hàng loạt"
         confirmVariant="danger"
         loading={processing}

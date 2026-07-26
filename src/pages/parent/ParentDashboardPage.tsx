@@ -1431,8 +1431,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const pHeldMin = useMemo(() => {
     return bookings
       .filter(b => !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
-      .reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
-  }, [bookings])
+      .reduce((sum, b) => sum + getBookingPoints(b, teacherMap[b.teacherId]), 0)
+  }, [bookings, teacherMap])
   const pAvailableMin = Math.max(0, pRemainingMin - pHeldMin)
   const usedPct = pTotalMin > 0 ? Math.min(100, Math.round((pUsedMin / pTotalMin) * 100)) : 0
 

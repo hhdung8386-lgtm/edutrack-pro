@@ -1,4 +1,5 @@
 import { BookingRequest, Student } from '@/types'
+import { getBookingPoints } from '@/lib/points'
 
 export function getStudentPackageMinuteSummary(student: Student) {
   const subjects = student.subjects || []
@@ -26,5 +27,5 @@ export function getStudentPackageMinuteSummary(student: Student) {
 export function getHeldBookingMinutes(bookings: BookingRequest[], subjectId: string): number {
   return bookings
     .filter(b => b.subjectId === subjectId && !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
-    .reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
+    .reduce((sum, b) => sum + getBookingPoints(b), 0)
 }

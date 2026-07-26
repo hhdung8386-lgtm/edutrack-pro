@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle } from 'lucide-react'
+import { getBookingPoints } from '@/lib/points'
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -103,7 +104,7 @@ export function FutureBookingsPage() {
 
   const overdueStats = useMemo(() => ({
     count: overdueBookings.length,
-    minutes: overdueBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0),
+    points: overdueBookings.reduce((sum, b) => sum + getBookingPoints(b), 0),
     students: new Set(overdueBookings.map((b) => b.studentId).filter(Boolean)).size,
   }), [overdueBookings])
 
@@ -207,7 +208,7 @@ export function FutureBookingsPage() {
       for (const [studentId, allStudentBookings] of studentEntries) {
         for (let i = 0; i < allStudentBookings.length; i += CHUNK_SIZE) {
         const studentBookings = allStudentBookings.slice(i, i + CHUNK_SIZE)
-        const totalMinutesToRefund = studentBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
+        const totalPointsToRefund = studentBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
 
         await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', studentId)
@@ -240,7 +241,7 @@ export function FutureBookingsPage() {
 
           const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-          const nextHeld = Math.max(0, currentHeld - totalMinutesToRefund)
+          const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
 
           // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
           // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
@@ -272,7 +273,7 @@ export function FutureBookingsPage() {
               studentName: studentData.name,
               cancelledCount: studentBookings.length,
               cancelledIds: studentBookings.map(b => b.id),
-              refundedMinutes: totalMinutesToRefund,
+              refundedPoints: totalPointsToRefund,
             },
             createdAt: serverTimestamp(),
           })
@@ -282,7 +283,7 @@ export function FutureBookingsPage() {
         setCancelProgress({ done: processedStudents, total: studentEntries.length })
       }
 
-      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả phút cho học viên tương ứng.`)
+      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả kim cương cho học viên tương ứng.`)
       setSelectedBookingIds([])
       setConfirmTargets(null)
     } catch (err: any) {
@@ -326,11 +327,11 @@ export function FutureBookingsPage() {
                 </p>
                 <p className="text-sm text-amber-800 mt-1 leading-relaxed">
                   Các ca này đã qua ngày học nhưng vẫn giữ chỗ, khiến{' '}
-                  <span className="font-bold">{overdueStats.minutes.toLocaleString('vi-VN')} phút</span> của{' '}
+                  <span className="font-bold">{overdueStats.points.toLocaleString('vi-VN')} kim cương</span> của{' '}
                   <span className="font-bold">{overdueStats.students} học viên</span> bị treo, không đặt lịch mới được.
                 </p>
                 <p className="text-xs text-amber-700 mt-1.5 font-semibold">
-                  Huỷ các ca này sẽ <span className="underline">hoàn lại toàn bộ số phút</span> cho học viên — không mất buổi nào.
+                  Huỷ các ca này sẽ <span className="underline">hoàn lại toàn bộ kim cương đang giữ</span> cho học viên.
                 </p>
                 {cancelProgress && (
                   <div className="mt-3">
@@ -353,7 +354,7 @@ export function FutureBookingsPage() {
               className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
             >
               <Trash2 className="w-4 h-4 mr-2" />
-              Huỷ & hoàn phút ({overdueStats.count} ca)
+              Huỷ và hoàn kim cương ({overdueStats.count} ca)
             </Button>
           </div>
         </div>
@@ -632,9 +633,9 @@ export function FutureBookingsPage() {
         description={
           confirmTargets && confirmTargets.length === 1
             ? `Hủy ca học ngày ${confirmTargets[0].requestedDate} lúc ${confirmTargets[0].requestedStart} của học viên ${confirmTargets[0].studentName || ''}?`
-            : `Bạn có chắc chắn muốn hủy ${confirmTargets?.length ?? 0} ca học đã chọn và hoàn lại số phút cho các học viên tương ứng?`
+            : `Bạn có chắc chắn muốn hủy ${confirmTargets?.length ?? 0} ca học đã chọn và hoàn lại kim cương đang giữ cho các học viên tương ứng?`
         }
-        consequence="Các ca học sẽ được giải phóng khỏi lịch giáo viên và số phút giữ chỗ được hoàn lại cho học viên."
+        consequence="Các ca học sẽ được giải phóng khỏi lịch giáo viên và kim cương giữ chỗ được hoàn lại cho học viên."
         confirmLabel="Hủy ca học"
         confirmVariant="danger"
         loading={cancelling}

@@ -23,6 +23,7 @@ import { formatVND, getToday, MINUTE_PRESETS, LOW_SESSION_THRESHOLD } from '@/li
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
+import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -276,6 +277,12 @@ export function AttendancePage() {
 
       const teacher = tSnap.data()!
       const subject = sSnap.data()
+      const pointsPer25Minutes = getTeacherPointsPer25Minutes(teacher)
+      const lessonPoints = calculateLessonPoints(selectedMinutes, pointsPer25Minutes)
+      if (freshRemaining < lessonPoints) {
+        toast.error(`Học viên chỉ còn ${freshRemaining} kim cương, không đủ ${lessonPoints} kim cương cho buổi học với gia sư này.`)
+        return
+      }
 
       const currentRemainingMinutes = selectedPkg.remainingMinutes
       const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
@@ -291,6 +298,8 @@ export function AttendancePage() {
         subjectName: selectedPkg.subjectName,
         date: data.date,
         minutes: selectedMinutes,
+        points: lessonPoints,
+        pointsPer25Minutes,
         // Ghép báo cáo có cấu trúc thành `comment` để các màn hình cũ hiển thị được;
         // đồng thời lưu bản có cấu trúc (pages/report/rating) bên dưới.
         comment: isPresent ? composeLessonComment(report) : '',

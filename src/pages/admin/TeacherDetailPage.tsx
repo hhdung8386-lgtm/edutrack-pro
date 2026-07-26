@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
 import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -437,6 +438,9 @@ export function TeacherDetailPage() {
           const bookingNow = bookingSnap?.exists()
             ? ({ id: bookingSnap.id, ...bookingSnap.data() } as typeof matchedBooking)
             : null
+          const lessonPoints = bookingNow
+            ? getBookingPoints(bookingNow, teacherData)
+            : getLessonPoints(lessonNow, teacherData)
 
           let updatedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
             ? student.subjects.map((item) => ({ ...item }))
@@ -458,10 +462,13 @@ export function TeacherDetailPage() {
           const subjectIndex = updatedSubjects.findIndex((item) => item.subjectId === subjectId)
           if (subjectIndex < 0) throw new Error('STUDENT_SUBJECT_PACKAGE_NOT_FOUND')
           const subjectPackage = updatedSubjects[subjectIndex]
+          if (Number(subjectPackage.remainingMinutes || 0) < lessonPoints) {
+            throw new Error('NOT_ENOUGH_POINTS')
+          }
           const { price: pricePerMinute, currency } = getCountryRate(subjectPackage, teacherData?.country || 'VN')
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (lesson.date || '').slice(0, 7)
-          const newSubjectUsedMinutes = Number(subjectPackage.usedMinutes || 0) + lessonMinutes
+          const newSubjectUsedMinutes = Number(subjectPackage.usedMinutes || 0) + lessonPoints
           const newSubjectRemainingMinutes = Math.max(0, Number(subjectPackage.totalMinutes || 0) - newSubjectUsedMinutes)
           const subjectMps = Number(subjectPackage.minutesPerSession) || 50
           const usedSessionsRaw = subjectMps > 0 ? newSubjectUsedMinutes / subjectMps : 0
@@ -486,7 +493,7 @@ export function TeacherDetailPage() {
           const primarySubject = updatedSubjects[0]
 
           const prevHeldMinutes = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0
-          const heldMinutesToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow)
+          const heldMinutesToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow, teacherData)
           const newHeldMinutes = Math.max(0, prevHeldMinutes - heldMinutesToRelease)
           const earnedPoints = lessonRewardPoints(lessonNow as Lesson)
           const shouldAwardPoints = earnedPoints > 0 && !rewardSnap.exists()
@@ -500,6 +507,8 @@ export function TeacherDetailPage() {
             teacherLevel,
             pricePerMinute,
             currency,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId,
             subjectName,
             sessionsBeforeApproval: subjectPackage.remainingSessions,
@@ -563,6 +572,8 @@ export function TeacherDetailPage() {
             subjectName,
             date: lesson.date,
             minutes: lessonMinutes,
+            points: lessonPoints,
+            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: lesson.comment || '',
             homework: lesson.homework || '',
             book: lesson.book || '',
@@ -600,6 +611,7 @@ export function TeacherDetailPage() {
               status: { from: currentStatus, to: 'approved' },
               salary,
               minutesDeducted: lessonMinutes,
+              pointsDeducted: lessonPoints,
               minutesBefore: subjectPackage.remainingMinutes,
               minutesAfter: newSubjectRemainingMinutes,
               heldMinutesBefore: prevHeldMinutes,
@@ -615,6 +627,7 @@ export function TeacherDetailPage() {
         setApprovingLesson(null)
       } else if (currentStatus === 'approved') {
         // Luồng hoàn tác duyệt (approved -> pending hoặc approved -> rejected)
+        const lessonPointsToRestore = getLessonPoints(lesson, teacher)
         const payrollSnap = await getDocs(
           query(collection(db, 'payroll'), where('lessonId', '==', lesson.id))
         )
@@ -646,8 +659,6 @@ export function TeacherDetailPage() {
 
           if (hasStudent) {
             const s = studentSnap.data()!
-            const lessonMinutes = Number(lesson.minutes) || 0
-
             // Initialize subjects array for backward compatibility if needed
             let updatedSubjects = s.subjects && s.subjects.length > 0
               ? [...s.subjects]
@@ -670,7 +681,7 @@ export function TeacherDetailPage() {
             const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === lesson.subjectId)
             if (sIdx !== -1) {
               const subPkg = updatedSubjects[sIdx]
-              const subUsedMinutes = Math.max(0, subPkg.usedMinutes - lessonMinutes)
+              const subUsedMinutes = Math.max(0, subPkg.usedMinutes - lessonPointsToRestore)
               const subRemainingMinutes = subPkg.totalMinutes - subUsedMinutes
               const subMps = subPkg.minutesPerSession || 50
               const subUsedSessionsRaw = subMps > 0 ? subUsedMinutes / subMps : 0
@@ -736,14 +747,14 @@ export function TeacherDetailPage() {
           changes: {
             status: { from: 'approved', to: targetStatus },
             lessonDate: lesson.date,
-            restoredMinutes: lesson.minutes,
+            restoredPoints: lessonPointsToRestore,
             voidedPayrolls: payrollIds.length,
             voidedSalary: lesson.salary || 0,
           },
           createdAt: serverTimestamp(),
         })
 
-        if (!options?.silent) toast.success(`Đã huỷ duyệt, trả lại ${lesson.minutes} phút cho học viên`)
+        if (!options?.silent) toast.success(`Đã huỷ duyệt, trả lại ${lessonPointsToRestore} kim cương cho học viên`)
         setRevertingLesson(null)
         setRejectingLesson(null)
         setRejectReason('')
@@ -772,6 +783,8 @@ export function TeacherDetailPage() {
         toast.error('Học viên không tồn tại')
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (message === 'NOT_ENOUGH_POINTS') {
+        toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'permission-denied') {
         toast.error('Bạn không có quyền cập nhật trạng thái buổi dạy này')
       } else {

@@ -25,6 +25,7 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+import { getBookingPoints } from '@/lib/points'
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -180,9 +181,13 @@ export function BookingRequestsPage() {
           throw new Error('PAST_DATE_NOT_ALLOWED')
         }
 
+        const teacherSnap = requestNow.teacherId
+          ? await tx.get(doc(db, 'teachers', requestNow.teacherId))
+          : null
+        const teacherData = teacherSnap?.exists() ? teacherSnap.data() : null
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
-        const heldAmount = Number(requestNow.requestedPoints ?? requestNow.requestedMinutes) || 0
+        const heldAmount = getBookingPoints(requestNow, teacherData)
         const holdAlreadyApplied = requestNow.heldImmediately === true
 
         if (holdAlreadyApplied ? fund.held < heldAmount : fund.available < heldAmount) throw new Error('NOT_ENOUGH_MINUTES')
@@ -203,6 +208,8 @@ export function BookingRequestsPage() {
           confirmedAt: serverTimestamp(),
           confirmedBy: user?.uid ?? '',
           heldMinutesAfterConfirm: nextHeld,
+          requestedPoints: heldAmount,
+          pointsPer25Minutes: Number(requestNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
         })
 
         tx.set(doc(collection(db, 'adminLogs')), {
@@ -220,13 +227,13 @@ export function BookingRequestsPage() {
         })
       })
 
-      toast.success('Đã xác nhận và giữ chỗ trong quỹ phút')
+      toast.success('Đã xác nhận và giữ đúng số kim cương theo giá gia sư')
       setConfirming(null)
       setAdminNote('')
     } catch (error: any) {
       console.error('Confirm booking request failed:', error)
       const message = error?.message
-      if (message === 'NOT_ENOUGH_MINUTES') toast.error('Quỹ phút khả dụng không đủ để giữ chỗ')
+      if (message === 'NOT_ENOUGH_MINUTES') toast.error('Quỹ kim cương khả dụng không đủ để giữ chỗ')
       else if (message === 'REQUEST_ALREADY_PROCESSED') toast.warning('Yêu cầu này đã được xử lý trước đó')
       else if (message === 'PAST_DATE_NOT_ALLOWED') toast.error('Không thể xác nhận yêu cầu xếp lớp cho ngày đã qua!')
       else toast.error('Xác nhận yêu cầu thất bại')
@@ -300,9 +307,13 @@ export function BookingRequestsPage() {
         const requestNow = requestSnap.data() as BookingRequest
         if (requestNow.status !== 'confirmed') throw new Error('REQUEST_NOT_CONFIRMED')
 
+        const teacherSnap = requestNow.teacherId
+          ? await tx.get(doc(db, 'teachers', requestNow.teacherId))
+          : null
+        const teacherData = teacherSnap?.exists() ? teacherSnap.data() : null
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
-        const heldAmount = Number(requestNow.requestedPoints ?? requestNow.requestedMinutes) || 0
+        const heldAmount = getBookingPoints(requestNow, teacherData)
         const nextHeld = Math.max(0, fund.held - heldAmount)
 
         tx.update(studentRef, {
@@ -326,7 +337,7 @@ export function BookingRequestsPage() {
           targetId: releasing.id,
           changes: {
             studentId: releasing.studentId,
-            releasedMinutes: heldAmount,
+            releasedPoints: heldAmount,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
@@ -428,7 +439,7 @@ export function BookingRequestsPage() {
             const student = students[request.studentId]
             const fund = student ? getStudentMinuteFund(student) : null
             const teacherReady = request.teacherResponse === undefined || request.teacherResponse === 'accepted'
-            const requestedHold = Number(request.requestedPoints ?? request.requestedMinutes) || 0
+            const requestedHold = getBookingPoints(request)
             const hasEnoughMinutes = !!fund && (request.heldImmediately ? fund.held >= requestedHold : fund.available >= requestedHold)
             const canConfirm = request.status === 'pending' && teacherReady && hasEnoughMinutes
 
