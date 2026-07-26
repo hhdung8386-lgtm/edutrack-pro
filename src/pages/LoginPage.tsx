@@ -198,7 +198,7 @@ export function LoginPage() {
       <PublicNav />
 
       {/* Main Content - two column layout */}
-      <main className="flex flex-col lg:grid lg:min-h-[calc(100vh-69px)] lg:grid-cols-2">
+      <main className="mx-auto flex w-full max-w-7xl flex-col lg:grid lg:min-h-[calc(100vh-69px)] lg:grid-cols-2">
         {/* Left Side: Layered hero - text on top, image below */}
         <div className="relative hidden lg:flex flex-col justify-between overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f9fb 0%, #eef1f5 100%)' }}>
           {/* Image at bottom-right, z-index: 1 */}

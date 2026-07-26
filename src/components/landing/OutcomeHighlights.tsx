@@ -322,14 +322,14 @@ export function OutcomeHighlights() {
     <section
       ref={sectionRef}
       id="ket-qua"
-      className={`outcome-section relative overflow-hidden bg-[#FFFDF7] px-4 py-16 sm:px-6 sm:py-20 lg:px-12 lg:py-24 ${
+      className={`outcome-section relative overflow-hidden bg-[#FFFDF7] px-5 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24 ${
         isVisible ? 'is-visible' : ''
       }`}
     >
       <div className="outcome-orbit outcome-orbit-one" aria-hidden="true" />
       <div className="outcome-orbit outcome-orbit-two" aria-hidden="true" />
 
-      <div className="relative w-full">
+      <div className="relative mx-auto w-full max-w-7xl">
         <div className="outcome-reveal grid gap-8 lg:grid-cols-[1.16fr_0.84fr] lg:items-end">
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#A76500] shadow-sm">
