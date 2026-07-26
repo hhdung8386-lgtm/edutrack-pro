@@ -1,6 +1,110 @@
 @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
-
 @import 'tailwindcss';
+
+@keyframes program-enter-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes program-enter-right {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes program-level-rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.86);
+  }
+
+  70% {
+    transform: translate3d(0, -2px, 0) scale(1.03);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes program-orbit-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  50% {
+    transform: translate3d(-12px, 10px, 0) rotate(8deg);
+  }
+}
+
+@keyframes program-scroll-shift {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 14px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .program-hero-copy {
+    animation: program-enter-up 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .program-journey {
+    animation: program-enter-right 760ms 90ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .program-stage {
+    animation: program-enter-up 620ms var(--stage-delay, 180ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .program-level {
+    animation: program-level-rise 480ms var(--level-delay, 520ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .program-orbit {
+    animation: program-orbit-drift 8s ease-in-out infinite;
+  }
+
+  @supports (animation-timeline: view()) {
+    .program-scroll-reveal {
+      animation: program-scroll-shift 1ms linear both;
+      animation-range: entry 10% cover 28%;
+      animation-timeline: view();
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .program-hero-copy,
+  .program-journey,
+  .program-stage,
+  .program-level,
+  .program-orbit,
+  .program-scroll-reveal {
+    animation: none !important;
+    transform: none !important;
+  }
+}
 
 @theme {
   --font-quicksand: 'Quicksand', sans-serif;

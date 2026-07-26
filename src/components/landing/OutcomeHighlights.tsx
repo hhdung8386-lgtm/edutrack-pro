@@ -408,26 +408,26 @@ export function OutcomeHighlights() {
                 </div>
               </div>
 
-              <div className="outcome-chart-scroll overflow-x-auto px-5 pb-7 pt-8 sm:px-8">
-                <div className="min-w-[820px]">
+              <div className="px-4 pb-6 pt-6 sm:px-8 sm:pb-7 sm:pt-8">
+                <div className="w-full">
                   <div
-                    className="grid h-[330px] items-end gap-1.5 sm:gap-2"
+                    className="grid h-[230px] items-end gap-1 sm:h-[330px] sm:gap-2"
                     style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}
                   >
                     {LEVELS.map((item, index) => (
                       <div key={item.level} className="flex h-full min-w-0 flex-col justify-end">
-                        <div className="outcome-level-track relative h-[250px]">
+                        <div className="outcome-level-track relative h-[190px] sm:h-[250px]">
                           <div
                             className="outcome-level-bar absolute inset-x-0 bottom-0 rounded-t-[0.7rem]"
                             style={
                               {
-                                '--level-height': `${item.height * 2.15}px`,
+                                '--level-height': `clamp(${Math.max(42, item.height * 1.32)}px, ${item.height * 0.2}vw, ${item.height * 2.15}px)`,
                                 '--level-color': item.color,
                                 '--level-delay': `${index * 42}ms`,
                               } as CSSProperties
                             }
                           >
-                            <span className="absolute inset-x-0 bottom-3 text-center text-[10px] font-black text-[#10213A]">
+                            <span className="absolute inset-x-0 bottom-2 text-center text-[7px] font-black text-[#10213A] sm:bottom-3 sm:text-[10px]">
                               {item.level}
                             </span>
                           </div>
@@ -437,15 +437,15 @@ export function OutcomeHighlights() {
                   </div>
 
                   <div
-                    className="mt-3 grid gap-1.5 text-center text-[9px] font-black uppercase tracking-[0.05em] text-slate-500"
+                    className="mt-3 grid gap-1 text-center text-[8px] font-black uppercase tracking-[0.03em] text-slate-500 sm:gap-1.5 sm:text-[9px]"
                     style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}
                   >
-                    <div className="col-span-3 rounded-lg bg-[#FFF7D6] py-2">A1</div>
-                    <div className="col-span-3 rounded-lg bg-[#FFF0DF] py-2">A2</div>
-                    <div className="col-span-3 rounded-lg bg-[#FFE7E5] py-2">B1</div>
-                    <div className="col-span-3 rounded-lg bg-[#F0F9D7] py-2">B2</div>
-                    <div className="col-span-2 rounded-lg bg-[#E3F8F7] py-2">C1</div>
-                    <div className="col-span-2 rounded-lg bg-[#E4F6FC] py-2">C2</div>
+                    <div className="col-span-3 rounded-md bg-[#FFF7D6] py-2 sm:rounded-lg">A1</div>
+                    <div className="col-span-3 rounded-md bg-[#FFF0DF] py-2 sm:rounded-lg">A2</div>
+                    <div className="col-span-3 rounded-md bg-[#FFE7E5] py-2 sm:rounded-lg">B1</div>
+                    <div className="col-span-3 rounded-md bg-[#F0F9D7] py-2 sm:rounded-lg">B2</div>
+                    <div className="col-span-2 rounded-md bg-[#E3F8F7] py-2 sm:rounded-lg">C1</div>
+                    <div className="col-span-2 rounded-md bg-[#E4F6FC] py-2 sm:rounded-lg">C2</div>
                   </div>
                 </div>
               </div>
@@ -456,7 +456,7 @@ export function OutcomeHighlights() {
                 <h3 className="text-sm font-black uppercase tracking-[0.08em] text-[#10213A]">Bảng quy đổi tham khảo</h3>
                 <span className="text-xs font-semibold text-slate-400">Đọc từ trái sang phải theo từng nhóm trình độ</span>
               </div>
-              <div className="overflow-x-auto">
+              <div className="hidden sm:block">
                 <table className="w-full min-w-[760px] border-collapse text-left text-xs">
                   <tbody>
                     {[
@@ -479,6 +479,28 @@ export function OutcomeHighlights() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="grid gap-3 p-4 sm:hidden">
+                {[
+                  ['A1', 'Beginner', 'TOEFL 0 - 20', 'IELTS 0 - 4.0', 'TOEIC 0 - 200'],
+                  ['A2', 'Elementary', 'TOEFL 21 - 31', 'IELTS 4.0 - 4.5', 'TOEIC 205 - 385'],
+                  ['B1', 'Intermediate', 'TOEFL 32 - 45', 'IELTS 4.5 - 5.5', 'TOEIC 390 - 785'],
+                  ['B2', 'Upper Intermediate', 'TOEFL 46 - 93', 'IELTS 5.5 - 6.5', 'TOEIC 790 - 1095'],
+                  ['C1', 'Advanced', 'TOEFL 94 - 114', 'IELTS 7.0 - 8.0', 'TOEIC 1100 - 1305'],
+                  ['C2', 'Expert', 'TOEFL 115 - 120', 'IELTS 8.5 - 9.0', 'TOEIC trên 1305'],
+                ].map(([cefr, ability, toefl, ielts, toeic]) => (
+                  <article key={cefr} className="rounded-2xl border border-slate-100 bg-[#FCFDFE] p-4">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <strong className="text-lg font-black text-[#10213A]">{cefr}</strong>
+                      <span className="text-right text-xs font-extrabold text-[#118ED0]">{ability}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px] font-bold leading-4 text-slate-500">
+                      <span>{toefl}</span>
+                      <span>{ielts}</span>
+                      <span>{toeic}</span>
+                    </div>
+                  </article>
+                ))}
               </div>
             </article>
           </div>
@@ -753,9 +775,6 @@ export function OutcomeHighlights() {
           </div>
         </div>
 
-        <p className="outcome-reveal outcome-delay-three mt-4 text-center text-[10px] font-medium leading-5 text-slate-400">
-          Số liệu trong khu vực thành tích và lượt quan tâm là dữ liệu minh họa cho thiết kế, cần thay bằng dữ liệu đã đối soát trước khi dùng cho truyền thông chính thức. Logo đại học và THPT được tham chiếu từ nguồn nhận diện chính thức của từng trường.
-        </p>
       </div>
     </section>
   )
