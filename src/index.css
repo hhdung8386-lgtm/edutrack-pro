@@ -106,6 +106,573 @@
   }
 }
 
+/* Public homepage and teacher storytelling */
+.national-hero-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.national-hero-shell::before {
+  position: absolute;
+  inset: 1.5rem 0.75rem;
+  z-index: -1;
+  border: 1px solid rgb(226 232 240 / 0.72);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 8% 14%, rgb(255 193 7 / 0.16), transparent 24rem),
+    radial-gradient(circle at 88% 80%, rgb(34 181 232 / 0.1), transparent 21rem),
+    #fff;
+  content: "";
+}
+
+.national-home {
+  --national-navy: #10213a;
+  --national-blue: #20b3e5;
+  --national-yellow: #ffc107;
+  --national-mint: #00b983;
+  color: var(--national-navy);
+  background: #fff;
+}
+
+.national-section {
+  position: relative;
+  overflow: hidden;
+  padding: 6.5rem 1.25rem;
+}
+
+.national-container {
+  width: min(100%, 80rem);
+  margin-inline: auto;
+}
+
+.national-heading {
+  max-width: 46rem;
+}
+
+.national-heading-centered {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.national-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #9b6c00;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.national-heading h2 {
+  margin-top: 1rem;
+  color: var(--national-navy);
+  font-size: clamp(2.15rem, 4vw, 3.65rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+}
+
+.national-heading > p {
+  margin-top: 1.25rem;
+  color: #52647d;
+  font-size: 1.05rem;
+  font-weight: 550;
+  line-height: 1.8;
+}
+
+.national-section-ecosystem {
+  border-top: 1px solid #eef2f7;
+  background:
+    linear-gradient(90deg, rgb(16 33 58 / 0.025) 1px, transparent 1px),
+    linear-gradient(rgb(16 33 58 / 0.025) 1px, transparent 1px),
+    #fff;
+  background-size: 72px 72px;
+}
+
+.national-ecosystem-grid {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 3rem;
+}
+
+.national-ecosystem-feature {
+  position: relative;
+  min-height: 32rem;
+  overflow: hidden;
+  border-radius: 2rem;
+  background: var(--national-navy);
+  box-shadow: 0 34px 70px -44px rgb(16 33 58 / 0.5);
+}
+
+.national-ecosystem-feature > img {
+  width: 100%;
+  height: 100%;
+  min-height: 32rem;
+  object-fit: cover;
+}
+
+.national-ecosystem-feature::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 46%, rgb(6 22 44 / 0.82) 100%);
+  content: "";
+}
+
+.national-ecosystem-feature > div {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1;
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  color: #fff;
+}
+
+.national-feature-mark {
+  display: inline-flex;
+  width: 3rem;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  color: #10213a;
+  background: var(--national-yellow);
+}
+
+.national-ecosystem-feature h3,
+.national-trust-cta h3 {
+  max-width: 38rem;
+  margin-top: 1rem;
+  font-size: clamp(1.55rem, 2.25vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.national-ecosystem-feature p {
+  max-width: 43rem;
+  margin-top: 0.75rem;
+  color: #dbe7f5;
+  font-weight: 550;
+  line-height: 1.75;
+}
+
+.national-ecosystem-list {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.national-ecosystem-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: start;
+  padding: 1.5rem;
+  border: 1px solid #e8edf4;
+  border-radius: 1.5rem;
+  background: #fff;
+  transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
+}
+
+.national-ecosystem-item:hover {
+  transform: translate3d(0, -5px, 0);
+  border-color: rgb(32 179 229 / 0.38);
+  box-shadow: 0 22px 50px -34px rgb(16 33 58 / 0.45);
+}
+
+.national-ecosystem-item > span {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+}
+
+.national-ecosystem-item.is-blue > span {
+  color: #007bac;
+  background: #e5f7fe;
+}
+
+.national-ecosystem-item.is-yellow > span {
+  color: #956600;
+  background: #fff5cf;
+}
+
+.national-ecosystem-item.is-mint > span {
+  color: #007a58;
+  background: #e4f9f1;
+}
+
+.national-ecosystem-item.is-rose > span {
+  color: #c3485e;
+  background: #fff0f2;
+}
+
+.national-ecosystem-item h3 {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.national-ecosystem-item p {
+  margin-top: 0.4rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 550;
+  line-height: 1.65;
+}
+
+.national-section-map {
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 193 7 / 0.13), transparent 31rem),
+    linear-gradient(180deg, #fff 0%, #fffdf4 100%);
+}
+
+.national-map-stage {
+  position: relative;
+  min-width: 0;
+  margin-top: 3rem;
+  padding: 1.25rem;
+  border: 1px solid rgb(255 193 7 / 0.32);
+  border-radius: 2.25rem;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 35px 90px -58px rgb(16 33 58 / 0.36);
+}
+
+.national-world-map path {
+  fill: #fff0b0;
+  opacity: 0.52;
+  stroke: #fff9dc;
+  stroke-width: 0.35;
+}
+
+.national-map-province {
+  fill: #ffc928;
+  stroke: #fff;
+  stroke-width: 1.2;
+  opacity: 0.98;
+  transition: filter 220ms ease;
+}
+
+.national-map-stage:hover .national-map-province {
+  filter: saturate(1.08);
+}
+
+.national-map-route {
+  stroke: #21aaf2;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-dasharray: 0.1 0.035;
+  opacity: 0.82;
+  animation: national-route-flight 5.8s linear infinite;
+}
+
+.national-map-pulse {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: national-map-pulse 2.4s ease-out infinite;
+}
+
+.national-map-island {
+  fill: #ffc107;
+  stroke: #fff;
+  stroke-width: 1.4;
+  color: #ffc107;
+  animation: national-island-glow 2.8s ease-in-out infinite;
+}
+
+.national-island-cluster circle {
+  fill: #ffc107;
+  stroke: #fff;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 3px rgb(255 193 7 / 0.58));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: national-island-glow 2.8s ease-in-out infinite;
+}
+
+.national-map-hub {
+  color: #249cf2;
+}
+
+.national-map-hub circle:first-child {
+  fill: #fff;
+  stroke: #249cf2;
+  stroke-width: 6;
+}
+
+.national-map-hub circle:nth-child(2) {
+  fill: #249cf2;
+}
+
+.national-map-destination {
+  color: #ffc107;
+  animation: national-destination-arrive 700ms both;
+}
+
+.national-map-destination > circle:first-child {
+  fill: #ffc107;
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.national-map-destination text {
+  fill: #123a69;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.national-map-destination .national-map-city {
+  font-size: 8.5px;
+  font-weight: 650;
+}
+
+.national-island-label line {
+  stroke: #168ce2;
+  stroke-width: 1.2;
+}
+
+.national-island-label text {
+  fill: #123a69;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.national-section-awards {
+  background: #fff;
+}
+
+.national-award-gallery {
+  display: grid;
+  gap: 1rem;
+  margin-top: 3rem;
+}
+
+.national-award-gallery article {
+  position: relative;
+  min-height: 21rem;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background: #10213a;
+}
+
+.national-award-gallery img {
+  width: 100%;
+  height: 100%;
+  min-height: 21rem;
+  object-fit: cover;
+  transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.national-award-gallery article:hover img {
+  transform: scale(1.035);
+}
+
+.national-award-gallery article::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 42%, rgb(5 22 43 / 0.88) 100%);
+  content: "";
+}
+
+.national-award-gallery article > div {
+  position: absolute;
+  inset: auto 1.5rem 1.5rem;
+  z-index: 1;
+  color: #fff;
+}
+
+.national-award-gallery h3 {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.national-award-gallery p {
+  margin-top: 0.4rem;
+  color: #dce7f4;
+  font-size: 0.9rem;
+  font-weight: 550;
+  line-height: 1.6;
+}
+
+.national-trust-cta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: center;
+  margin-top: 2rem;
+  padding: 2rem;
+  border: 1px solid #f3d875;
+  border-radius: 2rem;
+  color: #10213a;
+  background:
+    radial-gradient(circle at 92% 14%, rgb(32 179 229 / 0.12), transparent 18rem),
+    linear-gradient(120deg, #fff9dc 0%, #fff 58%, #f1fbff 100%);
+}
+
+.national-trust-cta p {
+  margin-top: 0.6rem;
+  color: #5f7086;
+  font-weight: 550;
+}
+
+.national-trust-cta a {
+  display: inline-flex;
+  min-height: 3rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.9rem;
+  padding-inline: 1.25rem;
+  color: #10213a;
+  background: #ffc107;
+  font-size: 0.9rem;
+  font-weight: 800;
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.national-trust-cta a:hover {
+  transform: translate3d(0, -2px, 0);
+  background: #ffb300;
+}
+
+@keyframes national-route-flight {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes national-map-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.65);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+@keyframes national-island-glow {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes national-destination-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 768px) {
+  .national-ecosystem-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  }
+
+  .national-ecosystem-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .national-award-gallery {
+    grid-template-columns: 1.25fr 0.85fr 0.85fr;
+  }
+
+}
+
+@media (max-width: 767px) {
+  .national-hero-shell::before {
+    inset: 0.75rem 0.4rem;
+    border-radius: 1.5rem;
+  }
+
+  .national-section {
+    padding: 4.5rem 1rem;
+  }
+
+  .national-heading h2 {
+    font-size: clamp(2rem, 9vw, 2.85rem);
+  }
+
+  .national-ecosystem-feature,
+  .national-ecosystem-feature > img {
+    min-height: 25rem;
+  }
+
+  .national-map-stage {
+    margin: 2rem -0.55rem 0;
+    padding: 0.15rem;
+    border-radius: 1.5rem;
+  }
+
+  .national-map-destination text {
+    font-size: 13px;
+  }
+
+  .national-map-destination .national-map-city {
+    display: none;
+  }
+
+  .national-island-label text {
+    font-size: 12px;
+  }
+
+  .national-award-gallery {
+    grid-auto-columns: 82%;
+    grid-auto-flow: column;
+    overflow-x: auto;
+    padding: 0.35rem 0.15rem 1rem;
+    scroll-snap-type: x mandatory;
+  }
+
+  .national-award-gallery article {
+    scroll-snap-align: start;
+  }
+
+  .national-trust-cta {
+    grid-template-columns: auto 1fr;
+    padding: 1.5rem;
+  }
+
+  .national-trust-cta a {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .national-map-route,
+  .national-map-pulse,
+  .national-map-island,
+  .national-island-cluster circle,
+  .national-map-destination {
+    animation: none !important;
+  }
+
+  .national-ecosystem-item,
+  .national-award-gallery img,
+  .national-trust-cta a {
+    transition: none !important;
+  }
+}
+
 @theme {
   --font-quicksand: 'Quicksand', sans-serif;
   --font-jakarta: 'Quicksand', sans-serif;

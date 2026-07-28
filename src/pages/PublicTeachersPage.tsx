@@ -18,7 +18,6 @@ import {
 import {
   AlertCircle,
   ArrowLeft,
-  Award,
   BookOpen,
   CalendarDays,
   CheckCircle2,
@@ -28,7 +27,6 @@ import {
   GraduationCap,
   Search,
   Send,
-  ShieldCheck,
   Star,
   TrendingUp,
   UserRound,
@@ -36,7 +34,10 @@ import {
   X,
 } from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
+import { PublicFooter } from '@/components/layout/PublicFooter'
+import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { db } from '@/lib/firebase'
+import { useSiteContent } from '@/lib/siteContent'
 import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
@@ -63,6 +64,15 @@ type ScheduleOption = {
 }
 
 const PAGE_SIZE = 24
+const FEATURED_TEACHER_SESSION_SEED = Date.now()
+
+function getFeaturedTeacherRank(teacherId: string) {
+  let hash = FEATURED_TEACHER_SESSION_SEED
+  for (let index = 0; index < teacherId.length; index += 1) {
+    hash = (hash * 31 + teacherId.charCodeAt(index)) | 0
+  }
+  return hash
+}
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -331,6 +341,17 @@ function calculatePriority(teacher: Teacher, availability?: TeacherAvailability)
   return scheduleScore + adminScore + photoScore + experienceScore + taughtScore + profileScore + foreignScore
 }
 
+function toTeacherView(teacher: Teacher, availability?: TeacherAvailability): TeacherView {
+  return {
+    ...teacher,
+    availability,
+    priorityScore: calculatePriority(teacher, availability),
+    priorityReasons: getPriorityReasons(teacher, availability),
+    isForeignTeacher: isForeignTeacher(teacher),
+    hasAvailableSchedule: hasSchedule(availability),
+  }
+}
+
 function TeacherPhoto({ teacher }: { teacher: Teacher }) {
   if (teacher.photoURL) {
     return (
@@ -560,6 +581,13 @@ function TeacherCard({
               </>
             )}
           </div>
+
+          {compact && (
+            <span className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[#FFC107] px-3 py-2 text-xs font-black text-slate-950">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Đặt ngay
+            </span>
+          )}
 
           {!compact && onSelect && (
             <button
@@ -1014,6 +1042,14 @@ function TeacherBookingPage({
 }
 
 export function PublicTeachersPage() {
+  const { content: homeContent } = useSiteContent('home')
+  const teacherStoryBlocks = useMemo(
+    () => homeContent.blocks.filter((block) => (
+      block.enabled &&
+      ['home-standards', 'home-guarantee', 'home-global', 'home-companion'].includes(block.id)
+    )),
+    [homeContent.blocks],
+  )
   const [teachers, setTeachers] = useState<TeacherView[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -1050,6 +1086,19 @@ export function PublicTeachersPage() {
 
       const teacherSnap = await getDocs(teachersQuery)
       const rawTeachers = teacherSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
+
+      // Render the core profiles immediately. Availability is enrichment data and
+      // should not leave the public page looking empty while it is loading.
+      const basePageTeachers = rawTeachers.map((teacher) => toTeacherView(teacher))
+      setTeachers((prev) => {
+        const merged = reset ? basePageTeachers : [...prev, ...basePageTeachers]
+        const byId = new Map(merged.map((teacher) => [teacher.id, teacher]))
+        return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || getTeacherDisplayName(a).localeCompare(getTeacherDisplayName(b), 'vi'))
+      })
+      setLastDoc(teacherSnap.docs[teacherSnap.docs.length - 1] || null)
+      setHasMore(teacherSnap.docs.length === PAGE_SIZE)
+      setLoading(false)
+
       const availabilityPairs = await Promise.all(
         rawTeachers.map(async (teacher) => {
           try {
@@ -1066,26 +1115,15 @@ export function PublicTeachersPage() {
         })
       )
       const availabilityMap = new Map(availabilityPairs)
-
-      const pageTeachers = rawTeachers.map((teacher) => {
-        const availability = availabilityMap.get(teacher.id)
-        return {
-          ...teacher,
-          availability,
-          priorityScore: calculatePriority(teacher, availability),
-          priorityReasons: getPriorityReasons(teacher, availability),
-          isForeignTeacher: isForeignTeacher(teacher),
-          hasAvailableSchedule: hasSchedule(availability),
-        }
-      })
+      const pageTeachers = rawTeachers.map((teacher) => toTeacherView(teacher, availabilityMap.get(teacher.id)))
 
       setTeachers((prev) => {
-        const merged = reset ? pageTeachers : [...prev, ...pageTeachers]
+        const enrichedIds = new Set(pageTeachers.map((teacher) => teacher.id))
+        const untouchedTeachers = reset ? [] : prev.filter((teacher) => !enrichedIds.has(teacher.id))
+        const merged = [...untouchedTeachers, ...pageTeachers]
         const byId = new Map(merged.map((teacher) => [teacher.id, teacher]))
         return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || getTeacherDisplayName(a).localeCompare(getTeacherDisplayName(b), 'vi'))
       })
-      setLastDoc(teacherSnap.docs[teacherSnap.docs.length - 1] || null)
-      setHasMore(teacherSnap.docs.length === PAGE_SIZE)
     } catch (error) {
       console.error('Error loading public teachers:', error)
       if (reset) setTeachers([])
@@ -1159,7 +1197,10 @@ export function PublicTeachersPage() {
     })
   }, [filter, search, teachers])
 
-  const topTeachers = filteredTeachers.slice(0, 3)
+  const topTeachers = useMemo(
+    () => [...teachers].sort((first, second) => getFeaturedTeacherRank(first.id) - getFeaturedTeacherRank(second.id)).slice(0, 3),
+    [teachers],
+  )
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
 
   if (selectedTeacher) {
@@ -1169,6 +1210,7 @@ export function PublicTeachersPage() {
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <TeacherBookingPage teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
         </main>
+        <PublicFooter />
       </div>
     )
   }
@@ -1177,67 +1219,78 @@ export function PublicTeachersPage() {
     <div className="min-h-screen bg-[#fffaf0] text-slate-950">
       <PublicNav />
 
-      <main>
-        <section
-          className="relative overflow-hidden border-b border-[#eadfbd] bg-[#fff6d8] bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/teacher-hero-bg.png')" }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#fff7dc]/82 via-[#fff0bc]/58 to-[#fffaf0]/30" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.52),transparent_30%),radial-gradient(circle_at_78%_20%,rgba(255,193,7,0.16),transparent_32%)]" />
-          <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-14">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#e6c04d] bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
-                <ShieldCheck className="h-4 w-4 text-[#d69700]" />
-                Dành cho học viên và phụ huynh đã có tài khoản 123English
-              </div>
-              <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-                Chọn giáo viên phù hợp cho buổi học tiếp theo
-              </h1>
-              <p className="mt-5 max-w-2xl text-base leading-8 text-slate-700 sm:text-lg">
-                Danh sách ưu tiên giáo viên có lịch rảnh, hồ sơ rõ ràng, được học vụ đề xuất và có kinh nghiệm phù hợp. Khi cần đổi giáo viên hoặc xếp lịch mới, phụ huynh có thể dùng trang này để chọn nhanh trước khi nhắn học vụ.
+      <main className="bg-white">
+        <section className="border-b border-slate-100 bg-white px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-xs font-black uppercase tracking-[0.15em] text-[#A76500]">
+                Đội ngũ giáo viên tâm huyết và chuyên nghiệp
               </p>
-
-              <div className="mt-8 grid max-w-2xl grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
-                  <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">giáo viên toàn hệ thống</p>
-                </div>
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
-                  <p className="text-2xl font-black tabular-nums">{formatRoundedHundredPlus(summaryCounts.students)}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">học viên đang học</p>
-                </div>
-                <div className="rounded-2xl border border-[#f0df9f] bg-white/80 p-4">
-                  <p className="text-2xl font-black tabular-nums">{availableCount}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-600">có lịch rảnh</p>
-                </div>
+              <h1 className="mt-3 text-4xl font-black leading-[1.08] tracking-[-0.04em] text-[#10213A] sm:text-5xl">
+                Chất lượng giảng dạy bắt đầu từ người đồng hành phù hợp.
+              </h1>
+              <p className="mt-5 max-w-2xl text-base font-medium leading-8 text-slate-600">
+                Tìm hiểu tiêu chuẩn tuyển chọn, quy trình kiểm định và chọn giáo viên đang có lịch phù hợp với học viên.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="rounded-2xl border border-[#F1DE98] bg-[#FFFBEB] px-4 py-3">
+                <p className="text-xl font-black tabular-nums text-[#10213A]">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-500">giáo viên</p>
+              </div>
+              <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+                <p className="text-xl font-black tabular-nums text-[#10213A]">{formatRoundedHundredPlus(summaryCounts.students)}</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-500">học viên</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                <p className="text-xl font-black tabular-nums text-[#10213A]">{availableCount}</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-500">có lịch rảnh</p>
               </div>
             </div>
+          </div>
+        </section>
 
-            <div className="rounded-[2rem] border border-[#eadfbd] bg-white p-5 shadow-2xl shadow-amber-200/60 ring-8 ring-white/70">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#b18400]">Gợi ý hôm nay</p>
-                  <h2 className="text-2xl font-black text-slate-950">Ưu tiên hiển thị</h2>
+        <SiteBlocks blocks={teacherStoryBlocks} />
+
+        <section className="border-y border-slate-100 bg-[#F8FAFC] px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+          <div className="mx-auto max-w-7xl">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0E8BC4]">Gợi ý phù hợp</p>
+                <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-[#10213A] sm:text-4xl">
+                  Chọn giáo viên cho con ngay
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
+                  Danh sách được lấy từ hồ sơ giáo viên đang hoạt động và thay đổi sau mỗi lần truy cập.
+                </p>
+              </div>
+              <a
+                href="https://zalo.me/0393998733"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-5 text-sm font-black text-[#087CAD] transition hover:-translate-y-0.5 hover:border-sky-300"
+              >
+                Nhờ học vụ tư vấn
+                <Send className="h-4 w-4" />
+              </a>
+            </div>
+
+            <div className="mt-8 space-y-3">
+              {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
+                <button
+                  key={teacher.id}
+                  type="button"
+                  onClick={() => setSelectedTeacher(teacher)}
+                  className="block w-full rounded-2xl text-left transition focus:outline-none focus:ring-4 focus:ring-[#FFDE63]/40"
+                >
+                  <TeacherCard teacher={teacher} compact />
+                </button>
+              ))}
+              {!loading && teachers.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-600">
+                  Chưa có hồ sơ giáo viên công khai.
                 </div>
-                <Award className="h-7 w-7 text-[#ffb900]" />
-              </div>
-              <div className="space-y-3">
-                {(topTeachers.length ? topTeachers : teachers.slice(0, 3)).map((teacher) => (
-                  <button
-                    key={teacher.id}
-                    type="button"
-                    onClick={() => setSelectedTeacher(teacher)}
-                    className="block w-full rounded-2xl text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#ffde63]/40"
-                  >
-                    <TeacherCard teacher={teacher} compact />
-                  </button>
-                ))}
-                {!loading && teachers.length === 0 && (
-                  <div className="rounded-2xl bg-[#fff8df] p-6 text-center text-sm font-semibold text-slate-600">
-                    Chưa có hồ sơ giáo viên công khai.
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </section>
@@ -1284,7 +1337,31 @@ export function PublicTeachersPage() {
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             {loading
               ? Array.from({ length: 6 }).map((_, index) => (
-                  <div key={index} className="h-72 animate-pulse rounded-2xl bg-white ring-1 ring-sky-100" />
+                  <div
+                    key={index}
+                    className="overflow-hidden rounded-2xl bg-white p-5 ring-1 ring-sky-100"
+                    aria-hidden="true"
+                  >
+                    <div className="flex animate-pulse items-start gap-4">
+                      <div className="h-20 w-20 shrink-0 rounded-2xl bg-sky-50" />
+                      <div className="min-w-0 flex-1 pt-1">
+                        <div className="h-5 w-2/5 rounded-full bg-slate-100" />
+                        <div className="mt-3 h-3 w-3/5 rounded-full bg-slate-100" />
+                        <div className="mt-5 flex gap-2">
+                          <div className="h-8 w-24 rounded-lg bg-amber-50" />
+                          <div className="h-8 w-28 rounded-lg bg-sky-50" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-6 grid animate-pulse grid-cols-3 gap-3">
+                      <div className="h-12 rounded-xl bg-slate-50" />
+                      <div className="h-12 rounded-xl bg-slate-50" />
+                      <div className="h-12 rounded-xl bg-slate-50" />
+                    </div>
+                    {index === 0 && (
+                      <p className="mt-5 text-center text-xs font-bold text-slate-400">Đang tải hồ sơ giáo viên...</p>
+                    )}
+                  </div>
                 ))
               : filteredTeachers.map((teacher) => (
                   <TeacherCard key={teacher.id} teacher={teacher} onSelect={setSelectedTeacher} />
@@ -1317,6 +1394,7 @@ export function PublicTeachersPage() {
           </div>
         </section>
       </main>
+      <PublicFooter />
     </div>
   )
 }

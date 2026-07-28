@@ -9,8 +9,8 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
+import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
 import { OutcomeHighlights } from '@/components/landing/OutcomeHighlights'
-import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
 
 const loginSchema = z.object({
@@ -28,10 +28,11 @@ export function LoginPage() {
   const { content: siteContent } = useSiteContent('home')
   const { t } = useLanguageStore()
   const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
-  const homeBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
   const heroLines = (primaryHero?.title || 'Nâng tầm\nchất lượng giáo dục').split('\n').filter(Boolean)
   const heroDescription = primaryHero?.subtitle || t('landing.hero_desc')
-  const heroImage = primaryHero?.image || '/home-teacher-student-2026.png'
+  const heroImage = primaryHero?.image && !primaryHero.image.includes('home-teacher-student')
+    ? primaryHero.image
+    : '/home-hero-vietnam-2026-v2.png'
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -207,7 +208,7 @@ export function LoginPage() {
       <PublicNav />
 
       {/* Main Content - two column layout */}
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-8 sm:px-8 lg:grid lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-10 lg:px-12 lg:py-14">
+      <main className="national-hero-shell mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-8 sm:px-8 lg:grid lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:gap-10 lg:px-12 lg:py-14">
         {/* Left Side: hero — nền trắng, ảnh bo mềm đặt trên khối màu thương hiệu */}
         <div className="relative hidden lg:block">
           {primaryHero?.eyebrow && (
@@ -390,8 +391,7 @@ export function LoginPage() {
         </div>
       </main>
 
-      <SiteBlocks blocks={homeBlocks} />
-
+      <NationalBrandStory />
       <OutcomeHighlights />
 
       {/* Compact Footer */}
