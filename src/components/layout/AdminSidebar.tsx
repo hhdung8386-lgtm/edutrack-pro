@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, GraduationCap, BookOpen,
   ClipboardCheck, BarChart2, Wallet, Settings,
   LogOut, FileText, CalendarClock, CalendarDays,
-  ChevronLeft, ChevronRight, Bell, Gift, MonitorUp, MapPin, TestTube2, CalendarCheck2, CalendarRange, AlertCircle, Calculator
+  ChevronLeft, ChevronRight, Bell, Gift, MonitorUp, MapPin, TestTube2, CalendarCheck2, CalendarRange, AlertCircle, Calculator, LayoutTemplate
 } from 'lucide-react'
 import { signOut } from '@/lib/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -32,6 +32,7 @@ const navItems = [
   { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
   { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
   { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
+  { to: '/admin/site-content', icon: LayoutTemplate, label: 'Nội dung trang web' },
   { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
 ]
 

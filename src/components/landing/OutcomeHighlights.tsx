@@ -212,6 +212,12 @@ const HIGH_SCHOOLS = [
   },
 ]
 
+/**
+ * Tắt khối "Mục tiêu học thuật được quan tâm" theo yêu cầu vận hành.
+ * Giữ nguyên mã nguồn để có thể bật lại bất cứ lúc nào mà không phải viết lại.
+ */
+const SHOW_ACADEMIC_GOALS = false
+
 function formatNumber(value: number, decimals = 0) {
   return new Intl.NumberFormat('vi-VN', {
     minimumFractionDigits: decimals,
@@ -322,7 +328,7 @@ export function OutcomeHighlights() {
     <section
       ref={sectionRef}
       id="ket-qua"
-      className={`outcome-section relative overflow-hidden bg-[#FFFDF7] px-5 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24 ${
+      className={`outcome-section relative overflow-hidden bg-white px-5 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24 ${
         isVisible ? 'is-visible' : ''
       }`}
     >
@@ -543,6 +549,7 @@ export function OutcomeHighlights() {
           </aside>
         </div>
 
+        {SHOW_ACADEMIC_GOALS && (
         <div className="outcome-reveal outcome-delay-three mt-7 overflow-hidden rounded-[2.25rem] border border-amber-200/70 bg-white shadow-[0_24px_70px_rgba(217,141,0,0.08)]">
           <div className="px-6 pb-5 pt-7 text-center sm:px-9">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">Mục tiêu học thuật được quan tâm</p>
@@ -630,6 +637,7 @@ export function OutcomeHighlights() {
             </article>
           </div>
         </div>
+        )}
 
         <div
           className="outcome-reveal outcome-delay-three mt-7 grid overflow-hidden rounded-[2.25rem] border border-amber-200/70 bg-white shadow-[0_24px_70px_rgba(217,141,0,0.08)] xl:grid-cols-[310px_minmax(0,1fr)]"

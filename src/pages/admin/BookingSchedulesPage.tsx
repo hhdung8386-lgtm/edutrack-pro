@@ -1,7 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search, User, BookOpen, Link, Check, AlertTriangle, Trash2, ExternalLink, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  BookOpen,
+  BriefcaseBusiness,
+  CalendarClock,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Globe2,
+  GraduationCap,
+  Link,
+  Save,
+  Search,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange, Student, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -38,6 +56,24 @@ const TIME_WINDOWS = [
   { key: '12-20', label: '12:00-20:00', start: 720, end: 1200 },
   { key: '18-25', label: '18:00-25:00', start: 1080, end: 1500 },
 ] as const
+
+const COUNTRY_LABELS: Record<string, string> = {
+  VN: 'Việt Nam',
+  PH: 'Philippines',
+  US: 'Hoa Kỳ',
+  GB: 'Anh',
+  AU: 'Úc',
+  CA: 'Canada',
+  ZA: 'Nam Phi',
+  IN: 'Ấn Độ',
+  SG: 'Singapore',
+  MY: 'Malaysia',
+  TH: 'Thái Lan',
+}
+
+function countryLabel(code: string) {
+  return COUNTRY_LABELS[code] || code
+}
 
 const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }
 
@@ -195,6 +231,7 @@ export function BookingSchedulesPage() {
   const [filterIelts, setFilterIelts] = useState(false)
   const [filterExp, setFilterExp] = useState(false)
   const [filterYob, setFilterYob] = useState('')
+  const [filterCountry, setFilterCountry] = useState('')
 
   // Selection mode states
   const [multiSelectMode, setMultiSelectMode] = useState(false)
@@ -413,6 +450,13 @@ export function BookingSchedulesPage() {
     return Array.from(new Set(years)).sort((a, b) => b - a)
   }, [teachers])
 
+  const uniqueCountries = useMemo(() => {
+    const codes = teachers
+      .map((teacher) => teacher.country?.trim().toUpperCase())
+      .filter((country): country is string => !!country)
+    return Array.from(new Set(codes)).sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), 'vi'))
+  }, [teachers])
+
   const filteredTeachers = teachers.filter((teacher) => {
     // 1. Text search filter
     const keyword = search.trim().toLowerCase()
@@ -452,7 +496,14 @@ export function BookingSchedulesPage() {
       }
     }
 
-    // 6. Schedule availability filter
+    // 6. Country filter
+    if (filterCountry) {
+      if ((teacher.country || '').trim().toUpperCase() !== filterCountry) {
+        return false
+      }
+    }
+
+    // 7. Schedule availability filter
     if (filterDays.length > 0 && filterTime) {
       const avail = allAvailabilities[teacher.id]
       if (!avail) return false
@@ -1157,7 +1208,7 @@ export function BookingSchedulesPage() {
           <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-slate-400">Bộ lọc hồ sơ</span>
-              {(filterGender !== 'all' || filterIelts || filterExp || filterYob) && (
+              {(filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1165,6 +1216,7 @@ export function BookingSchedulesPage() {
                     setFilterIelts(false);
                     setFilterExp(false);
                     setFilterYob('');
+                    setFilterCountry('');
                   }}
                   className="text-xs text-indigo-650 hover:text-indigo-755 font-bold transition"
                 >
@@ -1211,6 +1263,27 @@ export function BookingSchedulesPage() {
               </div>
             </div>
 
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Quốc tịch
+              </label>
+              <div className="relative">
+                <Globe2 className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={filterCountry}
+                  onChange={(event) => setFilterCountry(event.target.value)}
+                  className="h-9 w-full cursor-pointer rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="">Tất cả quốc gia</option>
+                  {uniqueCountries.map((country) => (
+                    <option key={country} value={country}>
+                      {countryLabel(country)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Checkable Chips */}
             <div className="flex flex-wrap gap-1.5 pt-0.5">
               <button
@@ -1222,7 +1295,8 @@ export function BookingSchedulesPage() {
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
                 }`}
               >
-                <span>🎓 IELTS Cert</span>
+                <GraduationCap className="h-3.5 w-3.5" />
+                <span>IELTS Cert</span>
               </button>
               <button
                 type="button"
@@ -1233,7 +1307,8 @@ export function BookingSchedulesPage() {
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
                 }`}
               >
-                <span>💼 Kinh nghiệm &gt; 1 năm</span>
+                <BriefcaseBusiness className="h-3.5 w-3.5" />
+                <span>Kinh nghiệm &gt; 1 năm</span>
               </button>
             </div>
           </div>

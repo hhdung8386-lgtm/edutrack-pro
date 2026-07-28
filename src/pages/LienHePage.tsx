@@ -1,28 +1,39 @@
 import { useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
+import { SiteBlocks } from '@/components/site/SiteBlocks'
+import { useSiteContent } from '@/lib/siteContent'
 
 export function LienHePage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', subject: '', message: '' })
   const onChange = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
+  // Khối nội dung do admin cấu hình. Trang này vốn thiết kế gọn trong một màn hình
+  // (không cuộn); chỉ khi admin BẬT khối mới chuyển sang layout cho phép cuộn,
+  // nhờ vậy giao diện hiện tại giữ nguyên khi chưa dùng CMS.
+  const { content: siteContent } = useSiteContent('contact')
+  const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
+  const extraBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
+  const hasExtraBlocks = extraBlocks.some((block) => block.enabled)
+
   return (
-    <div className="h-screen flex flex-col font-sans overflow-hidden">
+    <div className={`flex flex-col font-sans ${hasExtraBlocks ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
       <PublicNav />
 
       {/* HERO */}
       <section className="grid grid-cols-1 lg:grid-cols-[46%_54%] flex-[0_0_36%] min-h-0 bg-[#FFFBF0]">
         <div className="flex flex-col justify-center px-6 md:px-12 lg:px-20 gap-2.5 min-w-0">
           <div className="max-w-[560px]">
-            <div className="text-[12px] font-bold text-[#FFC107] tracking-wide mb-2">Liên hệ với chúng tôi</div>
+            <div className="text-[12px] font-bold text-[#D98D00] tracking-wide mb-2">
+              {primaryHero?.eyebrow || 'Liên hệ với chúng tôi'}
+            </div>
             <h1 className="text-[clamp(20px,2.4vw,34px)] font-extrabold leading-[1.15] text-slate-900">
-              Chúng tôi luôn sẵn sàng<br />
-              <span className="text-[#FFC107]">đồng hành cùng bạn</span>
+              {primaryHero?.title || 'Chúng tôi luôn sẵn sàng đồng hành cùng bạn'}
             </h1>
             <p className="text-[clamp(11.5px,0.9vw,13.5px)] text-slate-600 leading-relaxed mt-3">
-              Nếu bạn có bất kỳ câu hỏi, thắc mắc hay cần tư vấn về chương trình học,<br />
-              đội ngũ 123 English luôn sẵn lòng hỗ trợ bạn nhanh chóng và tận tâm nhất.
+              {primaryHero?.subtitle ||
+                'Nếu bạn có câu hỏi hoặc cần tư vấn chương trình học, đội ngũ 123English luôn sẵn lòng hỗ trợ nhanh chóng và tận tâm.'}
             </p>
             <div className="grid grid-cols-3 gap-3 mt-4">
               <div>
@@ -42,7 +53,7 @@ export function LienHePage() {
         </div>
         <div className="overflow-hidden h-full bg-[#FFFBF0] flex items-center justify-center">
           <img
-            src="/lienhe.png"
+            src={primaryHero?.image || '/lienhe.png'}
             alt="Liên hệ"
             className="w-full h-full object-contain object-center block"
           />
@@ -138,6 +149,8 @@ export function LienHePage() {
           </form>
         </div>
       </section>
+
+      <SiteBlocks blocks={extraBlocks} />
 
       {/* FOOTER — match LoginPage style */}
       <footer className="border-t border-slate-200 bg-white py-3 shrink-0">

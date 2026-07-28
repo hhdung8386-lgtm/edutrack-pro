@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, CalendarCheck2, CalendarRange, BarChart2, FileText, Bell, Gift, MonitorUp, MapPin, TestTube2, AlertCircle, Calculator } from 'lucide-react'
+import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, CalendarCheck2, CalendarRange, BarChart2, FileText, Bell, Gift, MonitorUp, MapPin, TestTube2, AlertCircle, Calculator, LayoutTemplate } from 'lucide-react'
 import { useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -90,6 +90,7 @@ export function AdminLayout() {
     { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
     { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
     { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
+    { to: '/admin/site-content', icon: LayoutTemplate, label: 'Nội dung trang web' },
     { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
   ].filter((item) => {
     if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false

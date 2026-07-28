@@ -10,6 +10,8 @@ import { TeacherLayout } from '@/components/layout/TeacherLayout'
 
 // Lazy loaded Pages
 const LoginPage = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })))
+const BaiVietPage = lazy(() => import('@/pages/BaiVietPage').then(m => ({ default: m.BaiVietPage })))
+const BaiVietChiTietPage = lazy(() => import('@/pages/BaiVietPage').then(m => ({ default: m.BaiVietChiTietPage })))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })))
 const WaitingApprovalPage = lazy(() => import('@/pages/WaitingApprovalPage').then(m => ({ default: m.WaitingApprovalPage })))
 
@@ -32,6 +34,7 @@ const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPa
 const NotificationsPage = lazy(() => import('@/pages/admin/NotificationsPage').then(m => ({ default: m.NotificationsPage })))
 const FutureBookingsPage = lazy(() => import('@/pages/admin/FutureBookingsPage').then(m => ({ default: m.FutureBookingsPage })))
 const OverdueBookingsPage = lazy(() => import('@/pages/admin/OverdueBookingsPage').then(m => ({ default: m.OverdueBookingsPage })))
+const SiteContentPage = lazy(() => import('@/pages/admin/SiteContentPage').then(m => ({ default: m.SiteContentPage })))
 const QuotaReconcilePage = lazy(() => import('@/pages/admin/QuotaReconcilePage').then(m => ({ default: m.QuotaReconcilePage })))
 const StudentExperiencePage = lazy(() => import('@/pages/admin/StudentExperiencePage').then(m => ({ default: m.StudentExperiencePage })))
 
@@ -73,7 +76,6 @@ const RootRedirect = () => {
 
 function App() {
   const initAuth = useAuthStore((state) => state.initAuth)
-  const loading = useAuthStore((state) => state.loading)
   const initialized = useAuthStore((state) => state.initialized)
 
   useEffect(() => {
@@ -97,6 +99,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/chuong-trinh-hoc" element={<ChuongTrinhHocPage />} />
           <Route path="/lien-he" element={<LienHePage />} />
+          <Route path="/bai-viet" element={<BaiVietPage />} />
+          <Route path="/bai-viet/:slug" element={<BaiVietChiTietPage />} />
           <Route path="/giao-vien" element={<PublicTeachersPage />} />
           <Route path="/tracking" element={<TrackingPage />} />
           <Route path="/setup" element={<SetupPage />} />
@@ -129,6 +133,7 @@ function App() {
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="overdue-bookings" element={<OverdueBookingsPage />} />
+            <Route path="site-content" element={<SiteContentPage />} />
             <Route path="quota-reconcile" element={<QuotaReconcilePage />} />
             <Route path="subjects" element={<SubjectsPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />

@@ -6,11 +6,12 @@ import {
   Headphones,
   MessageCircleMore,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { PublicNav } from '@/components/layout/PublicNav'
+import { SiteBlocks } from '@/components/site/SiteBlocks'
+import { useSiteContent } from '@/lib/siteContent'
 import {
   CURRICULUM_GROUPS,
   type CurriculumAudience,
@@ -54,29 +55,30 @@ const GROUP_STYLES: Record<
   },
 }
 
+/**
+ * Ba chặng năng lực hiển thị thành một hàng ngay phía trên bảng giáo trình.
+ * Mỗi chặng trải đúng 3 cột cấp độ (1-3, 4-6, 7-9) để thẳng hàng với L1..L9.
+ */
 const LEVEL_STAGES = [
   {
-    levels: 'Level 1',
+    levels: '1-3',
     title: 'Nền tảng',
     note: 'Làm quen, phát âm và phản xạ cơ bản',
     surface: 'bg-[#FFF6CF]',
-    accent: 'bg-[#FFC107]',
     text: 'text-[#8A5800]',
   },
   {
-    levels: 'Level 2-6',
+    levels: '4-6',
     title: 'Thực chiến',
     note: 'Giao tiếp, học thuật và ứng dụng',
     surface: 'bg-[#EAF8FD]',
-    accent: 'bg-[#27B5DF]',
     text: 'text-[#087AA1]',
   },
   {
-    levels: 'Level 7-9',
+    levels: '7-9',
     title: 'Bứt phá',
     note: 'Diễn đạt chuyên sâu và tự chủ',
     surface: 'bg-[#EAF8F2]',
-    accent: 'bg-[#08B981]',
     text: 'text-[#08795A]',
   },
 ]
@@ -110,14 +112,34 @@ function LevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudie
 
 function DesktopMatrix() {
   return (
-    <div className="hidden overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_22px_64px_rgba(35,55,80,0.08)] md:block">
-      <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-slate-200 bg-[#10213A] text-white">
+    <div className="hidden overflow-hidden rounded-[1.75rem] border-2 border-[#FFC107] bg-white shadow-[0_22px_64px_rgba(217,141,0,0.12)] md:block">
+      {/* Hàng ba chặng năng lực — mỗi chặng trải đúng 3 cột cấp độ */}
+      <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
+        <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
+          Lộ trình 9 cấp độ
+        </div>
+        <div className="grid grid-cols-3 gap-px bg-amber-200/60">
+          {LEVEL_STAGES.map((stage) => (
+            <div
+              key={stage.title}
+              className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
+            >
+              <p className={`text-sm font-black ${stage.text}`}>
+                {stage.levels}: {stage.title}
+              </p>
+              <p className="mt-0.5 hidden text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-300 bg-[#FFC107] text-[#10213A]">
         <div className="flex items-center px-6 py-4 text-sm font-extrabold">Danh mục giáo trình</div>
         <div className="grid grid-cols-9">
           {Array.from({ length: 9 }, (_, index) => (
             <div
               key={index}
-              className="flex min-h-16 items-center justify-center border-l border-white/10 text-sm font-black"
+              className="flex min-h-16 items-center justify-center border-l border-[#10213A]/10 text-sm font-black"
             >
               L{index + 1}
             </div>
@@ -169,6 +191,21 @@ function DesktopMatrix() {
 function MobileMatrix() {
   return (
     <div className="space-y-5 md:hidden">
+      {/* Ba chặng năng lực — bản rút gọn cho điện thoại */}
+      <div className="overflow-hidden rounded-2xl border-2 border-[#FFC107]">
+        <p className="bg-[#FFC107] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#10213A]">
+          Lộ trình 9 cấp độ
+        </p>
+        <div className="grid grid-cols-3 gap-px bg-amber-200/60">
+          {LEVEL_STAGES.map((stage) => (
+            <div key={stage.title} className={`px-2 py-2.5 text-center ${stage.surface}`}>
+              <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.levels}</p>
+              <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.title}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {CURRICULUM_GROUPS.map((group) => {
         const style = GROUP_STYLES[group.id]
         return (
@@ -209,91 +246,38 @@ function MobileMatrix() {
 }
 
 export function ChuongTrinhHocPage() {
+  // Khối nội dung do admin cấu hình trong trang "Nội dung trang web"
+  const { content } = useSiteContent('curriculum')
+  const primaryHero = content.blocks.find((block) => block.type === 'hero' && block.enabled)
+  const extraBlocks = content.blocks.filter((block) => block.id !== primaryHero?.id)
+
   return (
-    <div className="min-h-[100dvh] overflow-x-clip bg-[#FFFDF8] font-[var(--font-quicksand)] text-[#10213A]">
+    <div className="min-h-[100dvh] overflow-x-clip bg-white font-[var(--font-quicksand)] text-[#10213A]">
       <PublicNav />
 
       <main>
-        <section className="relative overflow-hidden border-b border-amber-100">
+        <section className="relative overflow-hidden">
           <div className="program-orbit pointer-events-none absolute -right-24 top-8 h-72 w-72 rounded-full border-[42px] border-[#FFC107]/10" />
-          <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 md:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:px-12">
+          <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 md:py-20 lg:px-12">
             <div className="program-hero-copy relative">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
-                Chương trình học 123English
+                {primaryHero?.eyebrow || 'Chương trình học 123English'}
               </p>
               <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.045em] sm:text-5xl lg:text-6xl">
-                Chọn đúng giáo trình cho từng chặng tiến bộ.
+                {primaryHero?.title || 'Chọn đúng giáo trình cho từng chặng tiến bộ.'}
               </h1>
               <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
-                9 cấp độ rõ ràng, 16 giáo trình và lộ trình phù hợp cho từng độ tuổi.
+                {primaryHero?.subtitle || '9 cấp độ rõ ràng, 16 giáo trình và lộ trình phù hợp cho từng độ tuổi.'}
               </p>
               <a
-                href="#ban-do-giao-trinh"
+                href={primaryHero?.ctaHref || '#ban-do-giao-trinh'}
                 className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] shadow-[0_12px_30px_rgba(217,141,0,0.22)] transition-transform hover:-translate-y-0.5 active:translate-y-px"
               >
-                Xem bản đồ giáo trình
+                {primaryHero?.ctaLabel || 'Xem bản đồ giáo trình'}
                 <ArrowDown className="h-4 w-4" />
               </a>
             </div>
 
-            <div className="program-journey relative rounded-[2rem] border border-amber-200 bg-white p-5 shadow-[0_26px_70px_rgba(217,141,0,0.1)] sm:p-7">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF4C7] text-[#A76500]">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-black">Ba chặng năng lực</h2>
-                  <p className="text-sm font-medium text-slate-500">Từ nền tảng đến khả năng sử dụng tự chủ</p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                {LEVEL_STAGES.map((stage, index) => (
-                  <article
-                    key={stage.title}
-                    className={`program-stage group relative grid min-h-[112px] grid-cols-[auto_1fr] items-center gap-3 overflow-hidden rounded-2xl p-4 transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-[0_14px_30px_rgba(16,33,58,0.09)] sm:block sm:min-h-[168px] ${stage.surface}`}
-                    style={{ '--stage-delay': `${180 + index * 100}ms` } as CSSProperties}
-                  >
-                    <span
-                      className={`absolute inset-x-0 top-0 h-1 origin-left scale-x-0 transition-transform duration-500 group-hover:scale-x-100 ${stage.accent}`}
-                    />
-                    <div
-                      className={`flex min-w-[76px] items-center justify-center rounded-xl bg-white/80 px-3 py-2 text-center text-[11px] font-black shadow-sm ${stage.text} sm:inline-flex sm:min-w-0`}
-                    >
-                      {stage.levels}
-                    </div>
-                    <div className="min-w-0 sm:mt-5">
-                      <h3 className="whitespace-nowrap text-lg font-black sm:text-xl">{stage.title}</h3>
-                      <p className="mt-1 text-xs font-semibold leading-5 text-slate-600 sm:mt-2">{stage.note}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <div className="mt-5 rounded-2xl bg-slate-50 p-3 sm:p-4">
-                <div className="mb-3 flex items-center justify-between gap-4">
-                  <span className="text-xs font-black text-slate-600">Lộ trình 9 cấp độ</span>
-                  <span className="text-[11px] font-bold text-slate-400">Tiến dần theo năng lực</span>
-                </div>
-                <div className="grid grid-cols-9 gap-1.5">
-                {Array.from({ length: 9 }, (_, index) => (
-                  <div
-                    key={index}
-                    className={`program-level flex aspect-square items-center justify-center rounded-lg text-xs font-black shadow-sm transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-md ${
-                      index === 0
-                        ? 'bg-[#FFC107] text-[#10213A]'
-                        : index < 6
-                          ? 'bg-[#24B8E6] text-white'
-                          : 'bg-emerald-500 text-white'
-                    }`}
-                    style={{ '--level-delay': `${520 + index * 55}ms` } as CSSProperties}
-                  >
-                    {index + 1}
-                  </div>
-                ))}
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -313,7 +297,7 @@ export function ChuongTrinhHocPage() {
           </div>
         </section>
 
-        <section className="program-scroll-reveal border-y border-slate-100 bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
+        <section className="program-scroll-reveal bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
               <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng giáo trình</h2>
@@ -401,6 +385,7 @@ export function ChuongTrinhHocPage() {
             </div>
           </div>
         </section>
+        <SiteBlocks blocks={extraBlocks} />
       </main>
 
       <PublicFooter />

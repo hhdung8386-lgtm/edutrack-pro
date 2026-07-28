@@ -10,6 +10,8 @@ import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { OutcomeHighlights } from '@/components/landing/OutcomeHighlights'
+import { SiteBlocks } from '@/components/site/SiteBlocks'
+import { useSiteContent } from '@/lib/siteContent'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -22,10 +24,17 @@ type LoginData = z.infer<typeof loginSchema>
 type SectionKey = 'gioi-thieu' | 'chuong-trinh' | 'tin-tuc' | 'lien-he' | null
 
 export function LoginPage() {
+  // Khối nội dung do admin cấu hình trong trang "Nội dung trang web"
+  const { content: siteContent } = useSiteContent('home')
+  const { t } = useLanguageStore()
+  const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
+  const homeBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
+  const heroLines = (primaryHero?.title || 'Nâng tầm\nchất lượng giáo dục').split('\n').filter(Boolean)
+  const heroDescription = primaryHero?.subtitle || t('landing.hero_desc')
+  const heroImage = primaryHero?.image || '/home-teacher-student-2026.png'
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const { t } = useLanguageStore()
   
   // Login modal state
   const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
@@ -194,78 +203,100 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-[#F8FAFC]">
+    <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-white">
       <PublicNav />
 
       {/* Main Content - two column layout */}
-      <main className="mx-auto flex w-full max-w-7xl flex-col lg:grid lg:min-h-[calc(100vh-69px)] lg:grid-cols-2">
-        {/* Left Side: Layered hero - text on top, image below */}
-        <div className="relative hidden lg:flex flex-col justify-between overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f9fb 0%, #eef1f5 100%)' }}>
-          {/* Image at bottom-right, z-index: 1 */}
-          <img
-            src="/hero0.jpg"
-            alt="Learning"
-            className="absolute bottom-0 right-0 w-[95%] h-[75%] object-cover object-top"
-            style={{ zIndex: 1 }}
-          />
-          {/* Gradient overlay: fades background color into transparent so text is readable */}
-          <div
-            className="absolute inset-0"
-            style={{
-              zIndex: 2,
-              background: 'linear-gradient(to bottom, #f8f9fb 15%, rgba(248,249,251,0.85) 35%, rgba(248,249,251,0.2) 60%, transparent 80%)'
-            }}
-          />
-
-          {/* Text content - z-index: 3, always above image */}
-          <div className="relative p-10 lg:p-12" style={{ zIndex: 3 }}>
-            <h1 className="text-4xl lg:text-5xl xl:text-6xl font-extrabold text-[#1E293B] leading-[1.1] tracking-tight">
-              {t('landing.hero_title1')}<br />
-              <span className="text-[#FFC107]">{t('landing.hero_title2')}</span>
-            </h1>
-            <p className="mt-4 text-base lg:text-lg text-slate-600 max-w-md font-medium leading-relaxed">
-              {t('landing.hero_desc')}
+      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-8 sm:px-8 lg:grid lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-10 lg:px-12 lg:py-14">
+        {/* Left Side: hero — nền trắng, ảnh bo mềm đặt trên khối màu thương hiệu */}
+        <div className="relative hidden lg:block">
+          {primaryHero?.eyebrow && (
+            <p className="mb-4 text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
+              {primaryHero.eyebrow}
             </p>
+          )}
+          <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight text-[#1E293B] lg:text-5xl xl:text-6xl">
+            {heroLines.map((line, index) => (
+              <span key={`${line}-${index}`} className={index === 0 ? 'text-[#10213A]' : 'text-[#F2A900]'}>
+                {line}
+                {index < heroLines.length - 1 && <br />}
+              </span>
+            ))}
+          </h1>
+          <p className="mt-5 max-w-lg text-base lg:text-lg text-slate-600 font-medium leading-relaxed">
+            {heroDescription}
+          </p>
+          {primaryHero?.ctaLabel && (
+            <a
+              href={primaryHero.ctaHref || '#tra-cuu'}
+              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] shadow-[0_14px_30px_-14px_rgba(217,141,0,0.75)] transition-transform hover:-translate-y-0.5 active:translate-y-px"
+            >
+              {primaryHero.ctaLabel}
+            </a>
+          )}
+
+          {/* Ảnh: bo tròn đều, có khối vàng mềm phía sau thay cho nền xám cắt khúc */}
+          <div className="relative mt-8">
+            <span
+              aria-hidden="true"
+              className="absolute -left-6 -top-6 h-40 w-40 rounded-[2.5rem] bg-[#FFF4C7]"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-7 -right-5 h-28 w-28 rounded-full bg-[#E8F7FD]"
+            />
+            <img
+              src={heroImage}
+              alt="Giáo viên 123English đồng hành cùng học viên"
+              className="relative w-full rounded-[2rem] object-cover shadow-[0_28px_70px_-30px_rgba(15,35,60,0.35)]"
+              style={{ aspectRatio: '16 / 10' }}
+            />
           </div>
 
-          {/* 3 glass cards at bottom - z-index: 3, floating over image */}
-          <div className="relative px-10 lg:px-12 pb-8" style={{ zIndex: 3 }}>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
-                  <BarChart2 className="w-5 h-5 text-[#FFC107]" />
+          {/* 3 điểm nổi bật — hàng ngang gọn, không đè lên ảnh */}
+          <div className="mt-7 grid grid-cols-3 gap-3">
+            {[
+              { Icon: BarChart2, title: t('landing.feat1_title'), desc: t('landing.feat1_desc') },
+              { Icon: MessageSquare, title: t('landing.feat2_title'), desc: t('landing.feat2_desc') },
+              { Icon: Users, title: t('landing.feat3_title'), desc: t('landing.feat3_desc') },
+            ].map(({ Icon, title, desc }) => (
+              <div key={title} className="rounded-2xl border border-slate-200/80 bg-white p-4">
+                <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFF4C7]">
+                  <Icon className="h-5 w-5 text-[#D98D00]" />
                 </div>
-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat1_title')}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat1_desc')}</p>
+                <h3 className="mb-1 text-sm font-bold text-slate-900">{title}</h3>
+                <p className="text-xs leading-relaxed text-slate-600">{desc}</p>
               </div>
-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
-                  <MessageSquare className="w-5 h-5 text-[#FFC107]" />
-                </div>
-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat2_title')}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat2_desc')}</p>
-              </div>
-              <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/90 shadow-lg shadow-black/5">
-                <div className="w-9 h-9 rounded-xl bg-[#FFC107]/15 flex items-center justify-center mb-2.5">
-                  <Users className="w-5 h-5 text-[#FFC107]" />
-                </div>
-                <h3 className="font-bold text-slate-900 text-sm mb-1">{t('landing.feat3_title')}</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">{t('landing.feat3_desc')}</p>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
         {/* Mobile hero - shown only on small screens */}
-        <div className="lg:hidden px-6 pt-6 pb-2 bg-white">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1E293B] leading-[1.1] tracking-tight">
-            {t('landing.hero_title1')} <span className="text-[#FFC107]">{t('landing.hero_title2')}</span>
+        <div className="lg:hidden">
+          {primaryHero?.eyebrow && (
+            <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#A76500]">
+              {primaryHero.eyebrow}
+            </p>
+          )}
+          <h1 className="text-3xl font-extrabold leading-[1.1] tracking-tight text-[#1E293B] sm:text-4xl">
+            {heroLines.map((line, index) => (
+              <span key={`${line}-${index}`} className={index === 0 ? 'text-[#10213A]' : 'text-[#F2A900]'}>
+                {line}
+                {index < heroLines.length - 1 && <br />}
+              </span>
+            ))}
           </h1>
-          <p className="mt-2 text-sm text-slate-600 font-medium">{t('landing.hero_desc')}</p>
+          <p className="mt-2.5 text-sm font-medium leading-relaxed text-slate-600">{heroDescription}</p>
+          <img
+            src={heroImage}
+            alt="Giáo viên 123English đồng hành cùng học viên"
+            className="mt-5 w-full rounded-[1.5rem] object-cover shadow-[0_18px_44px_-24px_rgba(15,35,60,0.35)]"
+            style={{ aspectRatio: '16 / 10' }}
+          />
         </div>
 
         {/* Right Side: Cards */}
-        <div className="bg-[#F8FAFC] flex flex-col lg:justify-center px-6 sm:px-8 lg:px-12 xl:px-16 py-6 lg:py-12 space-y-4 lg:overflow-y-auto">
+        <div className="flex flex-col lg:justify-center space-y-4">
           {/* Card: Tra cứu */}
           <div id="tra-cuu" className="relative scroll-mt-24 rounded-2xl border border-slate-100/60 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             <div className="absolute top-5 right-5 flex gap-1">
@@ -358,6 +389,8 @@ export function LoginPage() {
           </div>
         </div>
       </main>
+
+      <SiteBlocks blocks={homeBlocks} />
 
       <OutcomeHighlights />
 

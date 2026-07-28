@@ -37,7 +37,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
   }
 
   return (
-    <div className="min-h-screen bg-[#FFFDF7] overflow-x-hidden relative font-jakarta">
+    <div className="min-h-screen bg-white overflow-x-hidden relative font-jakarta">
       
       {/* SECTION 1: HERO SECTION */}
       <section id="trang-chu" className="pt-8 pb-16 px-4 sm:px-6 md:px-12 lg:px-20 bg-gradient-to-b from-slate-50 via-white to-white relative overflow-hidden">
