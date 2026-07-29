@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react'
-import { Logo } from '@/components/shared/Logo'
 
 const ECOSYSTEM_ITEMS = [
   {
@@ -96,7 +95,7 @@ const DESTINATIONS = [
   { name: 'Hàn Quốc', city: 'Seoul', latitude: 37.5665, longitude: 126.978, labelDx: -18, labelDy: 12, anchor: 'end' },
   { name: 'Trung Quốc', city: 'Bắc Kinh', latitude: 39.9042, longitude: 116.4074, labelDx: -18, labelDy: -12, anchor: 'end' },
   { name: 'Đài Loan', city: 'Đài Bắc', latitude: 25.033, longitude: 121.5654, labelDx: 18, labelDy: -8, anchor: 'start' },
-  { name: 'Hồng Kông', city: 'Hồng Kông', latitude: 22.3193, longitude: 114.1694, labelDx: -18, labelDy: 18, anchor: 'end' },
+  { name: 'Hồng Kông', city: 'Hồng Kông', latitude: 22.3193, longitude: 114.1694, labelDx: -16, labelDy: -26, anchor: 'end' },
   { name: 'Thái Lan', city: 'Bangkok', latitude: 13.7563, longitude: 100.5018, labelDx: 18, labelDy: 20, anchor: 'start' },
   { name: 'Lào', city: 'Viêng Chăn', latitude: 17.9757, longitude: 102.6331, labelDx: -18, labelDy: -15, anchor: 'end' },
   { name: 'Campuchia', city: 'Phnom Penh', latitude: 11.5564, longitude: 104.9282, labelDx: -20, labelDy: 40, anchor: 'end' },
@@ -153,88 +152,69 @@ const AWARDS = [
 const BRAND_TIMELINE = [
   {
     year: '2021',
-    era: 'THE BEGINNING',
-    title: 'KHỞI NGUỒN',
-    paragraphs: [
-      '123English chính thức được hình thành với một định hướng rõ ràng:',
-      'Xây dựng một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.',
-      'Từ những bước đầu tiên, 123English bắt đầu đặt nền móng cho một hành trình dài hơn — nơi tiếng Anh không chỉ được học trong sách vở mà được sử dụng như một công cụ để kết nối với thế giới.',
-    ],
+    title: 'Khởi nguồn',
+    copy: 'Hình thành định hướng giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.',
   },
   {
     year: '2022',
-    era: 'THE METHOD',
-    title: 'ĐỊNH HÌNH PHƯƠNG PHÁP',
-    paragraphs: [
-      'Sau quá trình nghiên cứu và phát triển, 123 Teaching Method™ được hình thành.',
-      'Một phương pháp học tập được xây dựng trên ba nguyên tắc:',
-    ],
-    points: [
-      'Tập trung vào một trọng tâm.',
-      'Tương tác thông qua trò chơi.',
-      'Thực hành ngay trong lớp học.',
-    ],
-    closing: 'Đây trở thành nền tảng trong cách 123English thiết kế bài học và xây dựng trải nghiệm học tập.',
+    title: 'Định hình phương pháp',
+    copy: '123 Teaching Method™ được xây dựng trên ba nguyên tắc: tập trung, tương tác và thực hành.',
   },
   {
     year: '2023',
-    era: 'THE ECOSYSTEM',
-    title: 'KIẾN TẠO HỆ SINH THÁI',
-    paragraphs: [
-      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.',
-      'Chương trình học, đội ngũ giáo viên, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.',
-      'Đây là giai đoạn 123English chuyển mình:',
-    ],
-    points: [
-      'Từ một chương trình học',
-      'Trở thành một hệ thống giáo dục.',
-    ],
+    title: 'Kiến tạo hệ sinh thái',
+    copy: 'Chương trình, giáo viên, quy trình đào tạo và công nghệ được kết nối trong một hệ thống thống nhất.',
   },
   {
     year: '2024',
-    era: 'THE MILESTONE',
-    title: 'CỘT MỐC 1.000 HỌC VIÊN',
-    paragraphs: [
-      '123English chạm mốc 1.000 học viên.',
-      'Đằng sau con số đó là 1.000 hành trình học tập khác nhau.',
-    ],
-    points: [
-      '1.000 điểm bắt đầu.',
-      '1.000 mục tiêu.',
-      'Và hàng nghìn giờ học, thực hành và tiến bộ.',
-    ],
-    closing: 'Cột mốc này đánh dấu sự tin tưởng của cộng đồng người học dành cho 123English — đồng thời trở thành động lực để chúng tôi tiếp tục phát triển.',
+    title: '1.000 học viên',
+    copy: 'Một nghìn điểm bắt đầu, mục tiêu riêng và hành trình tiến bộ được cộng đồng gia đình tin tưởng.',
   },
   {
     year: '2025',
-    era: 'THE EXPANSION',
-    title: 'MỞ RỘNG HỆ THỐNG',
-    paragraphs: [
-      '123English tiếp tục mở rộng quy mô hoạt động và hoàn thiện hệ thống đào tạo.',
-      'Các chương trình học được phát triển theo nhiều nhu cầu khác nhau, từ xây dựng nền tảng đến giao tiếp thực tế và phát triển năng lực tiếng Anh chuyên sâu.',
-      'Đồng thời, hệ thống công nghệ, đội ngũ và quy trình vận hành tiếp tục được đầu tư để tạo ra một trải nghiệm học tập nhất quán và có khả năng mở rộng.',
-    ],
-    points: [
-      'Build better.',
-      'Learn further.',
-      'Grow together.',
-    ],
+    title: 'Mở rộng hệ thống',
+    copy: 'Đa dạng chương trình học, hoàn thiện vận hành và đầu tư công nghệ cho trải nghiệm nhất quán.',
   },
   {
     year: '2026',
-    era: 'THE WORLD',
-    title: 'KẾT NỐI VỚI THỊ TRƯỜNG QUỐC TẾ',
-    paragraphs: [
-      '123English bắt đầu bước vào giai đoạn phát triển mới.',
-      'Không chỉ xây dựng một hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.',
-    ],
-    points: [
-      'Kết nối người học với giáo viên.',
-      'Kết nối kiến thức với cơ hội.',
-      'Kết nối những con người khác nhau bằng một ngôn ngữ chung.',
-    ],
-    closing: 'Bởi vì hành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Nó bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
+    title: 'Kết nối quốc tế',
+    copy: 'Cộng đồng học viên được kết nối với giáo viên, kiến thức và cơ hội tại hơn 10 quốc gia.',
   },
+] as const
+
+const TRUST_SIGNALS = [
+  {
+    Icon: ShieldCheck,
+    value: 'Từ 2021',
+    label: 'Phát triển hệ thống học tập',
+    tone: 'blue',
+  },
+  {
+    Icon: GraduationCap,
+    value: '1.000+',
+    label: 'Học viên đã đồng hành',
+    tone: 'yellow',
+  },
+  {
+    Icon: Globe2,
+    value: '10+ quốc gia',
+    label: 'Cộng đồng học viên kết nối',
+    tone: 'mint',
+  },
+  {
+    Icon: Award,
+    value: '60+ giờ',
+    label: 'Đào tạo nội bộ cho giáo viên',
+    tone: 'rose',
+  },
+] as const
+
+const STUDENT_MILESTONES = [
+  'Dám nói câu tiếng Anh đầu tiên.',
+  'Giao tiếp tự tin hơn mỗi ngày.',
+  'Vượt qua nỗi sợ mắc lỗi.',
+  'Đạt được mục tiêu học tập.',
+  'Mở ra một cơ hội mới cho bản thân.',
 ] as const
 
 /**
@@ -281,8 +261,8 @@ const HOANG_SA_LABEL = (() => {
   return { x: p.x + 8, y: p.y }
 })()
 const TRUONG_SA_LABEL = (() => {
-  const p = projectCoordinates(8.6, 116.6)
-  return { x: p.x + 8, y: p.y }
+  const p = projectCoordinates(8.9, 114.8)
+  return { x: p.x + 5, y: p.y }
 })()
 
 const HOANG_SA_ISLANDS: [number, number, number][] = [
@@ -483,9 +463,9 @@ export function NationalBrandStory() {
               <Sparkles className="h-4 w-4" />
               123 ENGLISH ECOSYSTEM
             </span>
-            <h2>Một hệ sinh thái.<br />Nhiều hành trình học tập.</h2>
+            <h2>Một hệ sinh thái học tập.</h2>
             <p>
-              Phương pháp, lộ trình, giáo viên và công nghệ được kết nối trong một trải nghiệm thống nhất.
+              Kết nối phương pháp, lộ trình, giáo viên và công nghệ trong một trải nghiệm thống nhất.
             </p>
           </div>
 
@@ -523,6 +503,37 @@ export function NationalBrandStory() {
         </div>
       </section>
 
+      <section className="national-section national-section-trust">
+        <div className="national-container">
+          <div className="national-trust-signals" aria-label="Những dấu mốc phát triển của 123English">
+            {TRUST_SIGNALS.map(({ Icon, value, label, tone }) => (
+              <article key={value} className={`national-trust-signal is-${tone}`}>
+                <span><Icon className="h-5 w-5" /></span>
+                <strong>{value}</strong>
+                <p>{label}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="national-growth-story">
+            <div className="national-growth-heading">
+              <h2>Hành trình phát triển</h2>
+              <p>Từng cột mốc góp phần hoàn thiện một hệ sinh thái học tập rõ ràng và bền vững.</p>
+            </div>
+            <div className="national-growth-track">
+              {BRAND_TIMELINE.map((milestone) => (
+                <article key={milestone.year} className="national-growth-item">
+                  <strong>{milestone.year}</strong>
+                  <span aria-hidden="true" />
+                  <h3>{milestone.title}</h3>
+                  <p>{milestone.copy}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="national-section national-section-map">
         <div className="national-container">
           <div className="national-heading national-heading-centered">
@@ -539,60 +550,6 @@ export function NationalBrandStory() {
         </div>
       </section>
 
-      <section className="national-section national-section-timeline">
-        <div className="national-container">
-          <div className="national-heading national-heading-centered">
-            <span className="national-kicker">
-              <Sparkles className="h-4 w-4" />
-              Hành trình phát triển
-            </span>
-            <h2>MỘT HÀNH TRÌNH.<br />NHIỀU CỘT MỐC.</h2>
-            <p>
-              Từ một ý tưởng ban đầu đến một hệ thống giáo dục hướng tới thị trường quốc tế.
-            </p>
-          </div>
-
-          <div className="national-timeline">
-            <div className="national-timeline-logo">
-              <Logo className="h-9 w-auto" clickable={false} />
-            </div>
-            {Array.from({ length: Math.ceil(BRAND_TIMELINE.length / 2) }, (_, rowIndex) => {
-              const leftMilestone = BRAND_TIMELINE[rowIndex * 2]
-              const rightMilestone = BRAND_TIMELINE[rowIndex * 2 + 1]
-              return (
-                <div className="national-timeline-row" key={`${leftMilestone.year}-${rightMilestone?.year || ''}`}>
-                  <article className="national-timeline-item">
-                    <strong>{leftMilestone.year} — {leftMilestone.era}</strong>
-                    <h3>{leftMilestone.title}</h3>
-                    {leftMilestone.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-                    {'points' in leftMilestone && leftMilestone.points && (
-                      <ul>
-                        {leftMilestone.points.map((point) => <li key={point}>{point}</li>)}
-                      </ul>
-                    )}
-                    {'closing' in leftMilestone && leftMilestone.closing && <p>{leftMilestone.closing}</p>}
-                  </article>
-                  <span className="national-timeline-dot" aria-hidden="true" />
-                  {rightMilestone && (
-                    <article className="national-timeline-item">
-                      <strong>{rightMilestone.year} — {rightMilestone.era}</strong>
-                      <h3>{rightMilestone.title}</h3>
-                      {rightMilestone.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-                      {'points' in rightMilestone && rightMilestone.points && (
-                        <ul>
-                          {rightMilestone.points.map((point) => <li key={point}>{point}</li>)}
-                        </ul>
-                      )}
-                      {'closing' in rightMilestone && rightMilestone.closing && <p>{rightMilestone.closing}</p>}
-                    </article>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </section>
-
       <section className="national-section national-section-awards">
         <div className="national-container">
           <div className="national-milestones-intro">
@@ -601,33 +558,24 @@ export function NationalBrandStory() {
                 <Award className="h-4 w-4" />
                 Dấu ấn được ghi nhận
               </span>
-              <h2>
-                NHỮNG CỘT MỐC
-                <br />
-                ĐÁNG NHỚ.
-              </h2>
+              <h2>Những cột mốc đáng nhớ.</h2>
             </div>
 
             <div className="national-milestones-copy">
-              <p>
+              <div className="national-milestones-opening">
                 Mỗi giải thưởng, chứng nhận hay cột mốc đều là sự ghi nhận cho một chặng đường đã đi qua.
-              </p>
-              <p>
                 Nhưng với 123English, thành tựu lớn nhất không chỉ nằm ở những con số.
-              </p>
-              <p className="national-milestones-lead">Đó là khi một học viên:</p>
-              <ul>
-                <li>Dám nói câu tiếng Anh đầu tiên.</li>
-                <li>Có thể giao tiếp tự tin hơn.</li>
-                <li>Vượt qua nỗi sợ mắc lỗi.</li>
-                <li>Đạt được mục tiêu học tập.</li>
-                <li>Mở ra một cơ hội mới cho bản thân.</li>
-              </ul>
-              <strong>
-                EVERY MILESTONE
-                <br />
-                MOVES US FORWARD.
-              </strong>
+              </div>
+              <p className="national-milestones-lead">Thành tựu thật bắt đầu khi một học viên:</p>
+              <div className="national-milestones-grid">
+                {STUDENT_MILESTONES.map((milestone) => (
+                  <div key={milestone}>
+                    <BadgeCheck className="h-5 w-5" />
+                    <span>{milestone}</span>
+                  </div>
+                ))}
+              </div>
+              <strong>EVERY MILESTONE MOVES US FORWARD.</strong>
             </div>
           </div>
 
