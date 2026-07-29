@@ -11,6 +11,7 @@ import {
   Sparkles,
   UsersRound,
 } from 'lucide-react'
+import { Logo } from '@/components/shared/Logo'
 
 const ECOSYSTEM_ITEMS = [
   {
@@ -22,7 +23,7 @@ const ECOSYSTEM_ITEMS = [
   {
     Icon: BookOpenCheck,
     title: 'Giáo trình theo từng chặng',
-    copy: 'Lộ trình rõ ràng từ nền tảng, thực chiến đến khả năng sử dụng tự chủ.',
+    copy: 'Lộ trình rõ ràng từ nền tảng, thực chiến đến chuyên sâu.',
     tone: 'yellow',
   },
   {
@@ -73,6 +74,21 @@ const AWARDS = [
     title: 'Kết nối trong cộng đồng doanh nghiệp',
     copy: 'Mở rộng hợp tác để đưa trải nghiệm học tập Việt Nam đến gần hơn với thế giới.',
   },
+] as const
+
+const BRAND_TIMELINE = [
+  { year: '2011', copy: 'Khởi đầu định hướng học tiếng Anh trực tuyến theo mô hình 1 kèm 1.' },
+  { year: '2013', copy: 'Hoàn thiện mô hình kết nối giáo viên và học viên từ xa.' },
+  { year: '2015', copy: 'Mở rộng giáo trình theo độ tuổi và năng lực đầu vào.' },
+  { year: '2016', copy: 'Chuẩn hóa quy trình theo dõi tiến độ sau từng buổi học.' },
+  { year: '2017', copy: 'Phát triển đội ngũ học vụ đồng hành cùng học viên và gia đình.' },
+  { year: '2018', copy: 'Mở rộng mạng lưới giáo viên Việt Nam và quốc tế.' },
+  { year: '2019', copy: 'Hoàn thiện hệ thống nhận xét và đánh giá năng lực.' },
+  { year: '2020', copy: 'Đẩy mạnh lớp học trực tuyến và giáo trình số.' },
+  { year: '2021', copy: 'Cá nhân hóa lộ trình theo mục tiêu của từng học viên.' },
+  { year: '2022', copy: 'Kết nối lịch học, giáo viên và dữ liệu tiến độ trong một hệ thống.' },
+  { year: '2023', copy: 'Mở rộng chương trình học thuật và luyện thi quốc tế.' },
+  { year: '2026', copy: 'Tiếp tục nâng chuẩn trải nghiệm học tập cùng thương hiệu 123English.' },
 ] as const
 
 const HOANG_SA_DOTS = [
@@ -230,8 +246,8 @@ export function NationalBrandStory() {
           <div className="national-ecosystem-grid">
             <article className="national-ecosystem-feature">
               <img
-                src="/brand-online-class-2026.jpg"
-                alt="Không gian lớp học trực tuyến của 123English"
+                src="/home-hero-vietnam-2026-v2.png"
+                alt="Gia đình đồng hành cùng học viên trong lớp học trực tuyến"
                 loading="lazy"
               />
               <div>
@@ -273,6 +289,46 @@ export function NationalBrandStory() {
             </p>
           </div>
           <VietnamGlobalMap />
+        </div>
+      </section>
+
+      <section className="national-section national-section-timeline">
+        <div className="national-container">
+          <div className="national-heading national-heading-centered">
+            <span className="national-kicker">
+              <Sparkles className="h-4 w-4" />
+              Hành trình phát triển
+            </span>
+            <h2>Những cột mốc của 123English.</h2>
+            <p>
+              Từng bước hoàn thiện hệ thống học tập, đội ngũ đồng hành và trải nghiệm dành cho mỗi gia đình.
+            </p>
+          </div>
+
+          <div className="national-timeline">
+            <div className="national-timeline-logo">
+              <Logo className="h-9 w-auto" clickable={false} />
+            </div>
+            {Array.from({ length: Math.ceil(BRAND_TIMELINE.length / 2) }, (_, rowIndex) => {
+              const leftMilestone = BRAND_TIMELINE[rowIndex * 2]
+              const rightMilestone = BRAND_TIMELINE[rowIndex * 2 + 1]
+              return (
+                <div className="national-timeline-row" key={`${leftMilestone.year}-${rightMilestone?.year || ''}`}>
+                  <article className="national-timeline-item">
+                    <strong>{leftMilestone.year}</strong>
+                    <p>{leftMilestone.copy}</p>
+                  </article>
+                  <span className="national-timeline-dot" aria-hidden="true" />
+                  {rightMilestone && (
+                    <article className="national-timeline-item">
+                      <strong>{rightMilestone.year}</strong>
+                      <p>{rightMilestone.copy}</p>
+                    </article>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </section>
 

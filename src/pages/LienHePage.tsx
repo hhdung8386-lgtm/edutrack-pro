@@ -23,7 +23,7 @@ export function LienHePage() {
 
       {/* HERO */}
       <section className="grid grid-cols-1 lg:grid-cols-[46%_54%] flex-[0_0_36%] min-h-0 bg-[#FFFBF0]">
-        <div className="flex flex-col justify-center px-6 md:px-12 lg:px-20 gap-2.5 min-w-0">
+        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 gap-2.5 min-w-0">
           <div className="max-w-[560px]">
             <div className="text-[12px] font-bold text-[#D98D00] tracking-wide mb-2">
               {primaryHero?.eyebrow || 'Liên hệ với chúng tôi'}
@@ -63,7 +63,7 @@ export function LienHePage() {
       {/* CONTENT */}
       <section className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[38%_62%] overflow-hidden">
         {/* LEFT - info */}
-        <div className="flex flex-col justify-center px-6 md:px-12 lg:px-20 py-3 gap-2.5 border-r border-slate-100 min-w-0 overflow-hidden">
+        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 py-3 gap-2.5 border-r border-slate-100 min-w-0 overflow-hidden">
           <h2 className="text-[clamp(14px,1.25vw,17px)] font-extrabold text-slate-900">Thông tin liên hệ</h2>
 
           <div className="space-y-2">
@@ -96,7 +96,7 @@ export function LienHePage() {
         </div>
 
         {/* RIGHT - form */}
-        <div className="flex flex-col justify-center px-6 md:px-12 lg:px-20 py-3 gap-2.5 min-w-0 overflow-hidden">
+        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 py-3 gap-2.5 min-w-0 overflow-hidden">
           <h2 className="text-[clamp(14px,1.25vw,17px)] font-extrabold text-slate-900">Gửi tin nhắn cho chúng tôi</h2>
 
           <form
@@ -154,7 +154,7 @@ export function LienHePage() {
 
       {/* FOOTER — match LoginPage style */}
       <footer className="border-t border-slate-200 bg-white py-3 shrink-0">
-        <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
             © 2026 Hộ kinh doanh Gia Sư Toàn Năng

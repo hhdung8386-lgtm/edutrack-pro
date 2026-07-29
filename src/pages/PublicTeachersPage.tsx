@@ -1207,7 +1207,7 @@ export function PublicTeachersPage() {
     return (
       <div className="min-h-screen bg-[#fffaf0] text-slate-950 font-sans pb-16">
         <PublicNav />
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-12">
           <TeacherBookingPage teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
         </main>
         <PublicFooter />
@@ -1220,7 +1220,7 @@ export function PublicTeachersPage() {
       <PublicNav />
 
       <main className="bg-white">
-        <section className="border-b border-slate-100 bg-white px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <section className="border-b border-slate-100 bg-white px-5 py-12 sm:px-8 lg:px-12 lg:py-16">
           <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.15em] text-[#A76500]">
@@ -1252,7 +1252,7 @@ export function PublicTeachersPage() {
 
         <SiteBlocks blocks={teacherStoryBlocks} />
 
-        <section className="border-y border-slate-100 bg-[#F8FAFC] px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+        <section className="border-y border-slate-100 bg-[#F8FAFC] px-5 py-14 sm:px-8 lg:px-12 lg:py-20">
           <div className="mx-auto max-w-7xl">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
@@ -1295,7 +1295,7 @@ export function PublicTeachersPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <section className="hidden" aria-hidden="true">
           <div className="sticky top-0 z-10 -mx-4 border-y border-[#eadfbd] bg-[#fffaf0]/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
               <label className="relative block">

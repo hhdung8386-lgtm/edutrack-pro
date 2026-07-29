@@ -3,15 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, Lock, Eye, EyeOff, Search, BarChart2, MessageSquare, Users, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, Search, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen, MessageSquare, Users } from 'lucide-react'
 import { signIn, signInTeacher } from '@/lib/auth'
 import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
-import { OutcomeHighlights } from '@/components/landing/OutcomeHighlights'
-import { useSiteContent } from '@/lib/siteContent'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -24,15 +22,7 @@ type LoginData = z.infer<typeof loginSchema>
 type SectionKey = 'gioi-thieu' | 'chuong-trinh' | 'tin-tuc' | 'lien-he' | null
 
 export function LoginPage() {
-  // Khối nội dung do admin cấu hình trong trang "Nội dung trang web"
-  const { content: siteContent } = useSiteContent('home')
   const { t } = useLanguageStore()
-  const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
-  const heroLines = (primaryHero?.title || 'Nâng tầm\nchất lượng giáo dục').split('\n').filter(Boolean)
-  const heroDescription = primaryHero?.subtitle || t('landing.hero_desc')
-  const heroImage = primaryHero?.image && !primaryHero.image.includes('home-teacher-student')
-    ? primaryHero.image
-    : '/home-hero-vietnam-2026-v2.png'
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -207,105 +197,19 @@ export function LoginPage() {
     <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-white">
       <PublicNav />
 
-      {/* Main Content - two column layout */}
-      <main className="national-hero-shell mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-8 sm:px-8 lg:grid lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:gap-10 lg:px-12 lg:py-14">
-        {/* Left Side: hero — nền trắng, ảnh bo mềm đặt trên khối màu thương hiệu */}
-        <div className="relative hidden lg:block">
-          {primaryHero?.eyebrow && (
-            <p className="mb-4 text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
-              {primaryHero.eyebrow}
-            </p>
-          )}
-          <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight text-[#1E293B] lg:text-5xl xl:text-6xl">
-            {heroLines.map((line, index) => (
-              <span key={`${line}-${index}`} className={index === 0 ? 'text-[#10213A]' : 'text-[#F2A900]'}>
-                {line}
-                {index < heroLines.length - 1 && <br />}
-              </span>
-            ))}
-          </h1>
-          <p className="mt-5 max-w-lg text-base lg:text-lg text-slate-600 font-medium leading-relaxed">
-            {heroDescription}
-          </p>
-          {primaryHero?.ctaLabel && (
-            <a
-              href={primaryHero.ctaHref || '#tra-cuu'}
-              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] shadow-[0_14px_30px_-14px_rgba(217,141,0,0.75)] transition-transform hover:-translate-y-0.5 active:translate-y-px"
-            >
-              {primaryHero.ctaLabel}
-            </a>
-          )}
-
-          {/* Ảnh: bo tròn đều, có khối vàng mềm phía sau thay cho nền xám cắt khúc */}
-          <div className="relative mt-8">
-            <span
-              aria-hidden="true"
-              className="absolute -left-6 -top-6 h-40 w-40 rounded-[2.5rem] bg-[#FFF4C7]"
-            />
-            <span
-              aria-hidden="true"
-              className="absolute -bottom-7 -right-5 h-28 w-28 rounded-full bg-[#E8F7FD]"
-            />
-            <img
-              src={heroImage}
-              alt="Giáo viên 123English đồng hành cùng học viên"
-              className="relative w-full rounded-[2rem] object-cover shadow-[0_28px_70px_-30px_rgba(15,35,60,0.35)]"
-              style={{ aspectRatio: '16 / 10' }}
-            />
-          </div>
-
-          {/* 3 điểm nổi bật — hàng ngang gọn, không đè lên ảnh */}
-          <div className="mt-7 grid grid-cols-3 gap-3">
-            {[
-              { Icon: BarChart2, title: t('landing.feat1_title'), desc: t('landing.feat1_desc') },
-              { Icon: MessageSquare, title: t('landing.feat2_title'), desc: t('landing.feat2_desc') },
-              { Icon: Users, title: t('landing.feat3_title'), desc: t('landing.feat3_desc') },
-            ].map(({ Icon, title, desc }) => (
-              <div key={title} className="rounded-2xl border border-slate-200/80 bg-white p-4">
-                <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFF4C7]">
-                  <Icon className="h-5 w-5 text-[#D98D00]" />
-                </div>
-                <h3 className="mb-1 text-sm font-bold text-slate-900">{title}</h3>
-                <p className="text-xs leading-relaxed text-slate-600">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Mobile hero - shown only on small screens */}
-        <div className="lg:hidden">
-          {primaryHero?.eyebrow && (
-            <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#A76500]">
-              {primaryHero.eyebrow}
-            </p>
-          )}
-          <h1 className="text-3xl font-extrabold leading-[1.1] tracking-tight text-[#1E293B] sm:text-4xl">
-            {heroLines.map((line, index) => (
-              <span key={`${line}-${index}`} className={index === 0 ? 'text-[#10213A]' : 'text-[#F2A900]'}>
-                {line}
-                {index < heroLines.length - 1 && <br />}
-              </span>
-            ))}
-          </h1>
-          <p className="mt-2.5 text-sm font-medium leading-relaxed text-slate-600">{heroDescription}</p>
+      <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+        <section className="home-banner-hero">
           <img
-            src={heroImage}
-            alt="Giáo viên 123English đồng hành cùng học viên"
-            className="mt-5 w-full rounded-[1.5rem] object-cover shadow-[0_18px_44px_-24px_rgba(15,35,60,0.35)]"
-            style={{ aspectRatio: '16 / 10' }}
+            src="/home-hero-banner-123english.png"
+            alt="Giáo viên 123English giảng dạy trực tuyến cùng mascot"
+            className="home-banner-hero-image"
+            fetchPriority="high"
           />
-        </div>
+          <div className="home-banner-hero-scrim" aria-hidden="true" />
 
-        {/* Right Side: Cards */}
-        <div className="flex flex-col lg:justify-center space-y-4">
+          <div className="home-banner-panel">
           {/* Card: Tra cứu */}
-          <div id="tra-cuu" className="relative scroll-mt-24 rounded-2xl border border-slate-100/60 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-            <div className="absolute top-5 right-5 flex gap-1">
-              <div className="w-1 h-1 rounded-full bg-amber-200" />
-              <div className="w-1 h-1 rounded-full bg-amber-200" />
-              <div className="w-1 h-1 rounded-full bg-amber-200" />
-              <div className="w-1 h-1 rounded-full bg-amber-200" />
-            </div>
+          <div id="tra-cuu" className="relative scroll-mt-24 rounded-2xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_54px_-30px_rgba(16,33,58,0.42)] backdrop-blur-sm sm:p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-11 h-11 bg-amber-50 rounded-full flex items-center justify-center shrink-0">
                 <Search className="w-5 h-5 text-slate-800" />
@@ -348,7 +252,7 @@ export function LoginPage() {
           </div>
 
           {/* Card: Đăng nhập */}
-          <div className="bg-white rounded-2xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/60 relative">
+          <div className="relative rounded-2xl border border-white/80 bg-white/95 p-5 shadow-[0_18px_54px_-30px_rgba(16,33,58,0.42)] backdrop-blur-sm sm:p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0">
                 <Lock className="w-4 h-4 text-[#2196F3]" />
@@ -389,10 +293,10 @@ export function LoginPage() {
             </div>
           </div>
         </div>
+        </section>
       </main>
 
       <NationalBrandStory />
-      <OutcomeHighlights />
 
       {/* Compact Footer */}
       <PublicFooter />

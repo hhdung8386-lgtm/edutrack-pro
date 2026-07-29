@@ -14,7 +14,7 @@ export function PublicNav() {
   const location = useLocation()
 
   return (
-    <nav className="shrink-0 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur md:px-12 lg:px-20">
+    <nav className="shrink-0 border-b border-slate-100 bg-white/95 px-5 py-3 backdrop-blur sm:px-8 lg:px-12">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-6">
         <Link to="/login" className="flex min-w-0 items-center">
           <Logo className="h-10 w-auto max-w-[160px] sm:h-11 sm:max-w-[176px]" clickable={false} />

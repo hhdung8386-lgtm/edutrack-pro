@@ -57,27 +57,30 @@ const GROUP_STYLES: Record<
 
 /**
  * Ba chặng năng lực hiển thị thành một hàng ngay phía trên bảng giáo trình.
- * Mỗi chặng trải đúng 3 cột cấp độ (1-3, 4-6, 7-9) để thẳng hàng với L1..L9.
+ * Tỷ lệ cột bám đúng phạm vi cấp độ 1 / 4 / 4 để thẳng hàng với L1..L9.
  */
 const LEVEL_STAGES = [
   {
-    levels: '1-3',
+    levels: '1',
     title: 'Nền tảng',
     note: 'Làm quen, phát âm và phản xạ cơ bản',
+    span: 1,
     surface: 'bg-[#FFF6CF]',
     text: 'text-[#8A5800]',
   },
   {
-    levels: '4-6',
+    levels: '2-5',
     title: 'Thực chiến',
     note: 'Giao tiếp, học thuật và ứng dụng',
+    span: 4,
     surface: 'bg-[#EAF8FD]',
     text: 'text-[#087AA1]',
   },
   {
-    levels: '7-9',
-    title: 'Bứt phá',
+    levels: '6-9',
+    title: 'Chuyên sâu',
     note: 'Diễn đạt chuyên sâu và tự chủ',
+    span: 4,
     surface: 'bg-[#EAF8F2]',
     text: 'text-[#08795A]',
   },
@@ -113,16 +116,17 @@ function LevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudie
 function DesktopMatrix() {
   return (
     <div className="hidden overflow-hidden rounded-[1.75rem] border-2 border-[#FFC107] bg-white shadow-[0_22px_64px_rgba(217,141,0,0.12)] md:block">
-      {/* Hàng ba chặng năng lực — mỗi chặng trải đúng 3 cột cấp độ */}
+      {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng L1..L9 */}
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
         <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
           Lộ trình 9 cấp độ
         </div>
-        <div className="grid grid-cols-3 gap-px bg-amber-200/60">
+        <div className="grid grid-cols-9 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
             <div
               key={stage.title}
               className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
+              style={{ gridColumn: `span ${stage.span}` }}
             >
               <p className={`text-sm font-black ${stage.text}`}>
                 {stage.levels}: {stage.title}
