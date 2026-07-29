@@ -357,6 +357,7 @@
   margin-top: 0.35rem;
   font-size: 1.05rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .national-ecosystem-item small {
@@ -426,8 +427,9 @@
 
 .national-map-pulse {
   fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
+  stroke: #f2b600;
+  stroke-width: 1.35;
+  vector-effect: non-scaling-stroke;
   transform-box: fill-box;
   transform-origin: center;
   animation: national-map-pulse 2.4s ease-out infinite;
@@ -445,6 +447,7 @@
   fill: #ffc107;
   stroke: #fff;
   stroke-width: 1;
+  vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 3px rgb(255 193 7 / 0.58));
   transform-box: fill-box;
   transform-origin: center;
@@ -455,19 +458,29 @@
   color: #249cf2;
 }
 
-.national-map-hub circle:first-child {
-  fill: #fff;
+/* Nét mảnh nối điểm nhấn ngoài khơi về đúng vị trí Việt Nam trên đất liền */
+.national-map-hub-leader {
   stroke: #249cf2;
-  stroke-width: 6;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 3 3;
+  opacity: 0.75;
 }
 
-.national-map-hub circle:nth-child(2) {
+.national-map-hub circle:nth-of-type(1) {
+  fill: #fff;
+  stroke: #249cf2;
+  stroke-width: 3.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.national-map-hub circle:nth-of-type(2) {
   fill: #249cf2;
 }
 
 .national-map-hub text {
   fill: #123a69;
-  font-size: 11px;
+  font-size: 3.9px;
   font-weight: 850;
 }
 
@@ -478,24 +491,26 @@
 
 .national-map-destination > circle:first-child {
   fill: #ffc107;
-  stroke: #fff;
-  stroke-width: 3;
+  stroke: #ffdf79;
+  stroke-width: 1.15;
+  vector-effect: non-scaling-stroke;
 }
 
 .national-map-destination text {
   fill: #123a69;
-  font-size: 11px;
+  /* Khung nhìn bản đồ rộng 270 đơn vị -> cỡ chữ tính theo đơn vị đó */
+  font-size: 3.6px;
   font-weight: 800;
 }
 
 .national-map-destination .national-map-city {
-  font-size: 8.5px;
+  font-size: 2.8px;
   font-weight: 650;
 }
 
 .national-island-label text {
   fill: #123a69;
-  font-size: 9px;
+  font-size: 2.7px;
   font-weight: 850;
 }
 
@@ -824,6 +839,23 @@
 
 }
 
+@media (min-width: 1100px) {
+  .national-ecosystem-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(36rem, 1.15fr);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .national-ecosystem-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .national-ecosystem-feature,
+  .national-ecosystem-feature > img {
+    min-height: 30rem;
+  }
+}
+
 @media (max-width: 767px) {
   .home-banner-hero {
     display: flex;
@@ -870,6 +902,14 @@
     min-height: 25rem;
   }
 
+  .national-ecosystem-item {
+    padding: 1.15rem;
+  }
+
+  .national-ecosystem-item h3 {
+    font-size: clamp(0.9rem, 4.2vw, 1.02rem);
+  }
+
   .national-map-stage {
     margin: 2rem -0.55rem 0;
     padding: 0.15rem;
@@ -877,7 +917,15 @@
   }
 
   .national-map-destination text {
-    font-size: 9.5px;
+    font-size: 5.6px;
+  }
+
+  .national-map-hub text {
+    font-size: 5.8px;
+  }
+
+  .national-island-label text {
+    font-size: 4.4px;
   }
 
   .national-map-destination .national-map-city {
@@ -2091,4 +2139,85 @@
   .aspect-square {
     @apply aspect-square;
   }
+}
+
+/* Điểm đến nằm ngoài khung nhìn châu Á (châu Âu) — liệt kê dưới bản đồ */
+.national-map-outside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 18px;
+  margin-top: 18px;
+  padding: 14px 18px;
+  border: 1px solid rgb(255 193 7 / 0.28);
+  border-radius: 18px;
+  background: rgb(255 251 235 / 0.75);
+}
+
+.national-map-outside-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #9a6b00;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.national-map-outside ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.national-map-outside li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid rgb(255 193 7 / 0.35);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.national-map-outside-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffc107;
+  box-shadow: 0 0 0 4px rgb(255 193 7 / 0.22);
+}
+
+.national-map-outside li strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: #123a69;
+  line-height: 1.2;
+}
+
+.national-map-outside li em {
+  display: block;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  color: #6b7f99;
+}
+
+/* Máy tính: nước châu Á đã có nhãn trên bản đồ nên không lặp lại ở danh sách */
+.national-map-outside li.national-map-outside-asia { display: none; }
+
+@media (max-width: 900px) {
+  /* Bản đồ hẹp -> ẩn nhãn trên bản đồ, chuyển toàn bộ điểm đến xuống danh sách */
+  .national-map-destination text,
+  .national-island-label text { display: none; }
+
+  .national-map-outside li.national-map-outside-asia { display: inline-flex; }
+}
+
+@media (max-width: 640px) {
+  .national-map-outside { gap: 8px 12px; padding: 12px 14px; }
+  .national-map-outside li { padding: 5px 11px; }
 }

@@ -1,5 +1,67 @@
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { db } from './firebase'
+
+export interface TeacherNicknameLibrary {
+  male: string[]
+  female: string[]
+}
+
+// Danh sách mặc định được chủ động rút gọn về những tên thông dụng, dễ đọc và
+// phù hợp khi dùng làm tên giao tiếp của giáo viên. Danh sách mở rộng do admin
+// thêm được lưu riêng để không bị mất khi cập nhật ứng dụng.
+export const DEFAULT_TEACHER_NICKNAMES: TeacherNicknameLibrary = {
+  male: [
+    'Aaron', 'Adam', 'Alex', 'Andrew', 'Andy', 'Anthony', 'Ben', 'Brian', 'Bruce', 'Caleb',
+    'Charlie', 'Chris', 'Daniel', 'David', 'Dylan', 'Edward', 'Ethan', 'Felix', 'Finn', 'George',
+    'Harry', 'Henry', 'Hugo', 'Ian', 'Jack', 'James', 'Jason', 'Jay', 'John', 'Jordan',
+    'Joseph', 'Kevin', 'Leo', 'Liam', 'Lucas', 'Luke', 'Mark', 'Martin', 'Max', 'Michael',
+    'Nathan', 'Neil', 'Nick', 'Noah', 'Oliver', 'Oscar', 'Paul', 'Peter', 'Ryan', 'Sam',
+    'Simon', 'Steven', 'Thomas', 'Tony', 'Victor', 'William', 'Zack',
+  ],
+  female: [
+    'Alice', 'Amanda', 'Amy', 'Anna', 'Bella', 'Caroline', 'Cathy', 'Charlotte', 'Chloe', 'Cindy',
+    'Claire', 'Daisy', 'Diana', 'Ella', 'Ellie', 'Emily', 'Emma', 'Eva', 'Fiona', 'Grace',
+    'Hannah', 'Helen', 'Irene', 'Ivy', 'Jane', 'Jenny', 'Jessica', 'Joanne', 'Julia', 'Kate',
+    'Kelly', 'Laura', 'Lily', 'Linda', 'Lisa', 'Lucy', 'Luna', 'Mary', 'Mia', 'Michelle',
+    'Molly', 'Natalie', 'Nina', 'Olivia', 'Rachel', 'Rose', 'Ruby', 'Sarah', 'Sophie', 'Stella',
+    'Sunny', 'Tina', 'Tracy', 'Victoria', 'Wendy', 'Zoe',
+  ],
+}
+
+const normalizeNicknameList = (value: unknown) => {
+  if (!Array.isArray(value)) return []
+  const unique = new Map<string, string>()
+  value.forEach((item) => {
+    if (typeof item !== 'string') return
+    const cleaned = item.trim().replace(/\s+/g, '')
+    if (!/^[A-Za-z][A-Za-z0-9]{1,19}$/.test(cleaned)) return
+    unique.set(cleaned.toLowerCase(), cleaned.charAt(0).toUpperCase() + cleaned.slice(1))
+  })
+  return Array.from(unique.values())
+}
+
+export async function loadCustomTeacherNicknames(): Promise<TeacherNicknameLibrary> {
+  try {
+    const snapshot = await getDoc(doc(db, 'paymentSettings', 'main'))
+    const library = snapshot.data()?.teacherNicknameLibrary
+    return {
+      male: normalizeNicknameList(library?.male),
+      female: normalizeNicknameList(library?.female),
+    }
+  } catch {
+    return { male: [], female: [] }
+  }
+}
+
+export async function saveCustomTeacherNicknames(library: TeacherNicknameLibrary) {
+  await setDoc(doc(db, 'paymentSettings', 'main'), {
+    teacherNicknameLibrary: {
+      male: normalizeNicknameList(library.male),
+      female: normalizeNicknameList(library.female),
+    },
+    teacherNicknameLibraryUpdatedAt: serverTimestamp(),
+  }, { merge: true })
+}
 
 // 700+ Common Male Names
 const MALE_NAMES: string[] = [
@@ -342,9 +404,17 @@ export function getRandomEnglishName(gender?: 'male' | 'female' | 'unisex'): str
 export async function generateUniqueEnglishName(gender?: 'male' | 'female' | 'unisex'): Promise<string> {
   const maxAttempts = 100
   let attempts = 0
+  const custom = await loadCustomTeacherNicknames()
+  const maleNames = [...custom.male, ...DEFAULT_TEACHER_NICKNAMES.male]
+  const femaleNames = [...custom.female, ...DEFAULT_TEACHER_NICKNAMES.female]
+  const candidates = gender === 'male'
+    ? maleNames
+    : gender === 'female'
+      ? femaleNames
+      : [...maleNames, ...femaleNames]
 
   while (attempts < maxAttempts) {
-    const candidate = getRandomEnglishName(gender)
+    const candidate = candidates[Math.floor(Math.random() * candidates.length)]
 
     // 1. Check in students collection
     const studentSnap = await getDocs(query(collection(db, 'students'), where('code', '==', candidate)))
@@ -365,7 +435,7 @@ export async function generateUniqueEnglishName(gender?: 'male' | 'female' | 'un
 
   // Fallback if somehow there's a collision on all attempts (e.g. 100 attempts all hit existing names)
   // Append a small random 2-digit number
-  const candidate = getRandomEnglishName(gender)
+  const candidate = candidates[Math.floor(Math.random() * candidates.length)]
   const randomSuffix = Math.floor(10 + Math.random() * 90)
   return `${candidate}${randomSuffix}`
 }

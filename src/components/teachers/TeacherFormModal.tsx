@@ -14,7 +14,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { Upload, X, Eye, GraduationCap, MonitorUp, MapPin, TestTube2 } from 'lucide-react'
+import { AlertTriangle, Eye, GraduationCap, Info, MapPin, MonitorUp, RefreshCw, TestTube2, Upload, X } from 'lucide-react'
 import { formatVietnameseNumberInput } from '@/lib/countryPricing'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
@@ -651,16 +651,20 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
                   className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
                   title="Sinh tên ngẫu nhiên theo giới tính"
                 >
-                  🔄 Sinh tên
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Sinh tên
                 </button>
               </div>
               {localErrors.username ? (
                 <p className="text-[10px] text-red-500 mt-1">{localErrors.username}</p>
               ) : (
                 <p className="text-[10px] text-slate-400 mt-1">
-                  {isEdit 
-                    ? '⚠️ Thay đổi tên này sẽ đổi tài khoản đăng nhập của gia sư!'
-                    : 'Gia sư dùng tên này để đăng nhập vào hệ thống.'}
+                  {isEdit ? (
+                    <span className="inline-flex items-center gap-1 text-amber-600">
+                      <AlertTriangle className="h-3 w-3" />
+                      Thay đổi tên này sẽ đổi tài khoản đăng nhập của gia sư.
+                    </span>
+                  ) : 'Gia sư dùng tên này để đăng nhập vào hệ thống.'}
                 </p>
               )}
             </div>
@@ -669,7 +673,8 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           {!isEdit && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-xs text-blue-700 font-medium">
-                ℹ️ <strong>Mật khẩu cố định:</strong> Tất cả gia sư sẽ dùng mật khẩu <strong>1234560</strong>
+                <Info className="mr-1 inline h-3.5 w-3.5" />
+                <strong>Mật khẩu cố định:</strong> Tất cả gia sư sẽ dùng mật khẩu <strong>1234560</strong>
               </p>
             </div>
           )}

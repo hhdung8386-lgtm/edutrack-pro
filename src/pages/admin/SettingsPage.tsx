@@ -12,7 +12,13 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { Settings, Building2, Plus, Pencil, Trash2, MapPin, X, Users } from 'lucide-react'
+import { BookUser, Building2, Check, MapPin, Pencil, Plus, Settings, Trash2, Users, X } from 'lucide-react'
+import {
+  DEFAULT_TEACHER_NICKNAMES,
+  loadCustomTeacherNicknames,
+  saveCustomTeacherNicknames,
+  type TeacherNicknameLibrary,
+} from '@/lib/nameGenerator'
 
 export interface Branch {
   id: string
@@ -24,7 +30,7 @@ export interface Branch {
 
 export function SettingsPage() {
   const { role } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'branch' | 'accounts'>('branch')
+  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames'>('branch')
 
   // Branch states
   const [branches, setBranches] = useState<Branch[]>([])
@@ -50,6 +56,13 @@ export function SettingsPage() {
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [selectedRole, setSelectedRole] = useState<'student_manager' | 'teacher_manager' | 'admin'>('student_manager')
+
+  // Teacher nickname library states
+  const [customNicknames, setCustomNicknames] = useState<TeacherNicknameLibrary>({ male: [], female: [] })
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [nicknameGender, setNicknameGender] = useState<'female' | 'male'>('female')
+  const [loadingNicknames, setLoadingNicknames] = useState(false)
+  const [savingNicknames, setSavingNicknames] = useState(false)
 
   // Load branches
   useEffect(() => {
@@ -86,6 +99,63 @@ export function SettingsPage() {
       }
     )
   }, [activeTab, role])
+
+  useEffect(() => {
+    if (role !== 'admin' || activeTab !== 'nicknames') return
+    setLoadingNicknames(true)
+    loadCustomTeacherNicknames()
+      .then(setCustomNicknames)
+      .finally(() => setLoadingNicknames(false))
+  }, [activeTab, role])
+
+  const saveNicknameChanges = async (next: TeacherNicknameLibrary, successMessage: string) => {
+    setSavingNicknames(true)
+    try {
+      await saveCustomTeacherNicknames(next)
+      setCustomNicknames(next)
+      toast.success(successMessage)
+    } catch (error) {
+      console.error(error)
+      toast.error('Không thể lưu thư viện tên giáo viên')
+    } finally {
+      setSavingNicknames(false)
+    }
+  }
+
+  const addNicknames = async () => {
+    const names = nicknameInput
+      .split(/[\n,;]+/)
+      .map(name => name.trim().replace(/\s+/g, ''))
+      .filter(name => /^[A-Za-z][A-Za-z0-9]{1,19}$/.test(name))
+      .map(name => name.charAt(0).toUpperCase() + name.slice(1))
+    if (!names.length) {
+      toast.error('Nhập ít nhất một tên tiếng Anh hợp lệ')
+      return
+    }
+    const existing = new Set([
+      ...DEFAULT_TEACHER_NICKNAMES[nicknameGender],
+      ...customNicknames[nicknameGender],
+    ].map(name => name.toLowerCase()))
+    const added = names.filter(name => !existing.has(name.toLowerCase()))
+    if (!added.length) {
+      toast.error('Các tên vừa nhập đã có trong thư viện')
+      return
+    }
+    const next = {
+      ...customNicknames,
+      [nicknameGender]: [...customNicknames[nicknameGender], ...added],
+    }
+    await saveNicknameChanges(next, `Đã thêm ${added.length} tên vào thư viện`)
+    setNicknameInput('')
+  }
+
+  const removeCustomNickname = async (gender: 'female' | 'male', nickname: string) => {
+    const next = {
+      ...customNicknames,
+      [gender]: customNicknames[gender].filter(name => name !== nickname),
+    }
+    await saveNicknameChanges(next, `Đã xóa tên ${nickname}`)
+  }
 
   // Branch handlers
   const openAddModal = () => {
@@ -248,6 +318,16 @@ export function SettingsPage() {
             }`}
           >
             Quản lý tài khoản Nhân viên
+          </button>
+          <button
+            onClick={() => setActiveTab('nicknames')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
+              activeTab === 'nicknames'
+                ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Thư viện tên giáo viên
           </button>
         </div>
       )}
@@ -420,6 +500,95 @@ export function SettingsPage() {
                     )}
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {activeTab === 'nicknames' && role === 'admin' && (
+        <Card className="animate-slide-up overflow-hidden">
+          <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <BookUser className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Thư viện tên giao tiếp</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Tên được ưu tiên khi hệ thống tạo tài khoản giáo viên mới.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 text-xs font-bold">
+              <span className="rounded-full bg-rose-50 px-3 py-1.5 text-rose-700">{DEFAULT_TEACHER_NICKNAMES.female.length + customNicknames.female.length} tên nữ</span>
+              <span className="rounded-full bg-sky-50 px-3 py-1.5 text-sky-700">{DEFAULT_TEACHER_NICKNAMES.male.length + customNicknames.male.length} tên nam</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+            <div className="grid gap-3 md:grid-cols-[10rem_1fr_auto] md:items-end">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold uppercase text-slate-500">Nhóm tên</span>
+                <select
+                  value={nicknameGender}
+                  onChange={event => setNicknameGender(event.target.value as 'female' | 'male')}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-amber-400"
+                >
+                  <option value="female">Giáo viên nữ</option>
+                  <option value="male">Giáo viên nam</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold uppercase text-slate-500">Tên muốn bổ sung</span>
+                <input
+                  value={nicknameInput}
+                  onChange={event => setNicknameInput(event.target.value)}
+                  onKeyDown={event => event.key === 'Enter' && (event.preventDefault(), addNicknames())}
+                  placeholder="Ví dụ: Annie, Belle, Sean"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-800 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                />
+              </label>
+              <Button onClick={addNicknames} loading={savingNicknames} className="h-11 bg-amber-400 text-slate-900 hover:bg-amber-500">
+                <Plus className="mr-1 h-4 w-4" /> Thêm vào thư viện
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Có thể nhập nhiều tên, ngăn cách bằng dấu phẩy. Hệ thống tự loại tên trùng và chỉ nhận ký tự tiếng Anh.</p>
+          </div>
+
+          {loadingNicknames ? (
+            <div className="flex justify-center py-12"><div className="h-7 w-7 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" /></div>
+          ) : (
+            <div className="mt-6 grid gap-5 lg:grid-cols-2">
+              {(['female', 'male'] as const).map(group => (
+                <section key={group} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-900">{group === 'female' ? 'Tên giáo viên nữ' : 'Tên giáo viên nam'}</h3>
+                    <span className="text-xs font-semibold text-slate-400">{DEFAULT_TEACHER_NICKNAMES[group].length} mặc định</span>
+                  </div>
+                  <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
+                    {DEFAULT_TEACHER_NICKNAMES[group].map(name => (
+                      <span key={name} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-600">
+                        <Check className="h-3 w-3 text-emerald-500" /> {name}
+                      </span>
+                    ))}
+                    {customNicknames[group].map(name => (
+                      <span key={name} className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+                        {name}
+                        <button
+                          type="button"
+                          onClick={() => removeCustomNickname(group, name)}
+                          disabled={savingNicknames}
+                          className="rounded p-0.5 text-amber-500 hover:bg-amber-100 hover:text-rose-600 disabled:opacity-50"
+                          aria-label={`Xóa tên ${name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  {customNicknames[group].length > 0 && (
+                    <p className="mt-3 text-xs font-semibold text-amber-700">{customNicknames[group].length} tên do admin bổ sung</p>
+                  )}
+                </section>
               ))}
             </div>
           )}
