@@ -197,7 +197,7 @@ export function LoginPage() {
     <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-white">
       <PublicNav />
 
-      <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+      <main className="w-full">
         <section className="home-banner-hero">
           <img
             src="/home-hero-banner-123english.png"

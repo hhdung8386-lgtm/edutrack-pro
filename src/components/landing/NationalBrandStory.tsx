@@ -41,21 +41,20 @@ const ECOSYSTEM_ITEMS = [
 ] as const
 
 const DESTINATIONS = [
-  { name: 'Canada', city: 'Vancouver', x: 95, y: 100, bend: -72 },
-  { name: 'United States', city: 'New York', x: 75, y: 228, bend: -20 },
-  { name: 'Mexico', city: 'Mexico City', x: 85, y: 350, bend: 35 },
-  { name: 'Brazil', city: 'São Paulo', x: 150, y: 495, bend: 78 },
-  { name: 'Argentina', city: 'Buenos Aires', x: 160, y: 606, bend: 120 },
-  { name: 'United Kingdom', city: 'London', x: 525, y: 58, bend: -160 },
-  { name: 'France', city: 'Paris', x: 575, y: 130, bend: -116 },
-  { name: 'Germany', city: 'Frankfurt', x: 700, y: 78, bend: -154 },
-  { name: 'Russia', city: 'Moscow', x: 902, y: 136, bend: -98 },
-  { name: 'Japan', city: 'Tokyo', x: 850, y: 260, bend: -54 },
-  { name: 'South Korea', city: 'Seoul', x: 850, y: 336, bend: -16 },
-  { name: 'China', city: 'Shanghai', x: 820, y: 414, bend: 26 },
-  { name: 'Singapore', city: 'Singapore', x: 785, y: 506, bend: 64 },
-  { name: 'Australia', city: 'Sydney', x: 735, y: 594, bend: 105 },
-  { name: 'New Zealand', city: 'Auckland', x: 890, y: 638, bend: 130 },
+  { name: 'Nhật Bản', city: 'Tokyo', x: 898, y: 222 },
+  { name: 'Hàn Quốc', city: 'Seoul', x: 850, y: 278 },
+  { name: 'Trung Quốc', city: 'Bắc Kinh', x: 794, y: 334 },
+  { name: 'Đài Loan', city: 'Đài Bắc', x: 866, y: 378 },
+  { name: 'Hồng Kông', city: 'Hồng Kông', x: 804, y: 420 },
+  { name: 'Thái Lan', city: 'Bangkok', x: 738, y: 466 },
+  { name: 'Lào', city: 'Viêng Chăn', x: 670, y: 425 },
+  { name: 'Campuchia', city: 'Phnom Penh', x: 684, y: 488 },
+  { name: 'Malaysia', city: 'Kuala Lumpur', x: 770, y: 532 },
+  { name: 'Indonesia', city: 'Jakarta', x: 842, y: 580 },
+  { name: 'Nga', city: 'Moscow', x: 918, y: 105 },
+  { name: 'Pháp', city: 'Paris', x: 615, y: 94 },
+  { name: 'Tây Ban Nha', city: 'Madrid', x: 535, y: 142 },
+  { name: 'Cộng hòa Séc', city: 'Prague', x: 700, y: 78 },
 ] as const
 
 const AWARDS = [
@@ -77,18 +76,90 @@ const AWARDS = [
 ] as const
 
 const BRAND_TIMELINE = [
-  { year: '2011', copy: 'Khởi đầu định hướng học tiếng Anh trực tuyến theo mô hình 1 kèm 1.' },
-  { year: '2013', copy: 'Hoàn thiện mô hình kết nối giáo viên và học viên từ xa.' },
-  { year: '2015', copy: 'Mở rộng giáo trình theo độ tuổi và năng lực đầu vào.' },
-  { year: '2016', copy: 'Chuẩn hóa quy trình theo dõi tiến độ sau từng buổi học.' },
-  { year: '2017', copy: 'Phát triển đội ngũ học vụ đồng hành cùng học viên và gia đình.' },
-  { year: '2018', copy: 'Mở rộng mạng lưới giáo viên Việt Nam và quốc tế.' },
-  { year: '2019', copy: 'Hoàn thiện hệ thống nhận xét và đánh giá năng lực.' },
-  { year: '2020', copy: 'Đẩy mạnh lớp học trực tuyến và giáo trình số.' },
-  { year: '2021', copy: 'Cá nhân hóa lộ trình theo mục tiêu của từng học viên.' },
-  { year: '2022', copy: 'Kết nối lịch học, giáo viên và dữ liệu tiến độ trong một hệ thống.' },
-  { year: '2023', copy: 'Mở rộng chương trình học thuật và luyện thi quốc tế.' },
-  { year: '2026', copy: 'Tiếp tục nâng chuẩn trải nghiệm học tập cùng thương hiệu 123English.' },
+  {
+    year: '2021',
+    era: 'THE BEGINNING',
+    title: 'KHỞI NGUỒN',
+    paragraphs: [
+      '123English chính thức được hình thành với một định hướng rõ ràng:',
+      'Xây dựng một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.',
+      'Từ những bước đầu tiên, 123English bắt đầu đặt nền móng cho một hành trình dài hơn — nơi tiếng Anh không chỉ được học trong sách vở mà được sử dụng như một công cụ để kết nối với thế giới.',
+    ],
+  },
+  {
+    year: '2022',
+    era: 'THE METHOD',
+    title: 'ĐỊNH HÌNH PHƯƠNG PHÁP',
+    paragraphs: [
+      'Sau quá trình nghiên cứu và phát triển, 123 Teaching Method™ được hình thành.',
+      'Một phương pháp học tập được xây dựng trên ba nguyên tắc:',
+    ],
+    points: [
+      'Tập trung vào một trọng tâm.',
+      'Tương tác thông qua trò chơi.',
+      'Thực hành ngay trong lớp học.',
+    ],
+    closing: 'Đây trở thành nền tảng trong cách 123English thiết kế bài học và xây dựng trải nghiệm học tập.',
+  },
+  {
+    year: '2023',
+    era: 'THE ECOSYSTEM',
+    title: 'KIẾN TẠO HỆ SINH THÁI',
+    paragraphs: [
+      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.',
+      'Chương trình học, đội ngũ giáo viên, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.',
+      'Đây là giai đoạn 123English chuyển mình:',
+    ],
+    points: [
+      'Từ một chương trình học',
+      'Trở thành một hệ thống giáo dục.',
+    ],
+  },
+  {
+    year: '2024',
+    era: 'THE MILESTONE',
+    title: 'CỘT MỐC 1.000 HỌC VIÊN',
+    paragraphs: [
+      '123English chạm mốc 1.000 học viên.',
+      'Đằng sau con số đó là 1.000 hành trình học tập khác nhau.',
+    ],
+    points: [
+      '1.000 điểm bắt đầu.',
+      '1.000 mục tiêu.',
+      'Và hàng nghìn giờ học, thực hành và tiến bộ.',
+    ],
+    closing: 'Cột mốc này đánh dấu sự tin tưởng của cộng đồng người học dành cho 123English — đồng thời trở thành động lực để chúng tôi tiếp tục phát triển.',
+  },
+  {
+    year: '2025',
+    era: 'THE EXPANSION',
+    title: 'MỞ RỘNG HỆ THỐNG',
+    paragraphs: [
+      '123English tiếp tục mở rộng quy mô hoạt động và hoàn thiện hệ thống đào tạo.',
+      'Các chương trình học được phát triển theo nhiều nhu cầu khác nhau, từ xây dựng nền tảng đến giao tiếp thực tế và phát triển năng lực tiếng Anh chuyên sâu.',
+      'Đồng thời, hệ thống công nghệ, đội ngũ và quy trình vận hành tiếp tục được đầu tư để tạo ra một trải nghiệm học tập nhất quán và có khả năng mở rộng.',
+    ],
+    points: [
+      'Build better.',
+      'Learn further.',
+      'Grow together.',
+    ],
+  },
+  {
+    year: '2026',
+    era: 'THE WORLD',
+    title: 'KẾT NỐI VỚI THỊ TRƯỜNG QUỐC TẾ',
+    paragraphs: [
+      '123English bắt đầu bước vào giai đoạn phát triển mới.',
+      'Không chỉ xây dựng một hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.',
+    ],
+    points: [
+      'Kết nối người học với giáo viên.',
+      'Kết nối kiến thức với cơ hội.',
+      'Kết nối những con người khác nhau bằng một ngôn ngữ chung.',
+    ],
+    closing: 'Bởi vì hành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Nó bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
+  },
 ] as const
 
 const HOANG_SA_DOTS = [
@@ -121,14 +192,6 @@ const TRUONG_SA_DOTS = [
   [604, 491, 2.5],
 ] as const
 
-function routePath(x: number, y: number, bend: number) {
-  const startX = 508
-  const startY = 374
-  const controlX = (startX + x) / 2
-  const controlY = (startY + y) / 2 + bend
-  return `M ${startX} ${startY} Q ${controlX} ${controlY} ${x} ${y}`
-}
-
 function VietnamGlobalMap() {
   return (
     <div className="national-map-stage" aria-label="Bản đồ Việt Nam kết nối với các điểm đến quốc tế">
@@ -155,17 +218,6 @@ function VietnamGlobalMap() {
             <path key={location.id} d={location.path} />
           ))}
         </g>
-
-        {DESTINATIONS.map((destination, index) => (
-          <path
-            key={`route-${destination.name}`}
-            className="national-map-route"
-            style={{ animationDelay: `${index * 0.18}s` }}
-            d={routePath(destination.x, destination.y, destination.bend)}
-            fill="none"
-            pathLength="1"
-          />
-        ))}
 
         <svg x="344" y="54" width="315" height="510" viewBox={vietnam.viewBox} preserveAspectRatio="xMidYMid meet">
           {vietnam.locations.map((location: { id: string; name: string; path: string }) => {
@@ -195,6 +247,7 @@ function VietnamGlobalMap() {
           <circle cx="508" cy="374" r="20" />
           <circle cx="508" cy="374" r="9" />
           <circle className="national-map-pulse" cx="508" cy="374" r="29" />
+          <text x="508" y="414" textAnchor="middle">Việt Nam</text>
         </g>
 
         {DESTINATIONS.map((destination, index) => {
@@ -215,10 +268,8 @@ function VietnamGlobalMap() {
         })}
 
         <g className="national-island-label">
-          <line x1="592" y1="329" x2="635" y2="306" />
           <text x="643" y="304">QUẦN ĐẢO</text>
           <text x="643" y="321">HOÀNG SA</text>
-          <line x1="598" y1="480" x2="636" y2="510" />
           <text x="644" y="511">QUẦN ĐẢO</text>
           <text x="644" y="528">TRƯỜNG SA</text>
         </g>
@@ -281,11 +332,11 @@ export function NationalBrandStory() {
           <div className="national-heading national-heading-centered">
             <span className="national-kicker">
               <Globe2 className="h-4 w-4" />
-              Từ Việt Nam vươn ra thế giới
+              Kết nối từ Việt Nam
             </span>
-            <h2>Một hành trình học tập mở ra nhiều điểm đến.</h2>
+            <h2>Cộng đồng học viên tại 10+ quốc gia</h2>
             <p>
-              Năng lực ngôn ngữ giúp học viên tự tin kết nối, học tập và làm việc trong môi trường quốc tế.
+              Lan tỏa giá trị giáo dục Việt đến cộng đồng học viên trên khắp thế giới.
             </p>
           </div>
           <VietnamGlobalMap />
@@ -299,9 +350,9 @@ export function NationalBrandStory() {
               <Sparkles className="h-4 w-4" />
               Hành trình phát triển
             </span>
-            <h2>Những cột mốc của 123English.</h2>
+            <h2>MỘT HÀNH TRÌNH.<br />NHIỀU CỘT MỐC.</h2>
             <p>
-              Từng bước hoàn thiện hệ thống học tập, đội ngũ đồng hành và trải nghiệm dành cho mỗi gia đình.
+              Từ một ý tưởng ban đầu đến một hệ thống giáo dục hướng tới thị trường quốc tế.
             </p>
           </div>
 
@@ -315,14 +366,28 @@ export function NationalBrandStory() {
               return (
                 <div className="national-timeline-row" key={`${leftMilestone.year}-${rightMilestone?.year || ''}`}>
                   <article className="national-timeline-item">
-                    <strong>{leftMilestone.year}</strong>
-                    <p>{leftMilestone.copy}</p>
+                    <strong>{leftMilestone.year} — {leftMilestone.era}</strong>
+                    <h3>{leftMilestone.title}</h3>
+                    {leftMilestone.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                    {'points' in leftMilestone && leftMilestone.points && (
+                      <ul>
+                        {leftMilestone.points.map((point) => <li key={point}>{point}</li>)}
+                      </ul>
+                    )}
+                    {'closing' in leftMilestone && leftMilestone.closing && <p>{leftMilestone.closing}</p>}
                   </article>
                   <span className="national-timeline-dot" aria-hidden="true" />
                   {rightMilestone && (
                     <article className="national-timeline-item">
-                      <strong>{rightMilestone.year}</strong>
-                      <p>{rightMilestone.copy}</p>
+                      <strong>{rightMilestone.year} — {rightMilestone.era}</strong>
+                      <h3>{rightMilestone.title}</h3>
+                      {rightMilestone.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                      {'points' in rightMilestone && rightMilestone.points && (
+                        <ul>
+                          {rightMilestone.points.map((point) => <li key={point}>{point}</li>)}
+                        </ul>
+                      )}
+                      {'closing' in rightMilestone && rightMilestone.closing && <p>{rightMilestone.closing}</p>}
                     </article>
                   )}
                 </div>

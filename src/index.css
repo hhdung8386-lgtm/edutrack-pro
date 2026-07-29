@@ -137,13 +137,10 @@
 .home-banner-hero {
   position: relative;
   display: flex;
-  min-height: 40rem;
+  min-height: clamp(38rem, 47.2vw, 48rem);
   align-items: center;
   overflow: hidden;
-  border: 1px solid rgb(221 158 0 / 0.28);
-  border-radius: 2.25rem;
   background: #ffd52f;
-  box-shadow: 0 34px 90px -52px rgb(16 33 58 / 0.48);
   isolation: isolate;
 }
 
@@ -171,7 +168,7 @@
   width: min(100%, 30rem);
   flex-direction: column;
   gap: 1rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
+  margin-left: max(1.25rem, calc((100vw - 80rem) / 2 + 3rem));
 }
 
 .national-section {
@@ -404,15 +401,6 @@
   filter: saturate(1.08);
 }
 
-.national-map-route {
-  stroke: #21aaf2;
-  stroke-width: 1.55;
-  stroke-linecap: round;
-  stroke-dasharray: 0.1 0.035;
-  opacity: 0.82;
-  animation: national-route-flight 5.8s linear infinite;
-}
-
 .national-map-pulse {
   fill: none;
   stroke: currentColor;
@@ -454,6 +442,12 @@
   fill: #249cf2;
 }
 
+.national-map-hub text {
+  fill: #123a69;
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .national-map-destination {
   color: #ffc107;
   animation: national-destination-arrive 700ms both;
@@ -474,11 +468,6 @@
 .national-map-destination .national-map-city {
   font-size: 8.5px;
   font-weight: 650;
-}
-
-.national-island-label line {
-  stroke: #168ce2;
-  stroke-width: 1.2;
 }
 
 .national-island-label text {
@@ -533,7 +522,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 3.5rem minmax(0, 1fr);
   gap: 0;
-  align-items: center;
+  align-items: stretch;
   margin-top: 1.25rem;
 }
 
@@ -555,16 +544,37 @@
 
 .national-timeline-item strong {
   color: #0d8fc7;
-  font-size: 1.05rem;
+  font-size: 0.82rem;
   font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.national-timeline-item h3 {
+  margin-top: 0.55rem;
+  color: #10213a;
+  font-size: 1.08rem;
+  font-weight: 850;
+  line-height: 1.35;
 }
 
 .national-timeline-item p {
-  margin-top: 0.45rem;
+  margin-top: 0.65rem;
   color: #607187;
   font-size: 0.9rem;
   font-weight: 550;
   line-height: 1.65;
+}
+
+.national-timeline-item ul {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+  padding-left: 1.15rem;
+  color: #263e5b;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.55;
+  list-style: disc;
 }
 
 .national-timeline-dot {
@@ -573,7 +583,9 @@
   grid-column: 2;
   width: 0.85rem;
   height: 0.85rem;
+  align-self: start;
   justify-self: center;
+  margin-top: 2rem;
   border: 3px solid #fff;
   border-radius: 50%;
   background: #20b3e5;
@@ -675,15 +687,6 @@
   background: #ffb300;
 }
 
-@keyframes national-route-flight {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
 @keyframes national-map-pulse {
   0% {
     opacity: 0.9;
@@ -738,7 +741,6 @@
     min-height: 0;
     flex-direction: column;
     align-items: stretch;
-    border-radius: 1.6rem;
     background: #fff9dc;
   }
 
@@ -757,6 +759,7 @@
   .home-banner-panel {
     width: 100%;
     max-width: none;
+    margin-left: 0;
     padding: 1rem;
   }
 
@@ -846,6 +849,7 @@
     position: absolute;
     top: 1.5rem;
     left: -1.85rem;
+    margin-top: 0;
   }
 
   .national-timeline-item {
@@ -855,7 +859,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .national-map-route,
   .national-map-pulse,
   .national-map-island,
   .national-island-cluster circle,
