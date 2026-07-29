@@ -9,10 +9,113 @@ import { db } from '@/lib/firebase'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import type { SitePost } from '@/lib/siteContent'
-import { ArrowLeft, ArrowRight, CalendarDays, Newspaper } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Newspaper, Sparkles } from 'lucide-react'
+
+const timestamp = (date: string) => ({ toMillis: () => new Date(`${date}T08:00:00+07:00`).getTime() })
+
+const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
+  {
+    id: 'brand-award-2026',
+    slug: 'dau-an-thuong-hieu-giao-duc-2026',
+    title: 'Dấu ấn 123English trong hành trình xây dựng thương hiệu giáo dục',
+    excerpt:
+      'Những hình ảnh tại chương trình vinh danh năm 2026 ghi lại một cột mốc đáng nhớ trên hành trình phát triển của 123English.',
+    body:
+      'Mỗi sự ghi nhận là một dịp để 123English nhìn lại chặng đường đã đi qua và tiếp tục hoàn thiện trải nghiệm học tập.\n\nVới 123English, thành tựu không chỉ nằm ở hình ảnh trên sân khấu. Thành tựu còn là khi một học viên dám nói câu tiếng Anh đầu tiên, tự tin giao tiếp hơn, vượt qua nỗi sợ mắc lỗi và mở ra một cơ hội mới cho bản thân.\n\nCột mốc năm 2026 tiếp thêm động lực để đội ngũ tiếp tục đầu tư vào phương pháp giảng dạy, chất lượng giáo viên, công nghệ theo dõi tiến độ và sự đồng hành cùng từng gia đình.',
+    coverImage: '/brand-national-award-2026.jpg',
+    category: 'Dấu ấn 2026',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2026-07-25'),
+  },
+  {
+    id: 'the-world-2026',
+    slug: '2026-ket-noi-voi-thi-truong-quoc-te',
+    title: '2026 | Kết nối với thị trường quốc tế',
+    excerpt:
+      '123English bước vào giai đoạn phát triển mới, kết nối người học với giáo viên, kiến thức và cơ hội.',
+    body:
+      '123English bắt đầu bước vào một giai đoạn phát triển mới.\n\nKhông chỉ xây dựng hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.\n\nKết nối người học với giáo viên.\nKết nối kiến thức với cơ hội.\nKết nối những con người khác nhau bằng một ngôn ngữ chung.\n\nHành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Hành trình ấy thực sự bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
+    coverImage: '/brand-award-recipient-2026.jpg',
+    category: 'Hành trình phát triển',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2026-01-12'),
+  },
+  {
+    id: 'expansion-2025',
+    slug: '2025-mo-rong-he-thong',
+    title: '2025 | Mở rộng hệ thống',
+    excerpt:
+      'Chương trình, công nghệ, đội ngũ và quy trình vận hành được đầu tư để tạo ra trải nghiệm học tập nhất quán.',
+    body:
+      '123English tiếp tục mở rộng quy mô hoạt động và hoàn thiện hệ thống đào tạo.\n\nCác chương trình học được phát triển theo nhiều nhu cầu, từ xây dựng nền tảng đến giao tiếp thực tế và phát triển năng lực tiếng Anh chuyên sâu.\n\nCùng với đó, công nghệ, đội ngũ và quy trình vận hành tiếp tục được đầu tư để tạo ra một trải nghiệm học tập nhất quán và có khả năng mở rộng.\n\nBuild better.\nLearn further.\nGrow together.',
+    coverImage: '/home-quality-review-2026.png',
+    category: 'Hành trình phát triển',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2025-08-18'),
+  },
+  {
+    id: 'milestone-2024',
+    slug: '2024-cot-moc-1000-hoc-vien',
+    title: '2024 | Cột mốc 1.000 học viên',
+    excerpt:
+      'Đằng sau con số 1.000 là 1.000 điểm bắt đầu, 1.000 mục tiêu và hàng nghìn giờ học tập.',
+    body:
+      '123English chạm mốc 1.000 học viên.\n\nĐằng sau con số đó là 1.000 hành trình học tập khác nhau.\n\n1.000 điểm bắt đầu.\n1.000 mục tiêu.\nVà hàng nghìn giờ học, thực hành và tiến bộ.\n\nCột mốc này đánh dấu sự tin tưởng của cộng đồng người học dành cho 123English, đồng thời trở thành động lực để đội ngũ tiếp tục phát triển.',
+    coverImage: '/home-teacher-student-2026.png',
+    category: 'Hành trình phát triển',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2024-09-05'),
+  },
+  {
+    id: 'ecosystem-2023',
+    slug: '2023-kien-tao-he-sinh-thai',
+    title: '2023 | Kiến tạo hệ sinh thái',
+    excerpt:
+      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện.',
+    body:
+      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.\n\nChương trình học, đội ngũ giáo viên, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.\n\nĐây là giai đoạn 123English chuyển mình: từ một chương trình học trở thành một hệ thống giáo dục.',
+    coverImage: '/home-international-team-2026.png',
+    category: 'Hành trình phát triển',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2023-06-21'),
+  },
+  {
+    id: 'method-2022',
+    slug: '2022-dinh-hinh-phuong-phap',
+    title: '2022 | Định hình phương pháp',
+    excerpt:
+      '123 Teaching Method™ được xây dựng trên ba nguyên tắc: tập trung, tương tác và thực hành.',
+    body:
+      'Sau quá trình nghiên cứu và phát triển, 123 Teaching Method™ được hình thành.\n\nPhương pháp học tập được xây dựng trên ba nguyên tắc:\n\nTập trung vào một trọng tâm.\nTương tác thông qua trò chơi.\nThực hành ngay trong lớp học.\n\nĐây trở thành nền tảng trong cách 123English thiết kế bài học và xây dựng trải nghiệm học tập.',
+    coverImage: '/brand-online-class-2026.jpg',
+    category: 'Phương pháp',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2022-05-10'),
+  },
+  {
+    id: 'beginning-2021',
+    slug: '2021-khoi-nguon',
+    title: '2021 | Khởi nguồn',
+    excerpt:
+      'Một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm bắt đầu được hình thành.',
+    body:
+      '123English chính thức được hình thành với một định hướng rõ ràng:\n\nXây dựng một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.\n\nTừ những bước đầu tiên, 123English bắt đầu đặt nền móng cho một hành trình dài hơn, nơi tiếng Anh không chỉ được học trong sách vở mà được sử dụng như một công cụ để kết nối với thế giới.',
+    coverImage: '/brand-online-class-2026.jpg',
+    category: 'Khởi nguồn',
+    author: '123English',
+    published: true,
+    createdAt: timestamp('2021-03-15'),
+  },
+]
 
 function usePublishedPosts() {
-  const [posts, setPosts] = useState<SitePost[]>([])
+  const [posts, setPosts] = useState<SitePost[]>(DEFAULT_EDITORIAL_POSTS)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -25,12 +128,13 @@ function usePublishedPosts() {
           const bv = (b.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() || 0
           return bv - av
         })
-        setPosts(list)
+        const remoteSlugs = new Set(list.map((post) => post.slug))
+        setPosts([...list, ...DEFAULT_EDITORIAL_POSTS.filter((post) => !remoteSlugs.has(post.slug))])
         setLoading(false)
       },
       (err) => {
         console.warn('[posts] không đọc được:', err?.message)
-        setPosts([])
+        setPosts(DEFAULT_EDITORIAL_POSTS)
         setLoading(false)
       }
     )
@@ -55,15 +159,20 @@ export function BaiVietPage() {
       <PublicNav />
 
       <main className="flex-1">
-        {/* Tiêu đề trang */}
-        <section className="px-5 pb-6 pt-12 sm:px-8 lg:px-12 lg:pt-16">
-          <div className="mx-auto w-full max-w-7xl">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">Góc chia sẻ 123English</p>
-            <h1 className="mt-3 max-w-3xl text-3xl font-extrabold leading-[1.12] tracking-tight text-[#10213A] sm:text-4xl lg:text-5xl">
-              Bài viết &amp; kinh nghiệm học tiếng Anh
-            </h1>
-            <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-slate-600">
-              Phương pháp học, lộ trình và câu chuyện thật từ học viên — được đội ngũ 123English tổng hợp.
+        <section className="px-5 pb-8 pt-12 sm:px-8 lg:px-12 lg:pb-12 lg:pt-20">
+          <div className="mx-auto grid w-full max-w-7xl gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-end">
+            <div>
+              <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
+                <Sparkles className="h-4 w-4" />
+                Góc chia sẻ 123English
+              </p>
+              <h1 className="mt-4 max-w-3xl text-[clamp(2.7rem,5.4vw,5.2rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
+                Một hành trình.<br />
+                Nhiều câu chuyện đáng nhớ.
+              </h1>
+            </div>
+            <p className="max-w-xl border-l-4 border-[#FFC107] pl-5 text-base font-semibold leading-8 text-slate-600">
+              Từ khởi nguồn, phương pháp đến những cột mốc phát triển, mỗi bài viết lưu lại một phần hành trình của 123English và cộng đồng người học.
             </p>
           </div>
         </section>

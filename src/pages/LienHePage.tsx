@@ -1,171 +1,205 @@
 import { useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Clock3,
+  Globe2,
+  MessageCircle,
+  Phone,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
+import { PublicFooter } from '@/components/layout/PublicFooter'
 import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
 
-export function LienHePage() {
-  const [form, setForm] = useState({ name: '', phone: '', email: '', subject: '', message: '' })
-  const onChange = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setForm(prev => ({ ...prev, [k]: e.target.value }))
+const ZALO_URL = 'https://zalo.me/0906966691'
+const PHONE_URL = 'tel:0906966691'
 
-  // Khối nội dung do admin cấu hình. Trang này vốn thiết kế gọn trong một màn hình
-  // (không cuộn); chỉ khi admin BẬT khối mới chuyển sang layout cho phép cuộn,
-  // nhờ vậy giao diện hiện tại giữ nguyên khi chưa dùng CMS.
+export function LienHePage() {
+  const [form, setForm] = useState({ name: '', phone: '', subject: '', message: '' })
   const { content: siteContent } = useSiteContent('contact')
   const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
   const extraBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
-  const hasExtraBlocks = extraBlocks.some((block) => block.enabled)
+
+  const onChange =
+    (key: keyof typeof form) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm((current) => ({ ...current, [key]: event.target.value }))
+
+  const openZalo = (event: React.FormEvent) => {
+    event.preventDefault()
+    window.open(ZALO_URL, '_blank', 'noopener,noreferrer')
+  }
 
   return (
-    <div className={`flex flex-col font-sans ${hasExtraBlocks ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
+    <div className="flex min-h-screen flex-col bg-white font-sans text-[#10213A]">
       <PublicNav />
 
-      {/* HERO */}
-      <section className="grid grid-cols-1 lg:grid-cols-[46%_54%] flex-[0_0_36%] min-h-0 bg-[#FFFBF0]">
-        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 gap-2.5 min-w-0">
-          <div className="max-w-[560px]">
-            <div className="text-[12px] font-bold text-[#D98D00] tracking-wide mb-2">
-              {primaryHero?.eyebrow || 'Liên hệ với chúng tôi'}
-            </div>
-            <h1 className="text-[clamp(20px,2.4vw,34px)] font-extrabold leading-[1.15] text-slate-900">
-              {primaryHero?.title || 'Chúng tôi luôn sẵn sàng đồng hành cùng bạn'}
-            </h1>
-            <p className="text-[clamp(11.5px,0.9vw,13.5px)] text-slate-600 leading-relaxed mt-3">
-              {primaryHero?.subtitle ||
-                'Nếu bạn có câu hỏi hoặc cần tư vấn chương trình học, đội ngũ 123English luôn sẵn lòng hỗ trợ nhanh chóng và tận tâm.'}
-            </p>
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div>
-                <div className="text-[12px] font-bold text-slate-900">Tư vấn tận tâm</div>
-                <div className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">Đội ngũ tư vấn viên chuyên nghiệp</div>
-              </div>
-              <div>
-                <div className="text-[12px] font-bold text-slate-900">Hỗ trợ nhanh chóng</div>
-                <div className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">Phản hồi trong vòng 24 giờ</div>
-              </div>
-              <div>
-                <div className="text-[12px] font-bold text-slate-900">Bảo mật thông tin</div>
-                <div className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">Cam kết bảo mật tuyệt đối</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-hidden h-full bg-[#FFFBF0] flex items-center justify-center">
-          <img
-            src={primaryHero?.image || '/lienhe.png'}
-            alt="Liên hệ"
-            className="w-full h-full object-contain object-center block"
-          />
-        </div>
-      </section>
-
-      {/* CONTENT */}
-      <section className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[38%_62%] overflow-hidden">
-        {/* LEFT - info */}
-        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 py-3 gap-2.5 border-r border-slate-100 min-w-0 overflow-hidden">
-          <h2 className="text-[clamp(14px,1.25vw,17px)] font-extrabold text-slate-900">Thông tin liên hệ</h2>
-
-          <div className="space-y-2">
-            <div>
-              <div className="text-[10.5px] text-slate-500 font-medium">Hotline</div>
-              <div className="text-[14px] font-bold text-[#FFC107] leading-tight">090.696.6691</div>
-              <div className="text-[10.5px] text-slate-500 leading-tight">Thứ 2 - Chủ nhật: 8:00 - 21:00</div>
-            </div>
-            <div>
-              <div className="text-[10.5px] text-slate-500 font-medium">Email</div>
-              <div className="text-[12.5px] font-bold text-slate-900 leading-tight">support@123english.vn</div>
-              <div className="text-[10.5px] text-slate-500 leading-tight">Phản hồi trong vòng 24 giờ</div>
-            </div>
-            <div>
-              <div className="text-[10.5px] text-slate-500 font-medium">Địa chỉ</div>
-              <div className="text-[12px] font-bold text-slate-900 leading-snug">123 Đường số 1, Khu đô thị Sala</div>
-              <div className="text-[10.5px] text-slate-500 leading-tight">Phường An Lợi Đông, TP. Thủ Đức, TP. HCM</div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div>
-                <div className="text-[10.5px] text-slate-500 font-medium">Facebook</div>
-                <div className="text-[11.5px] font-bold text-slate-900 truncate">facebook.com/123english.vn</div>
-              </div>
-              <div>
-                <div className="text-[10.5px] text-slate-500 font-medium">Website</div>
-                <div className="text-[11.5px] font-bold text-slate-900 truncate">www.123english.vn</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT - form */}
-        <div className="flex flex-col justify-center px-5 sm:px-8 lg:px-12 py-3 gap-2.5 min-w-0 overflow-hidden">
-          <h2 className="text-[clamp(14px,1.25vw,17px)] font-extrabold text-slate-900">Gửi tin nhắn cho chúng tôi</h2>
-
-          <form
-            onSubmit={(e) => { e.preventDefault(); alert('Cảm ơn bạn đã gửi tin nhắn!') }}
-            className="grid grid-cols-2 gap-2.5"
-          >
-            <input
-              required value={form.name} onChange={onChange('name')}
-              placeholder="Họ và tên của bạn *"
-              className="col-span-1 px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-[#FFC107] placeholder-slate-400"
-            />
-            <input
-              required value={form.phone} onChange={onChange('phone')}
-              placeholder="Số điện thoại *"
-              className="col-span-1 px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-[#FFC107] placeholder-slate-400"
-            />
-            <input
-              type="email" value={form.email} onChange={onChange('email')}
-              placeholder="Email của bạn"
-              className="col-span-2 px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-[#FFC107] placeholder-slate-400"
-            />
-            <select
-              value={form.subject} onChange={onChange('subject')}
-              className="col-span-2 px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-[#FFC107] text-slate-700 bg-white"
-            >
-              <option value="">Chọn chủ đề</option>
-              <option>Tư vấn chương trình học</option>
-              <option>Học phí & ưu đãi</option>
-              <option>Lịch học & thời gian</option>
-              <option>Phản hồi & khiếu nại</option>
-              <option>Khác</option>
-            </select>
-            <textarea
-              value={form.message} onChange={onChange('message')}
-              placeholder="Nội dung tin nhắn của bạn..."
-              rows={2}
-              className="col-span-2 px-3.5 py-2.5 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:border-[#FFC107] placeholder-slate-400 resize-none"
-            />
-            <div className="col-span-2 flex items-center gap-4">
-              <button
-                type="submit"
-                className="px-7 py-2.5 bg-[#FFC107] hover:bg-[#FFB300] text-slate-900 font-bold text-[13px] rounded-lg transition-colors whitespace-nowrap"
-              >
-                Gửi tin nhắn
-              </button>
-              <p className="text-[11px] text-slate-500 leading-snug">
-                Thông tin của bạn được bảo mật và chỉ sử dụng để hỗ trợ.
+      <main className="flex-1">
+        <section className="overflow-hidden border-b border-[#F3E5AE] bg-white px-5 py-12 sm:px-8 lg:px-12 lg:py-20">
+          <div className="mx-auto grid w-full max-w-7xl items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="max-w-xl">
+              <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#9B6C00]">
+                <Sparkles className="h-4 w-4" />
+                {primaryHero?.eyebrow || 'Liên hệ 123English'}
+              </span>
+              <h1 className="mt-5 text-[clamp(2.6rem,5.4vw,5rem)] font-black leading-[0.98] tracking-[-0.055em]">
+                {primaryHero?.title || 'Bắt đầu bằng một cuộc trò chuyện rõ ràng.'}
+              </h1>
+              <p className="mt-6 max-w-lg text-base font-semibold leading-8 text-slate-600">
+                {primaryHero?.subtitle ||
+                  'Chia sẻ mục tiêu học tập, đội ngũ 123English sẽ cùng bạn xác định lộ trình phù hợp và bước tiếp theo cần thiết.'}
               </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <a
+                  href={ZALO_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#FFC107] px-5 text-sm font-black text-[#10213A] shadow-[0_16px_36px_-20px_rgba(255,193,7,0.85)] transition hover:-translate-y-0.5 hover:bg-[#FFB300]"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Tư vấn qua Zalo
+                  <ArrowUpRight className="h-4 w-4" />
+                </a>
+                <a
+                  href={PHONE_URL}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black transition hover:-translate-y-0.5 hover:border-[#20B3E5]"
+                >
+                  <Phone className="h-4 w-4 text-[#0D8FC7]" />
+                  090.696.6691
+                </a>
+              </div>
             </div>
-          </form>
-        </div>
-      </section>
 
-      <SiteBlocks blocks={extraBlocks} />
+            <div className="relative">
+              <div className="absolute -left-5 -top-5 h-28 w-28 rounded-[2rem] bg-[#FFF1B6]" aria-hidden="true" />
+              <img
+                src={primaryHero?.image || '/lienhe.png'}
+                alt="Đội ngũ tư vấn 123English"
+                className="relative aspect-[16/10] w-full rounded-[2.25rem] object-cover shadow-[0_32px_80px_-42px_rgba(16,33,58,0.5)]"
+              />
+            </div>
+          </div>
+        </section>
 
-      {/* FOOTER — match LoginPage style */}
-      <footer className="border-t border-slate-200 bg-white py-3 shrink-0">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-            © 2026 Hộ kinh doanh Gia Sư Toàn Năng
+        <section className="px-5 py-14 sm:px-8 lg:px-12 lg:py-20">
+          <div className="mx-auto grid w-full max-w-7xl gap-8 lg:grid-cols-[0.72fr_1.28fr]">
+            <aside className="rounded-[2rem] bg-[#10213A] p-6 text-white sm:p-8">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#FFD344]">Kết nối trực tiếp</p>
+              <h2 className="mt-4 text-2xl font-black leading-tight">Chọn kênh thuận tiện nhất cho bạn.</h2>
+              <div className="mt-8 grid gap-7">
+                <div className="flex gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#FFD344]">
+                    <Phone className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-black">Hotline tư vấn</p>
+                    <a href={PHONE_URL} className="mt-1 block text-lg font-black text-[#FFD344]">090.696.6691</a>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#68D5F2]">
+                    <Clock3 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-black">Thời gian hỗ trợ</p>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-300">Thứ 2 đến Chủ nhật<br />08:00 - 21:00</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#64E1BC]">
+                    <Globe2 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-black">Kênh chính thức</p>
+                    <a
+                      href="https://www.123english.edu.vn"
+                      className="mt-1 block text-sm font-semibold text-slate-300 hover:text-white"
+                    >
+                      www.123english.edu.vn
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 flex items-start gap-3 border-t border-white/10 pt-6 text-xs font-semibold leading-5 text-slate-300">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#64E1BC]" />
+                Thông tin chỉ được sử dụng để đội ngũ 123English hỗ trợ nhu cầu tư vấn của bạn.
+              </div>
+            </aside>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_28px_70px_-52px_rgba(16,33,58,0.5)] sm:p-8 lg:p-10">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#0D8FC7]">Yêu cầu tư vấn</span>
+              <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] sm:text-3xl">Bạn đang hướng đến mục tiêu nào?</h2>
+              <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
+                Điền thông tin cơ bản, sau đó hệ thống sẽ mở kênh Zalo chính thức để bạn trao đổi trực tiếp.
+              </p>
+
+              <form onSubmit={openZalo} className="mt-7 grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-bold">
+                  Họ và tên
+                  <input
+                    required
+                    value={form.name}
+                    onChange={onChange('name')}
+                    placeholder="Nguyễn Minh Anh"
+                    className="min-h-12 rounded-2xl border border-slate-200 px-4 font-semibold outline-none transition placeholder:text-slate-300 focus:border-[#20B3E5] focus:ring-4 focus:ring-[#20B3E5]/10"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-bold">
+                  Số điện thoại
+                  <input
+                    required
+                    inputMode="tel"
+                    value={form.phone}
+                    onChange={onChange('phone')}
+                    placeholder="090 000 0000"
+                    className="min-h-12 rounded-2xl border border-slate-200 px-4 font-semibold outline-none transition placeholder:text-slate-300 focus:border-[#20B3E5] focus:ring-4 focus:ring-[#20B3E5]/10"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-bold sm:col-span-2">
+                  Nội dung cần tư vấn
+                  <select
+                    required
+                    value={form.subject}
+                    onChange={onChange('subject')}
+                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 font-semibold outline-none transition focus:border-[#20B3E5] focus:ring-4 focus:ring-[#20B3E5]/10"
+                  >
+                    <option value="">Chọn mục tiêu</option>
+                    <option>Tư vấn lộ trình tiếng Anh</option>
+                    <option>Chương trình dành cho trẻ em</option>
+                    <option>IELTS và chứng chỉ quốc tế</option>
+                    <option>Đào tạo cho doanh nghiệp</option>
+                    <option>Hỗ trợ tài khoản và lớp học</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-bold sm:col-span-2">
+                  Chia sẻ thêm
+                  <textarea
+                    value={form.message}
+                    onChange={onChange('message')}
+                    placeholder="Mục tiêu, độ tuổi hoặc thời gian bạn muốn được liên hệ..."
+                    rows={4}
+                    className="resize-none rounded-2xl border border-slate-200 px-4 py-3 font-semibold leading-6 outline-none transition placeholder:text-slate-300 focus:border-[#20B3E5] focus:ring-4 focus:ring-[#20B3E5]/10"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:bg-[#FFB300] sm:col-span-2 sm:w-fit"
+                >
+                  Tiếp tục trao đổi qua Zalo
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+              </form>
+            </div>
           </div>
-          <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-500 font-medium">
-            <span className="hover:text-slate-800 cursor-pointer transition-colors">Chính sách bảo mật</span>
-            <span className="hover:text-slate-800 cursor-pointer transition-colors">Điều khoản sử dụng</span>
-            <a href="https://facebook.com/123englishinvietnam" target="_blank" rel="noopener noreferrer" className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-white cursor-pointer hover:bg-black transition-colors font-bold text-[9px]">f</a>
-          </div>
-        </div>
-      </footer>
+        </section>
+
+        <SiteBlocks blocks={extraBlocks} />
+      </main>
+
+      <PublicFooter />
     </div>
   )
 }

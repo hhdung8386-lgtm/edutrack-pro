@@ -3,59 +3,89 @@ import world from '@svg-maps/world'
 import {
   ArrowUpRight,
   Award,
+  BadgeCheck,
   BookOpenCheck,
+  BriefcaseBusiness,
+  Cpu,
   Globe2,
-  Headphones,
-  MessageCircleMore,
+  GraduationCap,
+  Network,
   ShieldCheck,
   Sparkles,
-  UsersRound,
 } from 'lucide-react'
 import { Logo } from '@/components/shared/Logo'
 
 const ECOSYSTEM_ITEMS = [
   {
-    Icon: Headphones,
-    title: 'Lớp học trực tuyến 1 kèm 1',
-    copy: 'Mỗi buổi học tập trung vào đúng năng lực và mục tiêu cần cải thiện.',
+    Icon: BookOpenCheck,
+    eyebrow: '123 TEACHING METHOD™',
+    title: 'Phương pháp giảng dạy độc quyền 3 bước.',
+    copy: 'Tập trung một trọng tâm, tương tác qua hoạt động và thực hành ngay trong lớp.',
     tone: 'blue',
   },
   {
-    Icon: BookOpenCheck,
-    title: 'Giáo trình theo từng chặng',
-    copy: 'Lộ trình rõ ràng từ nền tảng, thực chiến đến chuyên sâu.',
+    Icon: Network,
+    eyebrow: '123 LEARNING PATH',
+    title: 'Lộ trình học tập 9 cấp độ',
+    copy: 'Nền tảng • Thực chiến • Bứt phá',
     tone: 'yellow',
   },
   {
-    Icon: MessageCircleMore,
-    title: 'Nhận xét sau từng buổi',
-    copy: 'Phụ huynh theo dõi được nội dung học, phản hồi và tiến bộ của học viên.',
+    Icon: GraduationCap,
+    eyebrow: '123 TEACHERS',
+    title: 'Đội ngũ giáo viên đạt chuẩn',
+    copy: '60+ giờ đào tạo nội bộ • Trình độ từ B2+',
     tone: 'mint',
   },
   {
-    Icon: UsersRound,
-    title: 'Đồng hành cùng gia đình',
-    copy: 'Học vụ, giáo viên và phụ huynh cùng kết nối trong một hành trình thống nhất.',
+    Icon: Cpu,
+    eyebrow: '123 LEARNING TECHNOLOGY',
+    title: 'Công nghệ hỗ trợ học tập',
+    copy: 'Theo dõi tiến độ • Cá nhân hóa trải nghiệm',
     tone: 'rose',
+  },
+  {
+    Icon: BadgeCheck,
+    eyebrow: '123 QUALITY VERIFICATION',
+    title: 'Kiểm định chất lượng học tập',
+    copy: 'Theo dõi, phản hồi và cải thiện chất lượng qua từng buổi học.',
+    tone: 'blue',
+  },
+  {
+    Icon: BriefcaseBusiness,
+    eyebrow: '123 BUSINESS SOLUTIONS',
+    title: 'Đào tạo cho doanh nghiệp',
+    copy: 'Chương trình được thiết kế theo nhu cầu thực tế của từng tổ chức.',
+    tone: 'yellow',
   },
 ] as const
 
+const MAP_WIDTH = 1010
+const MAP_HEIGHT = 666
+
+function projectCoordinates(latitude: number, longitude: number) {
+  return {
+    x: ((longitude + 180) / 360) * MAP_WIDTH,
+    y: ((90 - latitude) / 180) * MAP_HEIGHT,
+  }
+}
+
 const DESTINATIONS = [
-  { name: 'Nhật Bản', city: 'Tokyo', x: 898, y: 222 },
-  { name: 'Hàn Quốc', city: 'Seoul', x: 850, y: 278 },
-  { name: 'Trung Quốc', city: 'Bắc Kinh', x: 794, y: 334 },
-  { name: 'Đài Loan', city: 'Đài Bắc', x: 866, y: 378 },
-  { name: 'Hồng Kông', city: 'Hồng Kông', x: 804, y: 420 },
-  { name: 'Thái Lan', city: 'Bangkok', x: 738, y: 466 },
-  { name: 'Lào', city: 'Viêng Chăn', x: 670, y: 425 },
-  { name: 'Campuchia', city: 'Phnom Penh', x: 684, y: 488 },
-  { name: 'Malaysia', city: 'Kuala Lumpur', x: 770, y: 532 },
-  { name: 'Indonesia', city: 'Jakarta', x: 842, y: 580 },
-  { name: 'Nga', city: 'Moscow', x: 918, y: 105 },
-  { name: 'Pháp', city: 'Paris', x: 615, y: 94 },
-  { name: 'Tây Ban Nha', city: 'Madrid', x: 535, y: 142 },
-  { name: 'Cộng hòa Séc', city: 'Prague', x: 700, y: 78 },
-] as const
+  { name: 'Nhật Bản', city: 'Tokyo', latitude: 35.6762, longitude: 139.6503, labelDx: -18, labelDy: -10, anchor: 'end' },
+  { name: 'Hàn Quốc', city: 'Seoul', latitude: 37.5665, longitude: 126.978, labelDx: -18, labelDy: 12, anchor: 'end' },
+  { name: 'Trung Quốc', city: 'Bắc Kinh', latitude: 39.9042, longitude: 116.4074, labelDx: -18, labelDy: -12, anchor: 'end' },
+  { name: 'Đài Loan', city: 'Đài Bắc', latitude: 25.033, longitude: 121.5654, labelDx: 18, labelDy: -8, anchor: 'start' },
+  { name: 'Hồng Kông', city: 'Hồng Kông', latitude: 22.3193, longitude: 114.1694, labelDx: -18, labelDy: 18, anchor: 'end' },
+  { name: 'Thái Lan', city: 'Bangkok', latitude: 13.7563, longitude: 100.5018, labelDx: 18, labelDy: 20, anchor: 'start' },
+  { name: 'Lào', city: 'Viêng Chăn', latitude: 17.9757, longitude: 102.6331, labelDx: -18, labelDy: -15, anchor: 'end' },
+  { name: 'Campuchia', city: 'Phnom Penh', latitude: 11.5564, longitude: 104.9282, labelDx: -18, labelDy: 26, anchor: 'end' },
+  { name: 'Malaysia', city: 'Kuala Lumpur', latitude: 3.139, longitude: 101.6869, labelDx: 18, labelDy: 12, anchor: 'start' },
+  { name: 'Indonesia', city: 'Jakarta', latitude: -6.2088, longitude: 106.8456, labelDx: 18, labelDy: 20, anchor: 'start' },
+  { name: 'Nga', city: 'Moscow', latitude: 55.7558, longitude: 37.6173, labelDx: 18, labelDy: -6, anchor: 'start' },
+  { name: 'Pháp', city: 'Paris', latitude: 48.8566, longitude: 2.3522, labelDx: -18, labelDy: -8, anchor: 'end' },
+  { name: 'Tây Ban Nha', city: 'Madrid', latitude: 40.4168, longitude: -3.7038, labelDx: -18, labelDy: 22, anchor: 'end' },
+  { name: 'Cộng hòa Séc', city: 'Prague', latitude: 50.0755, longitude: 14.4378, labelDx: 18, labelDy: -9, anchor: 'start' },
+].map((destination) => ({ ...destination, ...projectCoordinates(destination.latitude, destination.longitude) }))
 
 const AWARDS = [
   {
@@ -251,16 +281,16 @@ function VietnamGlobalMap() {
         </g>
 
         {DESTINATIONS.map((destination, index) => {
-          const alignRight = destination.x < 500
-          const textX = destination.x + (alignRight ? 12 : -12)
+          const textX = destination.x + destination.labelDx
+          const textY = destination.y + destination.labelDy
           return (
             <g key={destination.name} className="national-map-destination" style={{ animationDelay: `${index * 0.12}s` }}>
               <circle cx={destination.x} cy={destination.y} r="6" />
               <circle className="national-map-pulse" cx={destination.x} cy={destination.y} r="12" />
-              <text x={textX} y={destination.y - 5} textAnchor={alignRight ? 'start' : 'end'}>
+              <text x={textX} y={textY} textAnchor={destination.anchor as 'start' | 'end'}>
                 {destination.name}
               </text>
-              <text className="national-map-city" x={textX} y={destination.y + 12} textAnchor={alignRight ? 'start' : 'end'}>
+              <text className="national-map-city" x={textX} y={textY + 15} textAnchor={destination.anchor as 'start' | 'end'}>
                 {destination.city}
               </text>
             </g>
@@ -286,11 +316,11 @@ export function NationalBrandStory() {
           <div className="national-heading">
             <span className="national-kicker">
               <Sparkles className="h-4 w-4" />
-              Hệ sinh thái học tập 123English
+              123 ENGLISH ECOSYSTEM
             </span>
-            <h2>Học đúng lộ trình, tiến bộ rõ ràng qua từng buổi.</h2>
+            <h2>Một hệ sinh thái.<br />Nhiều hành trình học tập.</h2>
             <p>
-              Giáo viên, giáo trình và phản hồi được kết nối để mỗi học viên luôn biết bước tiếp theo của mình.
+              Phương pháp, lộ trình, giáo viên và công nghệ được kết nối trong một trải nghiệm thống nhất.
             </p>
           </div>
 
@@ -313,10 +343,11 @@ export function NationalBrandStory() {
             </article>
 
             <div className="national-ecosystem-list">
-              {ECOSYSTEM_ITEMS.map(({ Icon, title, copy, tone }) => (
+              {ECOSYSTEM_ITEMS.map(({ Icon, eyebrow, title, copy, tone }) => (
                 <article key={title} className={`national-ecosystem-item is-${tone}`}>
                   <span><Icon className="h-5 w-5" /></span>
                   <div>
+                    <small>{eyebrow}</small>
                     <h3>{title}</h3>
                     <p>{copy}</p>
                   </div>
@@ -399,15 +430,40 @@ export function NationalBrandStory() {
 
       <section className="national-section national-section-awards">
         <div className="national-container">
-          <div className="national-heading national-heading-centered">
-            <span className="national-kicker">
-              <Award className="h-4 w-4" />
-              Dấu ấn được ghi nhận
-            </span>
-            <h2>Niềm tin được bồi đắp qua từng cột mốc.</h2>
-            <p>
-              Hình ảnh thật từ hành trình phát triển thương hiệu, kết nối cộng đồng và nâng cao chất lượng giáo dục.
-            </p>
+          <div className="national-milestones-intro">
+            <div className="national-milestones-title">
+              <span className="national-kicker">
+                <Award className="h-4 w-4" />
+                Dấu ấn được ghi nhận
+              </span>
+              <h2>
+                NHỮNG CỘT MỐC
+                <br />
+                ĐÁNG NHỚ.
+              </h2>
+            </div>
+
+            <div className="national-milestones-copy">
+              <p>
+                Mỗi giải thưởng, chứng nhận hay cột mốc đều là sự ghi nhận cho một chặng đường đã đi qua.
+              </p>
+              <p>
+                Nhưng với 123English, thành tựu lớn nhất không chỉ nằm ở những con số.
+              </p>
+              <p className="national-milestones-lead">Đó là khi một học viên:</p>
+              <ul>
+                <li>Dám nói câu tiếng Anh đầu tiên.</li>
+                <li>Có thể giao tiếp tự tin hơn.</li>
+                <li>Vượt qua nỗi sợ mắc lỗi.</li>
+                <li>Đạt được mục tiêu học tập.</li>
+                <li>Mở ra một cơ hội mới cho bản thân.</li>
+              </ul>
+              <strong>
+                EVERY MILESTONE
+                <br />
+                MOVES US FORWARD.
+              </strong>
+            </div>
           </div>
 
           <div className="national-award-gallery">

@@ -303,6 +303,7 @@
 .national-ecosystem-list {
   display: grid;
   gap: 1.25rem;
+  align-content: stretch;
 }
 
 .national-ecosystem-item {
@@ -353,8 +354,30 @@
 }
 
 .national-ecosystem-item h3 {
+  margin-top: 0.35rem;
   font-size: 1.05rem;
   font-weight: 800;
+}
+
+.national-ecosystem-item small {
+  display: block;
+  color: #0d8fc7;
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+}
+
+.national-ecosystem-item.is-yellow small {
+  color: #956600;
+}
+
+.national-ecosystem-item.is-mint small {
+  color: #007a58;
+}
+
+.national-ecosystem-item.is-rose small {
+  color: #b53d54;
 }
 
 .national-ecosystem-item p {
@@ -478,6 +501,72 @@
 
 .national-section-awards {
   background: #fff;
+}
+
+.national-milestones-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+  gap: clamp(2.25rem, 5vw, 4.5rem);
+  align-items: start;
+}
+
+.national-milestones-title h2 {
+  margin-top: 1.15rem;
+  color: var(--national-navy);
+  font-size: clamp(2.65rem, 4.2vw, 4.2rem);
+  font-weight: 850;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+  white-space: nowrap;
+}
+
+.national-milestones-copy {
+  max-width: 40rem;
+  padding-top: 0.2rem;
+  color: #465976;
+}
+
+.national-milestones-copy p {
+  margin: 0;
+  font-size: clamp(1rem, 1.3vw, 1.12rem);
+  font-weight: 600;
+  line-height: 1.75;
+}
+
+.national-milestones-copy p + p {
+  margin-top: 1rem;
+}
+
+.national-milestones-copy .national-milestones-lead {
+  margin-top: 1.35rem;
+  color: var(--national-navy);
+  font-weight: 800;
+}
+
+.national-milestones-copy ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.8rem 0 0;
+  padding-left: 1.35rem;
+  color: #243958;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.55;
+  list-style: disc;
+}
+
+.national-milestones-copy li::marker {
+  color: #f5b800;
+}
+
+.national-milestones-copy strong {
+  display: block;
+  margin-top: 1.75rem;
+  color: #0d8fc7;
+  font-size: clamp(1.2rem, 2vw, 1.75rem);
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
 }
 
 .national-section-timeline {
@@ -788,7 +877,7 @@
   }
 
   .national-map-destination text {
-    font-size: 13px;
+    font-size: 9.5px;
   }
 
   .national-map-destination .national-map-city {
@@ -797,6 +886,24 @@
 
   .national-island-label text {
     font-size: 12px;
+  }
+
+  .national-milestones-intro {
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
+  }
+
+  .national-milestones-title h2 {
+    font-size: clamp(2.45rem, 12vw, 3.4rem);
+    white-space: normal;
+  }
+
+  .national-milestones-copy {
+    padding-top: 0;
+  }
+
+  .national-milestones-copy strong {
+    margin-top: 1.5rem;
   }
 
   .national-award-gallery {
