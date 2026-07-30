@@ -9,6 +9,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore'
 import {
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -26,6 +27,12 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { getBookingPoints } from '@/lib/points'
+import {
+  bookingConflictMessage,
+  checkBookingCandidates,
+  findExistingBookingConflictPairs,
+  formatBookingDate,
+} from '@/lib/bookingConflicts'
 
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -93,6 +100,7 @@ export function BookingRequestsPage() {
   const [rejecting, setRejecting] = useState<BookingRequest | null>(null)
   const [releasing, setReleasing] = useState<BookingRequest | null>(null)
   const [adminNote, setAdminNote] = useState('')
+  const [todayISO] = useState(() => new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().split('T')[0])
 
   useEffect(() => {
     const q = query(collection(db, 'bookingRequests'), orderBy('createdAt', 'desc'))
@@ -140,6 +148,12 @@ export function BookingRequestsPage() {
     released: requests.filter((item) => item.status === 'released').length,
   }), [requests])
 
+  const upcomingConflicts = useMemo(() => {
+    return findExistingBookingConflictPairs(
+      requests.filter((item) => Boolean(item.requestedDate) && item.requestedDate! >= todayISO),
+    )
+  }, [requests, todayISO])
+
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase()
 
@@ -162,6 +176,26 @@ export function BookingRequestsPage() {
     setActioning(true)
 
     try {
+      const conflicts = await checkBookingCandidates([{
+        id: confirming.id,
+        teacherId: confirming.teacherId,
+        teacherName: confirming.teacherName,
+        studentId: confirming.studentId,
+        studentName: confirming.studentName,
+        requestedDate: confirming.requestedDate,
+        requestedStart: confirming.requestedStart,
+        requestedEnd: confirming.requestedEnd,
+        requestedMinutes: confirming.requestedMinutes,
+      }], {
+        ignoreBookingIds: [confirming.id],
+        includePending: false,
+      })
+
+      if (conflicts.length > 0) {
+        toast.error(bookingConflictMessage(conflicts[0], 'vi'))
+        return
+      }
+
       await runTransaction(db, async (tx) => {
         const requestRef = doc(db, 'bookingRequests', confirming.id)
         const studentRef = doc(db, 'students', confirming.studentId)
@@ -395,6 +429,28 @@ export function BookingRequestsPage() {
           ))}
         </div>
       </div>
+
+      {upcomingConflicts.length > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm" role="alert">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+            <div className="min-w-0">
+              <p className="font-black">Có {upcomingConflicts.length} cặp yêu cầu đang trùng lịch</p>
+              <p className="mt-1 text-sm text-rose-700">
+                Hệ thống sẽ chặn xác nhận ca bị trùng. Vui lòng kiểm tra lại giáo viên và học viên trước khi duyệt.
+              </p>
+              <div className="mt-3 grid gap-2 text-sm lg:grid-cols-2">
+                {upcomingConflicts.slice(0, 4).map((conflict) => (
+                  <div key={`${conflict.first.id}-${conflict.second.id}`} className="rounded-xl bg-white/80 px-3 py-2">
+                    <span className="font-bold">{formatBookingDate(conflict.first.requestedDate)}, {conflict.first.requestedStart}-{conflict.first.requestedEnd}:</span>{' '}
+                    {conflict.first.teacherName || conflict.first.teacherCode} · {conflict.first.studentName || conflict.first.studentCode} / {conflict.second.studentName || conflict.second.studentCode}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Card className="space-y-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">

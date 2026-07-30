@@ -41,6 +41,7 @@ import { useSiteContent } from '@/lib/siteContent'
 import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -730,6 +731,22 @@ function TeacherBookingPage({
 
     setSubmitting(true)
     try {
+      const conflicts = await checkBookingCandidates([{
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        studentId: student.id,
+        studentName: student.name,
+        studentCode: student.code,
+        requestedDate: selectedSchedule.dateISO,
+        requestedStart: selectedSchedule.start,
+        requestedEnd: selectedSchedule.end,
+        requestedMinutes: duration,
+      }])
+      if (conflicts.length > 0) {
+        toast.error(bookingConflictMessage(conflicts[0]))
+        return
+      }
+
       const bookingRef = doc(collection(db, 'bookingRequests'))
       const createdAt = Timestamp.now()
       const teacherConfirmationDeadlineAt = Timestamp.fromMillis(createdAt.toMillis() + 3 * 60 * 60 * 1000)

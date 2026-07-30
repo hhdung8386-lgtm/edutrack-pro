@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
+import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
 
 type TeacherResponseFilter = 'pending' | 'accepted' | 'declined' | 'all'
 
@@ -90,6 +91,28 @@ export function TeacherBookingRequestsPage() {
     if (!teacherId || request.teacherId !== teacherId || request.status !== 'pending') return
     setActioningId(request.id)
     try {
+      if (response === 'accepted') {
+        const conflicts = await checkBookingCandidates([{
+          id: request.id,
+          teacherId: request.teacherId,
+          teacherName: request.teacherName,
+          studentId: request.studentId,
+          studentName: request.studentName,
+          requestedDate: request.requestedDate,
+          requestedStart: request.requestedStart,
+          requestedEnd: request.requestedEnd,
+          requestedMinutes: request.requestedMinutes,
+        }], {
+          ignoreBookingIds: [request.id],
+          includePending: false,
+        })
+
+        if (conflicts.length > 0) {
+          toast.error(bookingConflictMessage(conflicts[0], lang === 'vi' ? 'vi' : 'en'))
+          return
+        }
+      }
+
       await updateDoc(doc(db, 'bookingRequests', request.id), {
         teacherResponse: response,
         teacherRespondedAt: serverTimestamp(),

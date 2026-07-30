@@ -29,6 +29,12 @@ import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import {
+  bookingConflictMessage,
+  checkBookingCandidates,
+  findExistingBookingConflictPairs,
+  formatBookingDate,
+} from '@/lib/bookingConflicts'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -264,6 +270,12 @@ export function BookingSchedulesPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
+  const teacherScheduleConflicts = useMemo(() => {
+    const today = formatDateISO(new Date())
+    return findExistingBookingConflictPairs(
+      bookingRequests.filter((booking) => !booking.requestedDate || booking.requestedDate >= today),
+    ).filter((conflict) => conflict.reasons.includes('teacher'))
+  }, [bookingRequests])
 
   // Load teachers and availabilities
   useEffect(() => {
@@ -754,6 +766,58 @@ export function BookingSchedulesPage() {
         .filter((b) => !b.lessonId)
         .reduce((sum, b) => sum + getBookingPoints(b), 0)
 
+      const candidates = []
+      if (!isRecurring) {
+        selectedSlots.forEach((slot) => {
+          candidates.push({
+            teacherId: selectedTeacher.id,
+            teacherName: selectedTeacher.name,
+            studentId,
+            studentName: selectedStudent.name,
+            studentCode: selectedStudent.code,
+            requestedDate: slot.dateISO,
+            requestedStart: slot.time,
+            requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
+            requestedMinutes: duration,
+          })
+        })
+      } else {
+        const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
+        let sessionsScheduled = 0
+        let weekIndex = 0
+        while (sessionsScheduled < maxSessions) {
+          for (const slot of selectedSlots) {
+            if (sessionsScheduled >= maxSessions) break
+            const slotDate = addDays(parseDateISO(slot.dateISO), weekIndex * 7)
+            const slotDateISO = formatDateISO(slotDate)
+            if (weekIndex === 0) {
+              const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && slot.time < currentMinutesStr)
+              if (isPast) continue
+            }
+            candidates.push({
+              teacherId: selectedTeacher.id,
+              teacherName: selectedTeacher.name,
+              studentId,
+              studentName: selectedStudent.name,
+              studentCode: selectedStudent.code,
+              requestedDate: slotDateISO,
+              requestedStart: slot.time,
+              requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
+              requestedMinutes: duration,
+            })
+            sessionsScheduled += 1
+          }
+          weekIndex += 1
+        }
+      }
+
+      const conflicts = await checkBookingCandidates(candidates)
+      if (conflicts.length > 0) {
+        const conflictError = new Error('BOOKING_CONFLICT') as Error & { detail?: string }
+        conflictError.detail = bookingConflictMessage(conflicts[0])
+        throw conflictError
+      }
+
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const studentSnap = await tx.get(studentRef)
@@ -920,6 +984,10 @@ export function BookingSchedulesPage() {
       setIsRecurring(false)
     } catch (error: any) {
       console.error('Direct scheduling failed:', error)
+      if (error?.message === 'BOOKING_CONFLICT') {
+        toast.error(error.detail || 'Không thể xếp lớp vì lịch bị trùng.')
+        return
+      }
       if (error?.message === 'NOT_ENOUGH_MINUTES') {
         toast.error('Quỹ phút khả dụng của học viên không đủ để xếp lịch!')
       } else {
@@ -1190,6 +1258,31 @@ export function BookingSchedulesPage() {
           )}
         </div>
       </div>
+
+      {teacherScheduleConflicts.length > 0 && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm" role="alert">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+            <div className="min-w-0">
+              <p className="font-black">Phát hiện {teacherScheduleConflicts.length} cặp ca đang trùng lịch</p>
+              <p className="mt-1 text-sm text-rose-700">
+                Vui lòng xử lý một trong hai ca trước khi tiếp tục xếp thêm lịch cho giáo viên này.
+              </p>
+              <div className="mt-3 grid gap-2 text-sm">
+                {teacherScheduleConflicts.slice(0, 3).map((conflict) => (
+                  <div key={`${conflict.first.id}-${conflict.second.id}`} className="rounded-xl bg-white/80 px-3 py-2">
+                    <span className="font-bold">{formatBookingDate(conflict.first.requestedDate)}, {conflict.first.requestedStart}-{conflict.first.requestedEnd}:</span>{' '}
+                    {conflict.first.studentName || conflict.first.studentCode} và {conflict.second.studentName || conflict.second.studentCode}
+                  </div>
+                ))}
+                {teacherScheduleConflicts.length > 3 && (
+                  <p className="text-xs font-bold text-rose-700">Còn {teacherScheduleConflicts.length - 3} cặp xung đột khác.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
         {/* Sidebar: Teachers List */}

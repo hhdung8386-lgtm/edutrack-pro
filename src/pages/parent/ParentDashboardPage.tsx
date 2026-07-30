@@ -31,6 +31,7 @@ import {
 import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { rewardMonthKey } from '@/lib/rewards'
 import { parseLegacyLessonReport } from '@/components/lessons/lessonReport'
+import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -1679,6 +1680,22 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       }
 
       const requestedEnd = profileMinutesToTime(profileTimeToMinutes(profileBookingSlot.start) + profileBookingDuration)
+      const conflicts = await checkBookingCandidates([{
+        teacherId: profileTeacherId,
+        teacherName: teacher.name,
+        studentId: student.id,
+        studentName: student.name,
+        studentCode: student.code,
+        requestedDate: profileBookingSlot.dateISO,
+        requestedStart: profileBookingSlot.start,
+        requestedEnd,
+        requestedMinutes: profileBookingDuration,
+      }])
+      if (conflicts.length > 0) {
+        toast.error(bookingConflictMessage(conflicts[0], lang === 'vi' ? 'vi' : 'en'))
+        return
+      }
+
       const bookingRef = doc(collection(db, 'bookingRequests'))
       const createdAt = Timestamp.now()
       const teacherConfirmationDeadlineAt = Timestamp.fromMillis(createdAt.toMillis() + 3 * 60 * 60 * 1000)
