@@ -236,9 +236,28 @@
   margin-top: 2rem;
 }
 
+/* Cột trái: tiêu đề nằm trên, ảnh nổi bật nằm dưới */
+.national-ecosystem-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+/* Tiêu đề của riêng khối hệ sinh thái — nhỏ hơn tiêu đề mặc định */
+.national-section-ecosystem .national-heading h2 {
+  margin-top: 0.75rem;
+  font-size: clamp(1.6rem, 2.6vw, 2.35rem);
+}
+
+.national-section-ecosystem .national-heading > p {
+  margin-top: 0.85rem;
+  font-size: 0.98rem;
+}
+
 .national-ecosystem-feature {
   position: relative;
-  min-height: 32rem;
+  min-height: 24rem;
+  flex: 1;
   overflow: hidden;
   border-radius: 2rem;
   background: var(--national-navy);
@@ -248,7 +267,7 @@
 .national-ecosystem-feature > img {
   width: 100%;
   height: 100%;
-  min-height: 32rem;
+  min-height: 24rem;
   object-fit: cover;
 }
 
@@ -356,19 +375,10 @@
 }
 
 .national-ecosystem-item h3 {
-  margin-top: 0.35rem;
+  margin-top: 0;
   font-size: 1.05rem;
   font-weight: 800;
   white-space: nowrap;
-}
-
-.national-ecosystem-item small {
-  display: block;
-  color: #0d8fc7;
-  font-size: 0.64rem;
-  font-weight: 850;
-  letter-spacing: 0.07em;
-  line-height: 1.35;
 }
 
 .national-ecosystem-item.is-yellow small {

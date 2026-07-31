@@ -262,6 +262,11 @@ export default function TeacherEvaluationsPage() {
       toast.error(`Vui lòng chọn cấp độ bắt đầu cho ${courseMissingStartLevel.label}`)
       return
     }
+    // Ảnh buổi học là bắt buộc: phải có mặt cả giáo viên và học sinh.
+    if (!imageUrl) {
+      toast.error('Vui lòng tải lên ảnh buổi học có mặt giáo viên và học sinh')
+      return
+    }
 
     const payload: Partial<Evaluation> = {
       studentName: studentName.trim(),
@@ -819,8 +824,18 @@ export default function TeacherEvaluationsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-600">Ảnh kỷ niệm buổi học thử (Giáo viên & Học sinh)</label>
-                  <div className="flex flex-col sm:flex-row gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                  <label className="text-xs font-bold text-slate-600">
+                    Ảnh buổi học <span className="text-rose-500">*</span>
+                  </label>
+                  <p className="text-[11px] font-medium leading-5 text-slate-500">
+                    Bắt buộc tải lên ảnh chụp buổi học có mặt cả <strong className="font-bold text-slate-700">giáo viên và học sinh</strong>.
+                    Ảnh này được gửi kèm phiếu đánh giá cho phụ huynh.
+                  </p>
+                  <div
+                    className={`flex flex-col sm:flex-row gap-4 items-center rounded-2xl border p-4 ${
+                      imageUrl ? 'border-slate-150 bg-slate-50' : 'border-rose-200 bg-rose-50/60'
+                    }`}
+                  >
                     <input 
                       type="file" 
                       accept="image/*" 
@@ -846,7 +861,7 @@ export default function TeacherEvaluationsPage() {
                       htmlFor="eval-photo-upload"
                       className="cursor-pointer bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm"
                     >
-                      {compressing ? 'Đang nén ảnh...' : 'Chọn ảnh từ thiết bị'}
+                      {compressing ? 'Đang nén ảnh...' : imageUrl ? 'Đổi ảnh khác' : 'Tải ảnh buổi học từ máy'}
                     </label>
                     {imageUrl && (
                       <div className="relative w-20 h-20 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex-shrink-0">

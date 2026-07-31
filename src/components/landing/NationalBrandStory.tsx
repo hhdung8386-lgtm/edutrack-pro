@@ -458,41 +458,46 @@ export function NationalBrandStory() {
     <div className="national-home">
       <section className="national-section national-section-ecosystem">
         <div className="national-container">
-          <div className="national-heading">
-            <span className="national-kicker">
-              <Sparkles className="h-4 w-4" />
-              123 ENGLISH ECOSYSTEM
-            </span>
-            <h2>Một hệ sinh thái học tập.</h2>
-            <p>
-              Kết nối phương pháp, lộ trình, giáo viên và công nghệ trong một trải nghiệm thống nhất.
-            </p>
-          </div>
-
+          {/*
+            Tiêu đề nằm trong cột trái của lưới để lưới thẻ bên phải bắt đầu
+            NGANG HÀNG với tiêu đề, thay vì bị đẩy xuống dưới.
+          */}
           <div className="national-ecosystem-grid">
-            <article className="national-ecosystem-feature">
-              <img
-                src="/home-hero-vietnam-2026-v2.png"
-                alt="Gia đình đồng hành cùng học viên trong lớp học trực tuyến"
-                loading="lazy"
-              />
-              <div>
-                <span className="national-feature-mark">
-                  <ShieldCheck className="h-5 w-5" />
+            <div className="national-ecosystem-main">
+              <div className="national-heading">
+                <span className="national-kicker">
+                  <Sparkles className="h-4 w-4" />
+                  123 ENGLISH ECOSYSTEM
                 </span>
-                <h3>Học trực tuyến gần gũi, rõ ràng và có người theo sát.</h3>
+                <h2>Một hệ sinh thái học tập.</h2>
                 <p>
-                  Nội dung học, nhận xét và bước tiếp theo được lưu lại để gia đình dễ dàng theo dõi hành trình.
+                  Kết nối phương pháp, lộ trình, giáo viên và công nghệ trong một trải nghiệm thống nhất.
                 </p>
               </div>
-            </article>
+
+              <article className="national-ecosystem-feature">
+                <img
+                  src="/home-hero-vietnam-2026-v2.png"
+                  alt="Gia đình đồng hành cùng học viên trong lớp học trực tuyến"
+                  loading="lazy"
+                />
+                <div>
+                  <span className="national-feature-mark">
+                    <ShieldCheck className="h-5 w-5" />
+                  </span>
+                  <h3>Học trực tuyến gần gũi, rõ ràng và có người theo sát.</h3>
+                  <p>
+                    Nội dung học, nhận xét và bước tiếp theo được lưu lại để gia đình dễ dàng theo dõi hành trình.
+                  </p>
+                </div>
+              </article>
+            </div>
 
             <div className="national-ecosystem-list">
-              {ECOSYSTEM_ITEMS.map(({ Icon, eyebrow, title, copy, tone }) => (
+              {ECOSYSTEM_ITEMS.map(({ Icon, title, copy, tone }) => (
                 <article key={title} className={`national-ecosystem-item is-${tone}`}>
                   <span><Icon className="h-5 w-5" /></span>
                   <div>
-                    <small>{eyebrow}</small>
                     <h3>{title}</h3>
                     <p>{copy}</p>
                   </div>

@@ -13,7 +13,7 @@ import { Check, ChevronDown, Search } from 'lucide-react'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
-  totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 phút'),
+  totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 kim cương'),
   curriculumLink: z.string().optional(),
   supplementaryCurriculumLink: z.string().optional(),
   timetableNote: z.string().optional(),
@@ -189,7 +189,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
 
             if (prevPkg.usedMinutes > 0) {
               if (prevPkg.remainingMinutes <= 0) {
-                throw new Error('Gói môn cũ không còn phút để chuyển sang môn mới')
+                throw new Error('Gói môn cũ không còn kim cương để chuyển sang môn mới')
               }
 
               const historicalSessions = prevPkg.usedSessions || Math.round(
@@ -382,7 +382,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         updatedAt: serverTimestamp(),
       })
 
-      toast.success(isTransferringSubject ? 'Đã chuyển số phút còn lại sang môn mới' : isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
+      toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
       onClose()
     } catch (err) {
       console.error(err)
@@ -474,7 +474,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           {isTransferringSubject && (
             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
               {editingPkg?.usedMinutes
-                ? `Lịch sử đã học vẫn thuộc môn cũ. Hệ thống chỉ chuyển ${transferableMinutes.toLocaleString('vi-VN')} phút còn lại sang môn mới.`
+                ? `Lịch sử đã học vẫn thuộc môn cũ. Hệ thống chỉ chuyển ${transferableMinutes.toLocaleString('vi-VN')} kim cương còn lại sang môn mới.`
                 : 'Gói chưa phát sinh buổi học nên hệ thống sẽ đổi trực tiếp sang môn mới.'}
             </p>
           )}
@@ -510,12 +510,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
             <p className="text-xs font-medium text-slate-500">Quỹ chuyển sang môn mới</p>
             <p className="mt-1 font-semibold text-slate-800">
-              {transferableMinutes.toLocaleString('vi-VN')} phút · tương đương {transferredSessions.toLocaleString('vi-VN')} buổi
+              {transferableMinutes.toLocaleString('vi-VN')} kim cương · tương đương {transferredSessions.toLocaleString('vi-VN')} buổi
             </p>
           </div>
         ) : (
           <Input
-            label="Tổng số phút *"
+            label="Tổng số kim cương *"
             type="number"
             placeholder="500"
             error={errors.totalMinutes?.message}
