@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ClipboardCheck, Menu, X, GraduationCap, BookOpen, Wallet, Settings, LogOut, CalendarClock, CalendarDays, CalendarCheck2, CalendarRange, BarChart2, FileText, Bell, Gift, MonitorUp, MapPin, TestTube2, AlertCircle, Calculator, LayoutTemplate } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, ClipboardCheck, GraduationCap, LogOut, Menu, Users, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
 import { toast } from '@/stores/toastStore'
@@ -10,6 +10,12 @@ import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
+import {
+  adminDashboardItem,
+  getVisibleAdminNavigation,
+  isAdminNavGroupActive,
+  type AdminNavBadge,
+} from './adminNavigation'
 
 const PAGE_TITLES: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
@@ -32,17 +38,22 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/payroll': 'Lương gia sư',
   '/admin/contracts': 'Hợp đồng',
   '/admin/student-experience': 'Quà tặng & nạp tiền',
+  '/admin/quota-reconcile': 'Đối soát quỹ buổi',
+  '/admin/site-content': 'Nội dung trang web',
+  '/admin/notifications': 'Gửi thông báo',
   '/admin/settings': 'Cài đặt',
 }
 
 export function AdminLayout() {
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [mobileOpenGroupId, setMobileOpenGroupId] = useState<string | null>(null)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('admin_sidebar_collapsed') === 'true')
   const location = useLocation()
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
   const { user, role } = useAuthStore()
+  const visibleGroups = useMemo(() => getVisibleAdminNavigation(role), [role])
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
 
   const toggleSidebarCollapse = () => {
@@ -59,44 +70,20 @@ export function AdminLayout() {
     navigate('/login')
   }
 
-  const mobileNavItems = [
-    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    role === 'teacher_manager'
-      ? { to: '/admin/teachers/online', icon: GraduationCap, label: 'Gia sư' }
-      : { to: '/admin/students', icon: Users, label: 'Học viên' },
-    { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt', hasBadge: true },
-  ]
+  const badgeCount = (badge?: AdminNavBadge) => {
+    if (badge === 'approvals') return pendingCount
+    if (badge === 'bookings') return pendingBookingCount
+    return 0
+  }
 
-  // Danh sách đồng bộ với AdminSidebar (desktop) — iPad/mobile dùng menu này
-  const mobileMenuItems = [
-    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/admin/students', icon: Users, label: 'Học viên' },
-    { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
-    { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
-    { to: '/admin/teachers/online', icon: MonitorUp, label: 'Gia sư online' },
-    { to: '/admin/teachers/offline', icon: MapPin, label: 'Gia sư offline' },
-    { to: '/admin/teachers/tester', icon: TestTube2, label: 'Gia sư tester' },
-    { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
-    { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
-    { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
-    { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
-    { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },
-    { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', bookingBadge: true },
-    { to: '/admin/subjects', icon: BookOpen, label: 'Môn học' },
-    { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
-    { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', hasBadge: true },
-    { to: '/admin/reports', icon: BarChart2, label: 'Báo cáo' },
-    { to: '/admin/payroll', icon: Wallet, label: 'Lương gia sư' },
-    { to: '/admin/contracts', icon: FileText, label: 'Hợp đồng' },
-    { to: '/admin/notifications', icon: Bell, label: 'Gửi thông báo' },
-    { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
-    { to: '/admin/site-content', icon: LayoutTemplate, label: 'Nội dung trang web' },
-    { to: '/admin/settings', icon: Settings, label: 'Cài đặt' },
-  ].filter((item) => {
-    if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
-    if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
-    return true
-  })
+  const openMobileMenu = (groupId?: string) => {
+    setMobileOpenGroupId(groupId ?? visibleGroups.find((group) => isAdminNavGroupActive(group, location.pathname))?.id ?? null)
+    setSheetOpen(true)
+  }
+
+  const mobilePrimaryGroup = role === 'teacher_manager'
+    ? visibleGroups.find((group) => group.id === 'teachers')
+    : visibleGroups.find((group) => group.id === 'students')
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -126,7 +113,7 @@ export function AdminLayout() {
           <NotificationDrawer targetType="managers" targetId={user?.uid || ''} />
           
           <button
-            onClick={() => setSheetOpen(true)}
+            onClick={() => openMobileMenu()}
             className="lg:hidden p-2 text-slate-500 hover:text-slate-900"
             aria-label="Mở menu"
           >
@@ -153,33 +140,76 @@ export function AdminLayout() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <nav className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto px-4 py-4 pb-6">
-              {mobileMenuItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setSheetOpen(false)}
-                  className={({ isActive }) =>
-                    `relative flex min-h-[68px] items-center gap-3 rounded-2xl border px-3.5 py-3 text-sm font-bold transition active:scale-[0.98]
-                    ${isActive ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-100 bg-slate-50/70 text-slate-700 hover:border-brand-200 hover:bg-brand-50/70'}`
-                  }
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
-                    <item.icon className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0 leading-5">{item.label}</span>
-                  {item.bookingBadge && pendingBookingCount > 0 && (
-                    <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      {pendingBookingCount > 99 ? '99+' : pendingBookingCount}
-                    </span>
-                  )}
-                  {item.hasBadge && pendingCount > 0 && (
-                    <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      {pendingCount > 99 ? '99+' : pendingCount}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
+            <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-4 pb-6">
+              <NavLink
+                to={adminDashboardItem.to}
+                onClick={() => setSheetOpen(false)}
+                className={({ isActive }) =>
+                  `flex min-h-14 items-center gap-3 rounded-2xl border px-3.5 py-3 text-sm font-extrabold transition active:scale-[0.99]
+                  ${isActive ? 'border-brand-300 bg-brand-50 text-brand-900' : 'border-slate-100 bg-slate-50/70 text-slate-700'}`
+                }
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
+                  <adminDashboardItem.icon className="h-5 w-5" />
+                </span>
+                {adminDashboardItem.label}
+              </NavLink>
+
+              {visibleGroups.map((group) => {
+                const isOpen = mobileOpenGroupId === group.id
+                const isActive = isAdminNavGroupActive(group, location.pathname)
+                const groupBadgeCount = group.items.reduce((total, item) => total + badgeCount(item.badge), 0)
+                return (
+                  <section key={group.id} className={`overflow-hidden rounded-2xl border ${isActive ? 'border-brand-300 bg-brand-50/60' : 'border-slate-100 bg-slate-50/70'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setMobileOpenGroupId((current) => current === group.id ? null : group.id)}
+                      className="flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left text-sm font-extrabold text-slate-800 active:scale-[0.99]"
+                      aria-expanded={isOpen}
+                      aria-controls={`mobile-admin-nav-${group.id}`}
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
+                        <group.icon className="h-5 w-5" />
+                      </span>
+                      <span className="flex-1">{group.label}</span>
+                      {groupBadgeCount > 0 && (
+                        <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                          {groupBadgeCount > 99 ? '99+' : groupBadgeCount}
+                        </span>
+                      )}
+                      <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    <div id={`mobile-admin-nav-${group.id}`} className={`grid transition-[grid-template-rows,opacity] duration-200 ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                      <div className="min-h-0">
+                        <div className="grid grid-cols-1 gap-1 border-t border-slate-100 p-2 sm:grid-cols-2">
+                          {group.items.map((item) => {
+                            const count = badgeCount(item.badge)
+                            return (
+                              <NavLink
+                                key={item.to}
+                                to={item.to}
+                                onClick={() => setSheetOpen(false)}
+                                className={({ isActive: itemIsActive }) =>
+                                  `flex min-h-12 items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-bold transition active:scale-[0.99]
+                                  ${itemIsActive ? 'bg-brand-100 text-brand-900' : 'bg-white text-slate-600 hover:text-slate-900'}`
+                                }
+                              >
+                                <item.icon className="h-[18px] w-[18px] shrink-0 text-brand-700" />
+                                <span className="min-w-0 flex-1">{item.label}</span>
+                                {count > 0 && (
+                                  <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                                    {count > 99 ? '99+' : count}
+                                  </span>
+                                )}
+                              </NavLink>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                )
+              })}
             </nav>
             <div className="border-t border-slate-100 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
               <button
@@ -204,36 +234,53 @@ export function AdminLayout() {
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
         <div className="grid h-16 grid-cols-4">
-          {mobileNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97]
-                ${isActive ? 'text-brand-700' : 'text-slate-500 hover:text-slate-700'}`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <div className="relative">
-                    <item.icon className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
-                    {item.hasBadge && pendingCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {pendingCount > 9 ? '9+' : pendingCount}
-                      </span>
-                    )}
-                  </div>
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <span className="absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />
-                  )}
-                </>
-              )}
-            </NavLink>
-          ))}
+          <NavLink
+            to={adminDashboardItem.to}
+            className={({ isActive }) =>
+              `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <adminDashboardItem.icon className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
+                <span>Dashboard</span>
+                {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+              </>
+            )}
+          </NavLink>
           <button
             type="button"
-            onClick={() => setSheetOpen(true)}
+            onClick={() => mobilePrimaryGroup && openMobileMenu(mobilePrimaryGroup.id)}
+            className={`relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) ? 'text-brand-700' : 'text-slate-500'}`}
+          >
+            {role === 'teacher_manager' ? <GraduationCap className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+            <span>{role === 'teacher_manager' ? 'Gia sư' : 'Học viên'}</span>
+            {mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+          </button>
+          <NavLink
+            to="/admin/approvals"
+            className={({ isActive }) =>
+              `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className="relative">
+                  <ClipboardCheck className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
+                  {pendingCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                      {pendingCount > 9 ? '9+' : pendingCount}
+                    </span>
+                  )}
+                </div>
+                <span>Duyệt</span>
+                {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+              </>
+            )}
+          </NavLink>
+          <button
+            type="button"
+            onClick={() => openMobileMenu()}
             className="relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-500 transition hover:text-slate-700 active:scale-[0.97]"
             aria-label="Mở tất cả chức năng"
           >

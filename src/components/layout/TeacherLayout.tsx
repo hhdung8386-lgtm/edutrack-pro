@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole } from 'lucide-react'
 import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -15,6 +15,7 @@ import { NotificationDrawer } from '../shared/NotificationDrawer'
 import { WaveDivider } from '@/components/shared/WaveDivider'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
 
 type TeacherNavItem = {
   to: string
@@ -22,6 +23,7 @@ type TeacherNavItem = {
   labelKey: string
   shortLabel: { vi: string; en: string }
   badge?: number
+  locked?: boolean
 }
 
 export function TeacherLayout() {
@@ -35,6 +37,7 @@ export function TeacherLayout() {
   const [profileMissingFields, setProfileMissingFields] = useState<(keyof Teacher)[]>([])
   const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false)
   const [pendingBookingCount, setPendingBookingCount] = useState(0)
+  const { enabled: teacherAttendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceFeature()
   
   // Real-time clock and timezone states
   const [timezoneOffset, setTimezoneOffset] = useState<number>(7)
@@ -43,7 +46,13 @@ export function TeacherLayout() {
   // shortLabel: nhãn rút gọn cho bottom nav mobile — nhãn dài ("Lịch dạy của tôi")
   // bị xuống 2 dòng làm lệch cả thanh điều hướng
   const navItems: TeacherNavItem[] = [
-    { to: '/teacher/attendance', icon: PenLine, labelKey: 'nav.attendance', shortLabel: { vi: 'Điểm danh', en: 'Attendance' } },
+    {
+      to: '/teacher/attendance',
+      icon: !loadingAttendanceFeature && !teacherAttendanceEnabled ? LockKeyhole : PenLine,
+      labelKey: 'nav.attendance',
+      shortLabel: { vi: 'Điểm danh', en: 'Attendance' },
+      locked: !loadingAttendanceFeature && !teacherAttendanceEnabled,
+    },
     { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability', shortLabel: { vi: 'Lịch rảnh', en: 'Availability' } },
     { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Lịch dạy', en: 'Classes' } },
     { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Yêu cầu', en: 'Requests' }, badge: pendingBookingCount },
@@ -224,6 +233,11 @@ export function TeacherLayout() {
             >
               <item.icon className="w-4 h-4 shrink-0" />
               {t(item.labelKey)}
+              {item.locked && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                  {lang === 'vi' ? 'Khóa' : 'Locked'}
+                </span>
+              )}
               {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
             </NavLink>
           ))}

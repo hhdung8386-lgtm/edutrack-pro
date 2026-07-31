@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { TeacherLayout } from '@/components/layout/TeacherLayout'
+import { TeacherAttendanceGate } from '@/components/teacher/TeacherAttendanceGate'
 
 // Lazy loaded Pages
 const LoginPage = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })))
@@ -168,7 +169,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="attendance" element={<AttendancePage />} />
+            <Route path="attendance" element={<TeacherAttendanceGate><AttendancePage /></TeacherAttendanceGate>} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="schedules" element={<TeacherSchedulesPage />} />
             <Route path="booking-requests" element={<TeacherBookingRequestsPage />} />

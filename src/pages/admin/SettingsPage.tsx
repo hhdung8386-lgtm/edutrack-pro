@@ -12,13 +12,14 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { BookUser, Building2, Check, MapPin, Pencil, Plus, Settings, Trash2, Users, X } from 'lucide-react'
+import { BookUser, Building2, Check, LockKeyhole, MapPin, Pencil, Plus, Settings, ShieldCheck, Trash2, Users, X } from 'lucide-react'
 import {
   DEFAULT_TEACHER_NICKNAMES,
   loadCustomTeacherNicknames,
   saveCustomTeacherNicknames,
   type TeacherNicknameLibrary,
 } from '@/lib/nameGenerator'
+import { setTeacherAttendanceFeature, useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
 
 export interface Branch {
   id: string
@@ -29,8 +30,10 @@ export interface Branch {
 }
 
 export function SettingsPage() {
-  const { role } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames'>('branch')
+  const { role, user } = useAuthStore()
+  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'teacher_features'>('branch')
+  const { enabled: teacherAttendanceEnabled, loading: loadingTeacherFeatures } = useTeacherAttendanceFeature()
+  const [savingTeacherFeatures, setSavingTeacherFeatures] = useState(false)
 
   // Branch states
   const [branches, setBranches] = useState<Branch[]>([])
@@ -289,6 +292,23 @@ export function SettingsPage() {
     }
   }
 
+  const toggleTeacherAttendance = async () => {
+    if (savingTeacherFeatures || loadingTeacherFeatures) return
+    const nextEnabled = !teacherAttendanceEnabled
+    setSavingTeacherFeatures(true)
+    try {
+      await setTeacherAttendanceFeature(nextEnabled, user?.email || user?.uid)
+      toast.success(nextEnabled
+        ? 'Đã mở lại chức năng điểm danh cho gia sư'
+        : 'Đã khóa chức năng điểm danh của gia sư')
+    } catch (error) {
+      console.error('Unable to update teacher attendance setting:', error)
+      toast.error('Không thể cập nhật chức năng điểm danh')
+    } finally {
+      setSavingTeacherFeatures(false)
+    }
+  }
+
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-3xl">
       <div>
@@ -298,7 +318,7 @@ export function SettingsPage() {
 
       {/* Tabs */}
       {role === 'admin' && (
-        <div className="flex gap-2 border-b border-slate-200">
+        <div className="flex flex-wrap gap-2 border-b border-slate-200">
           <button
             onClick={() => setActiveTab('branch')}
             className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
@@ -328,6 +348,16 @@ export function SettingsPage() {
             }`}
           >
             Thư viện tên giáo viên
+          </button>
+          <button
+            onClick={() => setActiveTab('teacher_features')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
+              activeTab === 'teacher_features'
+                ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Chức năng gia sư
           </button>
         </div>
       )}
@@ -592,6 +622,71 @@ export function SettingsPage() {
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {activeTab === 'teacher_features' && role === 'admin' && (
+        <Card className="animate-slide-up overflow-hidden">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 gap-4">
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 ${
+                teacherAttendanceEnabled
+                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                  : 'bg-amber-50 text-amber-700 ring-amber-200'
+              }`}>
+                {teacherAttendanceEnabled
+                  ? <ShieldCheck className="h-6 w-6" />
+                  : <LockKeyhole className="h-6 w-6" />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Quyền thao tác gia sư</p>
+                <h2 className="mt-1 text-lg font-black text-slate-950">Điểm danh buổi học</h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                  Khóa hoặc mở đồng bộ trang Điểm danh và thao tác điểm danh trong Lịch dạy. Lịch sử, lịch đã đặt và dữ liệu buổi học cũ luôn được giữ nguyên.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={teacherAttendanceEnabled}
+              aria-label="Bật hoặc tắt chức năng điểm danh của gia sư"
+              disabled={loadingTeacherFeatures || savingTeacherFeatures}
+              onClick={toggleTeacherAttendance}
+              className={`relative inline-flex h-12 w-full shrink-0 items-center rounded-2xl px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-wait disabled:opacity-60 sm:w-48 ${
+                teacherAttendanceEnabled ? 'bg-emerald-600' : 'bg-slate-800'
+              }`}
+            >
+              <span className={`absolute h-8 w-8 rounded-xl bg-white shadow-sm transition-all ${
+                teacherAttendanceEnabled ? 'right-2' : 'left-2'
+              }`} />
+              <span className={`relative z-10 w-full text-center text-sm font-black text-white ${
+                teacherAttendanceEnabled ? 'pr-9' : 'pl-9'
+              }`}>
+                {loadingTeacherFeatures
+                  ? 'Đang tải...'
+                  : savingTeacherFeatures
+                    ? 'Đang lưu...'
+                    : teacherAttendanceEnabled ? 'Đang mở' : 'Đang khóa'}
+              </span>
+            </button>
+          </div>
+
+          <div className={`mt-6 rounded-2xl border px-4 py-4 ${
+            teacherAttendanceEnabled
+              ? 'border-emerald-200 bg-emerald-50/70'
+              : 'border-amber-200 bg-amber-50/70'
+          }`}>
+            <p className={`text-sm font-bold ${teacherAttendanceEnabled ? 'text-emerald-900' : 'text-amber-950'}`}>
+              {teacherAttendanceEnabled
+                ? 'Gia sư có thể tìm học viên và gửi điểm danh sau buổi học.'
+                : 'Gia sư chỉ có thể xem lịch dạy và lịch sử; mọi nút gửi điểm danh đều bị khóa.'}
+            </p>
+            <p className={`mt-1 text-xs leading-5 ${teacherAttendanceEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
+              Thay đổi được cập nhật theo thời gian thực, không cần xóa trang hoặc tải lại dữ liệu.
+            </p>
+          </div>
         </Card>
       )}
 
