@@ -23,7 +23,7 @@ import { toast } from '@/stores/toastStore'
 import { RewardsTab } from '@/components/parent/RewardsTab'
 import { TopUpTab } from '@/components/parent/TopUpTab'
 import { BookingExperienceTab, type TeacherRecommendation } from '@/components/parent/BookingExperienceTab'
-import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import { calculateLessonPoints, getBookingPoints, getLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
@@ -1424,11 +1424,24 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   }, [profileTeacherId])
 
   // ─── Minute fund stats ───────────────────────────────────────────
-  const pMps = student.minutesPerSession || 50
   const packageMinuteSummary = getStudentPackageMinuteSummary(student)
+  const approvedLessonPointsBySubject = useMemo(() => {
+    return lessons.reduce<Record<string, number>>((totals, lesson) => {
+      const subjectId = lesson.subjectId || student.subjectId || '__legacy__'
+      totals[subjectId] = (totals[subjectId] || 0) + getLessonPoints(lesson, teacherMap[lesson.teacherId])
+      return totals
+    }, {})
+  }, [lessons, student.subjectId, teacherMap])
+  const approvedLessonPoints = useMemo(
+    () => Object.values(approvedLessonPointsBySubject).reduce((sum, points) => sum + points, 0),
+    [approvedLessonPointsBySubject],
+  )
   const pTotalMin = packageMinuteSummary.totalMinutes
-  const pUsedMin = student.usedMinutes ?? packageMinuteSummary.usedMinutes
-  const pRemainingMin = packageMinuteSummary.remainingMinutes
+  // Prefer the larger value so a temporarily incomplete public mirror cannot
+  // reduce a valid stored balance, while stale under-counts are repaired from
+  // the approved lesson history.
+  const pUsedMin = Math.max(packageMinuteSummary.usedMinutes, approvedLessonPoints)
+  const pRemainingMin = Math.max(0, pTotalMin - pUsedMin)
   const pHeldMin = useMemo(() => {
     return bookings
       .filter(b => !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
@@ -1452,9 +1465,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   // ─── Subject packages (with legacy fallback) ─────────────────────
   const subjectPackages = useMemo(() => {
-    if (student.subjects && student.subjects.length > 0) return student.subjects
+    let packages: StudentSubject[] = []
+    if (student.subjects && student.subjects.length > 0) packages = student.subjects
     if (student.subjectId) {
-      return [{
+      if (packages.length === 0) packages = [{
         subjectId: student.subjectId,
         subjectName: student.subjectName || 'Chưa rõ',
         totalSessions: student.totalSessions || 0,
@@ -1467,8 +1481,28 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         pricePerMinute: 0,
       }]
     }
-    return []
-  }, [student])
+    return packages.map((subject) => {
+      const historyPoints = approvedLessonPointsBySubject[subject.subjectId]
+        ?? (packages.length === 1 ? approvedLessonPoints : 0)
+      const storedUsed = Number(subject.usedMinutes) || 0
+      const usedMinutes = Math.max(storedUsed, historyPoints)
+      const minutesPerSession = Number(subject.minutesPerSession) || 25
+      const totalMinutes = subject.totalMinutes !== null && subject.totalMinutes !== undefined
+        ? Number(subject.totalMinutes) || 0
+        : (Number(subject.totalSessions) || 0) * minutesPerSession
+      const totalSessions = Number(subject.totalSessions) || (totalMinutes / minutesPerSession)
+      const usedSessions = Math.round((usedMinutes / minutesPerSession) * 100) / 100
+      return {
+        ...subject,
+        totalMinutes,
+        totalSessions,
+        usedMinutes,
+        remainingMinutes: Math.max(0, totalMinutes - usedMinutes),
+        usedSessions,
+        remainingSessions: Math.max(0, totalSessions - usedSessions),
+      }
+    })
+  }, [approvedLessonPoints, approvedLessonPointsBySubject, student])
 
   useEffect(() => {
     if (!showTeacherSuggestions) return
@@ -1982,7 +2016,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             onRetryRecommendations={() => setRecommendationReload((value) => value + 1)}
           />
         )}
-        {tab === 'topup' && <TopUpTab student={student} lang={lang} />}
+        {tab === 'topup' && (
+          <TopUpTab
+            student={student}
+            lang={lang}
+            usedMinutesOverride={pUsedMin}
+            heldMinutesOverride={pHeldMin}
+          />
+        )}
         {tab === 'history' && (
           <HistoryTab
             lessons={lessons}

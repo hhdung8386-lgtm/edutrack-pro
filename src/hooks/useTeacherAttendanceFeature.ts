@@ -5,21 +5,21 @@ import { db } from '@/lib/firebase'
 const SETTINGS_REF = doc(db, 'paymentSettings', 'main')
 
 /**
- * Công tắc nghiệp vụ dùng chung cho toàn bộ luồng điểm danh của gia sư.
+ * Công tắc chỉ dành cho trang Điểm danh độc lập của gia sư.
  *
- * Mặc định khóa khi document/field chưa tồn tại hoặc không đọc được. Cách này
- * bảo đảm yêu cầu vận hành hiện tại không bị vô hiệu chỉ vì cấu hình chưa được
- * khởi tạo. Admin có thể bật lại ngay trong trang Cài đặt.
+ * Điểm danh từ Lịch dạy là luồng vận hành chính và không phụ thuộc công tắc này.
+ * Mặc định mở để bản triển khai hiện tại khôi phục toàn bộ trang; admin có thể
+ * khóa riêng trang độc lập sau khi đã thông báo cho gia sư.
  */
 export function useTeacherAttendanceFeature() {
-  const [enabled, setEnabled] = useState(false)
+  const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     return onSnapshot(
       SETTINGS_REF,
       (snapshot) => {
-        setEnabled(snapshot.data()?.teacherAttendanceEnabled === true)
+        setEnabled(snapshot.data()?.teacherAttendancePageEnabled !== false)
         setLoading(false)
       },
       (error) => {
@@ -37,9 +37,9 @@ export async function setTeacherAttendanceFeature(enabled: boolean, updatedBy?: 
   await setDoc(
     SETTINGS_REF,
     {
-      teacherAttendanceEnabled: enabled,
-      teacherAttendanceUpdatedAt: serverTimestamp(),
-      teacherAttendanceUpdatedBy: updatedBy || '',
+      teacherAttendancePageEnabled: enabled,
+      teacherAttendancePageUpdatedAt: serverTimestamp(),
+      teacherAttendancePageUpdatedBy: updatedBy || '',
     },
     { merge: true },
   )

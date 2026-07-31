@@ -8,6 +8,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { GraduationCap, Search, ArrowLeft, Share2, User, BookOpen } from 'lucide-react'
 import { maskPhone } from '@/lib/constants'
 import { useSearchParams } from 'react-router-dom'
+import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { getLessonPoints } from '@/lib/points'
 
 type TrackTab = 'student' | 'teacher'
 
@@ -206,14 +208,41 @@ export function TrackingPage() {
 }
 
 function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { student: Student; lessons: Lesson[]; teacherNicks?: Record<string, string>; onBack: () => void }) {
-  const usedPctRaw = student.totalSessions > 0
-    ? Math.round((student.usedSessions / student.totalSessions) * 100)
+  const minuteSummary = getStudentPackageMinuteSummary(student)
+  const historyPointsBySubject = lessons.reduce<Record<string, number>>((totals, lesson) => {
+    const subjectId = lesson.subjectId || student.subjectId || '__legacy__'
+    totals[subjectId] = (totals[subjectId] || 0) + getLessonPoints(lesson)
+    return totals
+  }, {})
+  const approvedHistoryPoints = Object.values(historyPointsBySubject).reduce((sum, points) => sum + points, 0)
+  const usedPoints = Math.max(minuteSummary.usedMinutes, approvedHistoryPoints)
+  const remainingPoints = Math.max(0, minuteSummary.totalMinutes - usedPoints)
+  const packageSessions = student.subjects?.length
+    ? student.subjects.reduce((summary, subject) => {
+        const unitPoints = Number(subject.minutesPerSession) || 25
+        const historyPoints = historyPointsBySubject[subject.subjectId] || 0
+        const storedUsedSessions = Number(subject.usedSessions) || 0
+        const historyUsedSessions = historyPoints / unitPoints
+        return {
+          total: summary.total + (Number(subject.totalSessions) || 0),
+          used: summary.used + Math.max(storedUsedSessions, historyUsedSessions),
+        }
+      }, { total: 0, used: 0 })
+    : {
+        total: student.totalSessions || 0,
+        used: Math.max(
+          student.usedSessions || 0,
+          approvedHistoryPoints / (student.minutesPerSession || 25),
+        ),
+      }
+  const remainingSessions = Math.max(0, packageSessions.total - packageSessions.used)
+  const usedPctRaw = minuteSummary.totalMinutes > 0
+    ? Math.round((usedPoints / minuteSummary.totalMinutes) * 100)
     : 0
   const usedPct = Math.min(usedPctRaw, 100)
   const remainingColor =
-    student.remainingSessions < 0 ? 'text-rose-600' :
-    student.remainingSessions === 0 ? 'text-rose-500' :
-    student.remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
+    remainingSessions === 0 ? 'text-rose-500' :
+    remainingSessions <= 3 ? 'text-amber-500' : 'text-emerald-500'
 
   return (
     <div className="space-y-5">
@@ -250,28 +279,27 @@ function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { studen
       <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-slate-600 mb-4">Tiến độ học tập</h3>
         {(() => {
-          const trackMps = student.minutesPerSession || 50
-          const trackTotalMin = student.totalMinutes ?? student.totalSessions * trackMps
-          const trackUsedMin = student.usedMinutes ?? student.usedSessions * trackMps
-          const trackRemainingMin = student.remainingMinutes ?? (trackTotalMin - trackUsedMin)
+          const trackTotalMin = minuteSummary.totalMinutes
+          const trackUsedMin = usedPoints
+          const trackRemainingMin = remainingPoints
           return (
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-slate-900">{student.totalSessions}</p>
+                <p className="text-2xl font-bold text-slate-900">{packageSessions.total}</p>
                 <p className="text-xs text-slate-500 mt-0.5">Tổng buổi</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">{trackTotalMin} phút</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-indigo-400">{student.usedSessions}</p>
+                <p className="text-2xl font-bold text-indigo-400">{packageSessions.used}</p>
                 <p className="text-xs text-slate-500 mt-0.5">Đã học</p>
                 <p className="text-[11px] text-indigo-300 mt-0.5">{trackUsedMin} phút</p>
               </div>
               <div className="text-center">
                 <p className={`text-2xl font-bold ${remainingColor}`}>
-                  {student.remainingSessions < 0 ? Math.abs(student.remainingSessions) : student.remainingSessions}
+                  {remainingSessions}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {student.remainingSessions < 0 ? 'Nợ buổi' : 'Còn lại'}
+                  Còn lại
                 </p>
                 <p className={`text-[11px] mt-0.5 ${trackRemainingMin <= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                   {trackRemainingMin < 0 ? `Nợ ${Math.abs(trackRemainingMin)}` : trackRemainingMin} phút
@@ -284,8 +312,8 @@ function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { studen
         <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-700 progress-bar-tracking ${
-              student.remainingSessions <= 0 ? 'bg-rose-500' :
-              student.remainingSessions <= 3 ? 'bg-amber-500' : 'bg-emerald-500'
+              remainingSessions <= 0 ? 'bg-rose-500' :
+              remainingSessions <= 3 ? 'bg-amber-500' : 'bg-emerald-500'
             }`}
           />
         </div>

@@ -4,8 +4,20 @@ import { getBookingPoints } from '@/lib/points'
 export function getStudentPackageMinuteSummary(student: Student) {
   const subjects = student.subjects || []
   if (subjects.length > 0) {
-    const totalMinutes = subjects.reduce((sum, sub) => sum + (Number(sub.totalMinutes) || 0), 0)
-    const usedMinutes = subjects.reduce((sum, sub) => sum + (Number(sub.usedMinutes) || 0), 0)
+    const totalMinutes = subjects.reduce((sum, sub) => {
+      const minutesPerSession = Number(sub.minutesPerSession) || 50
+      const storedTotal = Number(sub.totalMinutes)
+      const fallbackTotal = (Number(sub.totalSessions) || 0) * minutesPerSession
+      const hasStoredTotal = sub.totalMinutes !== null && sub.totalMinutes !== undefined && Number.isFinite(storedTotal)
+      return sum + (hasStoredTotal ? storedTotal : fallbackTotal)
+    }, 0)
+    const usedMinutes = subjects.reduce((sum, sub) => {
+      const minutesPerSession = Number(sub.minutesPerSession) || 50
+      const storedUsed = Number(sub.usedMinutes)
+      const fallbackUsed = (Number(sub.usedSessions) || 0) * minutesPerSession
+      const hasStoredUsed = sub.usedMinutes !== null && sub.usedMinutes !== undefined && Number.isFinite(storedUsed)
+      return sum + (hasStoredUsed ? storedUsed : fallbackUsed)
+    }, 0)
     const remainingMinutes = Math.max(0, totalMinutes - usedMinutes)
     return {
       totalMinutes,
@@ -14,8 +26,12 @@ export function getStudentPackageMinuteSummary(student: Student) {
     }
   }
   const mps = student.minutesPerSession || 50
-  const totalMinutes = Number(student.totalMinutes) || (student.totalSessions ? student.totalSessions * mps : 0)
-  const usedMinutes = Number(student.usedMinutes) || (student.usedSessions ? student.usedSessions * mps : 0)
+  const storedTotal = Number(student.totalMinutes)
+  const storedUsed = Number(student.usedMinutes)
+  const hasStoredTotal = student.totalMinutes !== null && student.totalMinutes !== undefined && Number.isFinite(storedTotal)
+  const hasStoredUsed = student.usedMinutes !== null && student.usedMinutes !== undefined && Number.isFinite(storedUsed)
+  const totalMinutes = hasStoredTotal ? storedTotal : (student.totalSessions ? student.totalSessions * mps : 0)
+  const usedMinutes = hasStoredUsed ? storedUsed : (student.usedSessions ? student.usedSessions * mps : 0)
   const remainingMinutes = Math.max(0, totalMinutes - usedMinutes)
   return {
     totalMinutes,

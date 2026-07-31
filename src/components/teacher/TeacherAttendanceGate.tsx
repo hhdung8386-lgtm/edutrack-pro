@@ -37,12 +37,12 @@ export function TeacherAttendanceGate({ children }: TeacherAttendanceGateProps) 
             {lang === 'vi' ? 'Cài đặt hệ thống' : 'System setting'}
           </p>
           <h1 id="attendance-locked-title" className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
-            {lang === 'vi' ? 'Chức năng điểm danh đang tạm khóa' : 'Attendance is temporarily locked'}
+            {lang === 'vi' ? 'Trang Điểm danh đang tạm khóa' : 'Attendance page is temporarily locked'}
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
             {lang === 'vi'
-              ? 'Admin đang tạm dừng thao tác điểm danh của gia sư. Lịch dạy, lịch sử buổi học và toàn bộ dữ liệu đã có vẫn được giữ nguyên.'
-              : 'Teacher attendance is currently paused by the admin. Class schedules, lesson history, and all existing data remain unchanged.'}
+              ? 'Admin chỉ tạm khóa trang Điểm danh riêng. Gia sư vẫn điểm danh bình thường từ Lịch dạy; lịch sử và toàn bộ dữ liệu đã có được giữ nguyên.'
+              : 'Only the standalone attendance page is paused. Teachers can still submit attendance from Class schedules; all existing data remains unchanged.'}
           </p>
 
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">

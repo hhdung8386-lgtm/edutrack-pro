@@ -21,6 +21,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
 import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { retireTeacherAccount } from '@/lib/teacherAccount'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -57,6 +58,8 @@ export function TeacherDetailPage() {
   const [restoringLogin, setRestoringLogin] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [toggleLoading, setToggleLoading] = useState(false)
+  const [showRetireConfirm, setShowRetireConfirm] = useState(false)
+  const [retiring, setRetiring] = useState(false)
 
   // Khôi phục quyền đăng nhập cho GV bị 403: luồng đổi nickname có thể để lại
   // users doc với role 'inactive_teacher' trong khi teacher vẫn active — GV đăng
@@ -64,6 +67,10 @@ export function TeacherDetailPage() {
   // (rules không cho GV tự đổi role).
   const handleRestoreLoginRole = async () => {
     if (!teacher) return
+    if (teacher.status === 'resigned') {
+      toast.error('Gia sư đã nghỉ dạy. Cần cấp nickname mới và kích hoạt lại trước khi khôi phục đăng nhập.')
+      return
+    }
     setRestoringLogin(true)
     try {
       const snap = await getDocs(query(collection(db, 'users'), where('teacherId', '==', teacher.id)))
@@ -102,6 +109,11 @@ export function TeacherDetailPage() {
 
   const handleToggleStatus = async () => {
     if (!teacher) return
+    if (teacher.status !== 'active' && !(teacher.code || '').trim()) {
+      toast.error('Hãy cấp nickname đăng nhập mới trước khi kích hoạt lại gia sư')
+      setShowEdit(true)
+      return
+    }
     setToggleLoading(true)
     try {
       const nextStatus = teacher.status === 'active' ? 'inactive' : 'active'
@@ -116,6 +128,33 @@ export function TeacherDetailPage() {
       toast.error('Cập nhật trạng thái thất bại')
     } finally {
       setToggleLoading(false)
+    }
+  }
+
+  const handleRetireTeacher = async () => {
+    if (!teacher) return
+    setRetiring(true)
+    try {
+      const nickname = teacher.code || teacher.releasedNickname || ''
+      await retireTeacherAccount({
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        nickname,
+        adminId: user?.uid,
+      })
+      setTeacher((current) => current ? {
+        ...current,
+        status: 'resigned',
+        code: '',
+        releasedNickname: nickname,
+      } : current)
+      setShowRetireConfirm(false)
+      toast.success('Đã khóa tài khoản và thu hồi nickname đăng nhập')
+    } catch (error) {
+      console.error('Retire teacher failed:', error)
+      toast.error('Không thể khóa tài khoản gia sư. Dữ liệu chưa bị thay đổi.')
+    } finally {
+      setRetiring(false)
     }
   }
 
@@ -1085,8 +1124,14 @@ export function TeacherDetailPage() {
             )}
             <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-mono text-lg font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
-                  {teacher.code}
+                <span
+                  className={`font-mono text-lg font-bold px-3 py-1 rounded-lg border ${
+                    teacher.status === 'resigned'
+                      ? 'text-rose-600 bg-rose-50 border-rose-200'
+                      : 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                  }`}
+                >
+                  {teacher.code || teacher.releasedNickname || 'Đã thu hồi'}
                 </span>
                  <StatusBadge status={teacher.status} type="teacher" />
               </div>
@@ -1099,9 +1144,16 @@ export function TeacherDetailPage() {
                   <span className="text-slate-500">Level: </span>
                   <span className="text-slate-800 font-semibold">×{teacher.level}</span>
                 </div>
-                 <div>
+                <div>
                   <span className="text-slate-500">Tên đăng nhập: </span>
-                  <span className="text-indigo-600 font-bold font-mono">{teacher.code}</span>
+                  <span className="text-indigo-600 font-bold font-mono">
+                    {teacher.code || teacher.releasedNickname || 'Đã thu hồi'}
+                  </span>
+                  {teacher.status === 'resigned' && (
+                    <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">
+                      Nickname đã thu hồi
+                    </span>
+                  )}
                 </div>
                 {/* Câu giới thiệu — admin điền trực tiếp, phụ huynh sẽ thấy ở cổng phụ huynh */}
                 <InlineBioEditor teacherId={teacher.id} bio={teacher.bio || ''} onSaved={(bio) => setTeacher(prev => prev ? { ...prev, bio } : prev)} />
@@ -1132,19 +1184,34 @@ export function TeacherDetailPage() {
               loading={toggleLoading}
               onClick={handleToggleStatus}
             >
-              {teacher.status === 'active' ? 'Tạm dừng dạy' : 'Kích hoạt dạy'}
+              {teacher.status === 'active'
+                ? 'Tạm dừng dạy'
+                : teacher.status === 'resigned' && !teacher.code
+                  ? 'Cấp nickname để dạy lại'
+                  : 'Kích hoạt dạy'}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
-            <Button
-              size="sm"
-              variant="outline"
-              loading={restoringLogin}
-              onClick={handleRestoreLoginRole}
-              title="Sửa lỗi giáo viên đăng nhập bị 403 do tài khoản bị khóa quyền sau khi đổi nickname"
-              className="border-amber-300 text-amber-700 hover:bg-amber-50"
-            >
-              Khôi phục đăng nhập
-            </Button>
+            {teacher.status !== 'resigned' && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={restoringLogin}
+                  onClick={handleRestoreLoginRole}
+                  title="Sửa lỗi giáo viên đăng nhập bị 403 do tài khoản bị khóa quyền sau khi đổi nickname"
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                >
+                  Khôi phục đăng nhập
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => setShowRetireConfirm(true)}
+                >
+                  Nghỉ dạy
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </Card>
@@ -2348,6 +2415,20 @@ export function TeacherDetailPage() {
             />
           </div>
         </Modal>
+      )}
+
+      {showRetireConfirm && (
+        <ConfirmDialog
+          open
+          onClose={() => !retiring && setShowRetireConfirm(false)}
+          onConfirm={handleRetireTeacher}
+          title="Xác nhận gia sư nghỉ dạy?"
+          description={`Hồ sơ và toàn bộ lịch sử của ${teacher?.name || 'gia sư'} vẫn được giữ nguyên.`}
+          consequence="Tài khoản bị khóa ngay và nickname đăng nhập được thu hồi để có thể cấp cho gia sư khác."
+          confirmLabel="Khóa và thu hồi nickname"
+          confirmVariant="danger"
+          loading={retiring}
+        />
       )}
 
       {showEdit && <TeacherFormModal teacher={teacher} onClose={() => setShowEdit(false)} />}

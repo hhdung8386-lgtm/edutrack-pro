@@ -42,6 +42,7 @@ import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -239,10 +240,10 @@ function buildScheduleOptions(availability: TeacherAvailability | undefined, dur
 }
 
 function getStudentMinuteFund(student: Student) {
-  const minutesPerSession = student.minutesPerSession || 50
-  const total = student.totalMinutes ?? student.totalSessions * minutesPerSession
-  const used = student.usedMinutes ?? student.usedSessions * minutesPerSession
-  const remaining = student.remainingMinutes ?? Math.max(0, total - used)
+  const summary = getStudentPackageMinuteSummary(student)
+  const total = summary.totalMinutes
+  const used = summary.usedMinutes
+  const remaining = summary.remainingMinutes
   const held = student.reservedMinutes ?? student.heldMinutes ?? 0
   const available = Math.max(0, remaining - held)
 

@@ -129,6 +129,7 @@ function App() {
             <Route path="teachers/online" element={<TeachersPage category="online" />} />
             <Route path="teachers/offline" element={<TeachersPage category="offline" />} />
             <Route path="teachers/tester" element={<TeachersPage category="tester" />} />
+            <Route path="teachers/resigned" element={<TeachersPage category="resigned" />} />
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />

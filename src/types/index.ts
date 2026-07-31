@@ -87,7 +87,12 @@ export interface Teacher {
   level: number
   bio: string
   photoURL: string
-  status: 'active' | 'inactive'
+  status: 'active' | 'inactive' | 'resigned'
+  /** Nickname đã thu hồi khi gia sư nghỉ dạy; chỉ lưu để đối soát lịch sử. */
+  releasedNickname?: string
+  resignedAt?: Timestamp
+  resignedBy?: string
+  updatedAt?: Timestamp
   gender?: 'male' | 'female'
   teacherGrade?: 'A' | 'B' | 'C' | 'PH' | 'SA'
   contractAccepted?: boolean
@@ -304,7 +309,7 @@ export interface AdminLog {
 export interface UserDoc {
   uid: string
   email: string
-  role: 'admin' | 'teacher'
+  role: 'admin' | 'teacher' | 'inactive_teacher'
   teacherId?: string
   displayName?: string
   createdAt: Timestamp
@@ -337,7 +342,7 @@ export interface TeacherAvailability {
 
 export type LessonStatus = 'pending' | 'approved' | 'rejected'
 export type StudentStatus = 'active' | 'inactive' | 'expired'
-export type TeacherStatus = 'active' | 'inactive'
+export type TeacherStatus = 'active' | 'inactive' | 'resigned'
 export type MinutePreset = 25 | 50 | 75 | 100
 
 export interface SystemNotification {

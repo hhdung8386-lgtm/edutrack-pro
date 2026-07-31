@@ -10,14 +10,17 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2 } from 'lucide-react'
+import { BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
+import { retireTeacherAccount } from '@/lib/teacherAccount'
+import { useAuthStore } from '@/stores/authStore'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 interface Branch { id: string; name: string; status: string }
+type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
 
 async function commitTeacherUpdates(teacherIds: string[], values: Record<string, unknown>) {
   for (let index = 0; index < teacherIds.length; index += 450) {
@@ -48,7 +51,13 @@ const DIRECTORY_CONFIG = {
     description: 'Quản lý hồ sơ kiểm thử tách biệt với đội ngũ gia sư đang nhận lớp.',
     icon: TestTube2,
   },
-} satisfies Record<TeacherDirectoryCategory, { title: string; singular: string; description: string; icon: typeof GraduationCap }>
+  resigned: {
+    title: 'Gia sư nghỉ dạy',
+    singular: 'gia sư nghỉ dạy',
+    description: 'Lưu hồ sơ và lịch sử của gia sư đã nghỉ dạy; tài khoản đã khóa và nickname đã thu hồi.',
+    icon: UserX,
+  },
+} satisfies Record<TeacherDirectoryView, { title: string; singular: string; description: string; icon: typeof GraduationCap }>
 
 // Quốc gia của gia sư (lấy từ hồ sơ). Hiển thị cờ + tên gọn cho cột "Quốc gia".
 const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
@@ -79,15 +88,17 @@ function CountryCell({ country }: { country?: string }) {
   )
 }
 
-const STATUS_STYLES: Record<'active' | 'inactive', { badge: string; dot: string; label: string }> = {
+const STATUS_STYLES: Record<Teacher['status'], { badge: string; dot: string; label: string }> = {
   active: { badge: 'bg-emerald-100 text-emerald-700 border-emerald-300 hover:bg-emerald-200', dot: 'bg-emerald-400', label: 'Đang dạy' },
   inactive: { badge: 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200', dot: 'bg-slate-400', label: 'Tạm dừng' },
+  resigned: { badge: 'bg-rose-100 text-rose-700 border-rose-300 hover:bg-rose-200', dot: 'bg-rose-500', label: 'Nghỉ dạy' },
 }
 
-function StatusSelector({ teacherId, currentStatus }: { teacherId: string; currentStatus: 'active' | 'inactive' }) {
+function StatusSelector({ teacher, onRetire }: { teacher: Teacher; onRetire: (teacher: Teacher) => void }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const currentStatus = teacher.status
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -97,12 +108,20 @@ function StatusSelector({ teacherId, currentStatus }: { teacherId: string; curre
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleSelect = async (status: 'active' | 'inactive') => {
+  const handleSelect = async (status: Teacher['status']) => {
     setOpen(false)
     if (status === currentStatus) return
+    if (status === 'resigned') {
+      onRetire(teacher)
+      return
+    }
+    if (status === 'active' && !(teacher.code || '').trim()) {
+      toast.error('Hãy mở Sửa và cấp nickname đăng nhập mới trước khi kích hoạt lại gia sư')
+      return
+    }
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'teachers', teacherId), { status })
+      await updateDoc(doc(db, 'teachers', teacher.id), { status })
       toast.success(`Đã chuyển giáo viên sang "${STATUS_STYLES[status].label}"`)
     } catch {
       toast.error('Lỗi khi cập nhật trạng thái')
@@ -128,7 +147,7 @@ function StatusSelector({ teacherId, currentStatus }: { teacherId: string; curre
 
       {open && (
         <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[120px]">
-          {(['active', 'inactive'] as const).map((s) => (
+          {(['active', 'inactive', 'resigned'] as const).map((s) => (
             <button
               key={s}
               onClick={(e) => { e.stopPropagation(); handleSelect(s) }}
@@ -171,8 +190,9 @@ function CertificateComplianceCell({ teacher, onEdit, compact = false }: { teach
   )
 }
 
-export function TeachersPage({ category = 'online' }: { category?: TeacherDirectoryCategory }) {
+export function TeachersPage({ category = 'online' }: { category?: TeacherDirectoryView }) {
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const directory = DIRECTORY_CONFIG[category]
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
@@ -187,6 +207,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
   const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [retiringTeacher, setRetiringTeacher] = useState<Teacher | null>(null)
+  const [retiring, setRetiring] = useState(false)
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([])
   const [bulkPoints, setBulkPoints] = useState(25)
   const [savingPoints, setSavingPoints] = useState(false)
@@ -196,6 +218,12 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     const stored = sessionStorage.getItem('teachers_limitVal')
     return stored ? Number(stored) : 20
   })
+
+  useEffect(() => {
+    if (category === 'resigned' && statusFilter !== 'all') {
+      setStatusFilter('all')
+    }
+  }, [category, statusFilter])
 
   // Sync filters to sessionStorage
   useEffect(() => {
@@ -297,6 +325,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   }, [])
 
   const matchesDirectory = (teacher: Teacher) => {
+    if (category === 'resigned') return teacher.status === 'resigned'
+    if (teacher.status === 'resigned') return false
     const formats = teacher.teachingFormats || []
     return category === 'tester'
       ? !!teacher.isTester
@@ -316,10 +346,10 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const filtered = directoryTeachers.filter((t) => {
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.code.toLowerCase().includes(search.toLowerCase())
+      (t.code || t.releasedNickname || '').toLowerCase().includes(search.toLowerCase())
     const teacherCountry = (t.country || '').toUpperCase().trim() || 'missing'
     const matchCountry = countryFilter === 'all' || teacherCountry === countryFilter
-    const matchStatus = statusFilter === 'all' || t.status === statusFilter
+    const matchStatus = category === 'resigned' || statusFilter === 'all' || t.status === statusFilter
     const matchBranch = branchFilter === 'all' || t.branchId === branchFilter
     const certificates = getTeacherCertificateCompliance(t)
     const matchProfile = profileFilter === 'all'
@@ -343,10 +373,11 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     return counts
   }, { complete: 0, missingForeign: 0, missingPedagogical: 0, missingBoth: 0 })
 
-  const directoryCounts: Record<TeacherDirectoryCategory, number> = {
-    online: teachers.filter((t) => t.teachingFormats?.includes('online') || ((t.teachingFormats || []).length === 0 && !t.isTester)).length,
-    offline: teachers.filter((t) => t.teachingFormats?.includes('offline')).length,
-    tester: teachers.filter((t) => !!t.isTester).length,
+  const directoryCounts: Record<TeacherDirectoryView, number> = {
+    online: teachers.filter((t) => t.status !== 'resigned' && (t.teachingFormats?.includes('online') || ((t.teachingFormats || []).length === 0 && !t.isTester))).length,
+    offline: teachers.filter((t) => t.status !== 'resigned' && t.teachingFormats?.includes('offline')).length,
+    tester: teachers.filter((t) => t.status !== 'resigned' && !!t.isTester).length,
+    resigned: teachers.filter((t) => t.status === 'resigned').length,
   }
 
   // Bật/tắt vai trò Tester độc lập với nhóm Online/Offline.
@@ -372,6 +403,26 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       toast.error('Lỗi khi xóa giáo viên: ' + err.message)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleRetire = async () => {
+    if (!retiringTeacher) return
+    setRetiring(true)
+    try {
+      await retireTeacherAccount({
+        teacherId: retiringTeacher.id,
+        teacherName: retiringTeacher.name,
+        nickname: retiringTeacher.code || retiringTeacher.releasedNickname || '',
+        adminId: user?.uid,
+      })
+      toast.success('Đã chuyển sang Nghỉ dạy, khóa đăng nhập và thu hồi nickname')
+      setRetiringTeacher(null)
+    } catch (error) {
+      console.error(error)
+      toast.error('Không thể khóa tài khoản gia sư. Dữ liệu chưa bị thay đổi.')
+    } finally {
+      setRetiring(false)
     }
   }
 
@@ -439,15 +490,17 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             <p className="mt-0.5 hidden text-sm text-slate-500 sm:block">{directory.description}</p>
           </div>
         </div>
-        <Button onClick={() => setShowAdd(true)} className="shrink-0">
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Thêm {directory.singular}</span>
-          <span className="sm:hidden">Thêm mới</span>
-        </Button>
+        {category !== 'resigned' && (
+          <Button onClick={() => setShowAdd(true)} className="shrink-0">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Thêm {directory.singular}</span>
+            <span className="sm:hidden">Thêm mới</span>
+          </Button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {(Object.keys(DIRECTORY_CONFIG) as TeacherDirectoryCategory[]).map((key) => {
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {(Object.keys(DIRECTORY_CONFIG) as TeacherDirectoryView[]).map((key) => {
           const item = DIRECTORY_CONFIG[key]
           const ItemIcon = item.icon
           const active = key === category
@@ -539,21 +592,23 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             </select>
           </label>
 
-          <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
-            {['all', 'active', 'inactive'].map((status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                  statusFilter === status
-                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-                }`}
-              >
-                {status === 'all' ? 'Tất cả' : status === 'active' ? 'Đang dạy' : 'Tạm dừng'}
-              </button>
-            ))}
-          </div>
+          {category !== 'resigned' && (
+            <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
+              {['all', 'active', 'inactive'].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                    statusFilter === status
+                      ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  {status === 'all' ? 'Tất cả' : status === 'active' ? 'Đang dạy' : 'Tạm dừng'}
+                </button>
+              ))}
+            </div>
+          )}
 
           <select
             value={countryFilter}
@@ -639,7 +694,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         <EmptyState
           icon={<GraduationCap className="w-8 h-8" />}
           title={`Không tìm thấy ${directory.singular}`}
-          action={{ label: `Thêm ${directory.singular}`, onClick: () => setShowAdd(true) }}
+          action={category === 'resigned' ? undefined : { label: `Thêm ${directory.singular}`, onClick: () => setShowAdd(true) }}
         />
       ) : (
         <>
@@ -661,7 +716,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       <td className="px-4 py-3"><input type="checkbox" aria-label={`Chọn ${teacher.name}`} checked={selectedTeacherIds.includes(teacher.id)} onChange={(event) => setSelectedTeacherIds((current) => event.target.checked ? [...new Set([...current, teacher.id])] : current.filter((id) => id !== teacher.id))} /></td>
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                          {teacher.code}
+                          {teacher.code || teacher.releasedNickname || 'Đã thu hồi'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -715,7 +770,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                         </span>
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <StatusSelector teacherId={teacher.id} currentStatus={teacher.status} />
+                        <StatusSelector teacher={teacher} onRetire={setRetiringTeacher} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -764,9 +819,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="font-mono text-xs text-emerald-400">{teacher.code}</span>
+                      <span className="font-mono text-xs text-emerald-400">{teacher.code || teacher.releasedNickname || 'Đã thu hồi'}</span>
                       <span onClick={(e) => e.stopPropagation()}>
-                        <StatusSelector teacherId={teacher.id} currentStatus={teacher.status} />
+                        <StatusSelector teacher={teacher} onRetire={setRetiringTeacher} />
                       </span>
                       {teacher.isTester && (
                         <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
@@ -827,8 +882,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         </>
       )}
 
-      {showAdd && <TeacherFormModal defaultCategory={category} onClose={() => setShowAdd(false)} />}
-      {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category} onClose={() => setEditTeacher(null)} />}
+      {showAdd && <TeacherFormModal defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setShowAdd(false)} />}
+      {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setEditTeacher(null)} />}
       <ConfirmDialog
         open={!!deleteTeacher}
         onClose={() => setDeleteTeacher(null)}
@@ -839,6 +894,17 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         confirmLabel="Xóa"
         confirmVariant="danger"
         loading={deleting}
+      />
+      <ConfirmDialog
+        open={!!retiringTeacher}
+        onClose={() => !retiring && setRetiringTeacher(null)}
+        onConfirm={handleRetire}
+        title="Xác nhận gia sư nghỉ dạy?"
+        description={`Hồ sơ và toàn bộ lịch sử của ${retiringTeacher?.name || 'gia sư'} vẫn được giữ nguyên.`}
+        consequence="Tài khoản sẽ bị khóa ngay và nickname đăng nhập được thu hồi để có thể cấp cho gia sư khác."
+        confirmLabel="Khóa và thu hồi nickname"
+        confirmVariant="danger"
+        loading={retiring}
       />
     </div>
   )

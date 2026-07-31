@@ -299,11 +299,11 @@ export function SettingsPage() {
     try {
       await setTeacherAttendanceFeature(nextEnabled, user?.email || user?.uid)
       toast.success(nextEnabled
-        ? 'Đã mở lại chức năng điểm danh cho gia sư'
-        : 'Đã khóa chức năng điểm danh của gia sư')
+        ? 'Đã mở lại trang Điểm danh cho gia sư'
+        : 'Đã khóa trang Điểm danh của gia sư')
     } catch (error) {
       console.error('Unable to update teacher attendance setting:', error)
-      toast.error('Không thể cập nhật chức năng điểm danh')
+      toast.error('Không thể cập nhật trang Điểm danh')
     } finally {
       setSavingTeacherFeatures(false)
     }
@@ -640,9 +640,9 @@ export function SettingsPage() {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Quyền thao tác gia sư</p>
-                <h2 className="mt-1 text-lg font-black text-slate-950">Điểm danh buổi học</h2>
+                <h2 className="mt-1 text-lg font-black text-slate-950">Trang Điểm danh độc lập</h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Khóa hoặc mở đồng bộ trang Điểm danh và thao tác điểm danh trong Lịch dạy. Lịch sử, lịch đã đặt và dữ liệu buổi học cũ luôn được giữ nguyên.
+                  Chỉ khóa hoặc mở trang Điểm danh riêng của gia sư. Điểm danh từ Lịch dạy vẫn hoạt động bình thường; lịch sử và dữ liệu buổi học luôn được giữ nguyên.
                 </p>
               </div>
             </div>
@@ -651,7 +651,7 @@ export function SettingsPage() {
               type="button"
               role="switch"
               aria-checked={teacherAttendanceEnabled}
-              aria-label="Bật hoặc tắt chức năng điểm danh của gia sư"
+              aria-label="Bật hoặc tắt trang Điểm danh độc lập của gia sư"
               disabled={loadingTeacherFeatures || savingTeacherFeatures}
               onClick={toggleTeacherAttendance}
               className={`relative inline-flex h-12 w-full shrink-0 items-center rounded-2xl px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-wait disabled:opacity-60 sm:w-48 ${
@@ -680,8 +680,8 @@ export function SettingsPage() {
           }`}>
             <p className={`text-sm font-bold ${teacherAttendanceEnabled ? 'text-emerald-900' : 'text-amber-950'}`}>
               {teacherAttendanceEnabled
-                ? 'Gia sư có thể tìm học viên và gửi điểm danh sau buổi học.'
-                : 'Gia sư chỉ có thể xem lịch dạy và lịch sử; mọi nút gửi điểm danh đều bị khóa.'}
+                ? 'Trang Điểm danh riêng đang mở; điểm danh từ Lịch dạy cũng hoạt động bình thường.'
+                : 'Trang Điểm danh riêng đang khóa; gia sư vẫn điểm danh bình thường từ Lịch dạy.'}
             </p>
             <p className={`mt-1 text-xs leading-5 ${teacherAttendanceEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
               Thay đổi được cập nhật theo thời gian thực, không cần xóa trang hoặc tải lại dữ liệu.

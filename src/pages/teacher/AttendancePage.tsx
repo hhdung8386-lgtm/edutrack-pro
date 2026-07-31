@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -15,11 +15,10 @@ import {
   validateLessonReport, composeLessonComment, lessonReportFields,
 } from '@/components/lessons/lessonReport'
 import { Card } from '@/components/ui/Card'
-import { StatusBadge } from '@/components/ui/Badge'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { formatVND, getToday, MINUTE_PRESETS, LOW_SESSION_THRESHOLD } from '@/lib/constants'
+import { getToday, MINUTE_PRESETS } from '@/lib/constants'
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
@@ -47,7 +46,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export function AttendancePage() {
-  const { user, teacherId } = useAuthStore()
+  const { teacherId } = useAuthStore()
   const { t, lang } = useLanguageStore()
   const [code, setCode] = useState('')
   const [student, setStudent] = useState<Student | null>(null)
@@ -60,7 +59,6 @@ export function AttendancePage() {
   const [images, setImages] = useState<{ url: string; storageURL: string; uploading: boolean }[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [teacherData, setTeacherData] = useState<{ name: string; code: string; subjectName?: string; level: number } | null>(null)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
@@ -130,19 +128,6 @@ export function AttendancePage() {
             : []
         setSelectedSubjectId(subjects[0]?.subjectId || '')
 
-        if (teacherId) {
-          const tSnap = await getDoc(doc(db, 'teachers', teacherId))
-          if (tSnap.exists()) {
-            const td = tSnap.data()
-            const subjectSnap = td.subjectIds?.length
-              ? await getDoc(doc(db, 'subjects', s.subjectId))
-              : null
-            setTeacherData({
-              name: td.name, code: td.code, level: td.level,
-              subjectName: subjectSnap?.data()?.name,
-            })
-          }
-        }
       }
     } finally {
       setSearching(false)
@@ -271,7 +256,7 @@ export function AttendancePage() {
         ? (freshPkg.remainingMinutes || 0)
         : (freshStudent.remainingMinutes ?? ((freshStudent.remainingSessions || 0) * (freshStudent.minutesPerSession || 50)))
       if (freshStudent.status === 'expired' || freshRemaining <= 0) {
-        toast.error('Học viên đã HẾT BUỔI ở môn này — không thể điểm danh. Vui lòng báo phụ huynh nạp thêm buổi.')
+        toast.error('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.')
         return
       }
 
@@ -280,7 +265,7 @@ export function AttendancePage() {
       const pointsPer25Minutes = getTeacherPointsPer25Minutes(teacher)
       const lessonPoints = calculateLessonPoints(selectedMinutes, pointsPer25Minutes)
       if (freshRemaining < lessonPoints) {
-        toast.error(`Học viên chỉ còn ${freshRemaining} kim cương, không đủ ${lessonPoints} kim cương cho buổi học với gia sư này.`)
+        toast.error('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.')
         return
       }
 
@@ -401,7 +386,7 @@ export function AttendancePage() {
             <div className="min-w-0">
               <p className="font-bold text-rose-700">
                 {blockedStudent.reason === 'expired'
-                  ? 'Học viên đã HẾT BUỔI — không thể điểm danh'
+                  ? 'Gói học hiện không thể điểm danh'
                   : 'Học viên đang BẢO LƯU — không thể điểm danh'}
               </p>
               <p className="mt-1 text-sm font-semibold text-rose-800">
@@ -409,7 +394,7 @@ export function AttendancePage() {
               </p>
               <p className="mt-2 text-xs leading-relaxed text-rose-600 font-semibold">
                 {blockedStudent.reason === 'expired'
-                  ? 'Học viên không còn buổi trong gói nên hệ thống không cho ghi nhận buổi dạy dưới bất kỳ hình thức nào. Vui lòng báo giáo vụ / phụ huynh nạp thêm buổi rồi điểm danh lại.'
+                  ? 'Hệ thống chưa cho phép ghi nhận buổi dạy cho học viên này. Vui lòng liên hệ giáo vụ để kiểm tra trạng thái gói học.'
                   : 'Học viên đang trong thời gian bảo lưu. Vui lòng liên hệ giáo vụ để mở lại trước khi điểm danh.'}
               </p>
               <button
@@ -451,13 +436,12 @@ export function AttendancePage() {
 
         const selectedPkg = subjects.find(s => s.subjectId === selectedSubjectId) || subjects[0]
         const remainingMinutes = selectedPkg ? selectedPkg.remainingMinutes : 0
-        const remainingSessions = Math.floor(remainingMinutes / 25)
         const isOutOfMinutes = remainingMinutes <= 0
 
         return (
           <>
             <Card className={`transition-all duration-300 transform animate-fade-in-up ${isOutOfMinutes ? 'border-rose-200 bg-rose-50/50' : 'border-sky-100 hover:shadow-lg'}`}>
-              <div className="flex items-center justify-between">
+              <div>
                 <div>
                   <p className="text-xl font-bold text-slate-900">{student.name}</p>
                   <p className="font-mono text-sm text-[#3BB8EB] mt-0.5">{student.code}</p>
@@ -497,16 +481,6 @@ export function AttendancePage() {
                     </div>
                   )}
                 </div>
-                <div className="text-right">
-                  <p className={`text-3xl font-bold ${
-                    isOutOfMinutes ? 'text-rose-500' :
-                    remainingSessions <= LOW_SESSION_THRESHOLD ? 'text-amber-500' : 'text-emerald-500'
-                  }`}>{remainingSessions}</p>
-                  <p className="text-xs text-slate-500">buổi còn lại (25p)</p>
-                  <p className={`text-[11px] mt-0.5 ${isOutOfMinutes ? 'text-rose-500' : 'text-slate-400'}`}>
-                    {remainingMinutes} phút
-                  </p>
-                </div>
               </div>
 
               {/* Subject Package Dropdown inside Card */}
@@ -518,14 +492,11 @@ export function AttendancePage() {
                     onChange={(e) => setSelectedSubjectId(e.target.value)}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
                   >
-                    {subjects.map((sub) => {
-                      const remSess = Math.floor(sub.remainingMinutes / 25)
-                      return (
-                        <option key={sub.subjectId} value={sub.subjectId}>
-                          {sub.subjectName} (Còn {remSess} buổi / {sub.remainingMinutes}p)
-                        </option>
-                      )
-                    })}
+                    {subjects.map((sub) => (
+                      <option key={sub.subjectId} value={sub.subjectId}>
+                        {sub.subjectName}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -535,14 +506,14 @@ export function AttendancePage() {
               <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-5 flex items-start gap-3">
                 <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-rose-700">Học viên đã HẾT BUỔI — không thể điểm danh</p>
+                  <p className="font-bold text-rose-700">Gói học hiện không thể điểm danh</p>
                   <p className="text-xs text-rose-600 mt-1 leading-normal font-semibold">
-                    Môn học được chọn còn 0 buổi / 0 phút. Hệ thống không cho phép ghi nhận buổi dạy dưới bất kỳ hình thức nào
-                    (có mặt, vắng có phép hay vắng không phép). Vui lòng báo phụ huynh liên hệ trung tâm nạp thêm buổi.
+                    Hệ thống chưa cho phép ghi nhận buổi dạy dưới bất kỳ hình thức nào
+                    (có mặt, vắng có phép hay vắng không phép). Vui lòng liên hệ giáo vụ để kiểm tra trạng thái gói học.
                   </p>
                   {subjects.length > 1 && (
                     <p className="text-xs text-rose-700 mt-2 font-bold">
-                      Học viên còn môn khác — hãy chọn lại môn học phía trên nếu bạn dạy môn đó.
+                      Bạn có thể chọn môn học khác phía trên nếu buổi dạy thuộc một gói khác.
                     </p>
                   )}
                 </div>

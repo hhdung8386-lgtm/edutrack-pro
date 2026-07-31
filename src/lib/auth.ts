@@ -42,7 +42,11 @@ export async function signInTeacher(teacherCode: string, password: string) {
   }
 
   const teacherId = teacherDoc.id
-  const matchedCode = teacherDoc.data().code
+  const teacherData = teacherDoc.data()
+  if (teacherData.status === 'resigned') {
+    throw new Error('Tài khoản gia sư đã nghỉ dạy và bị khóa. Vui lòng liên hệ trung tâm nếu cần hỗ trợ.')
+  }
+  const matchedCode = teacherData.code
   const fallbackEmail = `${matchedCode}@edutrackpro.app`
 
   const userQuery = query(
@@ -184,6 +188,9 @@ export async function resetTeacherPassword(teacherId: string) {
     const userSnapshot = await getDocs(userQuery)
 
     const teacherDocSnap = await getDoc(doc(db, 'teachers', teacherId))
+    if (teacherDocSnap.exists() && teacherDocSnap.data().status === 'resigned') {
+      throw new Error('Gia sư đã nghỉ dạy; không thể khôi phục tài khoản khi chưa cấp nickname mới và kích hoạt lại.')
+    }
     const teacherCode = teacherDocSnap.exists() ? teacherDocSnap.data().code : ''
     const fallbackEmail = teacherCode.toLowerCase().startsWith('gv')
       ? `${teacherCode.toUpperCase()}@edutrackpro.app`

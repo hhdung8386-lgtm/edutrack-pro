@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, LockKeyhole } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -18,7 +18,6 @@ import {
   LessonReportDraft, emptyLessonReport,
   validateLessonReport, composeLessonComment, lessonReportFields,
 } from '@/components/lessons/lessonReport'
-import { useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
 
 const isAttendanceAllowed = (booking: BookingRequest) => {
   if (!booking.requestedDate || !booking.requestedEnd) return false
@@ -149,7 +148,6 @@ export function BookingSchedulesPage() {
   const navigate = useNavigate()
   const { teacherId } = useAuthStore()
   const { lang, t } = useLanguageStore()
-  const { enabled: attendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceFeature()
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
@@ -185,12 +183,6 @@ export function BookingSchedulesPage() {
       }
     }).catch(err => console.error('Error loading teacher profile:', err))
   }, [teacherId])
-
-  useEffect(() => {
-    if (!attendanceEnabled) {
-      setShowAttendanceModal(false)
-    }
-  }, [attendanceEnabled])
 
   // Load teacher availability
   useEffect(() => {
@@ -257,7 +249,7 @@ export function BookingSchedulesPage() {
 
   // Load pending attendance bookings in real-time
   useEffect(() => {
-    if (!teacherId || !attendanceEnabled) {
+    if (!teacherId) {
       setPendingAttendanceBookings([])
       return
     }
@@ -304,7 +296,7 @@ export function BookingSchedulesPage() {
     })
 
     return unsub
-  }, [teacherId, attendanceEnabled])
+  }, [teacherId])
 
   // Load booked booking requests in real-time
   useEffect(() => {
@@ -430,13 +422,6 @@ export function BookingSchedulesPage() {
 
   // Submit attendance from calendar booking slot
   const submitAttendance = async () => {
-    if (!attendanceEnabled) {
-      toast.warning(lang === 'vi'
-        ? 'Chức năng điểm danh đang tạm khóa bởi quản trị viên.'
-        : 'Attendance is temporarily locked by the administrator.')
-      setShowAttendanceModal(false)
-      return
-    }
     if (!selectedBooking || !teacherId) return
     // Chặn gửi khi còn ảnh đang tải — trước đây ảnh đang tải bị âm thầm bỏ khỏi điểm danh
     if (images.some((i) => i.uploading)) {
@@ -605,24 +590,6 @@ export function BookingSchedulesPage() {
         </div>
       </div>
 
-      {!loadingAttendanceFeature && !attendanceEnabled && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-950 shadow-sm">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-amber-700 ring-1 ring-amber-200">
-            <LockKeyhole className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm font-black">
-              {lang === 'vi' ? 'Điểm danh đang tạm khóa' : 'Attendance is temporarily locked'}
-            </p>
-            <p className="mt-1 text-xs font-medium leading-5 text-amber-800">
-              {lang === 'vi'
-                ? 'Bạn vẫn xem được lịch dạy và lịch sử buổi học. Thao tác gửi điểm danh sẽ mở lại khi quản trị viên bật chức năng này.'
-                : 'You can still view class schedules and lesson history. Attendance submission will return when an administrator re-enables it.'}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Filter and navigation controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="relative">
@@ -787,25 +754,17 @@ export function BookingSchedulesPage() {
                         setAttendanceStatus('present')
                         setShowAttendanceModal(true)
                       }}
-                      disabled={!attendanceEnabled || !allowed}
+                      disabled={!allowed}
                       className="flex items-center gap-1.5"
                     >
-                      {attendanceEnabled
-                        ? <PenSquare className="w-4 h-4" />
-                        : <LockKeyhole className="w-4 h-4" />}
-                      {attendanceEnabled
-                        ? t('sched.attendance_btn')
-                        : (lang === 'vi' ? 'Điểm danh đang khóa' : 'Attendance locked')}
+                      <PenSquare className="w-4 h-4" />
+                      {t('sched.attendance_btn')}
                     </Button>
-                    {(!attendanceEnabled || !allowed) && (
+                    {!allowed && (
                       <span className="text-[10px] text-rose-500 font-bold max-w-[220px] text-right leading-tight">
-                        {!attendanceEnabled
-                          ? (lang === 'vi'
-                              ? 'Quản trị viên đang tạm khóa chức năng điểm danh'
-                              : 'Attendance is temporarily locked by the administrator')
-                          : (lang === 'vi'
-                              ? 'Chỉ được điểm danh sau khi buổi học kết thúc 5 phút'
-                              : 'Only allowed 5 minutes after class ends')}
+                        {lang === 'vi'
+                          ? 'Chỉ được điểm danh sau khi buổi học kết thúc 5 phút'
+                          : 'Only allowed 5 minutes after class ends'}
                       </span>
                     )}
                   </div>
@@ -946,7 +905,7 @@ export function BookingSchedulesPage() {
       )}
 
       {/* MODAL 2: Quick Attendance Modal */}
-      {attendanceEnabled && showAttendanceModal && selectedBooking && (
+      {showAttendanceModal && selectedBooking && (
         <Modal
           open
           onClose={() => setShowAttendanceModal(false)}

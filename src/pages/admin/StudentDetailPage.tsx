@@ -1420,8 +1420,8 @@ export function StudentDetailPage() {
             <div className="flex-1 text-sm">
               <p className="font-semibold text-amber-800">Dữ liệu học viên đang lệch với lịch sử buổi học</p>
               <p className="text-amber-700 mt-1 leading-relaxed">
-                Hệ thống lưu: <strong>{storedUsedSessions} buổi ({storedUsedMinutes} kim cương)</strong> đã học.
-                {' '}Nhưng thực tế trong lịch sử chỉ có <strong>{actualUsedSessions} buổi đã duyệt ({actualUsedMinutes} kim cương)</strong>.
+                Bản tổng hợp đang lưu: <strong>{storedUsedSessions} buổi ({storedUsedMinutes} kim cương)</strong> đã học.
+                {' '}Lịch sử buổi học đã duyệt ghi nhận <strong>{actualUsedSessions} buổi ({actualUsedMinutes} kim cương)</strong>.
               </p>
               {orphanMinutes > 0 && (
                 <p className="text-amber-700 bg-amber-100/60 rounded-lg p-2.5 mt-2 font-medium leading-relaxed border border-amber-200/50">

@@ -76,7 +76,12 @@ export function LoginPage() {
         setErrorMsg('Quá nhiều lần thử. Vui lòng thử lại sau.')
       } else if (msg.includes('không có quyền') || msg.includes('does not have access')) {
         setErrorMsg('Tài khoản không có quyền truy cập')
-      } else if (msg.includes('chưa được kích hoạt') || msg.includes('bị khóa quyền')) {
+      } else if (
+        msg.includes('chưa được kích hoạt') ||
+        msg.includes('bị khóa quyền') ||
+        msg.includes('đã nghỉ dạy') ||
+        msg.includes('đã bị khóa')
+      ) {
         setErrorMsg(msg)
       } else {
         setErrorMsg('Đăng nhập thất bại. Vui lòng thử lại.')

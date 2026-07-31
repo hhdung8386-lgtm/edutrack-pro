@@ -59,6 +59,7 @@ export function StatusBadge({ status, type = 'student' }: { status: string; type
     rejected: { variant: 'danger', label: 'Từ chối' },
     active: { variant: 'success', label: type === 'teacher' ? 'Đang dạy' : 'Đang học' },
     inactive: { variant: 'slate', label: 'Tạm dừng' },
+    resigned: { variant: 'danger', label: 'Nghỉ dạy' },
     expired: { variant: 'danger', label: 'Hết buổi' },
     reserved: { variant: 'warning', label: 'Bảo lưu' },
   }

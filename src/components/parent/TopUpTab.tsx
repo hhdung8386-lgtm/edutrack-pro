@@ -9,7 +9,17 @@ import { toast } from '@/stores/toastStore'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 
-export function TopUpTab({ student, lang }: { student: Student; lang: string }) {
+export function TopUpTab({
+  student,
+  lang,
+  usedMinutesOverride,
+  heldMinutesOverride,
+}: {
+  student: Student
+  lang: string
+  usedMinutesOverride?: number
+  heldMinutesOverride?: number
+}) {
   const [settings, setSettings] = useState<PaymentSettings | null>(null)
   const [packages, setPackages] = useState<TopUpPackage[]>([])
   const [requests, setRequests] = useState<TopUpRequest[]>([])
@@ -49,12 +59,14 @@ export function TopUpTab({ student, lang }: { student: Student; lang: string }) 
   const selected = useMemo(() => packages.find((item) => item.id === selectedId) || null, [packages, selectedId])
   const transferContent = `${settings?.transferPrefix?.trim() || 'NAP'} ${student.code}`.toUpperCase()
   const pending = requests.some((item) => item.status === 'pending')
-  const minutesPerSession = student.minutesPerSession || 50
   const minuteSummary = getStudentPackageMinuteSummary(student)
   const totalMinutes = minuteSummary.totalMinutes
-  const usedMinutes = Math.max(0, student.usedMinutes ?? student.usedSessions * minutesPerSession)
-  const remainingMinutes = minuteSummary.remainingMinutes
-  const heldMinutes = Math.max(0, student.reservedMinutes ?? student.heldMinutes ?? 0)
+  const usedMinutes = Math.max(minuteSummary.usedMinutes, usedMinutesOverride ?? 0)
+  const remainingMinutes = Math.max(0, totalMinutes - usedMinutes)
+  const heldMinutes = Math.max(
+    0,
+    heldMinutesOverride ?? student.reservedMinutes ?? student.heldMinutes ?? 0,
+  )
   const availableMinutes = Math.max(0, remainingMinutes - heldMinutes)
   const usedPercent = totalMinutes > 0 ? Math.min(100, Math.round((usedMinutes / totalMinutes) * 100)) : 0
   const heldPercent = totalMinutes > 0 ? Math.min(100 - usedPercent, Math.round((heldMinutes / totalMinutes) * 100)) : 0

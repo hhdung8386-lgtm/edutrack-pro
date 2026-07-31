@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { getBookingPoints } from '@/lib/points'
+import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import {
   bookingConflictMessage,
   checkBookingCandidates,
@@ -59,10 +60,10 @@ const STATUS_STYLES: Record<BookingRequest['status'], string> = {
 }
 
 function getStudentMinuteFund(student: Student) {
-  const minutesPerSession = student.minutesPerSession || 50
-  const total = student.totalMinutes ?? student.totalSessions * minutesPerSession
-  const used = student.usedMinutes ?? student.usedSessions * minutesPerSession
-  const remaining = student.remainingMinutes ?? Math.max(0, total - used)
+  const summary = getStudentPackageMinuteSummary(student)
+  const total = summary.totalMinutes
+  const used = summary.usedMinutes
+  const remaining = summary.remainingMinutes
   const held = student.reservedMinutes ?? student.heldMinutes ?? 0
   const available = Math.max(0, remaining - held)
 

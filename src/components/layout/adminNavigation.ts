@@ -20,6 +20,7 @@ import {
   MonitorUp,
   Settings,
   TestTube2,
+  UserX,
   Users,
   Wallet,
 } from 'lucide-react'
@@ -69,6 +70,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       { to: '/admin/teachers/online', icon: MonitorUp, label: 'Gia sư online' },
       { to: '/admin/teachers/offline', icon: MapPin, label: 'Gia sư offline' },
       { to: '/admin/teachers/tester', icon: TestTube2, label: 'Gia sư tester' },
+      { to: '/admin/teachers/resigned', icon: UserX, label: 'Gia sư nghỉ dạy' },
     ],
   },
   {

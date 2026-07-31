@@ -25,6 +25,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/teachers/online': 'Gia sư online',
   '/admin/teachers/offline': 'Gia sư offline',
   '/admin/teachers/tester': 'Gia sư tester',
+  '/admin/teachers/resigned': 'Gia sư nghỉ dạy',
   '/admin/teachers': 'Gia sư',
   '/admin/teacher-availability': 'Lịch gia sư',
   '/admin/booking-schedules': 'Lịch xếp lớp',

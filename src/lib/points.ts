@@ -29,6 +29,21 @@ export function getLessonPoints(
   lesson: Pick<Lesson, 'minutes'> & Partial<Pick<Lesson, 'points' | 'pointsPer25Minutes'>>,
   teacher?: Partial<Teacher> | null,
 ): number {
+  // The rate snapshot is the canonical price for a lesson. Some historical
+  // 50-minute lessons were saved with the 25-minute point total, so trusting
+  // `points` first permanently under-counted the student's used fund.
+  const storedRate = Number(lesson.pointsPer25Minutes)
+  if (
+    lesson.pointsPer25Minutes !== null
+    && lesson.pointsPer25Minutes !== undefined
+    && Number.isFinite(storedRate)
+    && storedRate > 0
+  ) {
+    return calculateLessonPoints(lesson.minutes, storedRate)
+  }
+
+  // Legacy lessons without a rate snapshot keep their stored point total.
+  // This avoids repricing old lessons when a teacher's current rate changes.
   const storedPoints = Number(lesson.points)
   if (lesson.points !== null && lesson.points !== undefined && Number.isFinite(storedPoints) && storedPoints >= 0) {
     return storedPoints
@@ -42,6 +57,20 @@ export function getBookingPoints(
   booking: Pick<BookingRequest, 'requestedMinutes'> & Partial<Pick<BookingRequest, 'requestedPoints' | 'pointsPer25Minutes'>>,
   teacher?: Partial<Teacher> | null,
 ): number {
+  // Keep held/reserved points consistent with lesson charging: when a booking
+  // contains the rate snapshot, duration x snapshot rate is authoritative.
+  const storedRate = Number(booking.pointsPer25Minutes)
+  if (
+    booking.pointsPer25Minutes !== null
+    && booking.pointsPer25Minutes !== undefined
+    && Number.isFinite(storedRate)
+    && storedRate > 0
+  ) {
+    return calculateLessonPoints(booking.requestedMinutes, storedRate)
+  }
+
+  // Legacy bookings without a rate snapshot retain their stored total so an
+  // edited teacher rate never changes an already-held historical balance.
   const storedPoints = Number(booking.requestedPoints)
   if (
     booking.requestedPoints !== null
@@ -52,6 +81,8 @@ export function getBookingPoints(
     return storedPoints
   }
 
-  const rate = booking.pointsPer25Minutes ?? teacher?.pointsPer25Minutes
-  return calculateLessonPoints(booking.requestedMinutes, normalizePointsPer25Minutes(rate))
+  return calculateLessonPoints(
+    booking.requestedMinutes,
+    getTeacherPointsPer25Minutes(teacher),
+  )
 }

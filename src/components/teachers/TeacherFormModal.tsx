@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  collection, addDoc, updateDoc, doc, getDocs, query,
+  collection, addDoc, updateDoc, doc, getDoc, getDocs, query,
   where, serverTimestamp, setDoc
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
@@ -452,6 +452,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         const FIXED_PASSWORD = '1234560'
 
         let finalUid: string
+        let isRecycledNicknameAccount = false
         try {
           const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
           await secondaryAuth.signOut()
@@ -466,11 +467,30 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           })
         } catch (err: any) {
           if (err.code === 'auth/email-already-in-use') {
-            toast.error('Tài khoản này đã tồn tại!')
+            // Firebase Authentication vẫn giữ email sau khi gia sư nghỉ dạy.
+            // Chỉ tái sử dụng tài khoản nếu hồ sơ quyền đã được khóa đúng trạng thái;
+            // tuyệt đối không chiếm nickname của tài khoản đang hoạt động.
+            try {
+              const credential = await signInWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
+              finalUid = credential.user.uid
+              await secondaryAuth.signOut()
+
+              const existingUserSnap = await getDoc(doc(db, 'users', finalUid))
+              if (!existingUserSnap.exists() || existingUserSnap.data().role !== 'inactive_teacher') {
+                toast.error('Nickname này đang thuộc một tài khoản hoạt động!')
+                return
+              }
+              isRecycledNicknameAccount = true
+            } catch (reuseErr) {
+              console.error('Failed to recycle released teacher nickname:', reuseErr)
+              try { await secondaryAuth.signOut() } catch { /* no-op */ }
+              toast.error('Nickname đã có tài khoản xác thực và chưa thể thu hồi an toàn')
+              return
+            }
           } else {
             toast.error('Có lỗi xảy ra khi tạo tài khoản')
+            return
           }
-          return
         }
 
         let photoURL = ''
@@ -499,8 +519,15 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
 
         // Link teacherId to user doc
         await updateDoc(doc(db, 'users', finalUid), {
+          uid: finalUid,
+          email: finalEmail,
+          username: newUsername,
           role: 'teacher',
-          teacherId: teacherRef.id
+          teacherId: teacherRef.id,
+          loginDisabledAt: null,
+          loginDisabledReason: '',
+          recycledAt: isRecycledNicknameAccount ? serverTimestamp() : null,
+          updatedAt: serverTimestamp(),
         })
 
         toast.success(`Đã tạo gia sư thành công!`)

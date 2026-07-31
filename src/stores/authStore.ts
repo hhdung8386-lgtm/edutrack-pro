@@ -6,11 +6,11 @@ import { auth, db } from '@/lib/firebase'
 
 interface AuthState {
   user: User | null
-  role: 'admin' | 'teacher' | 'guest' | 'student_manager' | 'teacher_manager' | null
+  role: 'admin' | 'teacher' | 'inactive_teacher' | 'guest' | 'student_manager' | 'teacher_manager' | null
   teacherId: string | null
   loading: boolean
   initialized: boolean
-  setUser: (user: User | null, role: 'admin' | 'teacher' | 'guest' | 'student_manager' | 'teacher_manager' | null, teacherId?: string | null) => void
+  setUser: (user: User | null, role: 'admin' | 'teacher' | 'inactive_teacher' | 'guest' | 'student_manager' | 'teacher_manager' | null, teacherId?: string | null) => void
   setLoading: (loading: boolean) => void
   initAuth: () => () => void
 }

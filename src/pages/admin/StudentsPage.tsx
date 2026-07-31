@@ -15,6 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
+import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 
 /**
  * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
@@ -23,8 +24,7 @@ import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from
  *  nhưng quỹ vẫn còn nhiều -> báo nhầm.)
  */
 function remainingSessionsOf(s: Student): number {
-  const mps = s.minutesPerSession || 50
-  const remainingMins = s.remainingMinutes ?? (s.remainingSessions * mps)
+  const remainingMins = getStudentPackageMinuteSummary(s).remainingMinutes
   return Math.floor(Math.max(0, remainingMins) / 25)
 }
 
@@ -464,8 +464,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {sorted.map((student) => {
-                    const mps = student.minutesPerSession || 50;
-                    const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
+                    const remainingMins = getStudentPackageMinuteSummary(student).remainingMinutes;
                     const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
                     const availableMins = Math.max(0, remainingMins - heldMins);
                     const availableSessions25 = Math.floor(availableMins / 25);
@@ -562,8 +561,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
             {sorted.map((student) => {
-              const mps = student.minutesPerSession || 50;
-              const remainingMins = student.remainingMinutes ?? (student.remainingSessions * mps);
+              const remainingMins = getStudentPackageMinuteSummary(student).remainingMinutes;
               const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
               const availableMins = Math.max(0, remainingMins - heldMins);
               const availableSessions25 = Math.floor(availableMins / 25);
