@@ -350,7 +350,7 @@ export function BookingExperienceTab({
           </div>
         </div>
 
-        {recommendationsLoading ? (
+        {recommendationsLoading && recommendedTeachers.length === 0 ? (
           <div className="space-y-3" aria-label={lang === 'vi' ? 'Đang tìm gia sư phù hợp' : 'Finding suitable teachers'}>
             {[1, 2, 3, 4, 5, 6].map((item) => (
               <div key={item} className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -362,7 +362,7 @@ export function BookingExperienceTab({
               </div>
             ))}
           </div>
-        ) : recommendationsError ? (
+        ) : recommendationsError && recommendedTeachers.length === 0 ? (
           <div className="rounded-2xl border border-rose-100 bg-white px-5 py-7 text-center">
             <p className="text-sm font-black text-slate-900">{lang === 'vi' ? 'Chưa tải được danh sách gợi ý' : 'Suggestions could not be loaded'}</p>
             <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-slate-500">{lang === 'vi' ? 'Dữ liệu đặt lịch của bạn vẫn an toàn. Vui lòng thử tải lại.' : 'Your booking data is safe. Please try again.'}</p>

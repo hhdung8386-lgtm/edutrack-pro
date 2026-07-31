@@ -702,7 +702,9 @@ function normalizeRecommendationText(value?: string) {
     .trim()
 }
 
-function teacherMatchesStudentSubjects(teacher: Teacher, subjects: StudentSubject[]) {
+type RecommendationSubject = Pick<StudentSubject, 'subjectId' | 'subjectName'>
+
+function teacherMatchesStudentSubjects(teacher: Teacher, subjects: RecommendationSubject[]) {
   if (subjects.length === 0) return true
   const subjectIds = new Set(subjects.map((item) => item.subjectId).filter(Boolean))
   if ((teacher.subjectIds || []).some((id) => subjectIds.has(id))) return true
@@ -712,7 +714,7 @@ function teacherMatchesStudentSubjects(teacher: Teacher, subjects: StudentSubjec
   return studentNames.some((studentName) => teacherNames.some((teacherName) => teacherName === studentName || teacherName.includes(studentName) || studentName.includes(teacherName)))
 }
 
-function matchedRecommendationSubjects(teacher: Teacher, subjects: StudentSubject[]) {
+function matchedRecommendationSubjects(teacher: Teacher, subjects: RecommendationSubject[]) {
   const teacherIds = new Set(teacher.subjectIds || [])
   const teacherNames = (teacher.subjectNames || []).map(normalizeRecommendationText)
   return subjects
@@ -1504,6 +1506,25 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     })
   }, [approvedLessonPoints, approvedLessonPointsBySubject, student])
 
+  // Recommendation matching only needs stable subject identities. The full package objects
+  // also contain calculated balances that change after teacher data is enriched; depending on
+  // those objects would restart this Firestore request and flash the skeleton repeatedly.
+  const recommendationSubjectSignature = JSON.stringify(
+    subjectPackages
+      .map(({ subjectId, subjectName }) => ({
+        subjectId: String(subjectId || '').trim(),
+        subjectName: String(subjectName || '').trim(),
+      }))
+      .sort((left, right) => (
+        left.subjectId.localeCompare(right.subjectId)
+        || left.subjectName.localeCompare(right.subjectName)
+      )),
+  )
+  const recommendationSubjects = useMemo<RecommendationSubject[]>(
+    () => JSON.parse(recommendationSubjectSignature) as RecommendationSubject[],
+    [recommendationSubjectSignature],
+  )
+
   useEffect(() => {
     if (!showTeacherSuggestions) return
     let active = true
@@ -1519,7 +1540,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         const activeTeachers = activeSnapshot.docs
           .map((item) => ({ id: item.id, ...item.data() } as Teacher))
           .sort(compareTeacherWorkload)
-        const subjectMatches = activeTeachers.filter((teacher) => teacherMatchesStudentSubjects(teacher, subjectPackages))
+        const subjectMatches = activeTeachers.filter((teacher) => teacherMatchesStudentSubjects(teacher, recommendationSubjects))
         const subjectMatchIds = new Set(subjectMatches.map((teacher) => teacher.id))
         const fallbackTeachers = activeTeachers.filter((teacher) => !subjectMatchIds.has(teacher.id))
         // Học viên mới thường chưa có đủ dữ liệu môn học. Luôn bổ sung ứng viên đang hoạt động,
@@ -1622,14 +1643,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
             availableSlotCount,
             availableDayLabels,
-            matchedSubjectNames: matchedRecommendationSubjects(teacher, subjectPackages),
+            matchedSubjectNames: matchedRecommendationSubjects(teacher, recommendationSubjects),
           }))
 
         setRecommendedTeachers(suggestions)
       } catch (error) {
         console.error('Load teacher recommendations failed:', error)
         if (active) {
-          setRecommendedTeachers([])
           setRecommendationsError(true)
         }
       } finally {
@@ -1639,7 +1659,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
     void loadRecommendations()
     return () => { active = false }
-  }, [showTeacherSuggestions, recommendationReload, subjectPackages, lang, genericTeacherLabel])
+  }, [showTeacherSuggestions, recommendationReload, recommendationSubjects, lang, genericTeacherLabel])
 
   const profileSubjectPackage = subjectPackages.find(
     (item) => item.subjectId === profileBookingSubjectId,
