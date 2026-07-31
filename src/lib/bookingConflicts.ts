@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocsFromServer, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { BookingRequest } from '@/types'
 
@@ -116,8 +116,11 @@ export async function loadRelevantActiveBookings(candidates: BookingCandidate[])
   const teacherIds = Array.from(new Set(candidates.map((item) => item.teacherId).filter(Boolean)))
   const studentIds = Array.from(new Set(candidates.map((item) => item.studentId).filter(Boolean)))
   const snapshots = await Promise.all([
-    ...teacherIds.map((teacherId) => getDocs(query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)))),
-    ...studentIds.map((studentId) => getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', studentId)))),
+    // Lịch là dữ liệu giao dịch: luôn đọc trực tiếp từ server. Dùng getDocs() ở đây có thể
+    // trả về cache cũ trong lúc hai chuỗi lịch vừa được tạo sát nhau, khiến ca thứ hai
+    // không nhìn thấy ca thứ nhất và cùng ghi vào một khung giờ.
+    ...teacherIds.map((teacherId) => getDocsFromServer(query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)))),
+    ...studentIds.map((studentId) => getDocsFromServer(query(collection(db, 'bookingRequests'), where('studentId', '==', studentId)))),
   ])
 
   const byId = new Map<string, BookingRequest>()

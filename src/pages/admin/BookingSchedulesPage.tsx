@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
 import {
   AlertTriangle,
   BookOpen,
@@ -551,19 +551,35 @@ export function BookingSchedulesPage() {
     return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
-  // Find booking request overlapping this 30-min cell
+  const getBookingCreatedAt = (booking: BookingRequest) => {
+    const createdAt = booking.createdAt as unknown as {
+      toMillis?: () => number
+      seconds?: number
+    } | undefined
+    if (typeof createdAt?.toMillis === 'function') return createdAt.toMillis()
+    if (typeof createdAt?.seconds === 'number') return createdAt.seconds * 1000
+    return Number.MAX_SAFE_INTEGER
+  }
+
+  // Find the oldest active booking overlapping this cell. Historical duplicate
+  // documents must never make a newer booking visually replace the original one.
   const findBookingForCell = (dateISO: string, time: string) => {
     const cellStart = timeToMinutes(time)
     const cellEnd = cellStart + 30
-    return bookingRequests.find((req) => {
-      if (req.requestedDate !== dateISO) return false
-      if (req.status !== 'confirmed' && req.status !== 'pending') return false
+    return bookingRequests
+      .filter((req) => {
+        if (req.requestedDate !== dateISO) return false
+        if (req.status !== 'confirmed' && req.status !== 'pending') return false
 
-      const reqStart = timeToMinutes(req.requestedStart)
-      const reqEnd = timeToMinutes(req.requestedEnd)
+        const reqStart = timeToMinutes(req.requestedStart)
+        const reqEnd = timeToMinutes(req.requestedEnd)
 
-      return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
-    })
+        return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+      })
+      .sort((left, right) => {
+        const createdAtDiff = getBookingCreatedAt(left) - getBookingCreatedAt(right)
+        return createdAtDiff || left.id.localeCompare(right.id)
+      })[0]
   }
 
   // Filter students based on search keyword
@@ -754,7 +770,7 @@ export function BookingSchedulesPage() {
       let totalScheduled = 0
 
       // Query latest student bookings first to calculate actual held minutes
-      const bookingsSnap = await getDocs(
+      const bookingsSnap = await getDocsFromServer(
         query(
           collection(db, 'bookingRequests'),
           where('studentId', '==', studentId),
@@ -765,6 +781,18 @@ export function BookingSchedulesPage() {
       const latestHeldPoints = studentBookingsList
         .filter((b) => !b.lessonId)
         .reduce((sum, b) => sum + getBookingPoints(b), 0)
+
+      // Capture both calendar revisions before conflict detection. The transaction
+      // below may only write when these revisions are still current, preventing two
+      // near-simultaneous scheduling actions from committing the same time slot.
+      const [studentCalendarSnap, teacherCalendarSnap] = await Promise.all([
+        getDocFromServer(doc(db, 'students', studentId)),
+        getDocFromServer(doc(db, 'teachers', selectedTeacher.id)),
+      ])
+      if (!studentCalendarSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+      if (!teacherCalendarSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
+      const expectedStudentScheduleRevision = Number(studentCalendarSnap.data().bookingScheduleRevision || 0)
+      const expectedTeacherScheduleRevision = Number(teacherCalendarSnap.data().bookingScheduleRevision || 0)
 
       const candidates = []
       if (!isRecurring) {
@@ -820,8 +848,22 @@ export function BookingSchedulesPage() {
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
-        const studentSnap = await tx.get(studentRef)
+        const teacherRef = doc(db, 'teachers', selectedTeacher.id)
+        const [studentSnap, teacherSnap] = await Promise.all([
+          tx.get(studentRef),
+          tx.get(teacherRef),
+        ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+        if (!teacherSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
+
+        const currentStudentScheduleRevision = Number(studentSnap.data().bookingScheduleRevision || 0)
+        const currentTeacherScheduleRevision = Number(teacherSnap.data().bookingScheduleRevision || 0)
+        if (
+          currentStudentScheduleRevision !== expectedStudentScheduleRevision
+          || currentTeacherScheduleRevision !== expectedTeacherScheduleRevision
+        ) {
+          throw new Error('BOOKING_CALENDAR_CHANGED')
+        }
 
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(currentStudent, latestHeldPoints)
@@ -945,7 +987,14 @@ export function BookingSchedulesPage() {
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
           heldMinutes: nextHeld,
+          bookingScheduleRevision: currentStudentScheduleRevision + 1,
+          bookingScheduleUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
+        })
+
+        tx.update(teacherRef, {
+          bookingScheduleRevision: currentTeacherScheduleRevision + 1,
+          bookingScheduleUpdatedAt: serverTimestamp(),
         })
 
         // Set booking documents
@@ -986,6 +1035,10 @@ export function BookingSchedulesPage() {
       console.error('Direct scheduling failed:', error)
       if (error?.message === 'BOOKING_CONFLICT') {
         toast.error(error.detail || 'Không thể xếp lớp vì lịch bị trùng.')
+        return
+      }
+      if (error?.message === 'BOOKING_CALENDAR_CHANGED') {
+        toast.error('Lịch vừa được thay đổi ở thao tác khác. Hệ thống chưa tạo ca nào; vui lòng chọn lại lịch mới nhất.')
         return
       }
       if (error?.message === 'NOT_ENOUGH_MINUTES') {
