@@ -32,12 +32,19 @@ const makeSchema = (requireContact: boolean) => z.object({
   branchId: z.string().optional(),
   // Chỉ còn 2 nhóm: cố định (mặc định) hoặc linh hoạt. Hồ sơ cũ chưa phân loại được hiểu là cố định.
   learningScheduleType: z.enum(['fixed', 'flexible']).default('fixed'),
+  gender: z.enum(['male', 'female']).default('male'),
   classroomURL: z.string().optional().or(z.literal('')),
 })
 
 type FormData = z.infer<ReturnType<typeof makeSchema>>
 
 const DEFAULT_BRANCH_KEYWORD = 'binh tan'
+
+const inferStudentGender = (student?: Student): 'male' | 'female' => {
+  if (student?.gender === 'female') return 'female'
+  if (student?.gender === 'male') return 'male'
+  return ['2', '3'].includes(student?.profileAvatarId || '') ? 'female' : 'male'
+}
 
 const normalizeBranchName = (name: string) =>
   name
@@ -68,11 +75,13 @@ export function StudentFormModal({ student, onClose }: Props) {
           branchId: student.branchId || '',
           // Chưa phân loại được hiểu là cố định
           learningScheduleType: student.learningScheduleType === 'flexible' ? 'flexible' : 'fixed',
+          gender: inferStudentGender(student),
           classroomURL: student.classroomURL || '',
         }
-      : { code: '', branchId: '', learningScheduleType: 'fixed', classroomURL: '', email: '' },
+      : { code: '', branchId: '', learningScheduleType: 'fixed', gender: 'male', classroomURL: '', email: '' },
   })
   const scheduleType = watch('learningScheduleType')
+  const gender = watch('gender')
 
   useEffect(() => {
     if (!isEdit && !generatedCode) {
@@ -109,6 +118,8 @@ export function StudentFormModal({ student, onClose }: Props) {
     try {
       const branch = data.branchId ? branches.find((b) => b.id === data.branchId) : null
       if (isEdit && student) {
+        const genderChanged = data.gender !== inferStudentGender(student)
+        const shouldApplyDefaultAvatar = genderChanged && !student.profilePhotoURL
         await updateDoc(doc(db, 'students', student.id), {
           name: data.name,
           parentPhone: data.parentPhone,
@@ -116,6 +127,8 @@ export function StudentFormModal({ student, onClose }: Props) {
           branchId: data.branchId || '',
           branchName: branch?.name || '',
           learningScheduleType: data.learningScheduleType,
+          gender: data.gender,
+          ...(shouldApplyDefaultAvatar ? { profileAvatarId: data.gender === 'female' ? '2' : '1' } : {}),
           classroomURL: data.classroomURL || '',
           updatedAt: serverTimestamp(),
         })
@@ -132,6 +145,9 @@ export function StudentFormModal({ student, onClose }: Props) {
           branchId: data.branchId || '',
           branchName: branch?.name || '',
           learningScheduleType: data.learningScheduleType,
+          gender: data.gender,
+          profileAvatarId: data.gender === 'female' ? '2' : '1',
+          profilePhotoURL: '',
           totalSessions: 0,
           usedSessions: 0,
           remainingSessions: 0,
@@ -192,6 +208,39 @@ export function StudentFormModal({ student, onClose }: Props) {
             )
           })}
         </div>
+        <fieldset>
+          <legend className="mb-2 block text-sm font-medium text-slate-600">Giới tính và nhân vật mặc định</legend>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { value: 'male', label: 'Nam', avatar: '/student-avatars/1.png' },
+              { value: 'female', label: 'Nữ', avatar: '/student-avatars/2.png' },
+            ] as const).map((option) => {
+              const checked = gender === option.value
+              return (
+                <label
+                  key={option.value}
+                  className={`flex min-h-20 cursor-pointer items-center gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-brand-400 ${checked ? 'border-brand-400 bg-brand-50 shadow-sm' : 'border-slate-200 bg-white hover:border-brand-200'}`}
+                >
+                  <input
+                    type="radio"
+                    value={option.value}
+                    checked={checked}
+                    onChange={() => setValue('gender', option.value, { shouldDirty: true, shouldValidate: true })}
+                    className="sr-only"
+                  />
+                  <img src={option.avatar} alt="" className="h-14 w-14 rounded-full bg-white object-cover ring-2 ring-white" />
+                  <span>
+                    <span className="block text-sm font-bold text-slate-900">{option.label}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-slate-500">Nhân vật mặc định</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            Học viên mới sẽ nhận nhân vật tương ứng và vẫn có thể tự đổi hoặc tải ảnh riêng sau này.
+          </p>
+        </fieldset>
         <div>
           <Input
             label="Mã học viên *"

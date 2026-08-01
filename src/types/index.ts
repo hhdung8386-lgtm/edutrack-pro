@@ -70,7 +70,11 @@ export interface Student {
   rewardPoints?: number
   lifetimeRewardPoints?: number
   monthlyRewardPoints?: number
+  /** Giới tính dùng để chọn nhân vật mặc định khi admin tạo hồ sơ. */
+  gender?: 'male' | 'female'
   profileAvatarId?: string
+  /** Ảnh đại diện do học viên tự tải; nếu trống sẽ dùng profileAvatarId. */
+  profilePhotoURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }

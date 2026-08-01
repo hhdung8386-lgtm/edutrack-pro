@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
@@ -8,7 +8,7 @@ import {
   Star, Video, BookOpen, CalendarCheck2, Lightbulb, ChevronRight as ChevronRightIcon,
   FileText, Sparkles, ArrowLeft, ArrowUpRight, Award, MapPin, MessageSquareText,
   PlayCircle, UserRound, CheckCircle2, RotateCcw, ClipboardCheck, CalendarDays,
-  Trophy, Copy, Camera, Flame, Crown,
+  Trophy, Copy, Camera, Flame, Crown, Upload,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Logo } from '@/components/shared/Logo'
@@ -32,6 +32,7 @@ import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/stu
 import { rewardMonthKey } from '@/lib/rewards'
 import { parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -823,9 +824,13 @@ interface StudentLeaderboardEntry {
   code: string
   rewardPoints: number
   profileAvatarId?: Student['profileAvatarId']
+  profilePhotoURL?: Student['profilePhotoURL']
 }
 
-const STUDENT_AVATARS = ['1', '2', '3', '4', '5'] as const
+const STUDENT_AVATARS = [
+  { id: '1', gender: 'male', labelVi: 'Nhân vật nam', labelEn: 'Boy character' },
+  { id: '2', gender: 'female', labelVi: 'Nhân vật nữ', labelEn: 'Girl character' },
+] as const
 
 function getCurrentLeaderboardMonth() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -845,8 +850,9 @@ function getCurrentLeaderboardMonth() {
   }
 }
 
-// Ảnh nhân vật cậu bé (PNG) — bản giao diện được duyệt. Đặt ở public/student-avatars/.
-function studentAvatarUrl(avatarId?: Student['profileAvatarId']) {
+// Ưu tiên ảnh học viên tự tải; dữ liệu cũ vẫn tiếp tục dùng nhân vật đã chọn.
+function studentAvatarUrl(avatarId?: Student['profileAvatarId'], profilePhotoURL?: Student['profilePhotoURL']) {
+  if (profilePhotoURL?.trim()) return profilePhotoURL
   return `/student-avatars/${avatarId || '1'}.png`
 }
 
@@ -905,13 +911,15 @@ function ProgressRing({ percent, size = 104, children }: { percent: number; size
   )
 }
 
-function StudentProfileOverview({ student, completedLessons, avatarId, leaderboard, savingAvatar, onChooseAvatar, stats, usedPct, lessons, onGoTab, lang }: {
+function StudentProfileOverview({ student, completedLessons, avatarId, profilePhotoURL, leaderboard, savingAvatar, onChooseAvatar, onUploadPhoto, stats, usedPct, lessons, onGoTab, lang }: {
   student: Student
   completedLessons: number
   avatarId?: Student['profileAvatarId']
+  profilePhotoURL?: Student['profilePhotoURL']
   leaderboard: StudentLeaderboardEntry[]
   savingAvatar: boolean
   onChooseAvatar: (avatarId: Student['profileAvatarId']) => void
+  onUploadPhoto: (file: File) => Promise<void>
   stats: { total: number; used: number; held: number; available: number }
   usedPct: number
   lessons: Lesson[]
@@ -919,6 +927,7 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
   lang: string
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const points = Number(student.rewardPoints || 0)
   const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
   // Quy đổi theo buổi 25 phút để hai vế cùng đơn vị, không lệch số
@@ -971,7 +980,7 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
                 className="group relative h-full w-full rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2"
                 aria-label={lang === 'vi' ? 'Đổi nhân vật đại diện' : 'Change profile character'}
               >
-                <img src={studentAvatarUrl(avatarId)} alt="" className="h-full w-full rounded-full object-cover" />
+                <img src={studentAvatarUrl(avatarId, profilePhotoURL)} alt="" className="h-full w-full rounded-full object-cover" />
                 <span className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-brand-500 text-brand-900 shadow-md transition group-hover:bg-brand-600">
                   <Camera className="h-3.5 w-3.5" />
                 </span>
@@ -1053,7 +1062,7 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
                     >
                       {isFirst && <Crown className="absolute -top-1 left-1/2 h-6 w-6 -translate-x-1/2 fill-brand-400 text-brand-500" />}
                       <div className="relative">
-                        <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-16 w-16' : 'h-12 w-12'}`} />
+                        <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-16 w-16' : 'h-12 w-12'}`} />
                         <span className={`absolute -bottom-1 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-black ring-2 ring-white ${badgeColor}`}>{rank}</span>
                       </div>
                       <p className={`mt-2.5 line-clamp-2 text-center text-[11px] font-extrabold leading-tight text-slate-800 ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name}</p>
@@ -1074,7 +1083,7 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
                   return (
                     <div key={entry.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${isCurrent ? 'bg-brand-50 ring-1 ring-brand-300' : 'bg-slate-50/80'}`}>
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 ring-1 ring-slate-200">{rank}</span>
-                      <img src={studentAvatarUrl(entry.profileAvatarId)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
+                      <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
                       <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>{isCurrent && <p className="text-[10px] font-bold text-brand-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}</div>
                       <span className="inline-flex items-center gap-1 text-sm font-black tabular-nums text-brand-700"><Star className="h-4 w-4 fill-brand-500 text-brand-500" />{entry.rewardPoints}</span>
                     </div>
@@ -1087,13 +1096,53 @@ function StudentProfileOverview({ student, completedLessons, avatarId, leaderboa
         )}
       </section>
 
-      <BottomSheet open={pickerOpen} onClose={() => setPickerOpen(false)} title={lang === 'vi' ? 'Chọn nhân vật đại diện' : 'Choose your character'} size="sm" footer={<Button fullWidth variant="outline" onClick={() => setPickerOpen(false)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>}>
-        <p className="mb-4 text-sm leading-6 text-slate-600">{lang === 'vi' ? 'Chọn một nhân vật. Lựa chọn sẽ được lưu vào hồ sơ học viên và hiển thị ở bảng thi đua.' : 'Choose a character. It will be saved to the student profile and leaderboard.'}</p>
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+      <BottomSheet open={pickerOpen} onClose={() => !savingAvatar && setPickerOpen(false)} title={lang === 'vi' ? 'Ảnh đại diện của bạn' : 'Your profile picture'} size="sm" footer={<Button fullWidth variant="outline" disabled={savingAvatar} onClick={() => setPickerOpen(false)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>}>
+        <p className="mb-4 text-sm leading-6 text-slate-600">{lang === 'vi' ? 'Chọn nhân vật nam, nữ hoặc tải ảnh của riêng bạn. Ảnh sẽ hiển thị trong hồ sơ và bảng thi đua.' : 'Choose a boy or girl character, or upload your own photo. It will appear in your profile and leaderboard.'}</p>
+        <div className="grid grid-cols-2 gap-3">
           {STUDENT_AVATARS.map((item) => {
-            const active = avatarId === item || (!avatarId && item === '1')
-            return <button key={item} type="button" disabled={savingAvatar} onClick={() => { onChooseAvatar(item); setPickerOpen(false) }} className={`relative aspect-square overflow-hidden rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 ${active ? 'ring-4 ring-brand-500' : 'ring-1 ring-slate-200 hover:-translate-y-0.5 hover:ring-brand-300'}`} aria-label={`${lang === 'vi' ? 'Nhân vật' : 'Character'} ${item}`}><img src={studentAvatarUrl(item)} alt="" className="h-full w-full object-cover" />{active && <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900"><CheckCircle2 className="h-4 w-4" /></span>}</button>
+            const active = !profilePhotoURL && (avatarId === item.id || (!avatarId && item.id === '1'))
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={savingAvatar}
+                onClick={() => onChooseAvatar(item.id)}
+                className={`relative overflow-hidden rounded-2xl bg-white p-2 text-left transition focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60 ${active ? 'ring-4 ring-brand-500' : 'ring-1 ring-slate-200 hover:-translate-y-0.5 hover:ring-brand-300'}`}
+                aria-label={lang === 'vi' ? item.labelVi : item.labelEn}
+              >
+                <img src={studentAvatarUrl(item.id)} alt="" className="aspect-square w-full rounded-xl object-cover" />
+                <span className="mt-2 block px-1 pb-1 text-center text-xs font-extrabold text-slate-700">{lang === 'vi' ? item.labelVi : item.labelEn}</span>
+                {active && <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 shadow-sm"><CheckCircle2 className="h-4 w-4" /></span>}
+              </button>
+            )
           })}
+        </div>
+        <div className={`mt-4 rounded-2xl border p-3 ${profilePhotoURL ? 'border-brand-300 bg-brand-50' : 'border-dashed border-slate-300 bg-slate-50'}`}>
+          <div className="flex items-center gap-3">
+            {profilePhotoURL ? (
+              <img src={profilePhotoURL} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white" />
+            ) : (
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 ring-1 ring-slate-200"><Upload className="h-5 w-5" /></span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-extrabold text-slate-900">{lang === 'vi' ? 'Ảnh từ thiết bị' : 'Photo from device'}</p>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">{lang === 'vi' ? 'JPG, PNG hoặc WebP; tối đa 9 MB.' : 'JPG, PNG or WebP; up to 9 MB.'}</p>
+            </div>
+            <Button type="button" size="sm" loading={savingAvatar} onClick={() => photoInputRef.current?.click()}>
+              {lang === 'vi' ? (profilePhotoURL ? 'Đổi ảnh' : 'Tải ảnh') : (profilePhotoURL ? 'Change' : 'Upload')}
+            </Button>
+          </div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) await onUploadPhoto(file)
+            }}
+          />
         </div>
       </BottomSheet>
     </>
@@ -1138,6 +1187,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const [submittingCancellation, setSubmittingCancellation] = useState(false)
   const [cancellationDialog, setCancellationDialog] = useState<{ booking: BookingRequest; mode: 'confirm' | 'blocked' | 'rebook' } | null>(null)
   const [profileAvatarId, setProfileAvatarId] = useState<Student['profileAvatarId']>(student.profileAvatarId)
+  const [profilePhotoURL, setProfilePhotoURL] = useState<Student['profilePhotoURL']>(student.profilePhotoURL)
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [leaderboard, setLeaderboard] = useState<StudentLeaderboardEntry[]>([])
   const [showTeacherSuggestions, setShowTeacherSuggestions] = useState(false)
@@ -1148,7 +1198,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   useEffect(() => {
     setProfileAvatarId(student.profileAvatarId)
-  }, [student.profileAvatarId])
+    setProfilePhotoURL(student.profilePhotoURL)
+  }, [student.profileAvatarId, student.profilePhotoURL])
 
   useEffect(() => {
     const leaderboardQuery = query(
@@ -1168,6 +1219,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           code: data.code || '',
           rewardPoints: Number(data.monthlyRewardPoints || 0),
           profileAvatarId: data.profileAvatarId,
+          profilePhotoURL: data.profilePhotoURL,
         }
       }))
     }, (error) => {
@@ -1177,20 +1229,54 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   }, [lang])
 
   const chooseProfileAvatar = async (avatarId: Student['profileAvatarId']) => {
-    if (!avatarId || savingAvatar || avatarId === profileAvatarId) return
-    const previous = profileAvatarId
+    if (!avatarId || savingAvatar || (avatarId === profileAvatarId && !profilePhotoURL)) return
+    const previousAvatarId = profileAvatarId
+    const previousPhotoURL = profilePhotoURL
     setProfileAvatarId(avatarId)
+    setProfilePhotoURL('')
     setSavingAvatar(true)
     try {
-      await updateDoc(doc(db, 'students', student.id), {
+      const avatarUpdate: Record<string, unknown> = {
         profileAvatarId: avatarId,
         updatedAt: serverTimestamp(),
-      })
+      }
+      // Giữ tương thích với rule cũ cho học viên chưa từng tải ảnh.
+      // Chỉ cần xoá URL khi đang thực sự dùng ảnh riêng.
+      if (previousPhotoURL) avatarUpdate.profilePhotoURL = ''
+      await updateDoc(doc(db, 'students', student.id), avatarUpdate)
       toast.success(lang === 'vi' ? 'Đã cập nhật nhân vật đại diện' : 'Profile character updated')
     } catch (error) {
       console.error('Update student avatar failed:', error)
-      setProfileAvatarId(previous)
+      setProfileAvatarId(previousAvatarId)
+      setProfilePhotoURL(previousPhotoURL)
       toast.error(lang === 'vi' ? 'Chưa thể lưu nhân vật. Vui lòng thử lại.' : 'Could not save the character. Please try again.')
+    } finally {
+      setSavingAvatar(false)
+    }
+  }
+
+  const uploadProfilePhoto = async (file: File) => {
+    if (savingAvatar) return
+    if (!file.type.startsWith('image/') || file.size > 9 * 1024 * 1024) {
+      toast.error(lang === 'vi' ? 'Vui lòng chọn ảnh JPG, PNG hoặc WebP không quá 9 MB.' : 'Choose a JPG, PNG or WebP image up to 9 MB.')
+      return
+    }
+
+    const previousPhotoURL = profilePhotoURL
+    setSavingAvatar(true)
+    try {
+      const photoURL = await uploadStudentPhoto(student.id, file)
+      await updateDoc(doc(db, 'students', student.id), {
+        profilePhotoURL: photoURL,
+        profileAvatarId: profileAvatarId || (student.gender === 'female' ? '2' : '1'),
+        updatedAt: serverTimestamp(),
+      })
+      setProfilePhotoURL(photoURL)
+      toast.success(lang === 'vi' ? 'Đã cập nhật ảnh đại diện' : 'Profile picture updated')
+    } catch (error) {
+      console.error('Upload student profile photo failed:', error)
+      setProfilePhotoURL(previousPhotoURL)
+      toast.error(uploadErrorMessage(error, lang === 'vi' ? 'vi' : 'en'))
     } finally {
       setSavingAvatar(false)
     }
@@ -1998,9 +2084,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               student={student}
               completedLessons={lessons.length}
               avatarId={profileAvatarId}
+              profilePhotoURL={profilePhotoURL}
               leaderboard={leaderboard}
               savingAvatar={savingAvatar}
               onChooseAvatar={chooseProfileAvatar}
+              onUploadPhoto={uploadProfilePhoto}
               stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
               usedPct={usedPct}
               lessons={lessons}

@@ -128,6 +128,29 @@ export async function uploadTeacherPhoto(teacherId: string, file: File): Promise
   return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
 }
 
+/**
+ * Ảnh đại diện học viên được nén trước khi tải để giao diện phụ huynh tải nhanh.
+ * Tên tệp ngẫu nhiên giúp mỗi lần tải là một object mới, không ghi đè ảnh cũ.
+ */
+export async function uploadStudentPhoto(studentId: string, file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('UNSUPPORTED_IMAGE')
+  if (file.size > MAX_RAW_SIZE) throw new Error('UNSUPPORTED_IMAGE')
+
+  const blob = await compressImage(file).catch(() => {
+    throw new Error('UNSUPPORTED_IMAGE')
+  })
+  if (blob.size >= 2 * 1024 * 1024) throw new Error('UNSUPPORTED_IMAGE')
+  const timestamp = Date.now()
+  const randomStr = Math.random().toString(36).substring(2, 10)
+  const fileRef = ref(storage, `student-photos/${studentId}/${timestamp}_${randomStr}.jpg`)
+  const uploadResult = await withTimeout(
+    uploadBytes(fileRef, blob, { contentType: 'image/jpeg' }),
+    UPLOAD_TIMEOUT_MS,
+  )
+
+  return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+}
+
 export async function deleteUploadedImage(url: string): Promise<void> {
   if (!url) return
   try {
@@ -143,8 +166,8 @@ export function uploadErrorMessage(err: unknown, lang: 'vi' | 'en' = 'vi'): stri
   const msg = err instanceof Error ? err.message : ''
   if (msg === 'UPLOAD_TIMEOUT') {
     return lang === 'vi'
-      ? 'Mạng chậm, tải ảnh quá lâu. Ảnh đã được gỡ — vui lòng thử lại hoặc gửi điểm danh không kèm ảnh.'
-      : 'Network too slow, upload timed out. The image was removed — please retry or submit without it.'
+      ? 'Mạng chậm, tải ảnh quá lâu. Vui lòng kiểm tra kết nối rồi thử lại.'
+      : 'The upload timed out. Check your connection and try again.'
   }
   if (msg === 'UNSUPPORTED_IMAGE') {
     return lang === 'vi'
