@@ -20,6 +20,7 @@ const WaitingApprovalPage = lazy(() => import('@/pages/WaitingApprovalPage').the
 const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage').then(m => ({ default: m.StudentsPage })))
 const StudentDetailPage = lazy(() => import('@/pages/admin/StudentDetailPage').then(m => ({ default: m.StudentDetailPage })))
+const StudentAlertsPage = lazy(() => import('@/pages/admin/StudentAlertsPage').then(m => ({ default: m.StudentAlertsPage })))
 const TeachersPage = lazy(() => import('@/pages/admin/TeachersPage').then(m => ({ default: m.TeachersPage })))
 const TeacherDetailPage = lazy(() => import('@/pages/admin/TeacherDetailPage').then(m => ({ default: m.TeacherDetailPage })))
 const TeacherAvailabilityPage = lazy(() => import('@/pages/admin/TeacherAvailabilityPage').then(m => ({ default: m.TeacherAvailabilityPage })))
@@ -124,6 +125,7 @@ function App() {
             <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
             <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
             <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
+            <Route path="student-alerts" element={<StudentAlertsPage />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<Navigate to="online" replace />} />
             <Route path="teachers/online" element={<TeachersPage category="online" />} />

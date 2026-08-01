@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   AlertCircle,
+  AlertTriangle,
   BarChart2,
   Bell,
   BookOpen,
@@ -25,7 +26,7 @@ import {
   Wallet,
 } from 'lucide-react'
 
-export type AdminNavBadge = 'approvals' | 'bookings'
+export type AdminNavBadge = 'approvals' | 'bookings' | 'studentAlerts'
 
 export interface AdminNavItem {
   to: string
@@ -54,11 +55,12 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     id: 'students',
     label: 'Học viên',
     icon: Users,
-    activePrefixes: ['/admin/students', '/admin/evaluations'],
+    activePrefixes: ['/admin/students', '/admin/student-alerts', '/admin/evaluations'],
     items: [
       { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
       { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
       { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
+      { to: '/admin/student-alerts', icon: AlertTriangle, label: 'Cảnh báo học viên', badge: 'studentAlerts' },
     ],
   },
   {
@@ -82,16 +84,12 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/booking-schedules',
       '/admin/future-bookings',
       '/admin/bookings',
-      '/admin/overdue-bookings',
-      '/admin/approvals',
     ],
     items: [
       { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
       { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
-      { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
-      { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', badge: 'approvals' },
     ],
   },
   {
@@ -113,8 +111,12 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/student-experience',
       '/admin/payroll',
       '/admin/contracts',
+      '/admin/overdue-bookings',
+      '/admin/approvals',
     ],
     items: [
+      { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
+      { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', badge: 'approvals' },
       { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },
       { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
       { to: '/admin/payroll', icon: Wallet, label: 'Lương gia sư' },
@@ -137,7 +139,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
 export function canAccessAdminNavItem(item: AdminNavItem, role: string | null | undefined) {
   if (item.to === '/admin/notifications' && role !== 'admin') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
-  if (role === 'teacher_manager' && item.to.startsWith('/admin/students')) return false
+  if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/student-alerts'))) return false
   return true
 }
 
@@ -152,4 +154,9 @@ export function getVisibleAdminNavigation(role: string | null | undefined) {
 
 export function isAdminNavGroupActive(group: AdminNavGroup, pathname: string) {
   return group.activePrefixes.some((prefix) => pathname.startsWith(prefix))
+}
+
+/** Chỉ cho phép một nhóm mở; bấm lại đúng nhóm đang mở sẽ thu gọn nhóm đó. */
+export function nextOpenAdminNavGroup(currentGroupId: string | null, clickedGroupId: string) {
+  return currentGroupId === clickedGroupId ? null : clickedGroupId
 }

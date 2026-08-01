@@ -209,6 +209,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [deleting, setDeleting] = useState(false)
   const [retiringTeacher, setRetiringTeacher] = useState<Teacher | null>(null)
   const [retiring, setRetiring] = useState(false)
+  const [showBulkRetireConfirm, setShowBulkRetireConfirm] = useState(false)
+  const [bulkRetiring, setBulkRetiring] = useState(false)
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([])
   const [bulkPoints, setBulkPoints] = useState(25)
   const [savingPoints, setSavingPoints] = useState(false)
@@ -478,6 +480,40 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     }
   }
 
+  const handleBulkRetire = async () => {
+    const selectedTeachers = teachers.filter((teacher) =>
+      selectedTeacherIds.includes(teacher.id) && teacher.status !== 'resigned',
+    )
+    if (selectedTeachers.length === 0) return
+
+    setBulkRetiring(true)
+    const failedTeacherIds: string[] = []
+    let retiredCount = 0
+    for (const teacher of selectedTeachers) {
+      try {
+        await retireTeacherAccount({
+          teacherId: teacher.id,
+          teacherName: teacher.name,
+          nickname: teacher.code || teacher.releasedNickname || '',
+          adminId: user?.uid,
+        })
+        retiredCount += 1
+      } catch (error) {
+        console.error(`Unable to retire teacher ${teacher.id}:`, error)
+        failedTeacherIds.push(teacher.id)
+      }
+    }
+
+    setSelectedTeacherIds(failedTeacherIds)
+    setShowBulkRetireConfirm(false)
+    setBulkRetiring(false)
+    if (failedTeacherIds.length > 0) {
+      toast.warning(`Đã chuyển ${retiredCount} gia sư; còn ${failedTeacherIds.length} hồ sơ chưa xử lý. Các hồ sơ lỗi vẫn được giữ chọn.`)
+    } else {
+      toast.success(`Đã chuyển ${retiredCount} gia sư sang Nghỉ dạy, khóa đăng nhập và thu hồi nickname`)
+    }
+  }
+
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex items-center justify-between gap-4">
@@ -684,6 +720,12 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             <span className="flex items-center gap-1 whitespace-nowrap text-slate-500"><DiamondPointsIcon className="h-4 w-4 text-violet-600" /> / 25 phút</span>
           </label>
           <Button size="sm" onClick={handleBulkPointsUpdate} loading={savingPoints}>Áp dụng kim cương</Button>
+          {category !== 'resigned' && (
+            <Button size="sm" variant="danger" onClick={() => setShowBulkRetireConfirm(true)}>
+              <UserX className="h-4 w-4" />
+              Chuyển sang nghỉ dạy
+            </Button>
+          )}
           <button type="button" onClick={() => setSelectedTeacherIds([])} className="min-h-10 px-3 text-sm font-semibold text-slate-600">Bỏ chọn</button>
         </div>
       )}
@@ -905,6 +947,17 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         confirmLabel="Khóa và thu hồi nickname"
         confirmVariant="danger"
         loading={retiring}
+      />
+      <ConfirmDialog
+        open={showBulkRetireConfirm}
+        onClose={() => !bulkRetiring && setShowBulkRetireConfirm(false)}
+        onConfirm={handleBulkRetire}
+        title={`Chuyển ${selectedTeacherIds.length} gia sư sang nghỉ dạy?`}
+        description="Hồ sơ, buổi học và dữ liệu đối soát của các gia sư đã chọn vẫn được giữ nguyên."
+        consequence="Tài khoản của từng gia sư sẽ bị khóa và nickname đăng nhập được thu hồi. Chỉ tiếp tục khi danh sách đã chọn là chính xác."
+        confirmLabel="Khóa và chuyển sang nghỉ dạy"
+        confirmVariant="danger"
+        loading={bulkRetiring}
       />
     </div>
   )

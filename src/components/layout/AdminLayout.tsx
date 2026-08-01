@@ -7,6 +7,7 @@ import { signOut } from '@/lib/auth'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
+import { useStudentAlertCount } from '@/hooks/useStudentAlertCount'
 
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
@@ -14,6 +15,7 @@ import {
   adminDashboardItem,
   getVisibleAdminNavigation,
   isAdminNavGroupActive,
+  nextOpenAdminNavGroup,
   type AdminNavBadge,
 } from './adminNavigation'
 
@@ -22,6 +24,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/students/fixed': 'Học viên cố định',
   '/admin/students/flexible': 'Học viên linh hoạt',
   '/admin/students': 'Học viên',
+  '/admin/student-alerts': 'Cảnh báo học viên',
   '/admin/teachers/online': 'Gia sư online',
   '/admin/teachers/offline': 'Gia sư offline',
   '/admin/teachers/tester': 'Gia sư tester',
@@ -53,6 +56,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
+  const studentAlertCount = useStudentAlertCount()
   const { user, role } = useAuthStore()
   const visibleGroups = useMemo(() => getVisibleAdminNavigation(role), [role])
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
@@ -74,6 +78,7 @@ export function AdminLayout() {
   const badgeCount = (badge?: AdminNavBadge) => {
     if (badge === 'approvals') return pendingCount
     if (badge === 'bookings') return pendingBookingCount
+    if (badge === 'studentAlerts') return studentAlertCount
     return 0
   }
 
@@ -93,6 +98,7 @@ export function AdminLayout() {
         <AdminSidebar 
           pendingCount={pendingCount} 
           pendingBookingCount={pendingBookingCount} 
+          studentAlertCount={studentAlertCount}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
@@ -164,7 +170,7 @@ export function AdminLayout() {
                   <section key={group.id} className={`overflow-hidden rounded-2xl border ${isActive ? 'border-brand-300 bg-brand-50/60' : 'border-slate-100 bg-slate-50/70'}`}>
                     <button
                       type="button"
-                      onClick={() => setMobileOpenGroupId((current) => current === group.id ? null : group.id)}
+                      onClick={() => setMobileOpenGroupId((current) => nextOpenAdminNavGroup(current, group.id))}
                       className="flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left text-sm font-extrabold text-slate-800 active:scale-[0.99]"
                       aria-expanded={isOpen}
                       aria-controls={`mobile-admin-nav-${group.id}`}

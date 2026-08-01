@@ -33,8 +33,6 @@ import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import {
   bookingConflictMessage,
   checkBookingCandidates,
-  findExistingBookingConflictPairs,
-  formatBookingDate,
 } from '@/lib/bookingConflicts'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -259,6 +257,7 @@ export function BookingSchedulesPage() {
   const [classroomURL, setClassroomURL] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
+  const [scheduleConflictMessage, setScheduleConflictMessage] = useState('')
   const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
   const [studentFutureBookings, setStudentFutureBookings] = useState<BookingRequest[]>([])
   const [cancellingAll, setCancellingAll] = useState(false)
@@ -271,13 +270,6 @@ export function BookingSchedulesPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
-  const teacherScheduleConflicts = useMemo(() => {
-    const today = formatDateISO(new Date())
-    return findExistingBookingConflictPairs(
-      bookingRequests.filter((booking) => !booking.requestedDate || booking.requestedDate >= today),
-    ).filter((conflict) => conflict.reasons.includes('teacher'))
-  }, [bookingRequests])
-
   // Load teachers and availabilities
   useEffect(() => {
     async function loadTeachersAndAvailability() {
@@ -662,6 +654,7 @@ export function BookingSchedulesPage() {
   }
 
   const handleStudentSelect = (student: Student) => {
+    setScheduleConflictMessage('')
     setSelectedStudent(student)
     setClassroomURL(student.classroomURL || '')
     // Pre-select the first subject package that still has remaining minutes,
@@ -679,6 +672,7 @@ export function BookingSchedulesPage() {
   // Execute scheduling transaction
   const executeScheduling = async () => {
     if (!selectedStudent || !selectedTeacher || selectedSlots.length === 0) return
+    setScheduleConflictMessage('')
     if (!selectedSubjectId) {
       toast.warning('Vui lòng chọn môn học')
       return
@@ -749,7 +743,9 @@ export function BookingSchedulesPage() {
 
             const overlap = checkStudentOverlap(selectedStudentBookings, slotDateISO, sSlot.time, endStr)
             if (overlap) {
-              toast.error(`Trùng lịch học viên! Khung giờ ${sSlot.time} - ${endStr} ngày ${slotDateISO} đã được xếp cho giáo viên ${overlap.teacherName}. Không thể xếp đè!`)
+              const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${sSlot.time} - ${endStr}, ngày ${slotDateISO}.`
+              setScheduleConflictMessage(message)
+              toast.error(message)
               return
             }
             sessionsScheduled++
@@ -759,7 +755,9 @@ export function BookingSchedulesPage() {
       } else {
         const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
         if (overlap) {
-          toast.error(`Trùng lịch học viên! Khung giờ ${slot.time} - ${endStr} ngày ${slot.dateISO} đã được xếp cho giáo viên ${overlap.teacherName}. Không thể xếp đè!`)
+          const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${slot.time} - ${endStr}, ngày ${slot.dateISO}.`
+          setScheduleConflictMessage(message)
+          toast.error(message)
           return
         }
       }
@@ -1035,7 +1033,9 @@ export function BookingSchedulesPage() {
     } catch (error: any) {
       console.error('Direct scheduling failed:', error)
       if (error?.message === 'BOOKING_CONFLICT') {
-        toast.error(error.detail || 'Không thể xếp lớp vì lịch bị trùng.')
+        const message = error.detail || 'Không thể xếp lớp vì lịch bị trùng.'
+        setScheduleConflictMessage(message)
+        toast.error(message)
         return
       }
       if (error?.message === 'BOOKING_CALENDAR_CHANGED') {
@@ -1289,6 +1289,7 @@ export function BookingSchedulesPage() {
     setStudentSearch('')
     setSelectedSubjectId('')
     setClassroomURL('')
+    setScheduleConflictMessage('')
     setShowScheduleModal(true)
   }
 
@@ -1312,31 +1313,6 @@ export function BookingSchedulesPage() {
           )}
         </div>
       </div>
-
-      {teacherScheduleConflicts.length > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm" role="alert">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
-            <div className="min-w-0">
-              <p className="font-black">Phát hiện {teacherScheduleConflicts.length} cặp ca đang trùng lịch</p>
-              <p className="mt-1 text-sm text-rose-700">
-                Vui lòng xử lý một trong hai ca trước khi tiếp tục xếp thêm lịch cho giáo viên này.
-              </p>
-              <div className="mt-3 grid gap-2 text-sm">
-                {teacherScheduleConflicts.slice(0, 3).map((conflict) => (
-                  <div key={`${conflict.first.id}-${conflict.second.id}`} className="rounded-xl bg-white/80 px-3 py-2">
-                    <span className="font-bold">{formatBookingDate(conflict.first.requestedDate)}, {conflict.first.requestedStart}-{conflict.first.requestedEnd}:</span>{' '}
-                    {conflict.first.studentName || conflict.first.studentCode} và {conflict.second.studentName || conflict.second.studentCode}
-                  </div>
-                ))}
-                {teacherScheduleConflicts.length > 3 && (
-                  <p className="text-xs font-bold text-rose-700">Còn {teacherScheduleConflicts.length - 3} cặp xung đột khác.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
         {/* Sidebar: Teachers List */}
@@ -1760,6 +1736,16 @@ export function BookingSchedulesPage() {
           }
         >
           <div className="space-y-4">
+            {scheduleConflictMessage && (
+              <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800" role="alert" aria-live="assertive">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+                <div>
+                  <p className="text-sm font-black">Lịch học đang bị trùng</p>
+                  <p className="mt-0.5 text-xs leading-5 text-rose-700">{scheduleConflictMessage}</p>
+                  <p className="mt-1 text-xs font-semibold text-rose-700">Hệ thống chưa tạo ca học nào. Hãy đóng hộp này và chọn khung giờ khác.</p>
+                </div>
+              </div>
+            )}
             {/* Display selected times summary */}
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-2">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Thời gian đã chọn:</p>
