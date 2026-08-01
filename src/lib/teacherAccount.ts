@@ -1,11 +1,11 @@
 import {
   collection,
   doc,
-  getDocs,
+  getDocsFromServer,
   query,
+  runTransaction,
   serverTimestamp,
   where,
-  writeBatch,
 } from 'firebase/firestore'
 import { db } from './firebase'
 
@@ -27,45 +27,89 @@ export async function retireTeacherAccount({
   adminId = '',
 }: RetireTeacherAccountInput) {
   const releasedNickname = nickname.trim()
-  const usersSnapshot = await getDocs(
+  const usersSnapshot = await getDocsFromServer(
     query(collection(db, 'users'), where('teacherId', '==', teacherId))
   )
+  const teacherRef = doc(db, 'teachers', teacherId)
+  const queriedUserRefs = usersSnapshot.docs.map(userDocument => userDocument.ref)
+  const logRef = doc(collection(db, 'adminLogs'))
 
-  const batch = writeBatch(db)
-  batch.update(doc(db, 'teachers', teacherId), {
-    status: 'resigned',
-    code: '',
-    releasedNickname,
-    resignedAt: serverTimestamp(),
-    resignedBy: adminId || 'admin',
-    updatedAt: serverTimestamp(),
-  })
+  await runTransaction(db, async transaction => {
+    const currentTeacherSnap = await transaction.get(teacherRef)
+    if (!currentTeacherSnap.exists()) {
+      throw new Error('Không tìm thấy hồ sơ gia sư cần khóa')
+    }
+    const currentTeacher = currentTeacherSnap.data()
+    if (currentTeacher.status === 'resigned') {
+      throw new Error('Gia sư này đã được khóa trước đó')
+    }
+    if (releasedNickname && currentTeacher.code !== releasedNickname) {
+      throw new Error('Nickname gia sư đã thay đổi ở nơi khác. Vui lòng tải lại trước khi khóa tài khoản.')
+    }
 
-  usersSnapshot.docs.forEach((userDocument) => {
-    const userData = userDocument.data()
-    batch.update(userDocument.ref, {
-      role: 'inactive_teacher',
-      username: '',
-      releasedUsername: releasedNickname || String(userData.username || ''),
-      loginDisabledAt: serverTimestamp(),
-      loginDisabledReason: 'teacher_resigned',
+    // UID chuẩn được đọc bên trong transaction để không bỏ sót tài khoản vừa
+    // được reset/đổi nickname sau truy vấn users ban đầu.
+    const currentCanonicalUid = typeof currentTeacher.loginAccountUid === 'string'
+      ? currentTeacher.loginAccountUid
+      : ''
+    const userRefsById = new Map(queriedUserRefs.map(userRef => [userRef.id, userRef]))
+    if (currentCanonicalUid) {
+      userRefsById.set(currentCanonicalUid, doc(db, 'users', currentCanonicalUid))
+    }
+    const currentUserSnaps = await Promise.all(
+      Array.from(userRefsById.values()).map(userRef => transaction.get(userRef)),
+    )
+
+    currentUserSnaps.forEach(userSnap => {
+      if (!userSnap.exists()) return
+      const userData = userSnap.data()
+      const isCurrentCanonical = userSnap.id === currentCanonicalUid
+      const belongsToAnotherTeacher = userData.teacherId
+        && userData.teacherId !== teacherId
+      const isUnrelatedRole = userData.role !== 'teacher'
+        && userData.role !== 'inactive_teacher'
+      if (belongsToAnotherTeacher
+        || isUnrelatedRole
+        || (!userData.teacherId && !isCurrentCanonical)) {
+        throw new Error('Liên kết tài khoản đã thay đổi. Vui lòng tải lại trước khi khóa gia sư.')
+      }
+    })
+
+    transaction.update(teacherRef, {
+      status: 'resigned',
+      code: '',
+      releasedNickname,
+      loginAccountUid: '',
+      loginAccountUpdatedAt: serverTimestamp(),
+      resignedAt: serverTimestamp(),
+      resignedBy: adminId || 'admin',
       updatedAt: serverTimestamp(),
     })
-  })
 
-  const logRef = doc(collection(db, 'adminLogs'))
-  batch.set(logRef, {
-    adminId,
-    action: 'RETIRE_TEACHER_ACCOUNT',
-    targetType: 'teacher',
-    targetId: teacherId,
-    changes: {
-      teacherName,
-      releasedNickname,
-      lockedUserDocuments: usersSnapshot.size,
-    },
-    createdAt: serverTimestamp(),
-  })
+    currentUserSnaps.forEach(userSnap => {
+      if (!userSnap.exists()) return
+      const userData = userSnap.data()
+      transaction.set(userSnap.ref, {
+        role: 'inactive_teacher',
+        username: '',
+        releasedUsername: releasedNickname || String(userData.username || ''),
+        loginDisabledAt: serverTimestamp(),
+        loginDisabledReason: 'teacher_resigned',
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
+    })
 
-  await batch.commit()
+    transaction.set(logRef, {
+      adminId,
+      action: 'RETIRE_TEACHER_ACCOUNT',
+      targetType: 'teacher',
+      targetId: teacherId,
+      changes: {
+        teacherName,
+        releasedNickname,
+        lockedUserDocuments: currentUserSnaps.filter(userSnap => userSnap.exists()).length,
+      },
+      createdAt: serverTimestamp(),
+    })
+  })
 }

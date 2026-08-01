@@ -3,8 +3,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  collection, addDoc, updateDoc, doc, getDoc, getDocs, query,
-  where, serverTimestamp, setDoc
+  collection, updateDoc, doc, getDocFromServer, getDocs, getDocsFromServer, query,
+  where, serverTimestamp, runTransaction, type DocumentData
 } from 'firebase/firestore'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import { db, secondaryAuth, generateUniqueCode } from '@/lib/firebase'
@@ -352,17 +352,37 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       if (isEdit && teacher) {
         let photoURL = teacher.photoURL
         if (photoFile) photoURL = await uploadPhoto(teacher.id, photoFile)
+        const teacherRef = doc(db, 'teachers', teacher.id)
+        const teacherUpdateData = {
+          code: newUsername || teacher.code,
+          name: finalName || teacher.name,
+          level: data.level,
+          pointsPer25Minutes: normalizedStudentPoints,
+          bio: data.bio || '',
+          country: data.country || 'VN',
+          timezoneOffset,
+          gender: gender,
+          subjectIds: selectedSubjects,
+          subjectNames,
+          branchId: selectedBranchId || '',
+          branchName: branch?.name || '',
+          isTester,
+          ...interviewData,
+          photoURL,
+          updatedAt: serverTimestamp(),
+        }
+        let teacherUpdatedWithAccount = false
 
         // If nickname changed, verify uniqueness
         if (newUsername && newUsername !== teacher.code) {
           const checkQuery = query(collection(db, 'teachers'), where('code', '==', newUsername))
-          const checkSnap = await getDocs(checkQuery)
+          const checkSnap = await getDocsFromServer(checkQuery)
           if (!checkSnap.empty) {
             toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi gia sư khác!`)
             return
           }
           const studentCheckQuery = query(collection(db, 'students'), where('code', '==', newUsername))
-          const studentCheckSnap = await getDocs(studentCheckQuery)
+          const studentCheckSnap = await getDocsFromServer(studentCheckQuery)
           if (!studentCheckSnap.empty) {
             toast.error(`Tên tài khoản "${newUsername}" đã được học viên sử dụng!`)
             return
@@ -392,59 +412,108 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           }
 
           if (finalUid) {
-            // Write the new users document
-            await setDoc(doc(db, 'users', finalUid), {
-              uid: finalUid,
-              email: finalEmail,
-              username: newUsername,
-              role: 'teacher',
-              teacherId: teacher.id,
-              createdAt: serverTimestamp(),
-            })
+            const finalUserRef = doc(db, 'users', finalUid)
+            const finalUserSnap = await getDocFromServer(finalUserRef)
+            const finalUserData = finalUserSnap.exists() ? finalUserSnap.data() : null
+            const belongsToAnotherTeacher = finalUserData?.teacherId
+              && finalUserData.teacherId !== teacher.id
+            const isUnrelatedRole = finalUserData
+              && finalUserData.role !== 'teacher'
+              && finalUserData.role !== 'inactive_teacher'
+            if (belongsToAnotherTeacher || isUnrelatedRole) {
+              toast.error('Nickname này đang liên kết với một tài khoản khác; đã dừng cập nhật để bảo vệ dữ liệu.')
+              return
+            }
 
-            // Mark old user documents as inactive to prevent duplicates
-            const oldUserQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id), where('role', '==', 'teacher'))
-            const oldUserSnap = await getDocs(oldUserQuery)
-            for (const oldDoc of oldUserSnap.docs) {
-              if (oldDoc.id !== finalUid) {
-                await updateDoc(oldDoc.ref, { role: 'inactive_teacher' })
+            // Transaction khóa cả UID Auth và hồ sơ gia sư. Hai Admin cùng chọn
+            // một nickname sẽ không thể ghi đè liên kết của nhau theo kiểu last-write-wins.
+            const linkedUsersQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id))
+            const linkedUsersSnap = await getDocsFromServer(linkedUsersQuery)
+            const linkedUserRefs = linkedUsersSnap.docs
+              .filter(linkedUserDoc => linkedUserDoc.id !== finalUid)
+              .map(linkedUserDoc => linkedUserDoc.ref)
+
+            await runTransaction(db, async transaction => {
+              const currentTeacherSnap = await transaction.get(teacherRef)
+
+              if (!currentTeacherSnap.exists() || currentTeacherSnap.data().code !== teacher.code) {
+                throw new Error('Hồ sơ gia sư đã được thay đổi ở nơi khác. Vui lòng tải lại trước khi đổi nickname.')
               }
-            }
-          } else {
-            // Fallback: if auth provisioning failed completely, update the first found user doc.
-            // KHÔNG lọc role=='teacher' — doc có thể đã bị đánh dấu 'inactive_teacher' từ lần đổi
-            // nickname trước; nếu bỏ sót, GV sẽ kẹt 403 vĩnh viễn (bug thực tế của GV Nikolas).
-            const userQuery = query(collection(db, 'users'), where('teacherId', '==', teacher.id))
-            const userSnap = await getDocs(userQuery)
-            if (!userSnap.empty) {
-              const userDoc = userSnap.docs[0]
-              await updateDoc(userDoc.ref, {
-                username: newUsername,
-                email: finalEmail,
-                role: 'teacher',
+
+              const currentCanonicalUid = typeof currentTeacherSnap.data().loginAccountUid === 'string'
+                ? currentTeacherSnap.data().loginAccountUid
+                : ''
+              const linkedRefsById = new Map(linkedUserRefs.map(linkedUserRef => [linkedUserRef.id, linkedUserRef]))
+              if (currentCanonicalUid && currentCanonicalUid !== finalUid) {
+                linkedRefsById.set(currentCanonicalUid, doc(db, 'users', currentCanonicalUid))
+              }
+              const currentLinkedUserRefs = Array.from(linkedRefsById.values())
+              const [currentFinalUserSnap, currentLinkedUserSnaps] = await Promise.all([
+                transaction.get(finalUserRef),
+                Promise.all(currentLinkedUserRefs.map(linkedUserRef => transaction.get(linkedUserRef))),
+              ])
+
+              const currentFinalUser = currentFinalUserSnap.exists() ? currentFinalUserSnap.data() : null
+              const finalUidBelongsToAnotherTeacher = currentFinalUser?.teacherId
+                && currentFinalUser.teacherId !== teacher.id
+              const currentFinalRoleIsUnrelated = currentFinalUser
+                && currentFinalUser.role !== 'teacher'
+                && currentFinalUser.role !== 'inactive_teacher'
+              if (finalUidBelongsToAnotherTeacher || currentFinalRoleIsUnrelated) {
+                throw new Error('Nickname vừa được liên kết với một tài khoản khác. Dữ liệu chưa bị thay đổi.')
+              }
+
+              currentLinkedUserSnaps.forEach(linkedUserSnap => {
+                if (!linkedUserSnap.exists()) return
+                const linkedUser = linkedUserSnap.data()
+                const isCurrentCanonical = linkedUserSnap.id === currentCanonicalUid
+                const belongsToAnotherTeacher = linkedUser.teacherId
+                  && linkedUser.teacherId !== teacher.id
+                const isUnrelatedRole = linkedUser.role !== 'teacher'
+                  && linkedUser.role !== 'inactive_teacher'
+                if (belongsToAnotherTeacher
+                  || isUnrelatedRole
+                  || (!linkedUser.teacherId && !isCurrentCanonical)) {
+                  throw new Error('Liên kết tài khoản gia sư đã thay đổi. Vui lòng tải lại và thử lại.')
+                }
               })
-            }
+
+              currentLinkedUserSnaps.forEach(linkedUserSnap => {
+                if (!linkedUserSnap.exists()) return
+                transaction.set(linkedUserSnap.ref, {
+                  role: 'inactive_teacher',
+                  loginDisabledAt: serverTimestamp(),
+                  loginDisabledReason: 'nickname_changed',
+                  updatedAt: serverTimestamp(),
+                }, { merge: true })
+              })
+              transaction.set(finalUserRef, {
+                uid: finalUid,
+                email: finalEmail,
+                username: newUsername,
+                role: 'teacher',
+                teacherId: teacher.id,
+                createdAt: currentFinalUser?.createdAt || finalUserData?.createdAt || serverTimestamp(),
+                loginDisabledAt: null,
+                loginDisabledReason: '',
+                updatedAt: serverTimestamp(),
+              }, { merge: true })
+              transaction.update(teacherRef, {
+                ...teacherUpdateData,
+                loginAccountUid: finalUid,
+                loginAccountUpdatedAt: serverTimestamp(),
+              })
+            })
+            teacherUpdatedWithAccount = true
+          } else {
+            toast.error('Không thể tạo hoặc xác nhận tài khoản đăng nhập mới. Dữ liệu gia sư chưa bị thay đổi.')
+            return
           }
         }
 
-        await updateDoc(doc(db, 'teachers', teacher.id), {
-          code: newUsername || teacher.code,
-          name: finalName || teacher.name,
-          level: data.level,
-          pointsPer25Minutes: normalizedStudentPoints,
-          bio: data.bio || '',
-          country: data.country || 'VN',
-          timezoneOffset,
-          gender: gender,
-          subjectIds: selectedSubjects,
-          subjectNames,
-          branchId: selectedBranchId || '',
-          branchName: branch?.name || '',
-          isTester,
-          ...interviewData,
-          photoURL,
-          updatedAt: serverTimestamp(),
-        })
+        if (!teacherUpdatedWithAccount) {
+          await updateDoc(teacherRef, teacherUpdateData)
+        }
         toast.success('Đã cập nhật gia sư')
       } else {
         // CREATE mode - Admin creates account for teacher
@@ -466,20 +535,26 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         const finalEmail = newUsername.includes('@') ? newUsername : `${newUsername}@edutrackpro.app`
         const FIXED_PASSWORD = '1234560'
 
+        const [existingTeacherCode, existingStudentCode] = await Promise.all([
+          getDocsFromServer(query(collection(db, 'teachers'), where('code', '==', code))),
+          getDocsFromServer(query(collection(db, 'students'), where('code', '==', code))),
+        ])
+        if (!existingTeacherCode.empty) {
+          toast.error(`Tên tài khoản "${code}" đã có hồ sơ gia sư. Hãy mở hồ sơ đó và chọn "Khôi phục đăng nhập".`)
+          return
+        }
+        if (!existingStudentCode.empty) {
+          toast.error(`Tên tài khoản "${code}" đã được học viên sử dụng!`)
+          return
+        }
+
         let finalUid: string
         let isRecycledNicknameAccount = false
+        let existingAuthUserData: DocumentData | null = null
         try {
           const credential = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, FIXED_PASSWORD)
           await secondaryAuth.signOut()
           finalUid = credential.user.uid
-
-          await setDoc(doc(db, 'users', finalUid), {
-            uid: finalUid,
-            email: finalEmail,
-            username: newUsername,
-            role: 'teacher',
-            createdAt: serverTimestamp(),
-          })
         } catch (err: any) {
           if (err.code === 'auth/email-already-in-use') {
             // Firebase Authentication vẫn giữ email sau khi gia sư nghỉ dạy.
@@ -490,12 +565,15 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
               finalUid = credential.user.uid
               await secondaryAuth.signOut()
 
-              const existingUserSnap = await getDoc(doc(db, 'users', finalUid))
-              if (!existingUserSnap.exists() || existingUserSnap.data().role !== 'inactive_teacher') {
+              const existingUserSnap = await getDocFromServer(doc(db, 'users', finalUid))
+              existingAuthUserData = existingUserSnap.exists() ? existingUserSnap.data() : null
+              const isIncompleteProvision = !existingAuthUserData
+                || (existingAuthUserData.role === 'teacher' && !existingAuthUserData.teacherId)
+              if (!isIncompleteProvision && existingAuthUserData?.role !== 'inactive_teacher') {
                 toast.error('Nickname này đang thuộc một tài khoản hoạt động!')
                 return
               }
-              isRecycledNicknameAccount = true
+              isRecycledNicknameAccount = existingAuthUserData?.role === 'inactive_teacher'
             } catch (reuseErr) {
               console.error('Failed to recycle released teacher nickname:', reuseErr)
               try { await secondaryAuth.signOut() } catch { /* no-op */ }
@@ -511,38 +589,53 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         let photoURL = ''
         if (photoFile) photoURL = await uploadPhoto(finalUid, photoFile)
 
-        // Create teacher doc
-        const teacherRef = await addDoc(collection(db, 'teachers'), {
-          code,
-          name: finalName || 'Gia sư mới',
-          level: data.level,
-          pointsPer25Minutes: normalizedStudentPoints,
-          bio: data.bio || '',
-          country: data.country || 'VN',
-          timezoneOffset,
-          gender: gender,
-          subjectIds: selectedSubjects,
-          subjectNames,
-          branchId: selectedBranchId || '',
-          branchName: branch?.name || '',
-          isTester,
-          ...interviewData,
-          photoURL,
-          status: 'active',
-          createdAt: serverTimestamp(),
-        })
+        // Transaction trên users/{uid} là khóa sở hữu nickname. Nếu hai Admin
+        // cùng tạo một mã, chỉ giao dịch đầu tiên được phép liên kết Auth UID.
+        const teacherRef = doc(collection(db, 'teachers'))
+        const userRef = doc(db, 'users', finalUid)
+        await runTransaction(db, async transaction => {
+          const currentUserSnap = await transaction.get(userRef)
+          const currentUser = currentUserSnap.exists() ? currentUserSnap.data() : null
+          const isIncompleteProvision = !currentUser
+            || (currentUser.role === 'teacher' && !currentUser.teacherId)
+          const isReleasedTeacherAccount = currentUser?.role === 'inactive_teacher'
+          if (!isIncompleteProvision && !isReleasedTeacherAccount) {
+            throw new Error('Nickname vừa được một tài khoản khác sử dụng. Dữ liệu gia sư chưa được tạo.')
+          }
 
-        // Link teacherId to user doc
-        await updateDoc(doc(db, 'users', finalUid), {
-          uid: finalUid,
-          email: finalEmail,
-          username: newUsername,
-          role: 'teacher',
-          teacherId: teacherRef.id,
-          loginDisabledAt: null,
-          loginDisabledReason: '',
-          recycledAt: isRecycledNicknameAccount ? serverTimestamp() : null,
-          updatedAt: serverTimestamp(),
+          transaction.set(teacherRef, {
+            code,
+            name: finalName || 'Gia sư mới',
+            level: data.level,
+            pointsPer25Minutes: normalizedStudentPoints,
+            bio: data.bio || '',
+            country: data.country || 'VN',
+            timezoneOffset,
+            gender: gender,
+            subjectIds: selectedSubjects,
+            subjectNames,
+            branchId: selectedBranchId || '',
+            branchName: branch?.name || '',
+            isTester,
+            ...interviewData,
+            photoURL,
+            status: 'active',
+            loginAccountUid: finalUid,
+            loginAccountUpdatedAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+          })
+          transaction.set(userRef, {
+            uid: finalUid,
+            email: finalEmail,
+            username: newUsername,
+            role: 'teacher',
+            teacherId: teacherRef.id,
+            createdAt: currentUser?.createdAt || existingAuthUserData?.createdAt || serverTimestamp(),
+            loginDisabledAt: null,
+            loginDisabledReason: '',
+            recycledAt: isReleasedTeacherAccount || isRecycledNicknameAccount ? serverTimestamp() : null,
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
         })
 
         toast.success(`Đã tạo gia sư thành công!`)

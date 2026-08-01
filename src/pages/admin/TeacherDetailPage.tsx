@@ -22,6 +22,7 @@ import { lessonRewardPoints } from '@/lib/rewards'
 import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
+import { resetTeacherPassword } from '@/lib/auth'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -73,32 +74,20 @@ export function TeacherDetailPage() {
     }
     setRestoringLogin(true)
     try {
-      const snap = await getDocs(query(collection(db, 'users'), where('teacherId', '==', teacher.id)))
-      if (snap.empty) {
-        toast.info('GV này chưa có tài khoản đăng nhập — chỉ cần đăng nhập lại bằng mã GV, hệ thống sẽ tự tạo.')
-        return
-      }
-      let fixed = 0
-      for (const d of snap.docs) {
-        const u = d.data()
-        if (u.role !== 'teacher') {
-          await updateDoc(d.ref, { role: 'teacher', username: teacher.code, restoredAt: serverTimestamp(), restoredBy: user?.uid || 'admin' })
-          fixed++
-        }
-      }
-      if (fixed > 0) {
+      const result = await resetTeacherPassword(teacher.id)
+      try {
         await addDoc(collection(db, 'adminLogs'), {
           adminId: user?.uid || '',
-          action: 'RESTORE_TEACHER_LOGIN_ROLE',
+          action: 'RESTORE_TEACHER_LOGIN',
           targetType: 'teacher',
           targetId: teacher.id,
-          changes: { teacherCode: teacher.code, fixedUserDocs: fixed },
+          changes: { teacherCode: teacher.code, recoveredUid: result.uid },
           createdAt: serverTimestamp(),
         })
-        toast.success(`Đã khôi phục quyền đăng nhập (${fixed} tài khoản). GV đăng xuất/đăng nhập lại là vào được.`)
-      } else {
-        toast.info('Tài khoản đăng nhập của GV này vẫn bình thường (role=teacher), không cần khôi phục.')
+      } catch (logError) {
+        console.error('Teacher login was restored but audit log failed:', logError)
       }
+      toast.success('Đã khôi phục tài khoản đăng nhập. Gia sư có thể đăng nhập lại ngay bằng mã hiện tại.')
     } catch (err) {
       console.error('Restore login role failed:', err)
       toast.error('Không thể khôi phục quyền đăng nhập, vui lòng thử lại')

@@ -71,6 +71,10 @@ export function ProfilePage() {
   const [teacher, setTeacher] = useState<Teacher | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [lessonsLoading, setLessonsLoading] = useState(true)
+  const [lessonsError, setLessonsError] = useState(false)
   const [updatingTimezone, setUpdatingTimezone] = useState(false)
   const [bankName, setBankName] = useState('')
   const [bankAccountNo, setBankAccountNo] = useState('')
@@ -303,25 +307,87 @@ export function ProfilePage() {
   }
 
   useEffect(() => {
-    if (!teacherId) return
-    getDoc(doc(db, 'teachers', teacherId)).then((snap) => {
-      if (snap.exists()) setTeacher({ id: snap.id, ...snap.data() } as Teacher)
+    if (!teacherId) {
+      setTeacher(null)
       setLoading(false)
-    })
+      setLessonsLoading(false)
+      setLoadError(true)
+      return
+    }
+
+    let active = true
+    setLoading(true)
+    setLoadError(false)
+    setLessonsLoading(true)
+    setLessonsError(false)
+
+    getDoc(doc(db, 'teachers', teacherId))
+      .then((snap) => {
+        if (!active) return
+        setTeacher(snap.exists() ? ({ id: snap.id, ...snap.data() } as Teacher) : null)
+      })
+      .catch((error) => {
+        if (!active) return
+        console.error('Unable to load teacher profile:', error)
+        setLoadError(true)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
 
     const month = getCurrentMonth()
     const q = query(
       collection(db, 'lessons'),
       where('teacherId', '==', teacherId)
     )
-    return onSnapshot(q, (snap) => {
-      setLessons(
-        snap.docs
+    let lessonsListenerActive = true
+    let unsubscribe = () => {}
+    const lessonsTimeout = setTimeout(() => {
+      if (!active) return
+      lessonsListenerActive = false
+      unsubscribe()
+      setLessonsError(true)
+      setLessonsLoading(false)
+    }, 12_000)
+
+    unsubscribe = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snap) => {
+        if (!active || !lessonsListenerActive) return
+        const nextLessons = snap.docs
           .map((d) => ({ id: d.id, ...d.data() } as Lesson))
           .filter((lesson) => lesson.status === 'approved' && lesson.date >= `${month}-01`)
-      )
-    })
-  }, [teacherId])
+        setLessons(nextLessons)
+
+        // Cache rỗng trên thiết bị mới không phải bằng chứng thu nhập bằng 0.
+        // Chỉ bỏ trạng thái chờ sau snapshot xác nhận từ server.
+        if (!snap.metadata.fromCache) {
+          clearTimeout(lessonsTimeout)
+          setLessonsLoading(false)
+          setLessonsError(false)
+        }
+      },
+      (error) => {
+        if (!lessonsListenerActive) return
+        lessonsListenerActive = false
+        clearTimeout(lessonsTimeout)
+        unsubscribe()
+        console.error('Unable to load teacher lesson summary:', error)
+        if (active) {
+          setLessonsError(true)
+          setLessonsLoading(false)
+        }
+      },
+    )
+
+    return () => {
+      active = false
+      lessonsListenerActive = false
+      clearTimeout(lessonsTimeout)
+      unsubscribe()
+    }
+  }, [teacherId, loadAttempt])
 
   const handleTimezoneChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const countryCode = e.target.value
@@ -354,6 +420,33 @@ export function ProfilePage() {
     }
   }
 
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center">
+        <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
+          <AlertTriangle className="mx-auto h-8 w-8 text-amber-600" />
+          <h1 className="mt-3 text-lg font-bold text-slate-900">
+            {lang === 'vi' ? 'Chưa tải được hồ sơ gia sư' : 'Unable to load tutor profile'}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            {lang === 'vi'
+              ? 'Kết nối dữ liệu đang gián đoạn. Hồ sơ của bạn vẫn được giữ nguyên; vui lòng thử tải lại.'
+              : 'The data connection was interrupted. Your profile is unchanged; please try again.'}
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => {
+              setLoadError(false)
+              setLessonsError(false)
+              setLoadAttempt((attempt) => attempt + 1)
+            }}
+          >
+            {lang === 'vi' ? 'Thử tải lại' : 'Try again'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
   if (loading) return <LoadingSpinner />
   if (!teacher) return <p className="text-slate-500 text-center py-20">{t('profile.not_found')}</p>
 
@@ -716,13 +809,30 @@ export function ProfilePage() {
           </Button>
         </Card>
 
+        {lessonsError && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-bold">{lang === 'vi' ? 'Chưa tải được thống kê tháng này' : 'Monthly statistics are unavailable'}</p>
+            <button
+              type="button"
+              className="mt-1 font-bold text-amber-800 underline underline-offset-2"
+              onClick={() => {
+                setLessonsError(false)
+                setLessonsLoading(true)
+                setLoadAttempt((attempt) => attempt + 1)
+              }}
+            >
+              {lang === 'vi' ? 'Thử tải lại thống kê' : 'Retry statistics'}
+            </button>
+          </div>
+        )}
+
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider ml-1 mt-2">{t('profile.this_month')}</h3>
         <div className="grid grid-cols-2 gap-4">
           <Card className="flex flex-col items-center justify-center py-6 border-0 shadow-md shadow-slate-200/50 hover:scale-[1.02] transition-transform">
             <div className="w-12 h-12 bg-sky-50 rounded-full flex items-center justify-center mb-3">
               <CalendarDays className="w-6 h-6 text-[#3BB8EB]" />
             </div>
-            <p className="text-3xl font-extrabold text-slate-900">{lessons.length}</p>
+            <p className="text-3xl font-extrabold text-slate-900">{lessonsLoading || lessonsError ? '—' : lessons.length}</p>
             <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wide">{t('profile.lessons_taught')}</p>
           </Card>
           
@@ -730,7 +840,9 @@ export function ProfilePage() {
             <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mb-3">
               <Wallet className="w-6 h-6 text-emerald-600" />
             </div>
-            <p className="text-xl sm:text-2xl font-extrabold text-emerald-600">{formatVND(monthSalary)}</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-emerald-600">
+              {lessonsLoading || lessonsError ? '—' : formatVND(monthSalary)}
+            </p>
             <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wide">{t('profile.income')}</p>
           </Card>
         </div>

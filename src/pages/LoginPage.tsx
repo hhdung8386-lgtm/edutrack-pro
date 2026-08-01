@@ -4,7 +4,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { User, Lock, Eye, EyeOff, Search, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen, MessageSquare, Users } from 'lucide-react'
-import { signIn, signInTeacher } from '@/lib/auth'
+import { signIn, signInTeacher, signOut } from '@/lib/auth'
+import { waitForAuthProfile } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
@@ -62,22 +63,45 @@ export function LoginPage() {
         result = await signIn(emailToUse, data.password)
       }
       
-      const { role } = result
+      const { user, role, teacherId } = result
+
+      // Chỉ mở route sau khi listener quyền đã nhận xác nhận từ server. Việc tự
+      // đẩy state ở đây có thể bị onAuthStateChanged ghi đè và gây nháy trang.
+      try {
+        await waitForAuthProfile(user.uid, role, role === 'teacher' ? teacherId : undefined)
+      } catch (profileError) {
+        await signOut()
+        throw profileError
+      }
       
-      if (role === 'admin' || role === 'student_manager' || role === 'teacher_manager') navigate('/admin/dashboard')
-      else if (role === 'teacher') navigate('/teacher/attendance')
-      else if (role === 'guest') navigate('/waiting')
+      if (role === 'admin' || role === 'student_manager' || role === 'teacher_manager') navigate('/admin/dashboard', { replace: true })
+      else if (role === 'teacher') navigate('/teacher/attendance', { replace: true })
+      else if (role === 'guest') navigate('/waiting', { replace: true })
       else setErrorMsg('Tài khoản không có quyền truy cập')
     } catch (err: unknown) {
       const msg = (err as Error).message || ''
+      const code = (err as { code?: string }).code || ''
       if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found') || msg.includes('invalid-email') || msg.includes('Mật khẩu không đúng') || msg.includes('Mã gia sư không tồn tại')) {
         setErrorMsg('Mã gia sư hoặc mật khẩu không đúng')
       } else if (msg.includes('too-many-requests')) {
         setErrorMsg('Quá nhiều lần thử. Vui lòng thử lại sau.')
+      } else if (code.includes('unavailable') || code.includes('network-request-failed') || msg.includes('network-request-failed')) {
+        setErrorMsg('Kết nối tới máy chủ đang gián đoạn. Vui lòng kiểm tra mạng và thử lại; dữ liệu của bạn không bị thay đổi.')
       } else if (msg.includes('không có quyền') || msg.includes('does not have access')) {
         setErrorMsg('Tài khoản không có quyền truy cập')
       } else if (
         msg.includes('chưa được kích hoạt') ||
+        msg.includes('chưa được khởi tạo') ||
+        msg.includes('chưa sẵn sàng') ||
+        msg.includes('không khớp hồ sơ') ||
+        msg.includes('không khớp UID') ||
+        msg.includes('liên kết với nhiều hồ sơ') ||
+        msg.includes('Liên kết tài khoản gia sư chưa đồng bộ') ||
+        msg.includes('không phải tài khoản đăng nhập hiện hành') ||
+        msg.includes('Không thể đồng bộ quyền') ||
+        msg.includes('Không thể xác nhận quyền') ||
+        msg.includes('Quá thời gian xác nhận quyền') ||
+        msg.includes('nhiều tài khoản đăng nhập') ||
         msg.includes('bị khóa quyền') ||
         msg.includes('đã nghỉ dạy') ||
         msg.includes('đã bị khóa')

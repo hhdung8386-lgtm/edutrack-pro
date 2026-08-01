@@ -166,6 +166,12 @@ export function AvailabilityPage() {
   const [note, setNote] = useState('')
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [loadedAvailabilityKey, setLoadedAvailabilityKey] = useState<string | null>(null)
+  const [bookingsLoading, setBookingsLoading] = useState(true)
+  const [bookingsError, setBookingsError] = useState(false)
+  const [bookingsLoadAttempt, setBookingsLoadAttempt] = useState(0)
   const [savingMode, setSavingMode] = useState<SaveMode | null>(null)
   const [confirmMode, setConfirmMode] = useState<SaveMode | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
@@ -178,78 +184,127 @@ export function AvailabilityPage() {
 
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const weekStartISO = formatDateISO(weekStart)
+  const availabilityKey = teacherId ? `${teacherId}:${weekStartISO}` : null
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
 
-  // Fetch teacher profile for timezone settings
-  useEffect(() => {
-    if (!teacherId) return
-    getDoc(doc(db, 'teachers', teacherId)).then((snap) => {
-      if (snap.exists()) {
-        setTeacher({ id: snap.id, ...snap.data() } as Teacher)
-      }
-    }).catch(err => console.error('Error loading teacher profile:', err))
-  }, [teacherId])
-
-  // Fetch teacher's availability for the selected week
+  // Fetch profile and availability together so timezone conversion is based on one
+  // resolved snapshot. The old two-effect flow rendered once with UTC+7, then put
+  // the page back into a spinner and loaded again when the teacher profile arrived.
   useEffect(() => {
     if (!teacherId) {
+      setTeacher(null)
+      setAvailability(null)
+      setSlots(emptySlots())
+      setLoadedAvailabilityKey(null)
       setLoading(false)
       return
     }
 
-    async function loadAvailability() {
+    let cancelled = false
+    const activeTeacherId = teacherId
+
+    async function loadAvailabilityData() {
       setLoading(true)
+      setLoadError(false)
       try {
-        const snap = await getDoc(doc(db, 'teacherAvailability', teacherId as string))
-        if (snap.exists()) {
-          const data = { id: snap.id, ...snap.data() } as TeacherAvailability
+        const [teacherSnap, availabilitySnap] = await Promise.all([
+          getDoc(doc(db, 'teachers', activeTeacherId)),
+          getDoc(doc(db, 'teacherAvailability', activeTeacherId)),
+        ])
+        if (cancelled) return
+
+        const resolvedTeacher = teacherSnap.exists()
+          ? ({ id: teacherSnap.id, ...teacherSnap.data() } as Teacher)
+          : null
+        setTeacher(resolvedTeacher)
+
+        if (availabilitySnap.exists()) {
+          const data = { id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability
           setAvailability(data)
-          
+
           const weekOverride = data.weekOverrides?.[weekStartISO]
           const loadedSlots = weekOverride?.slots || data.slots
           if (loadedSlots) {
-            const offsetVal = teacher?.timezoneOffset ?? 7
+            const offsetVal = resolvedTeacher?.timezoneOffset ?? 7
             const translated = translateVnSlotsToTeacher(loadedSlots, offsetVal)
             setSlots(translated)
           } else {
             setSlots(emptySlots())
           }
           setNote(weekOverride?.note || data.note || '')
-          if (data.updatedAt) setLastUpdated(data.updatedAt)
+          setLastUpdated(data.updatedAt || null)
         } else {
           setAvailability(null)
           setSlots(emptySlots())
           setNote('')
+          setLastUpdated(null)
         }
+        setLoadedAvailabilityKey(`${activeTeacherId}:${weekStartISO}`)
       } catch (error) {
+        if (cancelled) return
         console.error('Error loading teacher availability:', error)
-        toast.error('Không tải được lịch rảnh của bạn')
+        setLoadError(true)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
-    loadAvailability()
-  }, [teacherId, weekStartISO, teacher])
+    loadAvailabilityData()
+    return () => { cancelled = true }
+  }, [teacherId, weekStartISO, loadAttempt])
 
   // Fetch booking requests to mark RESERVED cells
   useEffect(() => {
-    if (!teacherId) return
+    if (!teacherId) {
+      setBookingRequests([])
+      setBookingsLoading(false)
+      setBookingsError(false)
+      return
+    }
 
-    const unsubscribe = onSnapshot(
+    setBookingRequests([])
+    setBookingsLoading(true)
+    setBookingsError(false)
+
+    let listenerActive = true
+    let unsubscribe = () => {}
+    const loadTimeout = setTimeout(() => {
+      listenerActive = false
+      unsubscribe()
+      setBookingsError(true)
+      setBookingsLoading(false)
+    }, 12_000)
+
+    unsubscribe = onSnapshot(
       query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)),
+      { includeMetadataChanges: true },
       (snap) => {
+        if (!listenerActive) return
         const items = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
         setBookingRequests(items)
+        if (!snap.metadata.fromCache) {
+          clearTimeout(loadTimeout)
+          setBookingsLoading(false)
+        }
       },
       (error) => {
+        if (!listenerActive) return
+        listenerActive = false
+        clearTimeout(loadTimeout)
+        unsubscribe()
         console.error('Error loading bookings for teacher:', error)
+        setBookingsError(true)
+        setBookingsLoading(false)
       }
     )
 
-    return unsubscribe
-  }, [teacherId])
+    return () => {
+      listenerActive = false
+      clearTimeout(loadTimeout)
+      unsubscribe()
+    }
+  }, [teacherId, bookingsLoadAttempt])
 
   const localBookings = useMemo(() => {
     const offset = teacher?.timezoneOffset ?? 7
@@ -403,7 +458,36 @@ export function AvailabilityPage() {
     }
   }
 
-  if (loading && !availability) return <LoadingSpinner />
+  if (loadError || bookingsError) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center">
+        <Card>
+          <AlertTriangle className="mx-auto h-8 w-8 text-amber-600" />
+          <h1 className="mt-3 text-lg font-bold text-slate-900">
+            {lang === 'vi' ? 'Chưa tải đủ dữ liệu lịch rảnh' : 'Unable to load availability data'}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            {lang === 'vi'
+              ? 'Kết nối dữ liệu đang gián đoạn. Lịch đã lưu của bạn không bị thay đổi; vui lòng thử tải lại.'
+              : 'The data connection was interrupted. Your saved availability is unchanged; please try again.'}
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => {
+              setLoadError(false)
+              setBookingsError(false)
+              setLoadedAvailabilityKey(null)
+              setLoadAttempt((attempt) => attempt + 1)
+              setBookingsLoadAttempt((attempt) => attempt + 1)
+            }}
+          >
+            {lang === 'vi' ? 'Thử tải lại' : 'Try again'}
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+  if (loading || bookingsLoading || loadedAvailabilityKey !== availabilityKey) return <LoadingSpinner />
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-6xl mx-auto">

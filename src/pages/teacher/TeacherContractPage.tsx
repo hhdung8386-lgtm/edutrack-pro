@@ -4,6 +4,7 @@ import { collection, addDoc, serverTimestamp, query, where, onSnapshot, doc, get
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StatusBadge } from '@/components/ui/Badge'
 import { toast } from '@/stores/toastStore'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -475,19 +476,60 @@ export function TeacherContractPage() {
   const { t } = useLanguageStore()
   const [submitting, setSubmitting] = useState(false)
   const [contracts, setContracts] = useState<any[]>([])
+  const [contractsLoading, setContractsLoading] = useState(true)
+  const [contractsError, setContractsError] = useState(false)
+  const [contractsLoadAttempt, setContractsLoadAttempt] = useState(0)
   
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
   const [isAgreed, setIsAgreed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!teacherId) return
+    if (!teacherId) {
+      setContractsLoading(false)
+      setContractsError(true)
+      return
+    }
+
+    setContractsLoading(true)
+    setContractsError(false)
     const q = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
-    const unsub = onSnapshot(q, (snap) => {
-      setContracts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)))
-    })
-    return unsub
-  }, [teacherId])
+    let listenerActive = true
+    let unsub = () => {}
+    const loadTimeout = setTimeout(() => {
+      listenerActive = false
+      unsub()
+      setContractsError(true)
+      setContractsLoading(false)
+    }, 12_000)
+    unsub = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snap) => {
+        if (!listenerActive) return
+        setContracts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)))
+        if (!snap.metadata.fromCache) {
+          clearTimeout(loadTimeout)
+          setContractsLoading(false)
+          setContractsError(false)
+        }
+      },
+      (error) => {
+        if (!listenerActive) return
+        listenerActive = false
+        clearTimeout(loadTimeout)
+        unsub()
+        console.error('Unable to load teacher contracts:', error)
+        setContractsError(true)
+        setContractsLoading(false)
+      },
+    )
+    return () => {
+      listenerActive = false
+      clearTimeout(loadTimeout)
+      unsub()
+    }
+  }, [teacherId, contractsLoadAttempt])
 
   const handleScroll = () => {
     if (!scrollRef.current) return
@@ -561,6 +603,30 @@ export function TeacherContractPage() {
 
   // Check if they have already agreed or have an old contract
   const hasAgreedBefore = contracts.some(c => c.type === 'terms_of_service' || c.status === 'agreed' || c.status === 'pending' || c.status === 'approved')
+
+  if (contractsLoading) return <LoadingSpinner />
+  if (contractsError) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center">
+        <Card>
+          <h1 className="text-lg font-bold text-slate-900">Chưa tải được trạng thái hợp đồng</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Kết nối dữ liệu đang gián đoạn. Hệ thống chưa thay đổi hợp đồng của bạn; vui lòng thử tải lại.
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => {
+              setContractsError(false)
+              setContractsLoading(true)
+              setContractsLoadAttempt((attempt) => attempt + 1)
+            }}
+          >
+            Thử tải lại
+          </Button>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pt-2 lg:pt-6 pb-20 animate-fade-in">

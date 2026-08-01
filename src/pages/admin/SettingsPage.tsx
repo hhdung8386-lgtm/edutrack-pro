@@ -32,7 +32,12 @@ export interface Branch {
 export function SettingsPage() {
   const { role, user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'teacher_features'>('branch')
-  const { enabled: teacherAttendanceEnabled, loading: loadingTeacherFeatures } = useTeacherAttendanceFeature()
+  const {
+    enabled: teacherAttendanceEnabled,
+    loading: loadingTeacherFeatures,
+    error: teacherFeaturesError,
+    retry: retryTeacherFeatures,
+  } = useTeacherAttendanceFeature()
   const [savingTeacherFeatures, setSavingTeacherFeatures] = useState(false)
 
   // Branch states
@@ -293,7 +298,7 @@ export function SettingsPage() {
   }
 
   const toggleTeacherAttendance = async () => {
-    if (savingTeacherFeatures || loadingTeacherFeatures) return
+    if (savingTeacherFeatures || loadingTeacherFeatures || teacherFeaturesError) return
     const nextEnabled = !teacherAttendanceEnabled
     setSavingTeacherFeatures(true)
     try {
@@ -652,7 +657,7 @@ export function SettingsPage() {
               role="switch"
               aria-checked={teacherAttendanceEnabled}
               aria-label="Bật hoặc tắt trang Điểm danh độc lập của gia sư"
-              disabled={loadingTeacherFeatures || savingTeacherFeatures}
+              disabled={loadingTeacherFeatures || savingTeacherFeatures || teacherFeaturesError}
               onClick={toggleTeacherAttendance}
               className={`relative inline-flex h-12 w-full shrink-0 items-center rounded-2xl px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-wait disabled:opacity-60 sm:w-48 ${
                 teacherAttendanceEnabled ? 'bg-emerald-600' : 'bg-slate-800'
@@ -664,7 +669,9 @@ export function SettingsPage() {
               <span className={`relative z-10 w-full text-center text-sm font-black text-white ${
                 teacherAttendanceEnabled ? 'pr-9' : 'pl-9'
               }`}>
-                {loadingTeacherFeatures
+                {teacherFeaturesError
+                  ? 'Lỗi kết nối'
+                  : loadingTeacherFeatures
                   ? 'Đang tải...'
                   : savingTeacherFeatures
                     ? 'Đang lưu...'
@@ -673,7 +680,13 @@ export function SettingsPage() {
             </button>
           </div>
 
-          <div className={`mt-6 rounded-2xl border px-4 py-4 ${
+          {teacherFeaturesError ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
+              <p className="text-sm font-bold text-amber-950">Chưa tải được trạng thái hiện tại từ máy chủ.</p>
+              <Button className="mt-3" variant="outline" onClick={retryTeacherFeatures}>Thử tải lại</Button>
+            </div>
+          ) : (
+            <div className={`mt-6 rounded-2xl border px-4 py-4 ${
             teacherAttendanceEnabled
               ? 'border-emerald-200 bg-emerald-50/70'
               : 'border-amber-200 bg-amber-50/70'
@@ -686,7 +699,8 @@ export function SettingsPage() {
             <p className={`mt-1 text-xs leading-5 ${teacherAttendanceEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
               Thay đổi được cập nhật theo thời gian thực, không cần xóa trang hoặc tải lại dữ liệu.
             </p>
-          </div>
+            </div>
+          )}
         </Card>
       )}
 

@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
 import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole } from 'lucide-react'
 import { doc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
@@ -355,7 +355,9 @@ export function TeacherLayout() {
           {teacherId && profileMissingCount === null ? (
             <LoadingSpinner />
           ) : profileRouteAllowed ? (
-            <Outlet />
+            <Suspense fallback={<LoadingSpinner />}>
+              <Outlet />
+            </Suspense>
           ) : (
             <LoadingSpinner />
           )}

@@ -2,8 +2,9 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ReactNode, useEffect, useState } from 'react'
-import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore'
+import { collection, query, where, getDocsFromServer, doc, getDocFromServer, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { signOut } from '@/lib/auth'
 
 interface ProtectedRouteProps {
   children: ReactNode
@@ -12,12 +13,13 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole, requireContractAccepted = false }: ProtectedRouteProps) {
-  const { user, role, loading, initialized, teacherId } = useAuthStore()
+  const { user, role, loading, initialized, teacherId, profileStatus } = useAuthStore()
   const location = useLocation()
-  const [checkingRequirements, setCheckingRequirements] = useState(false)
   const [hasAcceptedContract, setHasAcceptedContract] = useState(false)
   const [hasRegisteredAvailability, setHasRegisteredAvailability] = useState(false)
   const [requirementsCheckKey, setRequirementsCheckKey] = useState<string | null>(null)
+  const [requirementsDecisionKey, setRequirementsDecisionKey] = useState<string | null>(null)
+  const [requirementsCheckedTeacherId, setRequirementsCheckedTeacherId] = useState<string | null>(null)
   const [requirementsError, setRequirementsError] = useState(false)
   const requiresTeacherCheck = requireContractAccepted && role === 'teacher' && !!teacherId
   const currentCheckKey = requiresTeacherCheck ? `${teacherId}:${location.pathname}` : null
@@ -28,15 +30,22 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
       return
     }
 
+    // Kiểm tra lại nền khi đổi route để nhận thay đổi từ Admin, nhưng chỉ chặn
+    // toàn màn hình ở lần kiểm tra đầu tiên của đúng gia sư.
+    if (requirementsCheckKey === currentCheckKey) {
+      return
+    }
+
     let cancelled = false
+    const isInitialCheck = requirementsCheckedTeacherId !== teacherId
     const checkRequirements = async () => {
-      setCheckingRequirements(true)
-      setRequirementsError(false)
+      if (isInitialCheck) setRequirementsError(false)
+      let checkSucceeded = false
       try {
         // 1. Check contract acceptance
         const contractQ = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
-        const contractSnapshot = await getDocs(contractQ)
-        const hasAccepted = contractSnapshot.docs.some(docSnap => {
+        const contractSnapshot = await getDocsFromServer(contractQ)
+        const nextHasAccepted = contractSnapshot.docs.some(docSnap => {
           const data = docSnap.data()
           return data.type === 'terms_of_service' || 
                  data.status === 'agreed' || 
@@ -44,44 +53,80 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
                  data.status === 'approved'
         })
         if (cancelled) return
-        setHasAcceptedContract(hasAccepted)
+        setHasAcceptedContract(nextHasAccepted)
 
         // 2. Check if availability is registered or if teacher has bookings
-        if (hasAccepted) {
+        if (nextHasAccepted) {
           const bookingsQ = query(
             collection(db, 'bookingRequests'),
             where('teacherId', '==', teacherId),
             limit(1)
           )
-          const bookingsSnapshot = await getDocs(bookingsQ)
+          const bookingsSnapshot = await getDocsFromServer(bookingsQ)
+          let nextHasAvailability = false
           if (!bookingsSnapshot.empty) {
-            if (!cancelled) setHasRegisteredAvailability(true)
+            nextHasAvailability = true
           } else {
-            const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
-            if (!cancelled) setHasRegisteredAvailability(availDoc.exists())
+            const availDoc = await getDocFromServer(doc(db, 'teacherAvailability', teacherId))
+            nextHasAvailability = availDoc.exists()
           }
+          if (!cancelled) setHasRegisteredAvailability(nextHasAvailability)
         } else if (!cancelled) {
           setHasRegisteredAvailability(false)
         }
+        checkSucceeded = true
       } catch (err) {
         console.error('Error checking requirements:', err)
-        if (!cancelled) setRequirementsError(true)
+        if (!cancelled && isInitialCheck) setRequirementsError(true)
       } finally {
         if (!cancelled) {
           setRequirementsCheckKey(`${teacherId}:${location.pathname}`)
-          setCheckingRequirements(false)
+          if (checkSucceeded) setRequirementsDecisionKey(`${teacherId}:${location.pathname}`)
+          setRequirementsCheckedTeacherId(teacherId)
         }
       }
     }
 
     checkRequirements()
     return () => { cancelled = true }
-  }, [requireContractAccepted, role, teacherId, location.pathname])
+  }, [currentCheckKey, location.pathname, requireContractAccepted, requirementsCheckedTeacherId, requirementsCheckKey, role, teacherId])
 
-  if (!initialized || loading || (requiresTeacherCheck && (checkingRequirements || requirementsCheckKey !== currentCheckKey))) {
+  if (!initialized || loading || (requiresTeacherCheck && requirementsCheckedTeacherId !== teacherId)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  if (user && (profileStatus === 'missing' || profileStatus === 'error')) {
+    const missingProfile = profileStatus === 'missing'
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-bold text-slate-900">
+            {missingProfile ? 'Tài khoản chưa được khởi tạo đầy đủ' : 'Chưa xác nhận được quyền truy cập'}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            {missingProfile
+              ? 'Vui lòng liên hệ Admin và chọn “Khôi phục đăng nhập” cho tài khoản gia sư này.'
+              : 'Kết nối tới máy chủ đang gián đoạn. Vui lòng thử tải lại; dữ liệu của bạn không bị thay đổi.'}
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {!missingProfile && (
+              <button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
+                Thử tải lại
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { void signOut().finally(() => window.location.assign('/login')) }}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Về trang đăng nhập
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -122,6 +167,22 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     )
   }
 
+  if (requiredRole === 'teacher' && role === 'teacher' && !teacherId) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-bold text-slate-900">Tài khoản chưa đồng bộ hồ sơ gia sư</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Vui lòng quay lại trang đăng nhập và đăng nhập lại một lần để hệ thống tự khôi phục liên kết hồ sơ. Nếu vẫn còn lỗi, hãy liên hệ Admin.
+          </p>
+          <a href="/login" className="mt-4 inline-flex rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
+            Về trang đăng nhập
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   // Handle specific path restrictions for managers
   if (role === 'student_manager') {
     if (location.pathname.startsWith('/admin/teachers') || location.pathname.startsWith('/admin/contracts')) {
@@ -150,13 +211,19 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
   }
 
   // Check if teacher needs to accept contract
-  if (requireContractAccepted && role === 'teacher' && !hasAcceptedContract) {
+  const hasCurrentRequirementsDecision = !requiresTeacherCheck || requirementsDecisionKey === currentCheckKey
+
+  if (hasCurrentRequirementsDecision && requireContractAccepted && role === 'teacher' && !hasAcceptedContract) {
     return <Navigate to="/teacher/contract" replace />
   }
 
   // Check if teacher needs to register availability slots (after contract accepted)
-  if (requireContractAccepted && role === 'teacher' && hasAcceptedContract && !hasRegisteredAvailability) {
-    if (location.pathname !== '/teacher/availability') {
+  if (hasCurrentRequirementsDecision && requireContractAccepted && role === 'teacher' && hasAcceptedContract && !hasRegisteredAvailability) {
+    // Hồ sơ chưa hoàn thiện được TeacherLayout đưa về /teacher/profile. Phải cho
+    // route hồ sơ đi qua trước; nếu ép sang lịch rảnh ở đây, hai lớp sẽ redirect
+    // /teacher/profile <-> /teacher/availability vô hạn đối với gia sư mới.
+    const isProfileSetupRoute = location.pathname === '/teacher/profile'
+    if (location.pathname !== '/teacher/availability' && !isProfileSetupRoute) {
       return <Navigate to="/teacher/availability?setupRequired=true" replace />
     }
   }
