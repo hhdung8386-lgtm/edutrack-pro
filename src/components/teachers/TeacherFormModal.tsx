@@ -14,13 +14,14 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { AlertTriangle, Eye, GraduationCap, Info, MapPin, MonitorUp, RefreshCw, TestTube2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Download, Eye, GraduationCap, Info, MapPin, MonitorUp, RefreshCw, TestTube2, Upload, X } from 'lucide-react'
 import { formatVietnameseNumberInput } from '@/lib/countryPricing'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
+import { downloadImage } from '@/lib/downloadImage'
 
 interface Branch {
   id: string
@@ -55,6 +56,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [photoDownloading, setPhotoDownloading] = useState(false)
 
   // Auth fields for creating new teacher account
   const [newUsername, setNewUsername] = useState('')
@@ -251,6 +253,19 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
     if (!file) return
     setPhotoFile(file)
     setPhotoPreview(URL.createObjectURL(file))
+  }
+
+  const handleDownloadPhoto = async () => {
+    if (!teacher?.photoURL || photoDownloading) return
+    setPhotoDownloading(true)
+    try {
+      await downloadImage(teacher.photoURL, `anh-gia-su-${teacher.code || teacher.name}`)
+    } catch (error) {
+      console.error('Download teacher photo failed:', error)
+      toast.error('Không thể tải ảnh gia sư xuống. Vui lòng thử lại.')
+    } finally {
+      setPhotoDownloading(false)
+    }
   }
 
   const uploadPhoto = async (teacherId: string, file: File): Promise<string> => {
@@ -720,10 +735,23 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           </div>
           <div>
             <p className="text-sm font-medium text-slate-600 mb-1">Ảnh gia sư</p>
-            <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
-              Chọn ảnh...
-            </label>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <label className="cursor-pointer text-xs font-semibold text-indigo-500 transition-colors hover:text-indigo-700">
+                <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+                Chọn ảnh...
+              </label>
+              {teacher?.photoURL && (
+                <button
+                  type="button"
+                  onClick={handleDownloadPhoto}
+                  disabled={photoDownloading}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 transition hover:text-sky-800 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {photoDownloading ? 'Đang tải...' : 'Tải ảnh xuống'}
+                </button>
+              )}
+            </div>
             {uploadProgress > 0 && uploadProgress < 100 && (
               <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden w-32">
                 <div className={`h-full bg-indigo-500 rounded-full transition-all ${uploadProgress === 10 ? 'w-[10%]' : uploadProgress === 50 ? 'w-[50%]' : uploadProgress === 100 ? 'w-full' : 'w-0'}`} />

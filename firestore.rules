@@ -33,10 +33,15 @@ service cloud.firestore {
     // Students collection
     match /students/{studentId} {
       function isPublicAvatarSelection() {
-        return request.resource.data.profileAvatarId in ['1', '2', '3', '4', '5']
+        let photoUrl = request.resource.data.get('profilePhotoURL', '');
+        return request.resource.data.get('profileAvatarId', '') in ['1', '2', '3', '4', '5']
+          && photoUrl is string
+          && photoUrl.size() <= 2048
           && request.resource.data.updatedAt == request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'profileAvatarId', 'updatedAt'
+            'profileAvatarId',
+            'profilePhotoURL',
+            'updatedAt'
           ]);
       }
 
@@ -98,16 +103,127 @@ service cloud.firestore {
           ]);
       }
 
+      // Huỷ nhưng GIỮ kim cương: không nhả hold, chỉ ghi nghĩa vụ đặt lại lên học viên.
+      function isKeepHoldRebookMark() {
+        let bookingId = request.resource.data.get('pendingRebookBookingId', '');
+        let bookingAfter = getAfter(/databases/$(database)/documents/bookingRequests/$(bookingId));
+        let heldBefore = resource.data.get('reservedMinutes', resource.data.get('heldMinutes', 0));
+        let heldAfter = request.resource.data.get('reservedMinutes', request.resource.data.get('heldMinutes', -1));
+        let bookingPoints = bookingAfter.data.get('rebookHoldPoints', 0);
+        return bookingId is string
+          && bookingId.size() > 0
+          && resource.data.get('pendingRebookBookingId', '') == ''  // chưa có nghĩa vụ nào đang treo
+          && bookingAfter.data.status == 'released'
+          && bookingAfter.data.selfServiceCancelled == true
+          && bookingAfter.data.pendingRebook == true
+          && bookingAfter.data.studentId == studentId
+          && bookingAfter.data.releasedBy == 'student:' + resource.data.code
+          && bookingPoints is int
+          && bookingPoints > 0
+          && request.resource.data.pendingRebookPoints == bookingPoints
+          && heldBefore is int
+          && heldAfter == heldBefore  // GIỮ hold, không thay đổi
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pendingRebookBookingId', 'pendingRebookPoints', 'updatedAt'
+          ]);
+      }
+
+      // Đặt lại: buổi mới DÙNG LẠI kim cương đã giữ, chỉ trừ/hoàn phần chênh lệch, và xoá nghĩa vụ.
+      function isRebookBookingHold() {
+        let newBookingId = request.resource.data.get('lastBookingHoldRequestId', '');
+        let oldBookingId = resource.data.get('pendingRebookBookingId', '');
+        let newBooking = getAfter(/databases/$(database)/documents/bookingRequests/$(newBookingId));
+        let oldBooking = get(/databases/$(database)/documents/bookingRequests/$(oldBookingId));
+        let heldBefore = resource.data.get('reservedMinutes', resource.data.get('heldMinutes', 0));
+        let heldAfter = request.resource.data.get('reservedMinutes', request.resource.data.get('heldMinutes', -1));
+        let newPoints = newBooking.data.get('requestedPoints', newBooking.data.requestedMinutes);
+        let oldPoints = oldBooking.data.get('rebookHoldPoints', 0);
+        return newBookingId is string
+          && newBookingId.size() > 0
+          && oldBookingId is string
+          && oldBookingId.size() > 0
+          && newBooking.data.status == 'pending'
+          && newBooking.data.heldImmediately == true
+          && newBooking.data.studentId == studentId
+          && newBooking.data.studentCode == resource.data.code
+          && newBooking.data.heldMinutesAfterRequest == heldAfter
+          && newBooking.data.createdAt == request.time
+          && newPoints is int
+          && newPoints > 0
+          && oldPoints is int
+          && oldPoints > 0
+          && heldBefore is int
+          && heldAfter == heldBefore + newPoints - oldPoints
+          && heldAfter <= resource.data.get('remainingMinutes', 99999999)
+          && request.resource.data.heldMinutes == heldAfter
+          && request.resource.data.get('pendingRebookBookingId', 'x') == ''
+          && request.resource.data.get('pendingRebookPoints', -1) == 0
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'reservedMinutes', 'heldMinutes', 'lastBookingHoldRequestId',
+            'pendingRebookBookingId', 'pendingRebookPoints', 'updatedAt'
+          ]);
+      }
+
       allow read: if true; // Public read for lookup by student code on tracking page
       allow create: if isAdmin();
-      allow update: if isAdmin() || isPublicBookingHold() || isSelfCancellationMinuteRelease() || isPublicAvatarSelection();
+      allow update: if isAdmin() || isPublicBookingHold() || isSelfCancellationMinuteRelease() || isPublicAvatarSelection() || isKeepHoldRebookMark() || isRebookBookingHold();
       allow delete: if isAdmin();
     }
 
     // Teachers collection
     match /teachers/{teacherId} {
+      function isTeacherSelfProfileUpdate() {
+        return isTeacher()
+          && getTeacherId() == teacherId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name',
+            'gender',
+            'yob',
+            'livingArea',
+            'degreeType',
+            'university',
+            'major',
+            'teachingYears',
+            'studentsTaughtCount',
+            'studentAgesTaught',
+            'teachingFormats',
+            'studentResults',
+            'strengths',
+            'otherStrengths',
+            'languagesTaught',
+            'academicSubjectsTaught',
+            'bankName',
+            'bankAccountNo',
+            'bankAccountName',
+            'youtubeLink',
+            'certificates',
+            'country',
+            'timezoneOffset'
+          ]);
+      }
+
+      function isTeacherFirstPhotoUpload() {
+        let oldPhotoUrl = resource.data.get('photoURL', '');
+        let newPhotoUrl = request.resource.data.get('photoURL', '');
+        return isTeacher()
+          && getTeacherId() == teacherId
+          && (oldPhotoUrl == null || (oldPhotoUrl is string && oldPhotoUrl.size() == 0))
+          && newPhotoUrl is string
+          && newPhotoUrl.size() > 0
+          && newPhotoUrl.size() <= 2048
+          && request.resource.data.photoSelfUploadedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'photoURL',
+            'photoSelfUploadedAt',
+            'updatedAt'
+          ]);
+      }
+
       allow read: if true; // Public read for teacher code verification during login
-      allow update: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
+      allow update: if isAdmin() || isTeacherSelfProfileUpdate() || isTeacherFirstPhotoUpload();
       allow create: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -126,7 +242,21 @@ service cloud.firestore {
 
     // Lessons collection
     match /lessons/{lessonId} {
-      allow create: if isTeacher() && getTeacherId() == request.resource.data.teacherId;
+      // Chốt chặn phía server: học viên ĐÃ HẾT BUỔI (hoặc đang bảo lưu) thì gia sư
+      // KHÔNG được ghi nhận buổi dạy dưới bất kỳ hình thức nào.
+      // Dùng .get() kèm giá trị mặc định để hồ sơ cũ thiếu field không bị chặn nhầm
+      // (giao diện vẫn tính chính xác theo từng gói môn học).
+      function studentCanBeMarked() {
+        let s = get(/databases/$(database)/documents/students/$(request.resource.data.studentId));
+        let status = s.data.get('status', 'active');
+        let remaining = s.data.get('remainingMinutes', 1);
+        return status != 'expired'
+          && status != 'reserved'
+          && remaining is int
+          && remaining > 0;
+      }
+
+      allow create: if isTeacher() && getTeacherId() == request.resource.data.teacherId && studentCanBeMarked();
       allow read: if isAdmin() 
                    || (isTeacher() && getTeacherId() == resource.data.teacherId);
       allow update: if isAdmin();
@@ -184,7 +314,7 @@ service cloud.firestore {
           && request.resource.data.heldMinutesAfterRequest == heldAfter
           && request.resource.data.createdAt == request.time
           && request.resource.data.teacherConfirmationDeadlineAt is timestamp
-          && studentAfter.data.lastBookingHoldRequestId == requestId
+          && studentAfter.data.get('lastBookingHoldRequestId', '') == requestId
           && heldBefore is int
           && heldAfter == heldBefore + bookingPoints;
       }
@@ -207,7 +337,7 @@ service cloud.firestore {
           && request.resource.data.releasedAt == request.time
           && request.resource.data.releasedBy == 'student:' + resource.data.studentCode
           && request.resource.data.heldMinutesAfterRelease == heldAfter
-          && studentAfter.data.lastSelfCancellationBookingId == requestId
+          && studentAfter.data.get('lastSelfCancellationBookingId', '') == requestId
           && studentAfter.data.code == resource.data.studentCode
           && heldBefore is int
           && bookingPoints is int
@@ -238,7 +368,7 @@ service cloud.firestore {
           && request.resource.data.releasedAt == request.time
           && request.resource.data.releasedBy == 'student:' + resource.data.studentCode
           && request.resource.data.heldMinutesAfterRelease == heldAfter
-          && studentAfter.data.lastSelfCancellationBookingId == requestId
+          && studentAfter.data.get('lastSelfCancellationBookingId', '') == requestId
           && studentAfter.data.code == resource.data.studentCode
           && heldBefore is int
           && bookingPoints is int
@@ -251,12 +381,101 @@ service cloud.firestore {
           ]);
       }
 
-      allow create: if isAdmin() || isPublicBookingCreate();
+      // Huỷ nhưng GIỮ kim cương (không nhả hold), đánh dấu buổi cần đặt lại.
+      function isKeepHoldSelfCancel() {
+        let studentBefore = get(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let studentAfter = getAfter(/databases/$(database)/documents/students/$(resource.data.studentId));
+        let heldBefore = studentBefore.data.get('reservedMinutes', studentBefore.data.get('heldMinutes', 0));
+        let heldAfter = studentAfter.data.get('reservedMinutes', studentAfter.data.get('heldMinutes', -1));
+        let bookingPoints = resource.data.get('requestedPoints', resource.data.requestedMinutes);
+        let wasConfirmed = resource.data.status == 'confirmed';
+        let wasHeldPending = resource.data.status == 'pending' && resource.data.heldImmediately == true;
+        let deadlineIsValid = !resource.data.keys().hasAny(['selfCancellationDeadlineAt'])
+          || request.time <= resource.data.selfCancellationDeadlineAt;
+        return (wasConfirmed || wasHeldPending)
+          && !resource.data.keys().hasAny(['lessonId'])
+          && request.resource.data.status == 'released'
+          && request.resource.data.selfServiceCancelled == true
+          && request.resource.data.pendingRebook == true
+          && request.resource.data.rebookHoldPoints == bookingPoints
+          && (
+            (wasConfirmed && request.resource.data.cancellationPolicyMinutes == 60)
+            || (wasHeldPending && request.resource.data.cancellationPolicyMinutes == 0)
+          )
+          && request.resource.data.cancelledMinutes == resource.data.requestedMinutes
+          && request.resource.data.cancellationReason is string
+          && request.resource.data.releasedAt == request.time
+          && request.resource.data.releasedBy == 'student:' + resource.data.studentCode
+          && request.resource.data.heldMinutesAfterRelease == heldAfter
+          && studentAfter.data.get('pendingRebookBookingId', '') == requestId
+          && studentAfter.data.code == resource.data.studentCode
+          && heldBefore is int
+          && bookingPoints is int
+          && bookingPoints > 0
+          && heldAfter == heldBefore
+          && deadlineIsValid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'releasedAt', 'releasedBy', 'heldMinutesAfterRelease',
+            'selfServiceCancelled', 'cancellationPolicyMinutes', 'cancellationReason',
+            'cancelledMinutes', 'pendingRebook', 'rebookHoldPoints'
+          ]);
+      }
+
+      // Đóng nghĩa vụ trên buổi cũ khi đã đặt lại (chỉ lật cờ, không đụng tiền).
+      function isRebookCloseOldBooking() {
+        return resource.data.status == 'released'
+          && resource.data.selfServiceCancelled == true
+          && resource.data.pendingRebook == true
+          && request.resource.data.pendingRebook == false
+          && request.resource.data.rebookedByBookingId is string
+          && request.resource.data.rebookedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pendingRebook', 'rebookedAt', 'rebookedByBookingId'
+          ]);
+      }
+
+      // Tạo buổi đặt lại: DÙNG LẠI hold cũ, held mới = held cũ + điểm mới - điểm giữ cũ.
+      function isRebookBookingCreate() {
+        let studentBefore = get(/databases/$(database)/documents/students/$(request.resource.data.studentId));
+        let studentAfter = getAfter(/databases/$(database)/documents/students/$(request.resource.data.studentId));
+        let oldBookingId = studentBefore.data.get('pendingRebookBookingId', '');
+        let oldBooking = get(/databases/$(database)/documents/bookingRequests/$(oldBookingId));
+        let teacher = get(/databases/$(database)/documents/teachers/$(request.resource.data.teacherId));
+        let heldBefore = studentBefore.data.get('reservedMinutes', studentBefore.data.get('heldMinutes', 0));
+        let heldAfter = studentAfter.data.get('reservedMinutes', studentAfter.data.get('heldMinutes', -1));
+        let teacherPoints = teacher.data.get('pointsPer25Minutes', 25);
+        let newPoints = request.resource.data.requestedPoints;
+        let oldPoints = oldBooking.data.get('rebookHoldPoints', 0);
+        return oldBookingId is string
+          && oldBookingId.size() > 0
+          && request.resource.data.status == 'pending'
+          && request.resource.data.studentCode == studentBefore.data.code
+          && request.resource.data.requestedMinutes is int
+          && request.resource.data.requestedMinutes in [25, 50, 75, 100]
+          && teacherPoints is int
+          && newPoints is int
+          && newPoints == teacherPoints * (request.resource.data.requestedMinutes / 25)
+          && request.resource.data.pointsPer25Minutes == teacherPoints
+          && request.resource.data.heldImmediately == true
+          && request.resource.data.heldMinutesAfterRequest == heldAfter
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.teacherConfirmationDeadlineAt is timestamp
+          && studentAfter.data.get('lastBookingHoldRequestId', '') == requestId
+          && studentAfter.data.get('pendingRebookBookingId', '') == ''
+          && oldPoints is int
+          && oldPoints > 0
+          && heldBefore is int
+          && heldAfter == heldBefore + newPoints - oldPoints;
+      }
+
+      allow create: if isAdmin() || isPublicBookingCreate() || isRebookBookingCreate();
       allow read: if true;
       allow update: if isAdmin()
         || (isTeacher() && resource.data.teacherId == getTeacherId())
         || isPublicSelfCancellation()
-        || isPublicPendingCancellation();
+        || isPublicPendingCancellation()
+        || isKeepHoldSelfCancel()
+        || isRebookCloseOldBooking();
       allow delete: if isAdmin();
     }
 

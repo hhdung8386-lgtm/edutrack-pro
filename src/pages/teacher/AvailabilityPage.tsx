@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { doc, getDoc, getDocs, setDoc, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, setDoc, updateDoc, deleteField, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/Modal'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+type SaveMode = 'week' | 'future'
 const DAY_LABELS_VI: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
   tue: 'Thứ 3',
@@ -54,20 +55,6 @@ function emptySlots(): Record<DayOfWeek, DayAvailability> {
   }
 }
 
-function cloneSlots(slots?: Record<DayOfWeek, DayAvailability>) {
-  const base = emptySlots()
-  DAYS.forEach((day) => {
-    const source = slots?.[day]
-    if (source) {
-      base[day] = {
-        available: !!source.available,
-        timeRanges: (source.timeRanges || []).map((range) => ({ ...range })),
-      }
-    }
-  })
-  return base
-}
-
 function getMonday(date: Date) {
   const copy = new Date(date)
   copy.setHours(0, 0, 0, 0)
@@ -88,12 +75,6 @@ function formatDateISO(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
-}
-
-function formatShortDate(date: Date) {
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  return `${day}/${month}`
 }
 
 function formatShortHeaderDate(date: Date) {
@@ -181,14 +162,12 @@ export function AvailabilityPage() {
 
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
-  const [dbSlots, setDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
-  const [localDbSlots, setLocalDbSlots] = useState<Record<DayOfWeek, DayAvailability> | null>(null)
   const [teacher, setTeacher] = useState<Teacher | null>(null)
   const [note, setNote] = useState('')
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [savingMode, setSavingMode] = useState<SaveMode | null>(null)
+  const [confirmMode, setConfirmMode] = useState<SaveMode | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Timestamp | null>(null)
 
   // Filtering states (similar to Admin view)
@@ -233,20 +212,14 @@ export function AvailabilityPage() {
             const offsetVal = teacher?.timezoneOffset ?? 7
             const translated = translateVnSlotsToTeacher(loadedSlots, offsetVal)
             setSlots(translated)
-            setLocalDbSlots(translated)
-            setDbSlots(cloneSlots(loadedSlots))
           } else {
             setSlots(emptySlots())
-            setDbSlots(null)
-            setLocalDbSlots(null)
           }
           setNote(weekOverride?.note || data.note || '')
           if (data.updatedAt) setLastUpdated(data.updatedAt)
         } else {
           setAvailability(null)
           setSlots(emptySlots())
-          setDbSlots(null)
-          setLocalDbSlots(null)
           setNote('')
         }
       } catch (error) {
@@ -264,22 +237,18 @@ export function AvailabilityPage() {
   useEffect(() => {
     if (!teacherId) return
 
-    async function loadBookingRequests() {
-      try {
-        const snap = await getDocs(
-          query(
-            collection(db, 'bookingRequests'),
-            where('teacherId', '==', teacherId)
-          )
-        )
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)),
+      (snap) => {
         const items = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
         setBookingRequests(items)
-      } catch (error) {
+      },
+      (error) => {
         console.error('Error loading bookings for teacher:', error)
       }
-    }
+    )
 
-    loadBookingRequests()
+    return unsubscribe
   }, [teacherId])
 
   const localBookings = useMemo(() => {
@@ -318,13 +287,6 @@ export function AvailabilityPage() {
     return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
-  const isCellOpenInDb = (day: DayOfWeek, start: string) => {
-    if (!localDbSlots) return false
-    const startMinute = timeToMinutes(start)
-    const endMinute = startMinute + duration
-    return localDbSlots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
-  }
-
   const isCellReserved = (dateISO: string, time: string) => {
     const startMinute = timeToMinutes(time)
     const endMinute = startMinute + duration
@@ -345,14 +307,6 @@ export function AvailabilityPage() {
     const endMinute = startMinute + duration
     const isOpen = slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
 
-    if (isOpen) {
-      // Locking mechanism: if the cell was already OPEN in the DB, they cannot remove it
-      if (isCellOpenInDb(day, start)) {
-        toast.error('Lịch đã lưu trước đó không thể tự hủy hoặc sửa. Hãy liên hệ quản lý nếu muốn thay đổi!')
-        return
-      }
-    }
-
     setSlots((current) => {
       const dayRanges = current[day].timeRanges
       const timeRanges = isOpen
@@ -369,46 +323,83 @@ export function AvailabilityPage() {
     })
   }
 
-  // Saves current slots as the new default for current week and all future weeks
-  const handleSaveCurrentAndFuture = async () => {
+  const reloadSavedAvailability = async () => {
     if (!teacherId) return
-    setSaving(true)
-    try {
-      const retainedOverrides = Object.fromEntries(
-        Object.entries(availability?.weekOverrides || {}).filter(([week]) => week < weekStartISO)
-      )
+    const snap = await getDoc(doc(db, 'teacherAvailability', teacherId))
+    if (!snap.exists()) return
 
+    const data = { id: snap.id, ...snap.data() } as TeacherAvailability
+    const offset = teacher?.timezoneOffset ?? 7
+    const weekOverride = data.weekOverrides?.[weekStartISO]
+    const loadedSlots = weekOverride?.slots || data.slots || emptySlots()
+    setAvailability(data)
+    setLastUpdated(data.updatedAt)
+    setSlots(translateVnSlotsToTeacher(loadedSlots, offset))
+    setNote(weekOverride?.note || data.note || '')
+  }
+
+  // Đóng/mở ca riêng của tuần đang xem. Giữ nguyên lịch gốc và mọi override khác.
+  const handleSaveWeekOnly = async () => {
+    if (!teacherId || !availability) return
+    setSavingMode('week')
+    try {
       const offset = teacher?.timezoneOffset ?? 7
       const vnSlots = translateTeacherSlotsToVn(slots, offset)
 
-      await setDoc(doc(db, 'teacherAvailability', teacherId as string), {
-        teacherId,
-        slots: vnSlots,
-        note,
-        weekOverrides: retainedOverrides,
+      await updateDoc(doc(db, 'teacherAvailability', teacherId), {
+        [`weekOverrides.${weekStartISO}`]: {
+          slots: vnSlots,
+          note,
+          updatedAt: new Date().toISOString(),
+        },
         updatedAt: serverTimestamp(),
-      }, { merge: true })
+      })
 
-      const snap = await getDoc(doc(db, 'teacherAvailability', teacherId as string))
-      if (snap.exists()) {
-        const data = snap.data() as TeacherAvailability
-        setAvailability(data)
-        setLastUpdated(data.updatedAt)
-        
-        const weekOverride = data.weekOverrides?.[weekStartISO]
-        const loadedSlots = weekOverride?.slots || data.slots
-        const translated = translateVnSlotsToTeacher(loadedSlots, offset)
-        setSlots(translated)
-        setLocalDbSlots(translated)
-        setDbSlots(cloneSlots(loadedSlots))
-      }
-      toast.success(t('avail.saved'))
-      setShowConfirmModal(false)
-    } catch (e) {
-      console.error(e)
+      await reloadSavedAvailability()
+      toast.success(lang === 'vi' ? 'Đã lưu thay đổi riêng cho tuần này.' : 'This week was updated.')
+      setConfirmMode(null)
+    } catch (error) {
+      console.error('Save teacher weekly availability failed:', error)
       toast.error(t('avail.save_fail'))
     } finally {
-      setSaving(false)
+      setSavingMode(null)
+    }
+  }
+
+  // Cập nhật lịch gốc nhưng vẫn bảo toàn các tuần đặc biệt do admin/gia sư đã lưu.
+  const handleSaveCurrentAndFuture = async () => {
+    if (!teacherId) return
+    setSavingMode('future')
+    try {
+      const offset = teacher?.timezoneOffset ?? 7
+      const vnSlots = translateTeacherSlotsToVn(slots, offset)
+
+      const availabilityRef = doc(db, 'teacherAvailability', teacherId as string)
+      if (availability) {
+        await updateDoc(availabilityRef, {
+          slots: vnSlots,
+          note,
+          [`weekOverrides.${weekStartISO}`]: deleteField(),
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        await setDoc(availabilityRef, {
+          teacherId,
+          slots: vnSlots,
+          note,
+          weekOverrides: {},
+          updatedAt: serverTimestamp(),
+        })
+      }
+
+      await reloadSavedAvailability()
+      toast.success(t('avail.saved'))
+      setConfirmMode(null)
+    } catch (error) {
+      console.error('Save teacher future availability failed:', error)
+      toast.error(t('avail.save_fail'))
+    } finally {
+      setSavingMode(null)
     }
   }
 
@@ -548,11 +539,15 @@ export function AvailabilityPage() {
 
       {/* Warning Banner */}
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 text-amber-800 text-xs leading-normal">
-        <span className="text-lg">⚠️</span>
+        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
         <div>
-          <p className="font-bold text-sm text-amber-900">{t('avail.warning_title')}</p>
+          <p className="font-bold text-sm text-amber-900">
+            {lang === 'vi' ? 'Có thể đóng lại ca trống chưa xếp lớp' : 'Unbooked availability can be closed'}
+          </p>
           <p className="mt-0.5 font-medium opacity-90">
-            {t('avail.warning_desc')}
+            {lang === 'vi'
+              ? 'Ca đã xếp lớp luôn được bảo vệ. Hãy dùng “Lưu riêng tuần này” khi chỉ bận tạm thời để không ảnh hưởng lịch các tuần khác.'
+              : 'Booked slots are always protected. Use “Save this week only” for temporary changes so other weeks remain unchanged.'}
           </p>
         </div>
       </div>
@@ -653,29 +648,56 @@ export function AvailabilityPage() {
         />
       </Card>
 
-      {/* Save Button */}
-      <div className="sticky bottom-20 lg:bottom-4 z-10">
-        <Button
-          fullWidth
-          loading={saving}
-          onClick={() => setShowConfirmModal(true)}
-          className="!bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5] !shadow-lg !shadow-[#3BB8EB]/30 !rounded-xl !py-3.5"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {t('avail.save_future')}
-        </Button>
+      {/* Save actions */}
+      <div className="sticky bottom-20 z-10 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-200/70 backdrop-blur lg:bottom-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            fullWidth
+            disabled={!availability || savingMode !== null}
+            loading={savingMode === 'week'}
+            onClick={() => setConfirmMode('week')}
+            className="!min-h-[50px] !rounded-xl"
+          >
+            <Clock className="mr-2 h-4 w-4" />
+            {lang === 'vi' ? 'Lưu riêng tuần này' : 'Save this week only'}
+          </Button>
+          <Button
+            fullWidth
+            disabled={savingMode !== null}
+            loading={savingMode === 'future'}
+            onClick={() => setConfirmMode('future')}
+            className="!min-h-[50px] !rounded-xl !bg-gradient-to-r !from-[#3BB8EB] !to-[#2b8fb8] hover:!from-[#2ba8d8] hover:!to-[#237fa5]"
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {t('avail.save_future')}
+          </Button>
+        </div>
+        {!availability && (
+          <p className="mt-2 text-center text-[11px] font-semibold text-slate-500">
+            {lang === 'vi'
+              ? 'Lần thiết lập đầu tiên cần lưu lịch tương lai.'
+              : 'Initial setup must be saved as future availability.'}
+          </p>
+        )}
       </div>
 
       {/* Confirmation Modal */}
-      {showConfirmModal && (
+      {confirmMode && (
         <Modal
           open
-          onClose={() => setShowConfirmModal(false)}
-          title={t('avail.confirm_title')}
+          onClose={() => savingMode === null && setConfirmMode(null)}
+          title={confirmMode === 'week'
+            ? (lang === 'vi' ? 'Xác nhận lịch riêng tuần này' : 'Confirm this week')
+            : t('avail.confirm_title')}
           footer={
             <div className="flex gap-3 justify-end w-full">
-              <Button variant="ghost" onClick={() => setShowConfirmModal(false)}>{t('avail.confirm_cancel')}</Button>
-              <Button onClick={handleSaveCurrentAndFuture} loading={saving} className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white">
+              <Button variant="ghost" disabled={savingMode !== null} onClick={() => setConfirmMode(null)}>{t('avail.confirm_cancel')}</Button>
+              <Button
+                onClick={confirmMode === 'week' ? handleSaveWeekOnly : handleSaveCurrentAndFuture}
+                loading={savingMode === confirmMode}
+                className="bg-gradient-to-r from-[#3BB8EB] to-[#2b8fb8] text-white"
+              >
                 {t('avail.confirm_ok')}
               </Button>
             </div>
@@ -685,9 +707,19 @@ export function AvailabilityPage() {
             <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <p className="font-extrabold text-slate-800 text-center text-base">{t('avail.confirm_body_title')}</p>
+            <p className="font-extrabold text-slate-800 text-center text-base">
+              {confirmMode === 'week'
+                ? (lang === 'vi' ? 'Chỉ thay đổi tuần đang chọn?' : 'Change only the selected week?')
+                : t('avail.confirm_body_title')}
+            </p>
             <p className="text-center text-xs text-slate-500">
-              {t('avail.confirm_body_desc')}
+              {confirmMode === 'week'
+                ? (lang === 'vi'
+                    ? 'Lịch gốc, booking đã xếp và lịch đặc biệt của các tuần khác được giữ nguyên.'
+                    : 'The recurring schedule, booked classes, and all other weekly overrides stay unchanged.')
+                : (lang === 'vi'
+                    ? 'Lịch này trở thành lịch trống mặc định. Các tuần đặc biệt đã lưu vẫn được giữ nguyên và ca đã xếp lớp không bị hủy.'
+                    : 'This becomes the default availability. Saved weekly overrides and booked classes remain unchanged.')}
             </p>
           </div>
         </Modal>

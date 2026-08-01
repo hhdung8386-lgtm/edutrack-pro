@@ -6,12 +6,20 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.claims.role == 'admin';
+      return isAuthenticated() && getUserData().role in ['admin', 'student_manager', 'teacher_manager'];
     }
 
     function isTeacher() {
-      return isAuthenticated() && request.auth.token.claims.role == 'teacher';
+      return isAuthenticated() && getUserData().role == 'teacher';
+    }
+
+    function getTeacherId() {
+      return getUserData().teacherId;
     }
 
     // Lesson images - teachers can upload, anyone can read
@@ -21,11 +29,24 @@ service firebase.storage {
       allow delete: if request.auth != null;
     }
 
-    // Teacher photos - admin only
+    // Teacher photos - admin manages all; each teacher may create one fixed self profile photo.
     match /teacher-photos/{teacherId}/{filename} {
       allow read: if true; // Publicly readable
-      allow create, update: if isAdmin() && request.resource.size < 5 * 1024 * 1024; // Max 5MB
-      allow delete: if isAdmin();
+      allow create: if (isAdmin() && request.resource.size < 5 * 1024 * 1024)
+        || (isTeacher()
+          && getTeacherId() == teacherId
+          && filename == 'self-profile.jpg'
+          && request.resource.size < 2 * 1024 * 1024
+          && request.resource.contentType == 'image/jpeg');
+      allow update, delete: if isAdmin();
+    }
+
+    // Student photos are public profile assets. The client always compresses them to JPEG.
+    match /student-photos/{studentId}/{filename} {
+      allow read: if true;
+      allow create: if request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow update, delete: if false;
     }
 
     // Deny all by default

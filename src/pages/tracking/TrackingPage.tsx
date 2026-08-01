@@ -10,6 +10,7 @@ import { maskPhone } from '@/lib/constants'
 import { useSearchParams } from 'react-router-dom'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { getLessonPoints } from '@/lib/points'
+import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
 
 type TrackTab = 'student' | 'teacher'
 
@@ -385,9 +386,9 @@ function TeacherResult({ teacher, lessonCount, onBack }: { teacher: Teacher; les
           </div>
         </div>
 
-        {(teacher.subjectNames?.length ?? 0) > 0 && (
+        {visibleTeacherSubjectNames(teacher.subjectNames).length > 0 && (
           <div className="flex gap-1.5 flex-wrap mb-3">
-            {(teacher.subjectNames ?? []).map((s) => (
+            {visibleTeacherSubjectNames(teacher.subjectNames).map((s) => (
               <Badge key={s} variant="info">{s}</Badge>
             ))}
           </div>

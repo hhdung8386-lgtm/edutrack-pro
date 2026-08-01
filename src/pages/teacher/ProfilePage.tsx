@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocFromServer, collection, query, where, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '@/lib/firebase'
 import { Teacher, Lesson } from '@/types'
@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
 import { toast } from '@/stores/toastStore'
-import { uploadTeacherPhoto, uploadLessonImage, deleteUploadedImage, uploadErrorMessage } from '@/lib/imageUploader'
+import { uploadTeacherPhoto, uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
+import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
 
 type BilingualOption = {
   value: string
@@ -170,19 +171,26 @@ export function ProfilePage() {
     if (!file || !teacherId) return
     setPhotoUploading(true)
     try {
-      const url = await uploadTeacherPhoto(teacherId, file)
-      try {
-        await updateDoc(doc(db, 'teachers', teacherId), { photoURL: url })
-      } catch (updateError) {
-        // Storage succeeded but Firestore failed: remove the orphaned file so
-        // repeated attempts do not leave unused billable objects behind.
-        await deleteUploadedImage(url).catch((cleanupError: any) => {
-          console.warn('Failed to clean up uploaded profile photo:', cleanupError)
-        })
-        throw updateError
+      // Luôn kiểm tra lại từ server trước khi upload để một tab cũ không thể
+      // vượt qua trạng thái khóa ảnh đang hiển thị trên giao diện.
+      const latestSnap = await getDocFromServer(doc(db, 'teachers', teacherId))
+      const latestPhotoURL = latestSnap.exists() ? String(latestSnap.data().photoURL || '') : ''
+      if (latestPhotoURL) {
+        setTeacher(prev => prev ? { ...prev, photoURL: latestPhotoURL } : prev)
+        toast.warning(lang === 'vi'
+          ? 'Ảnh đại diện đã được ghi nhận. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+          : 'Your profile photo is already locked. Contact an administrator to change it.')
+        return
       }
+
+      const url = await uploadTeacherPhoto(teacherId, file)
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        photoURL: url,
+        photoSelfUploadedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
       setTeacher(prev => prev ? { ...prev, photoURL: url } : prev)
-      toast.success(lang === 'vi' ? 'Đã cập nhật ảnh đại diện!' : 'Profile photo updated!')
+      toast.success(lang === 'vi' ? 'Đã lưu ảnh đại diện!' : 'Profile photo saved!')
     } catch (err) {
       console.error(err)
       toast.error(uploadErrorMessage(err, lang === 'vi' ? 'vi' : 'en'))
@@ -385,9 +393,9 @@ export function ProfilePage() {
                 <span className="font-mono text-sm font-extrabold text-indigo-650 bg-indigo-50/50 px-3.5 py-1 rounded-lg border border-indigo-150">{teacher.code}</span>
               </div>
 
-              {(teacher.subjectNames?.length ?? 0) > 0 && (
+              {visibleTeacherSubjectNames(teacher.subjectNames).length > 0 && (
                 <div className="flex gap-2 flex-wrap justify-center mt-4">
-                  {(teacher.subjectNames ?? []).map((s) => (
+                  {visibleTeacherSubjectNames(teacher.subjectNames).map((s) => (
                     <div key={s} className="flex items-center gap-1.5 text-xs font-medium bg-slate-100 text-slate-700 px-3 py-1.5 rounded-full">
                       <GraduationCap className="w-3.5 h-3.5" />
                       {s}
@@ -454,13 +462,20 @@ export function ProfilePage() {
                 <p className="text-[11px] font-bold text-rose-500 mt-1">{lang === 'vi' ? 'Chưa có ảnh đại diện!' : 'Photo is required!'}</p>
               )}
             </div>
-            <label className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1.5 flex-shrink-0 ${photoUploading ? 'bg-slate-100 text-slate-400' : 'bg-[#3BB8EB] hover:bg-[#2da8db] text-white shadow-sm shadow-sky-200'}`}>
-              {photoUploading
-                ? <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                : <Upload className="w-3.5 h-3.5" />}
-              {teacher.photoURL ? (lang === 'vi' ? 'Đổi ảnh' : 'Change') : (lang === 'vi' ? 'Tải ảnh lên' : 'Upload')}
-              <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={handleUploadAvatar} />
-            </label>
+            {teacher.photoURL ? (
+              <div className="max-w-32 flex-shrink-0 rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-bold leading-4 text-emerald-700 ring-1 ring-emerald-200">
+                <CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />
+                {lang === 'vi' ? 'Ảnh đã được ghi nhận' : 'Photo locked'}
+              </div>
+            ) : (
+              <label className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1.5 flex-shrink-0 ${photoUploading ? 'bg-slate-100 text-slate-400' : 'bg-[#3BB8EB] hover:bg-[#2da8db] text-white shadow-sm shadow-sky-200'}`}>
+                {photoUploading
+                  ? <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                  : <Upload className="w-3.5 h-3.5" />}
+                {lang === 'vi' ? 'Tải ảnh lên' : 'Upload'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={photoUploading} onChange={handleUploadAvatar} />
+              </label>
+            )}
           </div>
 
           {/* Các trường bắt buộc */}

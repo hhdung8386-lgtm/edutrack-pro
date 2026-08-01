@@ -14,18 +14,24 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, requiredRole, requireContractAccepted = false }: ProtectedRouteProps) {
   const { user, role, loading, initialized, teacherId } = useAuthStore()
   const location = useLocation()
-  const [checkingRequirements, setCheckingRequirements] = useState(requireContractAccepted && role === 'teacher')
+  const [checkingRequirements, setCheckingRequirements] = useState(false)
   const [hasAcceptedContract, setHasAcceptedContract] = useState(false)
   const [hasRegisteredAvailability, setHasRegisteredAvailability] = useState(false)
+  const [requirementsCheckKey, setRequirementsCheckKey] = useState<string | null>(null)
+  const [requirementsError, setRequirementsError] = useState(false)
+  const requiresTeacherCheck = requireContractAccepted && role === 'teacher' && !!teacherId
+  const currentCheckKey = requiresTeacherCheck ? `${teacherId}:${location.pathname}` : null
 
   // Check if teacher has accepted contract and registered availability
   useEffect(() => {
     if (!requireContractAccepted || role !== 'teacher' || !teacherId) {
-      setCheckingRequirements(false)
       return
     }
 
+    let cancelled = false
     const checkRequirements = async () => {
+      setCheckingRequirements(true)
+      setRequirementsError(false)
       try {
         // 1. Check contract acceptance
         const contractQ = query(collection(db, 'contracts'), where('teacherId', '==', teacherId))
@@ -37,6 +43,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
                  data.status === 'pending' || 
                  data.status === 'approved'
         })
+        if (cancelled) return
         setHasAcceptedContract(hasAccepted)
 
         // 2. Check if availability is registered or if teacher has bookings
@@ -48,26 +55,47 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
           )
           const bookingsSnapshot = await getDocs(bookingsQ)
           if (!bookingsSnapshot.empty) {
-            setHasRegisteredAvailability(true)
+            if (!cancelled) setHasRegisteredAvailability(true)
           } else {
             const availDoc = await getDoc(doc(db, 'teacherAvailability', teacherId))
-            setHasRegisteredAvailability(availDoc.exists())
+            if (!cancelled) setHasRegisteredAvailability(availDoc.exists())
           }
+        } else if (!cancelled) {
+          setHasRegisteredAvailability(false)
         }
       } catch (err) {
         console.error('Error checking requirements:', err)
+        if (!cancelled) setRequirementsError(true)
       } finally {
-        setCheckingRequirements(false)
+        if (!cancelled) {
+          setRequirementsCheckKey(`${teacherId}:${location.pathname}`)
+          setCheckingRequirements(false)
+        }
       }
     }
 
     checkRequirements()
+    return () => { cancelled = true }
   }, [requireContractAccepted, role, teacherId, location.pathname])
 
-  if (!initialized || loading || (requireContractAccepted && checkingRequirements)) {
+  if (!initialized || loading || (requiresTeacherCheck && (checkingRequirements || requirementsCheckKey !== currentCheckKey))) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  if (requiresTeacherCheck && requirementsError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-bold text-slate-900">Chưa kiểm tra được quyền truy cập</h1>
+          <p className="mt-2 text-sm text-slate-500">Kết nối đang gián đoạn. Vui lòng tải lại trang để kiểm tra hợp đồng và lịch rảnh.</p>
+          <button type="button" onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
+            Tải lại trang
+          </button>
+        </div>
       </div>
     )
   }

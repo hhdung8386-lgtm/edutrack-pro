@@ -102,30 +102,33 @@ export async function uploadLessonImage(teacherId: string, file: File): Promise<
 }
 
 export async function uploadTeacherPhoto(teacherId: string, file: File): Promise<string> {
-  let blob: Blob
-  let contentType = 'image/jpeg'
-  try {
-    blob = await compressImage(file)
-  } catch {
-    if (file.size <= MAX_RAW_SIZE) {
-      blob = file
-      contentType = file.type || 'image/jpeg'
-    } else {
-      throw new Error('UNSUPPORTED_IMAGE')
-    }
+  if (!file.type.startsWith('image/') || file.size > MAX_RAW_SIZE) {
+    throw new Error('UNSUPPORTED_IMAGE')
   }
 
-  const timestamp = Date.now()
-  const randomStr = Math.random().toString(36).substring(2, 8)
-  const filePath = `teachers/${teacherId}/${timestamp}_${randomStr}.jpg`
+  // Gia sư chỉ có một object ảnh tự tải. Đường dẫn cố định kết hợp Storage Rules
+  // create-only ngăn việc tạo nhiều ảnh rác; nếu lần trước upload xong nhưng ghi
+  // Firestore bị gián đoạn, lần thử sau có thể lấy lại đúng URL của object này.
+  const blob = await compressImage(file).catch(() => {
+    throw new Error('UNSUPPORTED_IMAGE')
+  })
+  if (blob.size >= 2 * 1024 * 1024) throw new Error('UNSUPPORTED_IMAGE')
+
+  const filePath = `teacher-photos/${teacherId}/self-profile.jpg`
   const fileRef = ref(storage, filePath)
-
-  const uploadResult = await withTimeout(
-    uploadBytes(fileRef, blob, { contentType }),
-    UPLOAD_TIMEOUT_MS,
-  )
-
-  return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+  try {
+    const uploadResult = await withTimeout(
+      uploadBytes(fileRef, blob, { contentType: 'image/jpeg' }),
+      UPLOAD_TIMEOUT_MS,
+    )
+    return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+  } catch (uploadError) {
+    try {
+      return await withTimeout(getDownloadURL(fileRef), 30 * 1000)
+    } catch {
+      throw uploadError
+    }
+  }
 }
 
 /**

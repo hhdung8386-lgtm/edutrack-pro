@@ -91,6 +91,8 @@ export interface Teacher {
   level: number
   bio: string
   photoURL: string
+  /** Dấu thời gian gia sư đã dùng quyền tự tải ảnh một lần. */
+  photoSelfUploadedAt?: Timestamp
   status: 'active' | 'inactive' | 'resigned'
   /** Nickname đã thu hồi khi gia sư nghỉ dạy; chỉ lưu để đối soát lịch sử. */
   releasedNickname?: string

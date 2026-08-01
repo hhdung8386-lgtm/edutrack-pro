@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
 import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole } from 'lucide-react'
-import { doc, getDoc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
+import { doc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
 import { db } from '@/lib/firebase'
@@ -16,6 +16,7 @@ import { WaveDivider } from '@/components/shared/WaveDivider'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
 type TeacherNavItem = {
   to: string
@@ -133,7 +134,15 @@ export function TeacherLayout() {
         ) {
           setShowProfileCompletionModal(true)
         }
+      } else {
+        // Không giữ toàn bộ khu vực gia sư ở spinner vô hạn nếu hồ sơ bị thiếu.
+        setProfileMissingCount(0)
       }
+    }, (error) => {
+      console.error('Error checking teacher profile completion:', error)
+      // ProtectedRoute vẫn chịu trách nhiệm quyền truy cập; đây chỉ là lớp nhắc
+      // hoàn thiện hồ sơ nên lỗi mạng không được làm trắng/nháy toàn bộ trang.
+      setProfileMissingCount(0)
     })
 
     return unsub
@@ -204,6 +213,10 @@ export function TeacherLayout() {
 
     return unsub
   }, [teacherId])
+
+  const profileRouteAllowed = profileMissingCount === 0
+    || location.pathname.startsWith('/teacher/profile')
+    || location.pathname.startsWith('/teacher/contract')
 
   return (
     <div className="min-h-screen bg-brand-50">
@@ -339,7 +352,13 @@ export function TeacherLayout() {
               </div>
             </div>
           )}
-          <Outlet />
+          {teacherId && profileMissingCount === null ? (
+            <LoadingSpinner />
+          ) : profileRouteAllowed ? (
+            <Outlet />
+          ) : (
+            <LoadingSpinner />
+          )}
         </div>
       </main>
 

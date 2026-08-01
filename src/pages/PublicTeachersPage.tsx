@@ -43,6 +43,7 @@ import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -258,7 +259,7 @@ function isForeignTeacher(teacher: Teacher) {
     teacher.degreeType,
     teacher.otherCerts,
     ...(teacher.languagesTaught || []),
-    ...(teacher.subjectNames || []),
+    ...visibleTeacherSubjectNames(teacher.subjectNames),
   ]
     .filter(Boolean)
     .join(' ')
@@ -510,6 +511,7 @@ function TeacherCard({
   const highlights = buildHighlights(teacher)
   const strengths = (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 3)
   const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
+  const subjectNames = visibleTeacherSubjectNames(teacher.subjectNames)
 
   return (
     <article className="group overflow-hidden rounded-2xl border border-[#eadfbd] bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#e3c55d] hover:shadow-xl hover:shadow-amber-100/70">
@@ -527,7 +529,7 @@ function TeacherCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
-                {teacher.subjectNames?.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
+                {subjectNames.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
               <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">
                 <div className="truncate">{getTeacherDisplayName(teacher)}</div>
@@ -779,7 +781,7 @@ function TeacherBookingPage({
         studentCode: student.code,
         studentName: student.name,
         subjectId: student.subjectId,
-        subjectName: student.subjectName || teacher.subjectNames?.[0] || '',
+        subjectName: student.subjectName || visibleTeacherSubjectNames(teacher.subjectNames)[0] || '',
         requestedDay: selectedSchedule.day,
         requestedDate: selectedSchedule.dateISO,
         requestedWeekStart: selectedSchedule.weekStartISO,
@@ -1194,7 +1196,7 @@ export function PublicTeachersPage() {
         teacher.bio,
         teacher.university,
         teacher.major,
-        ...(teacher.subjectNames || []),
+        ...visibleTeacherSubjectNames(teacher.subjectNames),
         ...(teacher.languagesTaught || []),
         ...(teacher.academicSubjectsTaught || []),
       ]
