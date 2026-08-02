@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search } from 'lucide-react'
 import { db } from '@/lib/firebase'
+import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
@@ -220,18 +221,36 @@ export function TeacherAvailabilityPage() {
 
   useEffect(() => {
     if (!selectedTeacherId) {
-      setAvailability(null)
-      setSlots(emptySlots())
-      setNote('')
+      queueMicrotask(() => {
+        setAvailability(null)
+        setSlots(emptySlots())
+        setNote('')
+      })
       return
     }
 
+    const teacherId = selectedTeacherId
+    let active = true
+
+    queueMicrotask(() => {
+      if (!active) return
+      setAvailability(null)
+      setSlots(emptySlots())
+      setNote('')
+    })
+
     async function loadAvailability() {
-      const snap = await getDoc(doc(db, 'teacherAvailability', selectedTeacherId))
+      const snap = await getDoc(doc(db, 'teacherAvailability', teacherId))
+      if (!active) return
       if (!snap.exists()) {
         setAvailability(null)
         setSlots(emptySlots())
         setNote('')
+        setAllAvailabilities((current) => {
+          const next = { ...current }
+          delete next[teacherId]
+          return next
+        })
         return
       }
 
@@ -239,13 +258,19 @@ export function TeacherAvailabilityPage() {
       const weekOverride = data.weekOverrides?.[weekStartISO]
       setAvailability(data)
       setSlots(cloneSlots(weekOverride?.slots || data.slots))
-      setNote(weekOverride?.note || data.note || '')
+      setNote(weekOverride?.note ?? data.note ?? '')
+      setAllAvailabilities((current) => ({ ...current, [teacherId]: data }))
     }
 
     loadAvailability().catch((error) => {
+      if (!active) return
       console.error('Error loading teacher availability:', error)
       toast.error('Không tải được lịch rảnh giáo viên')
     })
+
+    return () => {
+      active = false
+    }
   }, [selectedTeacherId, weekStartISO])
 
   useEffect(() => {
@@ -381,17 +406,42 @@ export function TeacherAvailabilityPage() {
     if (!selectedTeacherId) return
     setSavingMode('future')
     try {
-      const retainedOverrides = Object.fromEntries(
-        Object.entries(availability?.weekOverrides || {}).filter(([week]) => week < weekStartISO)
-      )
+      const availabilityRef = doc(db, 'teacherAvailability', selectedTeacherId)
 
-      await setDoc(doc(db, 'teacherAvailability', selectedTeacherId), {
-        teacherId: selectedTeacherId,
-        slots,
-        note,
-        weekOverrides: retainedOverrides,
-        updatedAt: serverTimestamp(),
-      }, { merge: true })
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(availabilityRef)
+        const current = snap.exists() ? snap.data() as TeacherAvailability : null
+        const retainedOverrides = retainWeekOverridesBefore(current?.weekOverrides, weekStartISO)
+        const nextAvailability = {
+          teacherId: selectedTeacherId,
+          slots,
+          note,
+          weekOverrides: retainedOverrides,
+          updatedAt: serverTimestamp(),
+        }
+
+        // Replace the whole map so stale current/future overrides cannot shadow
+        // the recurring schedule that the admin has just saved.
+        if (snap.exists()) {
+          transaction.update(availabilityRef, nextAvailability)
+        } else {
+          transaction.set(availabilityRef, nextAvailability)
+        }
+      })
+
+      try {
+        const savedSnap = await getDoc(availabilityRef)
+        if (savedSnap.exists()) {
+          const saved = { id: savedSnap.id, ...savedSnap.data() } as TeacherAvailability
+          const weekOverride = saved.weekOverrides?.[weekStartISO]
+          setAvailability(saved)
+          setSlots(cloneSlots(weekOverride?.slots || saved.slots))
+          setNote(weekOverride?.note ?? saved.note ?? '')
+          setAllAvailabilities((current) => ({ ...current, [selectedTeacherId]: saved }))
+        }
+      } catch (reloadError) {
+        console.warn('Availability saved but could not be reloaded:', reloadError)
+      }
       toast.success('Đã lưu lịch cho tuần hiện tại và các tuần tương lai')
     } catch (error) {
       console.error('Error saving future availability:', error)
@@ -715,4 +765,3 @@ export function TeacherAvailabilityPage() {
     </div>
   )
 }
-

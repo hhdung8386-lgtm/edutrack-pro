@@ -217,7 +217,6 @@ export function BookingSchedulesPage() {
   // Allow deep-linking to a specific teacher's schedule (e.g. from the student
   // lesson history page): /admin/booking-schedules?teacherId=...
   const [selectedTeacherId, setSelectedTeacherId] = useState(() => searchParams.get('teacherId') || '')
-  const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [search, setSearch] = useState('')
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
@@ -329,29 +328,44 @@ export function BookingSchedulesPage() {
   // Load teacher availability
   useEffect(() => {
     if (!selectedTeacherId) {
-      setAvailability(null)
-      setSlots(emptySlots())
+      queueMicrotask(() => setSlots(emptySlots()))
       return
     }
 
-    async function loadAvailability() {
-      const snap = await getDoc(doc(db, 'teacherAvailability', selectedTeacherId))
+    const teacherId = selectedTeacherId
+    const availabilityRef = doc(db, 'teacherAvailability', teacherId)
+    let active = true
+
+    queueMicrotask(() => {
+      if (active) setSlots(emptySlots())
+    })
+
+    const unsubscribe = onSnapshot(availabilityRef, (snap) => {
+      if (!active) return
       if (!snap.exists()) {
-        setAvailability(null)
         setSlots(emptySlots())
+        setAllAvailabilities((current) => {
+          const next = { ...current }
+          delete next[teacherId]
+          return next
+        })
         return
       }
 
       const data = { id: snap.id, ...snap.data() } as TeacherAvailability
       const weekOverride = data.weekOverrides?.[weekStartISO]
-      setAvailability(data)
       setSlots(cloneSlots(weekOverride?.slots || data.slots))
-    }
-
-    loadAvailability().catch((error) => {
+      setAllAvailabilities((current) => ({ ...current, [teacherId]: data }))
+    }, (error) => {
+      if (!active) return
       console.error('Error loading teacher availability:', error)
       toast.error('Không tải được lịch rảnh giáo viên')
     })
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
   }, [selectedTeacherId, weekStartISO])
 
   // Load booked booking requests in real-time

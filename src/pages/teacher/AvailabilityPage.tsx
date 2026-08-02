@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { doc, getDoc, onSnapshot, setDoc, updateDoc, deleteField, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, runTransaction, updateDoc, collection, query, where, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -12,6 +12,7 @@ import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckC
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
+import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 type SaveMode = 'week' | 'future'
@@ -421,7 +422,7 @@ export function AvailabilityPage() {
     }
   }
 
-  // Cập nhật lịch gốc nhưng vẫn bảo toàn các tuần đặc biệt do admin/gia sư đã lưu.
+  // Cập nhật lịch gốc từ tuần đang chọn và chỉ giữ các tuần đặc biệt trong quá khứ.
   const handleSaveCurrentAndFuture = async () => {
     if (!teacherId) return
     setSavingMode('future')
@@ -430,22 +431,24 @@ export function AvailabilityPage() {
       const vnSlots = translateTeacherSlotsToVn(slots, offset)
 
       const availabilityRef = doc(db, 'teacherAvailability', teacherId as string)
-      if (availability) {
-        await updateDoc(availabilityRef, {
-          slots: vnSlots,
-          note,
-          [`weekOverrides.${weekStartISO}`]: deleteField(),
-          updatedAt: serverTimestamp(),
-        })
-      } else {
-        await setDoc(availabilityRef, {
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(availabilityRef)
+        const current = snap.exists() ? snap.data() as TeacherAvailability : null
+        const retainedOverrides = retainWeekOverridesBefore(current?.weekOverrides, weekStartISO)
+        const nextAvailability = {
           teacherId,
           slots: vnSlots,
           note,
-          weekOverrides: {},
+          weekOverrides: retainedOverrides,
           updatedAt: serverTimestamp(),
-        })
-      }
+        }
+
+        if (snap.exists()) {
+          transaction.update(availabilityRef, nextAvailability)
+        } else {
+          transaction.set(availabilityRef, nextAvailability)
+        }
+      })
 
       await reloadSavedAvailability()
       toast.success(t('avail.saved'))
@@ -802,8 +805,8 @@ export function AvailabilityPage() {
                     ? 'Lịch gốc, booking đã xếp và lịch đặc biệt của các tuần khác được giữ nguyên.'
                     : 'The recurring schedule, booked classes, and all other weekly overrides stay unchanged.')
                 : (lang === 'vi'
-                    ? 'Lịch này trở thành lịch trống mặc định. Các tuần đặc biệt đã lưu vẫn được giữ nguyên và ca đã xếp lớp không bị hủy.'
-                    : 'This becomes the default availability. Saved weekly overrides and booked classes remain unchanged.')}
+                    ? 'Lịch này áp dụng từ tuần đã chọn; mọi lịch riêng từ tuần này trở đi sẽ được thay thế. Các ca đã xếp lớp vẫn được giữ nguyên.'
+                    : 'This schedule applies from the selected week; all weekly overrides from that week onward will be replaced. Existing booked classes remain unchanged.')}
             </p>
           </div>
         </Modal>
