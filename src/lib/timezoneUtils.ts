@@ -1,10 +1,31 @@
-import { DayAvailability, DayOfWeek, TimeRange } from '@/types'
+import type { DayAvailability, DayOfWeek, TimeRange } from '@/types'
 
 export const DAYS_ORDER: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
+const MINUTES_PER_DAY = 24 * 60
+const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY
+const MAX_UI_CLOCK_HOUR = 25
+const MAX_RANGE_DURATION = (MAX_UI_CLOCK_HOUR + 1) * 60 - 1
+// Carry only the tail needed by a 23:30-00:20 class. Exposing 24:00/24:30 in
+// the previous day would alias 00:00/00:30 in the next day and could let the
+// same physical time be booked twice under two requestedDate values.
+const MAX_CROSS_DAY_EXTENSION_MINUTES = 20
+
+function parseTimeMinutes(time: unknown, maxHour = MAX_UI_CLOCK_HOUR): number | null {
+  if (typeof time !== 'string') return null
+
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(time)
+  if (!match) return null
+
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isInteger(hours) || hours < 0 || hours > maxHour) return null
+
+  return hours * 60 + minutes
+}
+
 function timeToMinutes(time: string): number {
-  const [hours = '0', minutes = '0'] = time.split(':')
-  return Number(hours) * 60 + Number(minutes)
+  return parseTimeMinutes(time) ?? Number.NaN
 }
 
 function minutesToTime(total: number): string {
@@ -13,16 +34,22 @@ function minutesToTime(total: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
-function rangeCovers(range: TimeRange, start: number, end: number): boolean {
-  return timeToMinutes(range.start) <= start && timeToMinutes(range.end) >= end
+function modulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor
+}
+
+function normalizedTeacherOffset(teacherOffset: number): number {
+  return Number.isFinite(teacherOffset) ? teacherOffset : 7
 }
 
 function cloneSlots(slots: Record<DayOfWeek, DayAvailability>): Record<DayOfWeek, DayAvailability> {
   const res = {} as Record<DayOfWeek, DayAvailability>
   for (const k of DAYS_ORDER) {
+    const sourceDay = slots?.[k]
+    const sourceRanges = Array.isArray(sourceDay?.timeRanges) ? sourceDay.timeRanges : []
     res[k] = {
-      available: slots[k].available,
-      timeRanges: slots[k].timeRanges.map((r) => ({ ...r })),
+      available: sourceDay?.available ?? false,
+      timeRanges: sourceRanges.map((r) => ({ ...r })),
     }
   }
   return res
@@ -87,19 +114,33 @@ export function convertTeacherSlotToVn(tDay: DayOfWeek, tTime: string, teacherOf
 
 // Convert a specific date & time between Vietnam (GMT+7) and teacher local timezone
 export function convertVnDateTimeToTeacher(dateISO: string, timeStr: string, teacherOffset: number): { dateISO: string, timeStr: string } {
-  const diff = teacherOffset - 7
-  if (diff === 0) return { dateISO, timeStr }
-  
-  const [year, month, day] = dateISO.split('-').map(Number)
-  const [hours, minutes] = timeStr.split(':').map(Number)
-  
-  const date = new Date(year, month - 1, day, hours, minutes)
-  date.setHours(date.getHours() + diff)
-  
-  const targetYear = date.getFullYear()
-  const targetMonth = String(date.getMonth() + 1).padStart(2, '0')
-  const targetDay = String(date.getDate()).padStart(2, '0')
-  const targetTime = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const shiftMinutes = Math.round((normalizedTeacherOffset(teacherOffset) - 7) * 60)
+  if (shiftMinutes === 0) return { dateISO, timeStr }
+
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO)
+  const sourceTime = parseTimeMinutes(timeStr, MAX_UI_CLOCK_HOUR)
+  if (!dateMatch || sourceTime === null) return { dateISO, timeStr }
+
+  const year = Number(dateMatch[1])
+  const month = Number(dateMatch[2])
+  const day = Number(dateMatch[3])
+  const sourceDateMs = Date.UTC(year, month - 1, day)
+  const sourceDate = new Date(sourceDateMs)
+  if (
+    sourceDate.getUTCFullYear() !== year
+    || sourceDate.getUTCMonth() !== month - 1
+    || sourceDate.getUTCDate() !== day
+  ) {
+    return { dateISO, timeStr }
+  }
+
+  // Use UTC arithmetic on this fixed-offset wall-clock value. Local Date /
+  // setHours depends on the browser timezone and truncates fractional offsets.
+  const targetDate = new Date(sourceDateMs + (sourceTime + shiftMinutes) * 60_000)
+  const targetYear = targetDate.getUTCFullYear()
+  const targetMonth = String(targetDate.getUTCMonth() + 1).padStart(2, '0')
+  const targetDay = String(targetDate.getUTCDate()).padStart(2, '0')
+  const targetTime = `${String(targetDate.getUTCHours()).padStart(2, '0')}:${String(targetDate.getUTCMinutes()).padStart(2, '0')}`
   
   return {
     dateISO: `${targetYear}-${targetMonth}-${targetDay}`,
@@ -112,7 +153,7 @@ export function mergeTimeRanges(ranges: TimeRange[]): TimeRange[] {
   const sorted = [...ranges].sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start))
   const merged: TimeRange[] = []
   
-  let current = sorted[0]
+  let current = { ...sorted[0] }
   for (let i = 1; i < sorted.length; i++) {
     const next = sorted[i]
     const currentEndMins = timeToMinutes(current.end)
@@ -132,70 +173,105 @@ export function mergeTimeRanges(ranges: TimeRange[]): TimeRange[] {
   return merged
 }
 
-export function translateVnSlotsToTeacher(vnSlots: Record<DayOfWeek, DayAvailability>, teacherOffset: number): Record<DayOfWeek, DayAvailability> {
-  const diff = teacherOffset - 7
-  if (diff === 0) return cloneSlots(vnSlots)
-  
-  const target = emptySlots()
-  
-  for (const day of DAYS_ORDER) {
-    const ranges = vnSlots[day].timeRanges
-    for (let h = 0; h < 24; h++) {
-      for (const m of [0, 30]) {
-        const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-        const cellStart = h * 60 + m
-        const cellEnd = cellStart + 30
-        
-        const isAvail = ranges.some(r => rangeCovers(r, cellStart, cellEnd))
-        if (isAvail) {
-          const projected = convertVnSlotToTeacher(day, timeStr, teacherOffset)
-          const projStartMins = timeToMinutes(projected.time)
-          const projEndMins = projStartMins + 30
-          
-          target[projected.day].available = true
-          target[projected.day].timeRanges.push({ start: projected.time, end: minutesToTime(projEndMins) })
-        }
+function rangeDurationMinutes(range: unknown): number | null {
+  if (!range || typeof range !== 'object') return null
+
+  const candidate = range as Partial<TimeRange>
+  const start = parseTimeMinutes(candidate.start, MAX_UI_CLOCK_HOUR)
+  const end = parseTimeMinutes(candidate.end, MAX_UI_CLOCK_HOUR)
+  if (start === null || end === null) return null
+
+  let duration = end - start
+  // Legacy ranges may encode a midnight crossing as 23:30-00:20. The current
+  // UI also supports extended clock values such as 24:20, which already yield
+  // the correct positive duration and must be preserved.
+  if (duration < 0) duration += MINUTES_PER_DAY
+
+  // Equal endpoints are treated as an empty range, not an ambiguous full day.
+  if (duration <= 0 || duration > MAX_RANGE_DURATION) return null
+  return duration
+}
+
+function translateSlotRanges(
+  source: Record<DayOfWeek, DayAvailability>,
+  shiftMinutes: number,
+): Record<DayOfWeek, DayAvailability> {
+  if (shiftMinutes === 0) return cloneSlots(source)
+
+  const sourceCoverage = new Uint8Array(MINUTES_PER_WEEK)
+
+  DAYS_ORDER.forEach((sourceDay, sourceDayIndex) => {
+    const sourceRanges = source?.[sourceDay]?.timeRanges
+    const ranges: unknown[] = Array.isArray(sourceRanges) ? sourceRanges : []
+
+    ranges.forEach((range) => {
+      if (!range || typeof range !== 'object') return
+      const sourceStart = parseTimeMinutes((range as Partial<TimeRange>).start, MAX_UI_CLOCK_HOUR)
+      const duration = rangeDurationMinutes(range)
+      if (sourceStart === null || duration === null) return
+
+      const absoluteStart = sourceDayIndex * MINUTES_PER_DAY + sourceStart
+      for (let minute = 0; minute < duration; minute++) {
+        sourceCoverage[modulo(absoluteStart + minute, MINUTES_PER_WEEK)] = 1
       }
+    })
+  })
+
+  const shiftedCoverage = new Uint8Array(MINUTES_PER_WEEK)
+  for (let minute = 0; minute < MINUTES_PER_WEEK; minute++) {
+    if (sourceCoverage[minute]) {
+      shiftedCoverage[modulo(minute + shiftMinutes, MINUTES_PER_WEEK)] = 1
     }
   }
-  
-  for (const day of DAYS_ORDER) {
-    target[day].timeRanges = mergeTimeRanges(target[day].timeRanges)
-  }
-  
+
+  const target = emptySlots()
+  DAYS_ORDER.forEach((day, dayIndex) => {
+    const dayStart = dayIndex * MINUTES_PER_DAY
+    const timeRanges: TimeRange[] = []
+    let cursor = 0
+
+    while (cursor < MINUTES_PER_DAY) {
+      if (!shiftedCoverage[dayStart + cursor]) {
+        cursor++
+        continue
+      }
+
+      const rangeStart = cursor
+      while (cursor < MINUTES_PER_DAY && shiftedCoverage[dayStart + cursor]) cursor++
+      let rangeEnd = cursor
+
+      if (rangeEnd === MINUTES_PER_DAY) {
+        let extension = 0
+        while (
+          extension < MAX_CROSS_DAY_EXTENSION_MINUTES
+          && shiftedCoverage[modulo(dayStart + MINUTES_PER_DAY + extension, MINUTES_PER_WEEK)]
+        ) {
+          extension++
+        }
+        rangeEnd += extension
+      }
+
+      timeRanges.push({
+        start: minutesToTime(rangeStart),
+        end: minutesToTime(rangeEnd),
+      })
+    }
+
+    target[day] = {
+      available: timeRanges.length > 0,
+      timeRanges,
+    }
+  })
+
   return target
 }
 
+export function translateVnSlotsToTeacher(vnSlots: Record<DayOfWeek, DayAvailability>, teacherOffset: number): Record<DayOfWeek, DayAvailability> {
+  const shiftMinutes = Math.round((normalizedTeacherOffset(teacherOffset) - 7) * 60)
+  return translateSlotRanges(vnSlots, shiftMinutes)
+}
+
 export function translateTeacherSlotsToVn(tSlots: Record<DayOfWeek, DayAvailability>, teacherOffset: number): Record<DayOfWeek, DayAvailability> {
-  const diff = teacherOffset - 7
-  if (diff === 0) return cloneSlots(tSlots)
-  
-  const target = emptySlots()
-  
-  for (const day of DAYS_ORDER) {
-    const ranges = tSlots[day].timeRanges
-    for (let h = 0; h < 24; h++) {
-      for (const m of [0, 30]) {
-        const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-        const cellStart = h * 60 + m
-        const cellEnd = cellStart + 30
-        
-        const isAvail = ranges.some(r => rangeCovers(r, cellStart, cellEnd))
-        if (isAvail) {
-          const projected = convertTeacherSlotToVn(day, timeStr, teacherOffset)
-          const projStartMins = timeToMinutes(projected.time)
-          const projEndMins = projStartMins + 30
-          
-          target[projected.day].available = true
-          target[projected.day].timeRanges.push({ start: projected.time, end: minutesToTime(projEndMins) })
-        }
-      }
-    }
-  }
-  
-  for (const day of DAYS_ORDER) {
-    target[day].timeRanges = mergeTimeRanges(target[day].timeRanges)
-  }
-  
-  return target
+  const shiftMinutes = Math.round((7 - normalizedTeacherOffset(teacherOffset)) * 60)
+  return translateSlotRanges(tSlots, shiftMinutes)
 }

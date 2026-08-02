@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
+import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
@@ -345,14 +346,14 @@ export function BookingSchedulesPage() {
   const findBookingForCell = (dateISO: string, time: string) => {
     const cellStart = timeToMinutes(time)
     const cellEnd = cellStart + 30
+    const cellInterval = {
+      requestedDate: dateISO,
+      requestedStart: time,
+      requestedEnd: minutesToTime(cellEnd),
+    }
     return localBookings.find((req) => {
-      if (req.requestedDate !== dateISO) return false
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
-
-      const reqStart = timeToMinutes(req.requestedStart)
-      const reqEnd = timeToMinutes(req.requestedEnd)
-
-      return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+      return bookingIntervalsOverlap(req, cellInterval)
     })
   }
 

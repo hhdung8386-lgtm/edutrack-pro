@@ -13,6 +13,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
+import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 type SaveMode = 'week' | 'future'
@@ -346,15 +347,15 @@ export function AvailabilityPage() {
   const isCellReserved = (dateISO: string, time: string) => {
     const startMinute = timeToMinutes(time)
     const endMinute = startMinute + duration
+    const cellInterval = {
+      requestedDate: dateISO,
+      requestedStart: time,
+      requestedEnd: minutesToTime(endMinute),
+    }
 
     return localBookings.some((req) => {
-      if (req.requestedDate !== dateISO) return false
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
-
-      const reqStart = timeToMinutes(req.requestedStart)
-      const reqEnd = timeToMinutes(req.requestedEnd)
-
-      return Math.max(startMinute, reqStart) < Math.min(endMinute, reqEnd)
+      return bookingIntervalsOverlap(req, cellInterval)
     })
   }
 

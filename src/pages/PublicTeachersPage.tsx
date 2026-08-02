@@ -41,7 +41,7 @@ import { useSiteContent } from '@/lib/siteContent'
 import { toast } from '@/stores/toastStore'
 import { DayOfWeek, Student, Teacher, TeacherAvailability, BookingRequest } from '@/types'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
-import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
 
@@ -652,13 +652,12 @@ function TeacherBookingPage({
   const scheduleOptions = useMemo(() => {
     const rawOptions = buildScheduleOptions(teacher?.availability, duration)
     return rawOptions.map((opt) => {
-      const optStart = timeToMinutes(opt.start)
-      const optEnd = timeToMinutes(opt.end)
       const isBooked = teacherBookings.some((req) => {
-        if (req.requestedDate !== opt.dateISO) return false
-        const reqStart = timeToMinutes(req.requestedStart)
-        const reqEnd = timeToMinutes(req.requestedEnd)
-        return Math.max(optStart, reqStart) < Math.min(optEnd, reqEnd)
+        return bookingIntervalsOverlap(req, {
+          requestedDate: opt.dateISO,
+          requestedStart: opt.start,
+          requestedEnd: opt.end,
+        })
       })
       return { ...opt, isBooked }
     })

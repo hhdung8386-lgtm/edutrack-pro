@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestam
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
+import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
@@ -337,15 +338,15 @@ export function TeacherAvailabilityPage() {
   const isCellReserved = (dateISO: string, time: string) => {
     const startMinute = timeToMinutes(time)
     const endMinute = startMinute + duration
+    const cellInterval = {
+      requestedDate: dateISO,
+      requestedStart: time,
+      requestedEnd: minutesToTime(endMinute),
+    }
 
     return bookingRequests.some((req) => {
-      if (req.requestedDate !== dateISO) return false
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
-
-      const reqStart = timeToMinutes(req.requestedStart)
-      const reqEnd = timeToMinutes(req.requestedEnd)
-
-      return Math.max(startMinute, reqStart) < Math.min(endMinute, reqEnd)
+      return bookingIntervalsOverlap(req, cellInterval)
     })
   }
 

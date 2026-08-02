@@ -1,6 +1,13 @@
 import { collection, getDocsFromServer, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { BookingRequest } from '@/types'
+import {
+  bookingIntervalEndInMinutes,
+  bookingIntervalStartInMinutes,
+  bookingIntervalsOverlap,
+} from '@/lib/bookingTime'
+
+export { bookingIntervalsOverlap, bookingTimeToMinutes } from '@/lib/bookingTime'
 
 export type BookingConflictReason = 'teacher' | 'student'
 
@@ -28,32 +35,6 @@ export interface BookingConflictPair {
 }
 
 const ACTIVE_STATUSES = new Set<BookingRequest['status']>(['pending', 'confirmed'])
-
-export function bookingTimeToMinutes(value?: string) {
-  if (!value || !/^\d{1,2}:\d{2}$/.test(value)) return Number.NaN
-  const [hours, minutes] = value.split(':').map(Number)
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return Number.NaN
-  return hours * 60 + minutes
-}
-
-function bookingEndInMinutes(booking: BookingCandidate) {
-  const explicitEnd = bookingTimeToMinutes(booking.requestedEnd)
-  if (Number.isFinite(explicitEnd)) return explicitEnd
-  const start = bookingTimeToMinutes(booking.requestedStart)
-  return start + Number(booking.requestedMinutes || 0)
-}
-
-export function bookingIntervalsOverlap(first: BookingCandidate, second: BookingCandidate) {
-  if (!first.requestedDate || first.requestedDate !== second.requestedDate) return false
-  const firstStart = bookingTimeToMinutes(first.requestedStart)
-  const firstEnd = bookingEndInMinutes(first)
-  const secondStart = bookingTimeToMinutes(second.requestedStart)
-  const secondEnd = bookingEndInMinutes(second)
-  if (![firstStart, firstEnd, secondStart, secondEnd].every(Number.isFinite)) return false
-
-  // Khoảng mở: 08:00-08:25 và 08:25-08:50 được phép đặt liền nhau.
-  return firstStart < secondEnd && secondStart < firstEnd
-}
 
 export function isActiveBooking(booking: Pick<BookingRequest, 'status' | 'teacherResponse'>) {
   return ACTIVE_STATUSES.has(booking.status)
@@ -148,8 +129,8 @@ export function findExistingBookingConflictPairs(bookings: BookingRequest[]) {
 
   for (const booking of active) {
     const keys = [
-      booking.teacherId ? `teacher:${booking.teacherId}:${booking.requestedDate}` : '',
-      booking.studentId ? `student:${booking.studentId}:${booking.requestedDate}` : '',
+      booking.teacherId ? `teacher:${booking.teacherId}` : '',
+      booking.studentId ? `student:${booking.studentId}` : '',
     ].filter(Boolean)
     keys.forEach((key) => groups.set(key, [...(groups.get(key) || []), booking]))
   }
@@ -157,11 +138,11 @@ export function findExistingBookingConflictPairs(bookings: BookingRequest[]) {
   const pairMap = new Map<string, BookingConflictPair>()
   groups.forEach((items, key) => {
     const reason: BookingConflictReason = key.startsWith('teacher:') ? 'teacher' : 'student'
-    const sorted = [...items].sort((a, b) => bookingTimeToMinutes(a.requestedStart) - bookingTimeToMinutes(b.requestedStart))
+    const sorted = [...items].sort((a, b) => bookingIntervalStartInMinutes(a) - bookingIntervalStartInMinutes(b))
     for (let left = 0; left < sorted.length; left += 1) {
-      const leftEnd = bookingEndInMinutes(sorted[left])
+      const leftEnd = bookingIntervalEndInMinutes(sorted[left])
       for (let right = left + 1; right < sorted.length; right += 1) {
-        if (bookingTimeToMinutes(sorted[right].requestedStart) >= leftEnd) break
+        if (bookingIntervalStartInMinutes(sorted[right]) >= leftEnd) break
         if (!bookingIntervalsOverlap(sorted[left], sorted[right])) continue
         const ids = [sorted[left].id, sorted[right].id].sort()
         const pairKey = `${ids[0]}::${ids[1]}`
@@ -194,11 +175,11 @@ export function bookingConflictMessage(conflict: BookingConflict, language: 'vi'
     const owner = reasons.includes('teacher')
       ? `Teacher ${existing.teacherName || existing.teacherCode || ''}`
       : `Student ${existing.studentName || existing.studentCode || ''}`
-    return `${owner} already has a class on ${candidate.requestedDate || ''} at ${existing.requestedStart}-${existing.requestedEnd}. Please choose another time.`
+    return `${owner} already has a class on ${existing.requestedDate || candidate.requestedDate || ''} at ${existing.requestedStart}-${existing.requestedEnd}. Please choose another time.`
   }
 
   const time = `${existing.requestedStart}-${existing.requestedEnd}`
-  const date = formatBookingDate(candidate.requestedDate)
+  const date = formatBookingDate(existing.requestedDate || candidate.requestedDate)
   if (reasons.includes('teacher') && reasons.includes('student')) {
     return `Không thể đặt trùng: ${existing.teacherName || 'giáo viên'} và ${existing.studentName || 'học viên'} đã có đúng ca ${time}, ${date}.`
   }

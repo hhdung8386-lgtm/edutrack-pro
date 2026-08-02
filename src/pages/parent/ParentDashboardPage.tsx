@@ -31,7 +31,7 @@ import {
 import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { rewardMonthKey } from '@/lib/rewards'
 import { parseLegacyLessonReport } from '@/components/lessons/lessonReport'
-import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 
 const STORAGE_KEY = '123english_parent_session'
@@ -338,11 +338,14 @@ function isProfileSlotInsideAvailability(
 function isProfileSlotBooked(bookings: BookingRequest[], dateISO: string, start: string, duration: number) {
   const startMinutes = profileTimeToMinutes(start)
   const endMinutes = startMinutes + duration
+  const slotInterval = {
+    requestedDate: dateISO,
+    requestedStart: start,
+    requestedEnd: profileMinutesToTime(endMinutes),
+  }
   return bookings.some((booking) => {
-    if (booking.requestedDate !== dateISO || !['pending', 'confirmed'].includes(booking.status)) return false
-    const bookingStart = profileTimeToMinutes(booking.requestedStart)
-    const bookingEnd = profileTimeToMinutes(booking.requestedEnd)
-    return Math.max(startMinutes, bookingStart) < Math.min(endMinutes, bookingEnd)
+    if (!['pending', 'confirmed'].includes(booking.status)) return false
+    return bookingIntervalsOverlap(booking, slotInterval)
   })
 }
 

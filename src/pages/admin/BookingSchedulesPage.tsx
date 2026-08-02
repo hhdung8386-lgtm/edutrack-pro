@@ -32,6 +32,7 @@ import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes }
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import {
   bookingConflictMessage,
+  bookingIntervalsOverlap,
   checkBookingCandidates,
 } from '@/lib/bookingConflicts'
 
@@ -150,18 +151,13 @@ function checkStudentOverlap(
   endTime: string,
   ignoreBookingId?: string
 ): BookingRequest | null {
-  const startMins = timeToMinutes(startTime)
-  const endMins = timeToMinutes(endTime)
-  
   for (const b of studentBookings) {
     if (b.id === ignoreBookingId) continue
-    if (b.requestedDate !== dateISO) continue
-    
-    const bStart = timeToMinutes(b.requestedStart)
-    const bEnd = timeToMinutes(b.requestedEnd)
-    
-    // Check overlap
-    if (startMins < bEnd && bStart < endMins) {
+    if (bookingIntervalsOverlap(b, {
+      requestedDate: dateISO,
+      requestedStart: startTime,
+      requestedEnd: endTime,
+    })) {
       return b
     }
   }
@@ -573,15 +569,15 @@ export function BookingSchedulesPage() {
   const findBookingForCell = (dateISO: string, time: string) => {
     const cellStart = timeToMinutes(time)
     const cellEnd = cellStart + 30
+    const cellInterval = {
+      requestedDate: dateISO,
+      requestedStart: time,
+      requestedEnd: minutesToTime(cellEnd),
+    }
     return bookingRequests
       .filter((req) => {
-        if (req.requestedDate !== dateISO) return false
         if (req.status !== 'confirmed' && req.status !== 'pending') return false
-
-        const reqStart = timeToMinutes(req.requestedStart)
-        const reqEnd = timeToMinutes(req.requestedEnd)
-
-        return Math.max(cellStart, reqStart) < Math.min(cellEnd, reqEnd)
+        return bookingIntervalsOverlap(req, cellInterval)
       })
       .sort((left, right) => {
         const createdAtDiff = getBookingCreatedAt(left) - getBookingCreatedAt(right)
