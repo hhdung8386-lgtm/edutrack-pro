@@ -182,30 +182,34 @@ const BRAND_TIMELINE = [
   },
 ] as const
 
-const TRUST_SIGNALS = [
+const AUDIENCE_SEGMENTS = [
   {
-    Icon: ShieldCheck,
-    value: 'Từ 2021',
-    label: 'Phát triển hệ thống học tập',
-    tone: 'blue',
+    Icon: BookOpenCheck,
+    title: 'Trẻ em',
+    copy: 'Xây dựng môi trường 100% tiếng Anh từ sớm, giúp trẻ hình thành tư duy và phản xạ ngôn ngữ một cách tự nhiên.',
+    image: '/audience-children-english-2026.jpg',
+    imageAlt: 'Trẻ em học tiếng Anh tương tác cùng giáo viên',
   },
   {
     Icon: GraduationCap,
-    value: '1.000+',
-    label: 'Học viên đã đồng hành',
-    tone: 'yellow',
+    title: 'Thanh thiếu niên',
+    copy: 'Lộ trình từ củng cố nền tảng đến luyện thi IELTS, TOEIC, Cambridge và các kỳ thi học thuật.',
+    image: '/audience-teen-english-2026.jpg',
+    imageAlt: 'Thanh thiếu niên ôn luyện tiếng Anh học thuật cùng giáo viên',
   },
   {
-    Icon: Globe2,
-    value: '10+ quốc gia',
-    label: 'Cộng đồng học viên kết nối',
-    tone: 'mint',
+    Icon: BriefcaseBusiness,
+    title: 'Người đi làm',
+    copy: 'Xây dựng sự tự tin khi làm việc trong môi trường đa quốc gia và mở rộng cơ hội phát triển nghề nghiệp.',
+    image: '/audience-professional-english-2026.jpg',
+    imageAlt: 'Người đi làm sử dụng tiếng Anh trong môi trường quốc tế',
   },
   {
-    Icon: Award,
-    value: '60+ giờ',
-    label: 'Đào tạo nội bộ cho giáo viên',
-    tone: 'rose',
+    Icon: Network,
+    title: 'Doanh nghiệp',
+    copy: 'Thiết kế chương trình tiếng Anh theo ngành nghề và vị trí công việc, đồng hành cùng doanh nghiệp trong phát triển nguồn nhân lực.',
+    image: '/audience-business-english-2026.jpg',
+    imageAlt: 'Đội ngũ doanh nghiệp tham gia chương trình đào tạo tiếng Anh',
   },
 ] as const
 
@@ -510,19 +514,30 @@ export function NationalBrandStory() {
 
       <section className="national-section national-section-trust">
         <div className="national-container">
-          <div className="national-trust-signals" aria-label="Những dấu mốc phát triển của 123English">
-            {TRUST_SIGNALS.map(({ Icon, value, label, tone }) => (
-              <article key={value} className={`national-trust-signal is-${tone}`}>
-                <span><Icon className="h-5 w-5" /></span>
-                <strong>{value}</strong>
-                <p>{label}</p>
+          <div className="national-trust-heading">
+            <span>123 ENGLISH STORY</span>
+            <h2>Về 123English</h2>
+            <p>Chương trình được thiết kế theo từng độ tuổi, mục tiêu học tập và bối cảnh sử dụng tiếng Anh trong đời sống thực tế.</p>
+          </div>
+
+          <div className="national-trust-signals" aria-label="Chương trình tiếng Anh cho từng nhóm người học">
+            {AUDIENCE_SEGMENTS.map(({ Icon, title, copy, image, imageAlt }) => (
+              <article key={title} className="national-trust-signal">
+                <div className="national-trust-signal-media">
+                  <img src={image} alt={imageAlt} loading="lazy" width={640} height={360} />
+                  <span><Icon className="h-5 w-5" /></span>
+                </div>
+                <div className="national-trust-signal-copy">
+                  <h3>{title}</h3>
+                  <p>{copy}</p>
+                </div>
               </article>
             ))}
           </div>
 
           <div className="national-growth-story">
             <div className="national-growth-heading">
-              <h2>Hành trình phát triển</h2>
+              <h3>Hành trình phát triển</h3>
               <p>Từng cột mốc góp phần hoàn thiện một hệ sinh thái học tập rõ ràng và bền vững.</p>
             </div>
             <div className="national-growth-track">
@@ -530,7 +545,7 @@ export function NationalBrandStory() {
                 <article key={milestone.year} className="national-growth-item">
                   <strong>{milestone.year}</strong>
                   <span aria-hidden="true" />
-                  <h3>{milestone.title}</h3>
+                  <h4>{milestone.title}</h4>
                   <p>{milestone.copy}</p>
                 </article>
               ))}

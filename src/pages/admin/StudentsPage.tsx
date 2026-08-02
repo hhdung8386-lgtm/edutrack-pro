@@ -12,7 +12,7 @@ import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare } from 'lucide-react'
+import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare, Copy, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
@@ -169,7 +169,9 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     const matchScheduleType = learningScheduleType === 'all' || normalizedGroup === learningScheduleType
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.code.toLowerCase().includes(search.toLowerCase())
+      s.code.toLowerCase().includes(search.toLowerCase()) ||
+      (s.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.parentPhone || '').toLowerCase().includes(search.toLowerCase())
     // "Tất cả" nghĩa là TẤT CẢ, kể cả hồ sơ bảo lưu — trước đây ẩn bảo lưu khiến
     // tổng số lệch với Dashboard và gây hiểu nhầm là mất dữ liệu.
     // Tab "Hết buổi" gộp luôn học viên SẮP hết buổi (còn <= LOW_SESSION_THRESHOLD)
@@ -227,6 +229,43 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
       else sorted.forEach((student) => next.add(student.id))
       return next
     })
+  }
+
+  const copyStudentEmail = async (student: Student) => {
+    const email = student.email?.trim()
+    if (!email) {
+      setEditStudent(student)
+      return
+    }
+
+    try {
+      let copied = false
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(email)
+          copied = true
+        } catch {
+          // Một số trình duyệt vẫn khai báo Clipboard API nhưng từ chối quyền.
+          // Khi đó tiếp tục dùng cơ chế dự phòng bên dưới.
+        }
+      }
+
+      if (!copied) {
+        const textArea = document.createElement('textarea')
+        textArea.value = email
+        textArea.style.position = 'fixed'
+        textArea.style.opacity = '0'
+        document.body.appendChild(textArea)
+        textArea.select()
+        const copied = document.execCommand('copy')
+        textArea.remove()
+        if (!copied) throw new Error('Clipboard copy failed')
+      }
+      toast.success('Đã sao chép email phụ huynh')
+    } catch (error) {
+      console.error('Error copying student email:', error)
+      toast.error('Không thể sao chép email. Vui lòng thử lại.')
+    }
   }
 
   const handleBulkClassification = async () => {
@@ -351,7 +390,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <Input
-          placeholder="Tìm theo tên hoặc mã học viên..."
+          placeholder="Tìm theo tên, mã, email hoặc SĐT..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -442,7 +481,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
           {/* Desktop table */}
           <Card padding="none" className="hidden md:block">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[1180px] text-sm">
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-11 px-4 py-3">
@@ -455,7 +494,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                         className="h-4 w-4 accent-brand-600"
                       />
                     </th>
-                    {['Mã', 'Tên học viên', 'Ngày tạo', 'Buổi khả dụng', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên học viên', 'Email phụ huynh', 'Ngày tạo', 'Buổi khả dụng', 'Trạng thái', 'Hành động'].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap">
                         {h}
                       </th>
@@ -487,6 +526,34 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                           </span>
                         </td>
                         <td className="px-4 py-3 font-medium text-slate-700">{student.name}</td>
+                        <td className="min-w-[250px] px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="h-4 w-4 flex-none text-slate-400" />
+                            <button
+                              type="button"
+                              onClick={() => setEditStudent(student)}
+                              className={`min-h-9 min-w-0 truncate rounded-lg px-2 text-left text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                                student.email
+                                  ? 'text-indigo-700 hover:bg-indigo-50'
+                                  : 'text-amber-700 hover:bg-amber-50'
+                              }`}
+                              title={student.email ? `Sửa email ${student.email}` : 'Bổ sung email phụ huynh'}
+                            >
+                              {student.email || 'Bổ sung email'}
+                            </button>
+                            {student.email && (
+                              <button
+                                type="button"
+                                onClick={() => void copyStudentEmail(student)}
+                                className="flex h-9 w-9 flex-none items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                                title={`Sao chép ${student.email}`}
+                                aria-label={`Sao chép email của ${student.name}`}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-slate-500">
                           {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
                         </td>
@@ -593,6 +660,37 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                           : <StatusBadge status={student.status} />}
                       </div>
                       <p className="font-semibold text-slate-900">{student.name}</p>
+                      <div className="mt-1 flex min-w-0 items-center gap-1 text-xs">
+                        <Mail className="h-3.5 w-3.5 flex-none text-slate-400" />
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setEditStudent(student)
+                          }}
+                          className={`min-h-11 min-w-0 truncate rounded-lg px-2 text-left font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                            student.email
+                              ? 'text-indigo-700 hover:bg-indigo-50'
+                              : 'text-amber-700 hover:bg-amber-50'
+                          }`}
+                        >
+                          {student.email || 'Bổ sung email phụ huynh'}
+                        </button>
+                        {student.email && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void copyStudentEmail(student)
+                            }}
+                            className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                            title={`Sao chép ${student.email}`}
+                            aria-label={`Sao chép email của ${student.name}`}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {student.createdAt ? student.createdAt.toDate().toLocaleDateString('vi-VN') : '—'}
                       </p>

@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -35,6 +36,13 @@ import {
   bookingIntervalsOverlap,
   checkBookingCandidates,
 } from '@/lib/bookingConflicts'
+import {
+  buildTeacherSubjectFilterOptions,
+  normalizeTeacherSubjectLabel,
+  teacherMatchesSubjectFilters,
+  teacherSubjectLabels,
+  type TeacherSubjectGroup,
+} from '@/lib/teacherSubjects'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -75,6 +83,12 @@ const COUNTRY_LABELS: Record<string, string> = {
   SG: 'Singapore',
   MY: 'Malaysia',
   TH: 'Thái Lan',
+}
+
+const SUBJECT_GROUP_LABELS: Record<TeacherSubjectGroup, string> = {
+  language: 'Ngoại ngữ',
+  academic: 'Văn hóa & học thuật',
+  legacy: 'Môn khác',
 }
 
 function countryLabel(code: string) {
@@ -210,6 +224,7 @@ export function BookingSchedulesPage() {
   const { user } = useAuthStore()
   const [searchParams] = useSearchParams()
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [subjects, setSubjects] = useState<Subject[]>([])
   // Allow deep-linking to a specific teacher's schedule (e.g. from the student
   // lesson history page): /admin/booking-schedules?teacherId=...
   const [selectedTeacherId, setSelectedTeacherId] = useState(() => searchParams.get('teacherId') || '')
@@ -232,6 +247,9 @@ export function BookingSchedulesPage() {
   const [filterExp, setFilterExp] = useState(false)
   const [filterYob, setFilterYob] = useState('')
   const [filterCountry, setFilterCountry] = useState('')
+  const [filterSubjectKeys, setFilterSubjectKeys] = useState<string[]>([])
+  const [filterSubjectMode, setFilterSubjectMode] = useState<'any' | 'all'>('any')
+  const [subjectFilterSearch, setSubjectFilterSearch] = useState('')
 
   // Selection mode states
   const [multiSelectMode, setMultiSelectMode] = useState(false)
@@ -298,6 +316,21 @@ export function BookingSchedulesPage() {
       }
     }
     loadTeachersAndAvailability()
+  }, [])
+
+  // Danh mục cũ chỉ là nguồn bổ sung. Hồ sơ năng lực của gia sư vẫn được ưu tiên
+  // để các tài khoản chưa có subjectIds không bị mất khỏi bộ lọc môn.
+  useEffect(() => {
+    getDocs(collection(db, 'subjects'))
+      .then((snapshot) => {
+        setSubjects(snapshot.docs.map((document) => ({
+          id: document.id,
+          ...document.data(),
+        } as Subject)))
+      })
+      .catch((error) => {
+        console.error('Error loading subject catalog:', error)
+      })
   }, [])
 
   // When arriving via deep link (?teacherId=...), scroll the selected teacher
@@ -459,9 +492,15 @@ export function BookingSchedulesPage() {
   }, [selectedBooking])
 
   const uniqueYobs = useMemo(() => {
+    const latestPlausibleYear = new Date().getFullYear() - 16
     const years = teachers
       .map((t) => t.yob)
-      .filter((y): y is number => typeof y === 'number' && y > 0)
+      .filter((y): y is number => (
+        typeof y === 'number'
+        && Number.isInteger(y)
+        && y >= 1940
+        && y <= latestPlausibleYear
+      ))
     return Array.from(new Set(years)).sort((a, b) => b - a)
   }, [teachers])
 
@@ -472,10 +511,38 @@ export function BookingSchedulesPage() {
     return Array.from(new Set(codes)).sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), 'vi'))
   }, [teachers])
 
+  const subjectFilterOptions = useMemo(
+    () => buildTeacherSubjectFilterOptions(teachers, subjects),
+    [teachers, subjects],
+  )
+
+  const selectedSubjectFilters = useMemo(() => {
+    const selectedKeys = new Set(filterSubjectKeys)
+    return subjectFilterOptions.filter((option) => selectedKeys.has(option.key))
+  }, [filterSubjectKeys, subjectFilterOptions])
+
+  const visibleSubjectFilterOptions = useMemo(() => {
+    const keyword = normalizeTeacherSubjectLabel(subjectFilterSearch)
+    if (!keyword) return subjectFilterOptions
+    return subjectFilterOptions.filter((option) => option.normalizedName.includes(keyword))
+  }, [subjectFilterOptions, subjectFilterSearch])
+
+  const toggleSubjectFilter = (key: string) => {
+    if (filterSubjectKeys.includes(key) && filterSubjectKeys.length <= 2) {
+      setFilterSubjectMode('any')
+    }
+    setFilterSubjectKeys((current) => {
+      return current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key]
+    })
+  }
+
   const filteredTeachers = teachers.filter((teacher) => {
     // 1. Text search filter
-    const keyword = search.trim().toLowerCase()
-    if (keyword && !`${teacher.name} ${teacher.code}`.toLowerCase().includes(keyword)) {
+    const keyword = normalizeTeacherSubjectLabel(search)
+    const searchableTeacher = normalizeTeacherSubjectLabel(`${teacher.name} ${teacher.code}`)
+    if (keyword && !searchableTeacher.includes(keyword)) {
       return false
     }
 
@@ -518,7 +585,13 @@ export function BookingSchedulesPage() {
       }
     }
 
-    // 7. Schedule availability filter
+    // 7. Teacher capability filter. Default is OR; admins can require every
+    // selected subject when they need a multi-skill teacher.
+    if (!teacherMatchesSubjectFilters(teacher, selectedSubjectFilters, filterSubjectMode)) {
+      return false
+    }
+
+    // 8. Schedule availability filter
     if (filterDays.length > 0 && filterTime) {
       const avail = allAvailabilities[teacher.id]
       if (!avail) return false
@@ -1304,44 +1377,59 @@ export function BookingSchedulesPage() {
   }
 
   return (
-    <div className="space-y-6 pt-2 lg:pt-6">
-      <div className="rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 p-6 text-white shadow-lg shadow-indigo-100">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-4 pt-1 lg:pt-3">
+      <header className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
-              <CalendarClock className="h-6 w-6" />
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700">
+              <CalendarClock className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-black">Xếp lớp trực quan (Booking Schedules)</h1>
-              <p className="mt-1 text-sm text-white/85">Xếp lớp nhanh cho học viên vào các ca đã mở (OPEN) của giáo viên.</p>
+              <h1 className="text-xl font-extrabold tracking-tight text-slate-950 sm:text-2xl">Xếp lớp trực quan (Booking Schedules)</h1>
+              <p className="mt-1 text-sm text-slate-600">Chọn gia sư, kiểm tra ca OPEN và xếp lớp cho học viên trên cùng một màn hình.</p>
             </div>
           </div>
           {selectedTeacher && (
-            <div className="rounded-2xl bg-white/15 px-4 py-3 text-sm font-bold">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
               {selectedTeacher.code} · {selectedTeacher.name}
             </div>
           )}
         </div>
-      </div>
+      </header>
 
-      <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Sidebar: Teachers List */}
-        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm giáo viên..."
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
-            />
+        <aside className="contents">
+          <div className="order-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2 sm:p-5">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-900">Bộ lọc gia sư</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Kết hợp hồ sơ, môn dạy và lịch trống để thu hẹp danh sách.</p>
+              </div>
+              {!loading && (
+                <p className="text-xs font-bold text-slate-600">{filteredTeachers.length}/{teachers.length} gia sư phù hợp</p>
+              )}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-10">
+          <label className="block space-y-1.5 2xl:col-span-2">
+            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Tìm gia sư</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Tên hoặc mã gia sư..."
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+              />
+            </span>
           </label>
 
           {/* Bộ lọc hồ sơ nâng cao */}
-          <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="contents">
+            <div className="hidden">
               <span className="text-xs font-black uppercase tracking-wider text-slate-400">Bộ lọc hồ sơ</span>
-              {(filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry) && (
+              {(filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1350,6 +1438,9 @@ export function BookingSchedulesPage() {
                     setFilterExp(false);
                     setFilterYob('');
                     setFilterCountry('');
+                    setFilterSubjectKeys([]);
+                    setFilterSubjectMode('any');
+                    setSubjectFilterSearch('');
                   }}
                   className="text-xs text-indigo-650 hover:text-indigo-755 font-bold transition"
                 >
@@ -1358,17 +1449,141 @@ export function BookingSchedulesPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Môn gia sư dạy
+              </p>
+              <details className="group rounded-xl border border-slate-200 bg-white">
+                <summary
+                  aria-label="Mở bộ lọc môn gia sư dạy"
+                  className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-400 [&::-webkit-details-marker]:hidden"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <BookOpen className="h-4 w-4 flex-none text-indigo-500" />
+                    <span className="truncate">
+                      {selectedSubjectFilters.length > 0
+                        ? `${selectedSubjectFilters.length} môn đã chọn`
+                        : 'Tất cả môn học'}
+                    </span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 flex-none text-slate-400 transition group-open:rotate-180" />
+                </summary>
+
+                <div className="space-y-3 border-t border-slate-100 p-3">
+                  <label className="relative block">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={subjectFilterSearch}
+                      onChange={(event) => setSubjectFilterSearch(event.target.value)}
+                      placeholder="Tìm môn, ví dụ IELTS..."
+                      aria-label="Tìm môn gia sư dạy"
+                      className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </label>
+
+                  {selectedSubjectFilters.length > 1 && (
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 p-1.5">
+                      <span className="pl-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Khớp</span>
+                      <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setFilterSubjectMode('any')}
+                          aria-pressed={filterSubjectMode === 'any'}
+                          className={`min-h-8 rounded-md px-2 transition ${filterSubjectMode === 'any' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          Ít nhất 1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilterSubjectMode('all')}
+                          aria-pressed={filterSubjectMode === 'all'}
+                          className={`min-h-8 rounded-md px-2 transition ${filterSubjectMode === 'all' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          Tất cả
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                    {(['language', 'academic', 'legacy'] as TeacherSubjectGroup[]).map((group) => {
+                      const groupOptions = visibleSubjectFilterOptions.filter((option) => option.group === group)
+                      if (groupOptions.length === 0) return null
+
+                      return (
+                        <div key={group} className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            {SUBJECT_GROUP_LABELS[group]}
+                          </p>
+                          {groupOptions.map((option) => {
+                            const isSelected = filterSubjectKeys.includes(option.key)
+                            return (
+                              <button
+                                key={option.key}
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() => toggleSubjectFilter(option.key)}
+                                className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border px-2.5 text-left text-xs font-semibold transition ${
+                                  isSelected
+                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+                                    : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <span className={`flex h-4 w-4 flex-none items-center justify-center rounded border ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-slate-300 bg-white'}`}>
+                                    {isSelected && <Check className="h-3 w-3" />}
+                                  </span>
+                                  <span className="truncate">{option.label}</span>
+                                </span>
+                                <span className="flex-none rounded-full bg-white px-1.5 py-0.5 text-[10px] text-slate-500 ring-1 ring-slate-200">
+                                  {option.teacherCount}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+
+                    {visibleSubjectFilterOptions.length === 0 && (
+                      <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs font-semibold text-slate-500">
+                        Không tìm thấy môn phù hợp
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </details>
+
+              {selectedSubjectFilters.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedSubjectFilters.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => toggleSubjectFilter(option.key)}
+                      className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-indigo-50 px-2 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100"
+                      aria-label={`Bỏ lọc môn ${option.label}`}
+                    >
+                      <span className="max-w-36 truncate">{option.label}</span>
+                      <X className="h-3 w-3" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 2xl:col-span-2">
               {/* Giới tính */}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Giới tính</label>
-                <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold text-slate-600">
+                <div className="flex h-10 gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-bold text-slate-600">
                   {(['all', 'male', 'female'] as const).map((g) => (
                     <button
                       key={g}
                       type="button"
                       onClick={() => setFilterGender(g)}
-                      className={`flex-1 py-1 rounded transition ${
+                      aria-pressed={filterGender === g}
+                      className={`flex-1 rounded transition ${
                         filterGender === g ? 'bg-white text-indigo-700 shadow-sm' : 'hover:text-slate-800'
                       }`}
                     >
@@ -1380,11 +1595,12 @@ export function BookingSchedulesPage() {
 
               {/* Năm sinh */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Năm sinh</label>
+                <label htmlFor="booking-filter-yob" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Năm sinh</label>
                 <select
+                  id="booking-filter-yob"
                   value={filterYob}
                   onChange={(e) => setFilterYob(e.target.value)}
-                  className="h-[27px] w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold outline-none focus:border-indigo-400 cursor-pointer"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">Tất cả</option>
                   {uniqueYobs.map((y) => (
@@ -1396,16 +1612,17 @@ export function BookingSchedulesPage() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="space-y-1 2xl:col-span-1">
+              <label htmlFor="booking-filter-country" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Quốc tịch
               </label>
               <div className="relative">
                 <Globe2 className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <select
+                  id="booking-filter-country"
                   value={filterCountry}
                   onChange={(event) => setFilterCountry(event.target.value)}
-                  className="h-9 w-full cursor-pointer rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">Tất cả quốc gia</option>
                   {uniqueCountries.map((country) => (
@@ -1418,11 +1635,12 @@ export function BookingSchedulesPage() {
             </div>
 
             {/* Checkable Chips */}
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
+            <div className="grid grid-cols-2 gap-1.5 pt-5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
               <button
                 type="button"
                 onClick={() => setFilterIelts(!filterIelts)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
+                aria-pressed={filterIelts}
+                className={`min-h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
                   filterIelts
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
@@ -1434,7 +1652,8 @@ export function BookingSchedulesPage() {
               <button
                 type="button"
                 onClick={() => setFilterExp(!filterExp)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
+                aria-pressed={filterExp}
+                className={`min-h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
                   filterExp
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
@@ -1446,22 +1665,51 @@ export function BookingSchedulesPage() {
             </div>
           </div>
 
+          <label className="block space-y-1.5 2xl:col-span-1">
+            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">Khung giờ</span>
+            <select
+              value={timeWindow}
+              onChange={(event) => setTimeWindow(event.target.value)}
+              className="h-10 w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            >
+              {TIME_WINDOWS.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           {/* Lọc lịch rảnh */}
-          <div className="mt-4 border-t border-slate-100 pt-4 space-y-3">
+          <div className="grid gap-3 border-t border-slate-100 pt-4 sm:col-span-2 lg:col-span-4 lg:grid-cols-4 lg:items-end 2xl:col-span-10">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-slate-400">Lọc theo lịch trống</span>
-              {filterDays.length > 0 && (
+              {(search || filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0 || filterDays.length > 0 || timeWindow !== '24h') && (
                 <button
-                  onClick={() => { setFilterDays([]); setFilterTime('17:00'); }}
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    setFilterGender('all')
+                    setFilterIelts(false)
+                    setFilterExp(false)
+                    setFilterYob('')
+                    setFilterCountry('')
+                    setFilterSubjectKeys([])
+                    setFilterSubjectMode('any')
+                    setSubjectFilterSearch('')
+                    setFilterDays([])
+                    setFilterTime('17:00')
+                    setTimeWindow('24h')
+                  }}
                   className="text-xs text-indigo-600 hover:text-indigo-700 font-bold transition"
                 >
-                  Xóa lọc
+                  Đặt lại
                 </button>
               )}
             </div>
 
             {/* Days list (Mon-Sun) toggles */}
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 lg:col-span-2">
               {DAYS.map((day) => {
                 const isSelected = filterDays.includes(day)
                 const label = day === 'sun' ? 'CN' : `T${DAYS.indexOf(day) + 2}`
@@ -1469,6 +1717,7 @@ export function BookingSchedulesPage() {
                   <button
                     key={day}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => {
                       setFilterDays(prev => 
                         prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
@@ -1508,63 +1757,105 @@ export function BookingSchedulesPage() {
             )}
           </div>
 
-          <div className="mt-4 max-h-[620px] space-y-2 overflow-y-auto pr-1">
+            </div>
+          </div>
+
+          <div className="order-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-sm font-extrabold text-slate-900">Danh sách gia sư</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {loading ? 'Đang tải dữ liệu...' : `${filteredTeachers.length}/${teachers.length} gia sư phù hợp`}
+              </p>
+            </div>
+            {selectedTeacher && !filteredTeachers.some((teacher) => teacher.id === selectedTeacher.id) && (
+              <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">Ngoài bộ lọc</span>
+            )}
+          </div>
+
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1 xl:max-h-[calc(100vh-13rem)]">
             {loading ? (
               <div className="rounded-xl bg-slate-100 p-4 text-sm font-semibold text-slate-500">Đang tải...</div>
-            ) : filteredTeachers.map((teacher) => (
-              <button
-                key={teacher.id}
-                type="button"
-                data-teacher-id={teacher.id}
-                onClick={() => {
-                  setSelectedTeacherId(teacher.id)
-                  setSelectedSlots([])
-                }}
-                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
-                  selectedTeacherId === teacher.id
-                    ? 'border-indigo-300 bg-indigo-50'
-                    : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-slate-50'
-                }`}
-              >
-                {teacher.photoURL ? (
-                  <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 rounded-xl object-cover" />
-                ) : (
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-700">
-                    {teacher.name.slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-black text-slate-900">{teacher.name}</span>
-                  <span className="block truncate text-xs font-semibold text-slate-500">{teacher.code}</span>
-                </span>
-              </button>
-            ))}
+            ) : filteredTeachers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center">
+                <p className="text-sm font-bold text-slate-700">Không có gia sư phù hợp</p>
+                <p className="mt-1 text-xs text-slate-500">Thử bỏ bớt môn hoặc điều kiện lịch trống.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    setFilterGender('all')
+                    setFilterIelts(false)
+                    setFilterExp(false)
+                    setFilterYob('')
+                    setFilterCountry('')
+                    setFilterSubjectKeys([])
+                    setFilterSubjectMode('any')
+                    setSubjectFilterSearch('')
+                    setFilterDays([])
+                    setFilterTime('17:00')
+                    setTimeWindow('24h')
+                  }}
+                  className="mt-3 min-h-10 rounded-lg bg-white px-3 text-xs font-bold text-indigo-700 ring-1 ring-slate-200 transition hover:bg-indigo-50"
+                >
+                  Xóa tất cả bộ lọc
+                </button>
+              </div>
+            ) : filteredTeachers.map((teacher) => {
+              const subjectLabels = teacherSubjectLabels(teacher, subjects)
+              const subjectSummary = subjectLabels.length > 0
+                ? `${subjectLabels.slice(0, 2).join(', ')}${subjectLabels.length > 2 ? ` +${subjectLabels.length - 2}` : ''}`
+                : 'Chưa khai báo môn'
+
+              return (
+                <button
+                  key={teacher.id}
+                  type="button"
+                  data-teacher-id={teacher.id}
+                  aria-pressed={selectedTeacherId === teacher.id}
+                  onClick={() => {
+                    setSelectedTeacherId(teacher.id)
+                    setSelectedSlots([])
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+                    selectedTeacherId === teacher.id
+                      ? 'border-indigo-300 bg-indigo-50'
+                      : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {teacher.photoURL ? (
+                    <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-700">
+                      {teacher.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black text-slate-900">{teacher.name}</span>
+                    <span className="block truncate text-xs font-semibold text-slate-500">{teacher.code}</span>
+                    <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                      <Globe2 className="h-3 w-3 flex-none" />
+                      {teacher.country ? countryLabel(teacher.country.trim().toUpperCase()) : 'Chưa cập nhật quốc gia'}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-slate-500" title={subjectLabels.join(', ')}>
+                      Môn: {subjectSummary}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
           </div>
         </aside>
 
         {/* Main Content: Weekly Booking Calendar */}
-        <section className="space-y-5">
+        <section className="order-3 min-w-0 space-y-4 xl:order-2 xl:col-start-1 xl:row-start-2">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-3">
-              {/* Time window selector */}
-              <div className="relative">
-                <select
-                  value={timeWindow}
-                  onChange={(e) => setTimeWindow(e.target.value)}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold outline-none focus:border-indigo-400 min-w-[140px] appearance-none pr-8 cursor-pointer"
-                >
-                  {TIME_WINDOWS.map((item) => (
-                    <option key={item.key} value={item.key}>
-                      Ca: {item.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">▼</div>
-              </div>
-
               {/* Multi-select toggle button */}
               <button
                 type="button"
+                aria-pressed={multiSelectMode}
                 onClick={() => {
                   const nextMode = !multiSelectMode
                   setMultiSelectMode(nextMode)
