@@ -85,10 +85,11 @@ const COUNTRY_LABELS: Record<string, string> = {
   TH: 'Thái Lan',
 }
 
-const SUBJECT_GROUP_LABELS: Record<TeacherSubjectGroup, string> = {
+type VisibleTeacherSubjectGroup = Exclude<TeacherSubjectGroup, 'legacy'>
+
+const SUBJECT_GROUP_LABELS: Record<VisibleTeacherSubjectGroup, string> = {
   language: 'Ngoại ngữ',
   academic: 'Văn hóa & học thuật',
-  legacy: 'Môn khác',
 }
 
 function countryLabel(code: string) {
@@ -260,6 +261,7 @@ export function BookingSchedulesPage() {
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [showCancelBatchModal, setShowCancelBatchModal] = useState(false)
+  const [profileTeacher, setProfileTeacher] = useState<Teacher | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null)
 
   // Form states inside Schedule Modal
@@ -526,6 +528,11 @@ export function BookingSchedulesPage() {
     if (!keyword) return subjectFilterOptions
     return subjectFilterOptions.filter((option) => option.normalizedName.includes(keyword))
   }, [subjectFilterOptions, subjectFilterSearch])
+
+  const displayedSubjectFilterOptions = useMemo(
+    () => visibleSubjectFilterOptions.filter((option) => option.group !== 'legacy'),
+    [visibleSubjectFilterOptions],
+  )
 
   const toggleSubjectFilter = (key: string) => {
     if (filterSubjectKeys.includes(key) && filterSubjectKeys.length <= 2) {
@@ -1506,8 +1513,8 @@ export function BookingSchedulesPage() {
                   )}
 
                   <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
-                    {(['language', 'academic', 'legacy'] as TeacherSubjectGroup[]).map((group) => {
-                      const groupOptions = visibleSubjectFilterOptions.filter((option) => option.group === group)
+                    {(['language', 'academic'] as VisibleTeacherSubjectGroup[]).map((group) => {
+                      const groupOptions = displayedSubjectFilterOptions.filter((option) => option.group === group)
                       if (groupOptions.length === 0) return null
 
                       return (
@@ -1545,7 +1552,7 @@ export function BookingSchedulesPage() {
                       )
                     })}
 
-                    {visibleSubjectFilterOptions.length === 0 && (
+                    {displayedSubjectFilterOptions.length === 0 && (
                       <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs font-semibold text-slate-500">
                         Không tìm thấy môn phù hợp
                       </p>
@@ -1635,12 +1642,12 @@ export function BookingSchedulesPage() {
             </div>
 
             {/* Checkable Chips */}
-            <div className="grid grid-cols-2 gap-1.5 pt-5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
+            <div className="grid self-start grid-cols-2 items-start gap-1.5 pt-5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
               <button
                 type="button"
                 onClick={() => setFilterIelts(!filterIelts)}
                 aria-pressed={filterIelts}
-                className={`min-h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
+                className={`h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
                   filterIelts
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
@@ -1653,7 +1660,7 @@ export function BookingSchedulesPage() {
                 type="button"
                 onClick={() => setFilterExp(!filterExp)}
                 aria-pressed={filterExp}
-                className={`min-h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
+                className={`h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
                   filterExp
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                     : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
@@ -1808,40 +1815,52 @@ export function BookingSchedulesPage() {
                 : 'Chưa khai báo môn'
 
               return (
-                <button
+                <div
                   key={teacher.id}
-                  type="button"
                   data-teacher-id={teacher.id}
-                  aria-pressed={selectedTeacherId === teacher.id}
-                  onClick={() => {
-                    setSelectedTeacherId(teacher.id)
-                    setSelectedSlots([])
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+                  className={`flex w-full items-center gap-2 rounded-xl border p-2 text-left transition ${
                     selectedTeacherId === teacher.id
                       ? 'border-indigo-300 bg-indigo-50'
                       : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-slate-50'
                   }`}
                 >
-                  {teacher.photoURL ? (
-                    <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 rounded-xl object-cover" />
-                  ) : (
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-700">
-                      {teacher.name.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-black text-slate-900">{teacher.name}</span>
-                    <span className="block truncate text-xs font-semibold text-slate-500">{teacher.code}</span>
-                    <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
-                      <Globe2 className="h-3 w-3 flex-none" />
-                      {teacher.country ? countryLabel(teacher.country.trim().toUpperCase()) : 'Chưa cập nhật quốc gia'}
+                  <button
+                    type="button"
+                    aria-pressed={selectedTeacherId === teacher.id}
+                    onClick={() => {
+                      setSelectedTeacherId(teacher.id)
+                      setSelectedSlots([])
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    {teacher.photoURL ? (
+                      <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 flex-none rounded-xl object-cover" />
+                    ) : (
+                      <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-700">
+                        {teacher.name.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-black text-slate-900">{teacher.name}</span>
+                      <span className="block truncate text-xs font-semibold text-slate-500">{teacher.code}</span>
+                      <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                        <Globe2 className="h-3 w-3 flex-none" />
+                        {teacher.country ? countryLabel(teacher.country.trim().toUpperCase()) : 'Chưa cập nhật quốc gia'}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] text-slate-500" title={subjectLabels.join(', ')}>
+                        Môn: {subjectSummary}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-slate-500" title={subjectLabels.join(', ')}>
-                      Môn: {subjectSummary}
-                    </span>
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileTeacher(teacher)}
+                    className="min-h-10 flex-none rounded-lg border border-indigo-200 bg-white px-2.5 text-[11px] font-extrabold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    aria-label={`Xem profile ${teacher.code}`}
+                  >
+                    Profile
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -2020,6 +2039,65 @@ export function BookingSchedulesPage() {
           </div>
         </section>
       </div>
+
+      {profileTeacher && (
+        <Modal open size="sm" onClose={() => setProfileTeacher(null)} title="Profile gia sư">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+              {profileTeacher.photoURL ? (
+                <img
+                  src={profileTeacher.photoURL}
+                  alt={profileTeacher.code}
+                  className="h-16 w-16 flex-none rounded-2xl object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl bg-indigo-50 text-lg font-black text-indigo-700">
+                  {profileTeacher.code.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-lg font-black text-slate-900">{profileTeacher.code}</p>
+                <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                  <Globe2 className="h-4 w-4 flex-none" />
+                  {profileTeacher.country
+                    ? countryLabel(profileTeacher.country.trim().toUpperCase())
+                    : 'Chưa cập nhật quốc gia'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kinh nghiệm</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-800">
+                  {typeof profileTeacher.teachingYears === 'number'
+                    ? `${profileTeacher.teachingYears} năm`
+                    : 'Chưa cập nhật'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">IELTS</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-800">{profileTeacher.ielts || 'Chưa cập nhật'}</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Môn giảng dạy</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {teacherSubjectLabels(profileTeacher, subjects).length > 0 ? (
+                  teacherSubjectLabels(profileTeacher, subjects).map((label) => (
+                    <span key={label} className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700">
+                      {label}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-sm font-semibold text-slate-500">Chưa cập nhật môn</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* MODAL 1: Schedule/Assign Class Modal */}
       {showScheduleModal && (

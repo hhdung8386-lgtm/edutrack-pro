@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
+import { LatestNewsSection } from '@/components/landing/LatestNewsSection'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -326,6 +327,8 @@ export function LoginPage() {
       </main>
 
       <NationalBrandStory />
+
+      <LatestNewsSection />
 
       {/* Compact Footer */}
       <PublicFooter />
