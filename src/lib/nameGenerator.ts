@@ -7,7 +7,7 @@ export interface TeacherNicknameLibrary {
 }
 
 // Danh sách mặc định được chủ động rút gọn về những tên thông dụng, dễ đọc và
-// phù hợp khi dùng làm tên giao tiếp của giáo viên. Danh sách mở rộng do admin
+// phù hợp khi dùng làm tên giao tiếp của gia sư. Danh sách mở rộng do admin
 // thêm được lưu riêng để không bị mất khi cập nhật ứng dụng.
 export const DEFAULT_TEACHER_NICKNAMES: TeacherNicknameLibrary = {
   male: [

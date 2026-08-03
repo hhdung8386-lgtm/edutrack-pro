@@ -58,7 +58,7 @@ export const COURSE_OPTIONS: Record<Exclude<EvaluationFormType, 'tutor'>, readon
     },
     {
       label: 'Free Talk',
-      description: 'Dành cho học viên từ trình độ trung cấp trở lên. Luyện hội thoại tự nhiên với giáo viên, đồng thời cải thiện phát âm, ngữ pháp, vốn từ và sự tự tin khi giao tiếp trong các tình huống thực tế.',
+      description: 'Dành cho học viên từ trình độ trung cấp trở lên. Luyện hội thoại tự nhiên với gia sư, đồng thời cải thiện phát âm, ngữ pháp, vốn từ và sự tự tin khi giao tiếp trong các tình huống thực tế.',
     },
     {
       label: 'IPA Pronunciation (Level 1–3)',

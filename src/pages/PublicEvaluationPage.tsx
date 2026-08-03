@@ -350,7 +350,7 @@ export default function PublicEvaluationPage() {
                 />
               </div>
               <p className="mt-3 text-center text-xs font-bold italic text-slate-500 lg:text-left">
-                Hình ảnh giáo viên và học viên chụp chung trong buổi đánh giá năng lực đầu vào
+                Hình ảnh gia sư và học viên chụp chung trong buổi đánh giá năng lực đầu vào
               </p>
             </div>
           )}
@@ -365,7 +365,7 @@ export default function PublicEvaluationPage() {
               /* Tutor Form detail view */
               <div className="space-y-6">
                 <p className="text-slate-600 text-sm leading-relaxed">
-                  123English cung cấp dịch vụ gia sư 1 kèm 1 theo chương trình của Bộ Giáo dục và Đào tạo, chương trình song ngữ, quốc tế và các khóa luyện thi. Sau buổi đánh giá, giáo viên tư vấn chương trình đề xuất dưới đây:
+                  123English cung cấp dịch vụ gia sư 1 kèm 1 theo chương trình của Bộ Giáo dục và Đào tạo, chương trình song ngữ, quốc tế và các khóa luyện thi. Sau buổi đánh giá, gia sư tư vấn chương trình đề xuất dưới đây:
                 </p>
                 {selectedTutorSkills.length > 0 && (
                   <div>
@@ -407,7 +407,7 @@ export default function PublicEvaluationPage() {
               /* Language/Communication course level options checkmarks */
               <div className="space-y-6">
                 <p className="text-slate-600 text-sm leading-relaxed">
-                  Chương trình Tiếng Anh gồm nhiều cấp độ chuyên biệt từ cơ bản đến nâng cao. Giáo viên đề xuất học viên tham gia học bắt đầu từ:
+                  Chương trình Tiếng Anh gồm nhiều cấp độ chuyên biệt từ cơ bản đến nâng cao. Gia sư đề xuất học viên tham gia học bắt đầu từ:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {evaluation.selectedLevels.map((lvl) => {

@@ -332,7 +332,7 @@ export function BookingSchedulesPage() {
         }
       } catch (error) {
         console.error('Error loading teachers/availability:', error)
-        toast.error('Không tải được danh sách giáo viên')
+        toast.error('Không tải được danh sách gia sư')
       } finally {
         setLoading(false)
       }
@@ -410,7 +410,7 @@ export function BookingSchedulesPage() {
     }, (error) => {
       if (!active) return
       console.error('Error loading teacher availability:', error)
-      toast.error('Không tải được lịch rảnh giáo viên')
+      toast.error('Không tải được lịch rảnh gia sư')
     })
 
     return () => {
@@ -2368,7 +2368,7 @@ export function BookingSchedulesPage() {
                 Thứ {selectedBooking.requestedDay === 'sun' ? 'Nhật' : selectedBooking.requestedDay === 'mon' ? '2' : selectedBooking.requestedDay === 'tue' ? '3' : selectedBooking.requestedDay === 'wed' ? '4' : selectedBooking.requestedDay === 'thu' ? '5' : selectedBooking.requestedDay === 'fri' ? '6' : '7'}
                 {` (${selectedBooking.requestedDate})`} · Từ {selectedBooking.requestedStart} đến {selectedBooking.requestedEnd} ({selectedBooking.requestedMinutes} phút)
               </p>
-              <p className="text-xs text-slate-500 font-semibold">Giáo viên: {selectedBooking.teacherName} ({selectedBooking.teacherCode})</p>
+              <p className="text-xs text-slate-500 font-semibold">Gia sư: {selectedBooking.teacherName} ({selectedBooking.teacherCode})</p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
@@ -2511,7 +2511,7 @@ export function BookingSchedulesPage() {
         >
           <div className="space-y-3">
             <p className="text-sm text-slate-600 font-semibold">
-              Bạn có chắc chắn muốn hủy <span className="font-black text-rose-600">{selectedBookingIds.length}</span> ca học đã xếp của giáo viên này?
+              Bạn có chắc chắn muốn hủy <span className="font-black text-rose-600">{selectedBookingIds.length}</span> ca học đã xếp của gia sư này?
             </p>
             <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 text-xs space-y-1.5 text-rose-800">
               <p className="font-bold flex items-center gap-1.5">

@@ -184,7 +184,7 @@ function BlockEditor({
   return (
     <div className="space-y-4 border-t border-slate-100 bg-slate-50/60 p-4">
       {(block.type === 'hero' || block.type === 'featureList' || block.type === 'imageText') && (
-        <Field label="Nhãn nhỏ phía trên" value={block.eyebrow || ''} onChange={(v) => onChange({ eyebrow: v })} placeholder="VD: Đội ngũ giáo viên" />
+        <Field label="Nhãn nhỏ phía trên" value={block.eyebrow || ''} onChange={(v) => onChange({ eyebrow: v })} placeholder="VD: Đội ngũ gia sư" />
       )}
       <Field label="Tiêu đề" value={block.title || ''} onChange={(v) => onChange({ title: v })} placeholder="Nhập tiêu đề" />
       {block.type !== 'richText' && (

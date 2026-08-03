@@ -124,7 +124,7 @@ export function SettingsPage() {
       toast.success(successMessage)
     } catch (error) {
       console.error(error)
-      toast.error('Không thể lưu thư viện tên giáo viên')
+      toast.error('Không thể lưu thư viện tên gia sư')
     } finally {
       setSavingNicknames(false)
     }
@@ -352,7 +352,7 @@ export function SettingsPage() {
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            Thư viện tên giáo viên
+            Thư viện tên gia sư
           </button>
           <button
             onClick={() => setActiveTab('teacher_features')}
@@ -517,7 +517,7 @@ export function SettingsPage() {
                           : acc.role === 'student_manager'
                           ? 'Quản lý Học viên'
                           : acc.role === 'teacher_manager'
-                          ? 'Quản lý Giáo viên'
+                          ? 'Quản lý Gia sư'
                           : acc.role}
                       </span>
                     </div>
@@ -550,7 +550,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">Thư viện tên giao tiếp</h2>
-                <p className="mt-0.5 text-xs text-slate-500">Tên được ưu tiên khi hệ thống tạo tài khoản giáo viên mới.</p>
+                <p className="mt-0.5 text-xs text-slate-500">Tên được ưu tiên khi hệ thống tạo tài khoản gia sư mới.</p>
               </div>
             </div>
             <div className="flex gap-2 text-xs font-bold">
@@ -568,8 +568,8 @@ export function SettingsPage() {
                   onChange={event => setNicknameGender(event.target.value as 'female' | 'male')}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-amber-400"
                 >
-                  <option value="female">Giáo viên nữ</option>
-                  <option value="male">Giáo viên nam</option>
+                  <option value="female">Gia sư nữ</option>
+                  <option value="male">Gia sư nam</option>
                 </select>
               </label>
               <label className="block">
@@ -596,7 +596,7 @@ export function SettingsPage() {
               {(['female', 'male'] as const).map(group => (
                 <section key={group} className="rounded-2xl border border-slate-200 p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900">{group === 'female' ? 'Tên giáo viên nữ' : 'Tên giáo viên nam'}</h3>
+                    <h3 className="font-bold text-slate-900">{group === 'female' ? 'Tên gia sư nữ' : 'Tên gia sư nam'}</h3>
                     <span className="text-xs font-semibold text-slate-400">{DEFAULT_TEACHER_NICKNAMES[group].length} mặc định</span>
                   </div>
                   <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
@@ -779,8 +779,8 @@ export function SettingsPage() {
                 onChange={(e) => setSelectedRole(e.target.value as any)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
               >
-                <option value="student_manager">Quản lý Học viên (Chỉ xem học sinh/buổi dạy, không xem giáo viên/hợp đồng/lương)</option>
-                <option value="teacher_manager">Quản lý Giáo viên (Chỉ xem giáo viên/hợp đồng/lương, không xem học sinh)</option>
+                <option value="student_manager">Quản lý Học viên (Chỉ xem học sinh/buổi dạy, không xem gia sư/hợp đồng/lương)</option>
+                <option value="teacher_manager">Quản lý Gia sư (Chỉ xem gia sư/hợp đồng/lương, không xem học sinh)</option>
                 <option value="admin">Admin cấp cao (Toàn quyền hệ thống)</option>
               </select>
             </div>

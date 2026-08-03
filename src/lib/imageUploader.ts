@@ -58,7 +58,7 @@ export function compressImage(file: File): Promise<Blob> {
 }
 
 // Reject sau `ms` mili-giây để upload không bao giờ treo vô hạn (mạng yếu khiến
-// uploadBytes retry rất lâu -> ảnh kẹt spinner mãi và giáo viên không gửi điểm danh được)
+// uploadBytes retry rất lâu -> ảnh kẹt spinner mãi và gia sư không gửi điểm danh được)
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('UPLOAD_TIMEOUT')), ms)

@@ -85,7 +85,7 @@ export function ContractsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Quản lý Hồ sơ / Hợp đồng</h1>
-          <p className="text-sm text-slate-500 mt-1">Duyệt hồ sơ và xem xác nhận điều khoản của giáo viên</p>
+          <p className="text-sm text-slate-500 mt-1">Duyệt hồ sơ và xem xác nhận điều khoản của gia sư</p>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 text-emerald-700 font-medium">
@@ -104,7 +104,7 @@ export function ContractsPage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Tìm theo tên giáo viên..."
+              placeholder="Tìm theo tên gia sư..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"

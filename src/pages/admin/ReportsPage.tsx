@@ -385,7 +385,7 @@ export function ReportsPage() {
   const tabs: { id: ReportTab; label: string; icon: typeof BarChart3 }[] = [
     { id: 'funds', label: 'Quỹ học viên theo môn', icon: BookOpen },
     { id: 'monthly', label: 'Hoạt động theo tháng', icon: CalendarDays },
-    { id: 'teachers', label: 'Theo giáo viên', icon: GraduationCap },
+    { id: 'teachers', label: 'Theo gia sư', icon: GraduationCap },
   ]
 
   return (
@@ -585,7 +585,7 @@ export function ReportsPage() {
               { label: 'Buổi đã duyệt', value: lessons.length, icon: CalendarDays, tone: 'text-brand-700 bg-brand-50' },
               { label: 'Tổng phút dạy', value: `${numberFormat(totalMinutes)} phút`, icon: BarChart3, tone: 'text-sky-700 bg-sky-50' },
               { label: 'Tổng lương', value: formatVND(totalSalary), icon: Sparkles, tone: 'text-emerald-700 bg-emerald-50' },
-              { label: 'Giáo viên hoạt động', value: teacherStats.length, icon: GraduationCap, tone: 'text-violet-700 bg-violet-50' },
+              { label: 'Gia sư hoạt động', value: teacherStats.length, icon: GraduationCap, tone: 'text-violet-700 bg-violet-50' },
             ].map((metric) => {
               const Icon = metric.icon
               return <Card key={metric.label} className="p-4 sm:p-5"><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${metric.tone}`}><Icon className="h-5 w-5" /></span><p className="mt-4 text-xl font-black text-slate-950">{metric.value}</p><p className="mt-1 text-xs font-semibold text-slate-500">{metric.label}</p></Card>

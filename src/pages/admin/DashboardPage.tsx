@@ -261,7 +261,7 @@ export function DashboardPage() {
           color="text-emerald-400"
         />
         <KpiCard
-          title="Giáo viên active"
+          title="Gia sư active"
           value={teacherCount}
           icon={GraduationCap}
           color="text-rose-400"
@@ -283,7 +283,7 @@ export function DashboardPage() {
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Học viên</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden sm:table-cell">Giáo viên</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden sm:table-cell">Gia sư</th>
                     <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider hidden md:table-cell">Phút</th>
                     <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Trạng thái</th>
                   </tr>

@@ -24,7 +24,7 @@ export function TrackingPage() {
   const [notFound, setNotFound] = useState(false)
   const [studentResult, setStudentResult] = useState<{ student: Student; lessons: Lesson[] } | null>(null)
   const [teacherResult, setTeacherResult] = useState<{ teacher: Teacher; lessonCount: number } | null>(null)
-  // Nickname giáo viên (mã đăng nhập kiểu "Mirabelle") — phụ huynh không thấy tên thật
+  // Nickname gia sư (mã đăng nhập kiểu "Mirabelle") — phụ huynh không thấy tên thật
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function TrackingPage() {
         lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
         setStudentResult({ student, lessons })
 
-        // Lấy nickname (code) của các giáo viên xuất hiện trong lịch sử
+        // Lấy nickname (code) của các gia sư xuất hiện trong lịch sử
         const teacherIds = Array.from(new Set(lessons.map(l => l.teacherId).filter(Boolean)))
         if (teacherIds.length > 0) {
           const nickEntries = await Promise.all(teacherIds.map(async (tid) => {
@@ -157,7 +157,7 @@ export function TrackingPage() {
                     ${tab === t ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}
                 >
                   {t === 'student' ? <User className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
-                  {t === 'student' ? 'Học viên' : 'Giáo viên'}
+                  {t === 'student' ? 'Học viên' : 'Gia sư'}
                 </button>
               ))}
             </div>
@@ -382,7 +382,7 @@ function TeacherResult({ teacher, lessonCount, onBack }: { teacher: Teacher; les
           <div>
             <h2 className="text-xl font-bold text-slate-900">{teacher.name}</h2>
             <span className="font-mono text-sm text-emerald-400">{teacher.code}</span>
-            <p className="text-sm text-slate-500 mt-1">Giáo viên cấp {teacher.level}</p>
+            <p className="text-sm text-slate-500 mt-1">Gia sư cấp {teacher.level}</p>
           </div>
         </div>
 

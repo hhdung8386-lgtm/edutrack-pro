@@ -1798,7 +1798,7 @@ export function StudentDetailPage() {
                       className="h-4 w-4 accent-brand-600"
                     />
                   </th>
-                  {['Ngày', 'Giáo viên', 'Môn học', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
+                  {['Ngày', 'Gia sư', 'Môn học', 'Sách học', 'Phút', 'Nhận xét', 'Lương buổi', 'Trạng thái', 'Hành động'].map((h) => (
                     <th key={h} className="text-left px-3 py-3 text-xs font-bold text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -1808,7 +1808,7 @@ export function StudentDetailPage() {
                     <input type="date" value={historyFilters.date} onChange={(event) => setHistoryFilters((current) => ({ ...current, date: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium outline-none focus:border-indigo-400" />
                   </th>
                   <th className="px-2 pb-3">
-                    <input value={historyFilters.teacher} onChange={(event) => setHistoryFilters((current) => ({ ...current, teacher: event.target.value }))} placeholder="Tên giáo viên" className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400" />
+                    <input value={historyFilters.teacher} onChange={(event) => setHistoryFilters((current) => ({ ...current, teacher: event.target.value }))} placeholder="Tên gia sư" className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400" />
                   </th>
                   <th className="px-2 pb-3">
                     <select value={historyFilters.subject} onChange={(event) => setHistoryFilters((current) => ({ ...current, subject: event.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-indigo-400">
@@ -1874,7 +1874,7 @@ export function StudentDetailPage() {
                           <Link
                             to={`/admin/booking-schedules?teacherId=${lesson.teacherId}`}
                             className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
-                            title="Mở lịch xếp lớp của giáo viên này"
+                            title="Mở lịch xếp lớp của gia sư này"
                           >
                             {lesson.teacherName}
                           </Link>
@@ -2012,7 +2012,7 @@ export function StudentDetailPage() {
               <span className="text-emerald-600 font-semibold">+ {reversingLesson.minutes} phút</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Void lương giáo viên</span>
+              <span className="text-slate-600">Void lương gia sư</span>
               <span className="text-rose-600 font-semibold">
                 − {formatMoney(reversingLesson.salary || 0, reversingLesson.currency)}
               </span>
@@ -2116,7 +2116,7 @@ export function StudentDetailPage() {
                 <span className="text-rose-600 font-semibold">− {reApprovingLesson.minutes} phút</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600">Lương giáo viên (tính theo môn đã chọn)</span>
+                <span className="text-slate-600">Lương gia sư (tính theo môn đã chọn)</span>
                 <span className="text-emerald-600 font-semibold">
                   {(() => {
                     const chosen = activeSubjects.find(s => s.subjectId === reApproveSubjectId)

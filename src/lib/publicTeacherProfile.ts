@@ -95,6 +95,22 @@ function safeUrl(value: unknown): string {
   }
 }
 
+const MAX_INLINE_IMAGE_LENGTH = 900_000
+
+function safeImageSource(value: unknown): string {
+  const candidate = safeString(value)
+  if (!candidate) return ''
+
+  if (
+    candidate.length <= MAX_INLINE_IMAGE_LENGTH
+    && /^data:image\/(?:jpeg|jpg|png|webp);base64,[a-z0-9+/=\r\n]+$/i.test(candidate)
+  ) {
+    return candidate
+  }
+
+  return safeUrl(candidate)
+}
+
 function safeCertificateCategory(value: unknown): TeacherCertificate['category'] {
   if (value === 'foreign_language' || value === 'pedagogical' || value === 'other') return value
   return 'other'
@@ -110,7 +126,7 @@ function publicCertificates(certificates: TeacherCertificate[] | undefined): Pub
       title: safeString(certificate.title),
       description: safeString(certificate.description),
       score: safeString(certificate.score),
-      fileURL: safeUrl(certificate.fileURL),
+      fileURL: safeImageSource(certificate.fileURL),
     }))
 }
 
@@ -131,7 +147,7 @@ export function buildPublicTeacherProfile(teacher: Teacher): PublicTeacherProfil
     subjectNames: safeStringArray(teacher.subjectNames),
     level: safeNonNegativeNumber(teacher.level, 1) || 1,
     bio: safeString(teacher.bio),
-    photoURL: safeUrl(teacher.photoURL),
+    photoURL: safeImageSource(teacher.photoURL),
     status: 'active',
     country: safeString(teacher.country),
     totalApprovedMinutes: safeNonNegativeNumber(teacher.totalApprovedMinutes),
@@ -181,7 +197,7 @@ export function publicProfileAsTeacher(id: string, profile: PublicTeacherProfile
     subjectNames: safeStringArray(profile.subjectNames),
     level: safeNonNegativeNumber(profile.level, 1) || 1,
     bio: safeString(profile.bio),
-    photoURL: safeUrl(profile.photoURL),
+    photoURL: safeImageSource(profile.photoURL),
     status: 'active',
     country: safeString(profile.country),
     totalApprovedMinutes: safeNonNegativeNumber(profile.totalApprovedMinutes),
@@ -207,7 +223,7 @@ export function publicProfileAsTeacher(id: string, profile: PublicTeacherProfile
       title: safeString(certificate.title),
       description: safeString(certificate.description),
       score: safeString(certificate.score),
-      fileURL: safeUrl(certificate.fileURL),
+      fileURL: safeImageSource(certificate.fileURL),
       status: 'approved',
       voided: false,
     })),

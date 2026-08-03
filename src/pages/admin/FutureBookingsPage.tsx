@@ -368,14 +368,14 @@ export function FutureBookingsPage() {
             <div className="lg:col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
                 <Search className="w-3.5 h-3.5 text-slate-400" />
-                Tìm kiếm thông tin học viên / giáo viên
+                Tìm kiếm thông tin học viên / gia sư
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Nhập tên/mã học viên, giáo viên hoặc môn học..."
+                  placeholder="Nhập tên/mã học viên, gia sư hoặc môn học..."
                   className="h-10 w-full pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-sm"
                 />
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -550,7 +550,7 @@ export function FutureBookingsPage() {
                   <th className="p-3.5">Học viên</th>
                   <th className="p-3.5">Thời gian</th>
                   <th className="p-3.5">Môn học</th>
-                  <th className="p-3.5">Giáo viên</th>
+                  <th className="p-3.5">Gia sư</th>
                   <th className="p-3.5 text-center">Hành động</th>
                 </tr>
               </thead>
@@ -597,7 +597,7 @@ export function FutureBookingsPage() {
                           <Link
                             to={`/admin/booking-schedules?teacherId=${booking.teacherId}`}
                             className="text-indigo-600 hover:text-indigo-800 hover:underline"
-                            title="Mở lịch xếp lớp của giáo viên này"
+                            title="Mở lịch xếp lớp của gia sư này"
                           >
                             {teacherNicks[booking.teacherId] || booking.teacherName}
                           </Link>
@@ -635,7 +635,7 @@ export function FutureBookingsPage() {
             ? `Hủy ca học ngày ${confirmTargets[0].requestedDate} lúc ${confirmTargets[0].requestedStart} của học viên ${confirmTargets[0].studentName || ''}?`
             : `Bạn có chắc chắn muốn hủy ${confirmTargets?.length ?? 0} ca học đã chọn và hoàn lại kim cương đang giữ cho các học viên tương ứng?`
         }
-        consequence="Các ca học sẽ được giải phóng khỏi lịch giáo viên và kim cương giữ chỗ được hoàn lại cho học viên."
+        consequence="Các ca học sẽ được giải phóng khỏi lịch gia sư và kim cương giữ chỗ được hoàn lại cho học viên."
         confirmLabel="Hủy ca học"
         confirmVariant="danger"
         loading={cancelling}

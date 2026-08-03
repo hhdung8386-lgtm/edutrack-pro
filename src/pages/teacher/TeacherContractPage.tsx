@@ -574,7 +574,7 @@ export function TeacherContractPage() {
       const userAgent = navigator.userAgent;
 
       // Fetch teacher name for admin display
-      let teacherName = 'Giáo viên'
+      let teacherName = 'Gia sư'
       try {
         const tSnap = await getDoc(doc(db, 'teachers', teacherId!))
         if (tSnap.exists()) teacherName = tSnap.data().name || teacherName

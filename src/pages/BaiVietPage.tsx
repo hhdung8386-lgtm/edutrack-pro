@@ -21,7 +21,7 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
     excerpt:
       'Những hình ảnh tại chương trình vinh danh năm 2026 ghi lại một cột mốc đáng nhớ trên hành trình phát triển của 123English.',
     body:
-      'Mỗi sự ghi nhận là một dịp để 123English nhìn lại chặng đường đã đi qua và tiếp tục hoàn thiện trải nghiệm học tập.\n\nVới 123English, thành tựu không chỉ nằm ở hình ảnh trên sân khấu. Thành tựu còn là khi một học viên dám nói câu tiếng Anh đầu tiên, tự tin giao tiếp hơn, vượt qua nỗi sợ mắc lỗi và mở ra một cơ hội mới cho bản thân.\n\nCột mốc năm 2026 tiếp thêm động lực để đội ngũ tiếp tục đầu tư vào phương pháp giảng dạy, chất lượng giáo viên, công nghệ theo dõi tiến độ và sự đồng hành cùng từng gia đình.',
+      'Mỗi sự ghi nhận là một dịp để 123English nhìn lại chặng đường đã đi qua và tiếp tục hoàn thiện trải nghiệm học tập.\n\nVới 123English, thành tựu không chỉ nằm ở hình ảnh trên sân khấu. Thành tựu còn là khi một học viên dám nói câu tiếng Anh đầu tiên, tự tin giao tiếp hơn, vượt qua nỗi sợ mắc lỗi và mở ra một cơ hội mới cho bản thân.\n\nCột mốc năm 2026 tiếp thêm động lực để đội ngũ tiếp tục đầu tư vào phương pháp giảng dạy, chất lượng gia sư, công nghệ theo dõi tiến độ và sự đồng hành cùng từng gia đình.',
     coverImage: '/brand-national-award-2026.jpg',
     category: 'Dấu ấn 2026',
     author: '123English',
@@ -33,9 +33,9 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
     slug: '2026-ket-noi-voi-thi-truong-quoc-te',
     title: '2026 | Kết nối với thị trường quốc tế',
     excerpt:
-      '123English bước vào giai đoạn phát triển mới, kết nối người học với giáo viên, kiến thức và cơ hội.',
+      '123English bước vào giai đoạn phát triển mới, kết nối người học với gia sư, kiến thức và cơ hội.',
     body:
-      '123English bắt đầu bước vào một giai đoạn phát triển mới.\n\nKhông chỉ xây dựng hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.\n\nKết nối người học với giáo viên.\nKết nối kiến thức với cơ hội.\nKết nối những con người khác nhau bằng một ngôn ngữ chung.\n\nHành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Hành trình ấy thực sự bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
+      '123English bắt đầu bước vào một giai đoạn phát triển mới.\n\nKhông chỉ xây dựng hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.\n\nKết nối người học với gia sư.\nKết nối kiến thức với cơ hội.\nKết nối những con người khác nhau bằng một ngôn ngữ chung.\n\nHành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Hành trình ấy thực sự bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
     coverImage: '/brand-award-recipient-2026.jpg',
     category: 'Hành trình phát triển',
     author: '123English',
@@ -77,7 +77,7 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
     excerpt:
       'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện.',
     body:
-      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.\n\nChương trình học, đội ngũ giáo viên, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.\n\nĐây là giai đoạn 123English chuyển mình: từ một chương trình học trở thành một hệ thống giáo dục.',
+      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.\n\nChương trình học, đội ngũ gia sư, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.\n\nĐây là giai đoạn 123English chuyển mình: từ một chương trình học trở thành một hệ thống giáo dục.',
     coverImage: '/home-international-team-2026.png',
     category: 'Hành trình phát triển',
     author: '123English',

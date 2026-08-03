@@ -350,7 +350,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <span className="text-slate-700 font-semibold">{lesson.studentName} ({lesson.studentCode})</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Giáo viên</span>
+          <span className="text-slate-500">Gia sư</span>
           <span className="text-slate-700">{lesson.teacherName}</span>
         </div>
         <div className="flex justify-between">
@@ -415,7 +415,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Lương giáo viên (tính theo môn chọn)</span>
+                <span className="text-slate-500">Lương gia sư (tính theo môn chọn)</span>
                 <span className="text-emerald-500 font-semibold">
                   + {formatMoney(calculateSalary(lesson.minutes, chosen.pricePerMinute || 0, lesson.teacherLevel ?? 1, chosen.currency || 'VND'), chosen.currency || 'VND')}
                 </span>

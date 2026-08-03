@@ -1,6 +1,6 @@
 import { Teacher } from '@/types'
 
-// Các trường hồ sơ BẮT BUỘC giáo viên phải tự hoàn thiện sau khi đăng nhập
+// Các trường hồ sơ BẮT BUỘC gia sư phải tự hoàn thiện sau khi đăng nhập
 // (không gồm hệ lương: level / đơn giá / teacherGrade — do admin quản lý).
 export const REQUIRED_TEACHER_FIELDS: { key: keyof Teacher; label: string; labelEn: string }[] = [
   { key: 'photoURL', label: 'Ảnh đại diện', labelEn: 'Profile photo' },

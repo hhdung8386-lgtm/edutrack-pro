@@ -252,7 +252,7 @@ export function NotificationsPage() {
             </div>
             <div>
               <h1 className="text-2xl font-black">Thông báo hệ thống</h1>
-              <p className="mt-1 text-sm text-indigo-100">Gửi thông báo, nhắc lịch dạy học đến giáo viên, học viên hoặc quản lý.</p>
+              <p className="mt-1 text-sm text-indigo-100">Gửi thông báo, nhắc lịch dạy học đến gia sư, học viên hoặc quản lý.</p>
             </div>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -306,7 +306,7 @@ export function NotificationsPage() {
                       <h3 className="font-bold text-slate-900 text-sm">{notify.title}</h3>
                       <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${colorConfig.bg}`}>
                         {notify.targetType === 'teachers'
-                          ? 'Khối Giáo viên'
+                          ? 'Khối Gia sư'
                           : notify.targetType === 'students'
                           ? 'Khối Học viên'
                           : 'Khối Quản lý'}
@@ -449,7 +449,7 @@ export function NotificationsPage() {
                   onChange={(e) => setTargetType(e.target.value as any)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
                 >
-                  <option value="teachers">Khối Giáo viên (Teachers)</option>
+                  <option value="teachers">Khối Gia sư (Teachers)</option>
                   <option value="students">Khối Học viên (Students/Parents)</option>
                   <option value="managers">Khối Quản lý (Managers/Staff)</option>
                 </select>

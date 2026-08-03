@@ -1,4 +1,4 @@
-// Avatar giáo viên kèm huy hiệu quốc kỳ tròn (giống app học tiếng Anh 1-1).
+// Avatar gia sư kèm huy hiệu quốc kỳ tròn (giống app học tiếng Anh 1-1).
 // GV chưa có ảnh sẽ fallback chữ cái đầu trên nền gradient.
 
 import auFlagUrl from 'flag-icons/flags/4x3/au.svg'

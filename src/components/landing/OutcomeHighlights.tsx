@@ -47,7 +47,7 @@ const RESULT_HIGHLIGHTS = [
 const TESTIMONIALS = [
   {
     quote:
-      'Con chủ động nói tiếng Anh hơn và tự theo dõi được tiến độ mỗi tuần. Giáo viên sửa rất sát từng lỗi nhỏ nên gia đình thấy thay đổi rõ ràng.',
+      'Con chủ động nói tiếng Anh hơn và tự theo dõi được tiến độ mỗi tuần. Gia sư sửa rất sát từng lỗi nhỏ nên gia đình thấy thay đổi rõ ràng.',
     name: 'Nguyễn Minh Anh',
     role: 'Phụ huynh học viên lớp 8',
     result: 'Con tăng từ 5.5 lên 7.0 IELTS',
@@ -96,14 +96,14 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      'Báo cáo sau buổi học rất cụ thể nên gia đình biết con đang mạnh ở đâu và cần hỗ trợ phần nào. Việc chọn giáo viên cũng thuận tiện.',
+      'Báo cáo sau buổi học rất cụ thể nên gia đình biết con đang mạnh ở đâu và cần hỗ trợ phần nào. Việc chọn gia sư cũng thuận tiện.',
     name: 'Trương Ngọc Mai',
     role: 'Phụ huynh học viên lớp 6',
     result: 'Duy trì 42 buổi học liên tục',
   },
   {
     quote:
-      'Em thích cách giáo viên sửa phát âm ngay trong hội thoại. Sau mỗi tuần em nghe lại bản ghi và thấy phản xạ tự nhiên hơn trước.',
+      'Em thích cách gia sư sửa phát âm ngay trong hội thoại. Sau mỗi tuần em nghe lại bản ghi và thấy phản xạ tự nhiên hơn trước.',
     name: 'Lê Đức Minh',
     role: 'Sinh viên năm hai tại TP.HCM',
     result: 'Đạt mục tiêu speaking 7.0',

@@ -211,7 +211,7 @@ export function TeacherAvailabilityPage() {
         setAllAvailabilities(avMap)
       } catch (error) {
         console.error('Error loading teachers/availability:', error)
-        toast.error('Không tải được danh sách giáo viên')
+        toast.error('Không tải được danh sách gia sư')
       } finally {
         setLoading(false)
       }
@@ -266,7 +266,7 @@ export function TeacherAvailabilityPage() {
     loadAvailability().catch((error) => {
       if (!active) return
       console.error('Error loading teacher availability:', error)
-      toast.error('Không tải được lịch rảnh giáo viên')
+      toast.error('Không tải được lịch rảnh gia sư')
     })
 
     return () => {
@@ -461,8 +461,8 @@ export function TeacherAvailabilityPage() {
               <CalendarClock className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-black">Quản lý lịch rảnh giáo viên</h1>
-              <p className="mt-1 text-sm text-white/85">Admin chọn giáo viên, cấu hình lịch mở (OPEN) và xem lịch học viên đã đặt (RESERVED) trực quan theo bảng.</p>
+              <h1 className="text-2xl font-black">Quản lý lịch rảnh gia sư</h1>
+              <p className="mt-1 text-sm text-white/85">Admin chọn gia sư, cấu hình lịch mở (OPEN) và xem lịch học viên đã đặt (RESERVED) trực quan theo bảng.</p>
             </div>
           </div>
           {selectedTeacher && (
@@ -480,7 +480,7 @@ export function TeacherAvailabilityPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm giáo viên..."
+              placeholder="Tìm gia sư..."
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm font-semibold outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
           </label>
@@ -733,7 +733,7 @@ export function TeacherAvailabilityPage() {
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={3}
-              placeholder="VD: Tuần này giáo viên nghỉ sáng thứ 4, ưu tiên lớp tối..."
+              placeholder="VD: Tuần này gia sư nghỉ sáng thứ 4, ưu tiên lớp tối..."
               className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
           </div>

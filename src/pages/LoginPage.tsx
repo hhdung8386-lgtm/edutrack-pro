@@ -231,7 +231,7 @@ export function LoginPage() {
         <section className="home-banner-hero">
           <img
             src="/home-hero-banner-123english.png"
-            alt="Giáo viên 123English giảng dạy trực tuyến cùng mascot"
+            alt="Gia sư 123English giảng dạy trực tuyến cùng mascot"
             className="home-banner-hero-image"
             fetchPriority="high"
           />

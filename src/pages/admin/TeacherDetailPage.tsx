@@ -1030,7 +1030,7 @@ export function TeacherDetailPage() {
     } catch (error) {
       profileWindow?.close()
       console.error('Publish teacher profile failed:', error)
-      toast.error('Không thể tạo link hồ sơ. Dữ liệu giáo viên không bị thay đổi.')
+      toast.error('Không thể tạo link hồ sơ. Dữ liệu gia sư không bị thay đổi.')
     } finally {
       setPublishingProfile(false)
     }
@@ -1285,7 +1285,7 @@ export function TeacherDetailPage() {
                   variant="outline"
                   loading={restoringLogin}
                   onClick={handleRestoreLoginRole}
-                  title="Sửa lỗi giáo viên đăng nhập bị 403 do tài khoản bị khóa quyền sau khi đổi nickname"
+                  title="Sửa lỗi gia sư đăng nhập bị 403 do tài khoản bị khóa quyền sau khi đổi nickname"
                   className="border-amber-300 text-amber-700 hover:bg-amber-50"
                 >
                   Khôi phục đăng nhập
@@ -1609,7 +1609,7 @@ export function TeacherDetailPage() {
                   const unpaidMin = unpaidLessons.reduce((sum, l) => sum + l.minutes, 0)
                   const unpaidSalary = unpaidLessons.reduce((sum, l) => sum + (l.salary || 0), 0)
                   // Mỗi học viên có thể học môn tính giá theo quốc gia khác nhau (VD môn
-                  // "Giáo Viên Philippines" trả bằng PHP). Phải lấy tiền tệ theo chính buổi
+                  // "Gia Sư Philippines" trả bằng PHP). Phải lấy tiền tệ theo chính buổi
                   // dạy của học viên đó, KHÔNG dùng chung tiền tệ của tháng đang lọc — nếu
                   // không, lương PHP/USD sẽ bị hiển thị nhầm ký hiệu "đ".
                   const unpaidLabel = formatMoneyTotals(

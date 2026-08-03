@@ -546,7 +546,7 @@ export function ApprovalsPage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Tìm học viên / giáo viên..."
+              placeholder="Tìm học viên / gia sư..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors"
@@ -591,7 +591,7 @@ export function ApprovalsPage() {
                       <p className="text-xs text-indigo-400 font-mono">{lesson.studentCode}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-500 mb-0.5">Giáo viên</p>
+                      <p className="text-xs text-slate-500 mb-0.5">Gia sư</p>
                       <p className="text-slate-700">{lesson.teacherName}</p>
                     </div>
                     <div>
@@ -750,7 +750,7 @@ export function ApprovalsPage() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Lương giáo viên (tính theo môn chọn)</span>
+                    <span className="text-slate-500">Lương gia sư (tính theo môn chọn)</span>
                     <span className="text-emerald-500 font-semibold">
                       +{formatMoney(
                         calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1, chosen.currency || 'VND'),

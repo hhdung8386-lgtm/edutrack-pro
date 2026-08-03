@@ -1,13 +1,16 @@
+import { useState } from 'react'
 import {
   BookOpen,
   BriefcaseBusiness,
   CheckCircle2,
+  Eye,
   ExternalLink,
   Globe2,
   GraduationCap,
 } from 'lucide-react'
 import { Subject, Teacher } from '@/types'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
+import { ImageLightbox } from '@/components/shared/ImageLightbox'
 
 const COUNTRY_LABELS: Record<string, string> = {
   VN: 'Việt Nam', PH: 'Philippines', US: 'Hoa Kỳ', GB: 'Anh', AU: 'Úc',
@@ -46,6 +49,7 @@ interface TeacherProfileDetailsProps {
 }
 
 export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes, publicView = false }: TeacherProfileDetailsProps) {
+  const [certificateImage, setCertificateImage] = useState<{ src: string; alt: string } | null>(null)
   const nickname = teacher.code || teacher.releasedNickname || 'Chưa cấp nickname'
   const subjectLabels = teacherSubjectLabels(teacher, subjects)
   const approvedMinutes = Math.max(0, Number(totalApprovedMinutes ?? teacher.totalApprovedMinutes) || 0)
@@ -89,10 +93,12 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
                 <Globe2 className="h-4 w-4 text-indigo-500" />
                 {countryLabel(teacher.country)}
               </div>
-              <div className="flex items-center gap-1.5 text-sm font-bold text-violet-700">
-                <BriefcaseBusiness className="h-4 w-4" />
-                {approvedMinutes.toLocaleString('vi-VN')} phút đã dạy
-              </div>
+              {!publicView && (
+                <div className="flex items-center gap-1.5 text-sm font-bold text-violet-700">
+                  <BriefcaseBusiness className="h-4 w-4" />
+                  {approvedMinutes.toLocaleString('vi-VN')} phút đã dạy
+                </div>
+              )}
             </div>
             {teacher.bio && <p className="mt-3 text-sm italic leading-6 text-slate-600">“{teacher.bio}”</p>}
           </div>
@@ -143,16 +149,6 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {certificates.map((certificate, index) => (
               <article key={`${certificate.category}-${certificate.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                {publicView && certificate.fileURL && (
-                  <a href={certificate.fileURL} target="_blank" rel="noreferrer" className="mb-3 block overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
-                    <img
-                      src={certificate.fileURL}
-                      alt={`Chứng chỉ ${certificate.title || 'của gia sư'}`}
-                      className="h-44 w-full object-contain"
-                      loading="lazy"
-                    />
-                  </a>
-                )}
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-bold uppercase text-indigo-600">
@@ -166,11 +162,22 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-2 text-xs">
                   <span className="font-semibold text-slate-600">Điểm số: <strong className="text-slate-800">{certificate.score || '—'}</strong></span>
-                  {certificate.fileURL && (
+                  {certificate.fileURL && (publicView ? (
+                    <button
+                      type="button"
+                      onClick={() => setCertificateImage({
+                        src: certificate.fileURL || '',
+                        alt: `Chứng chỉ ${certificate.title || 'của gia sư'}`,
+                      })}
+                      className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline"
+                    >
+                      Xem ảnh <Eye className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
                     <a href={certificate.fileURL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline">
                       Xem ảnh <ExternalLink className="h-3.5 w-3.5" />
                     </a>
-                  )}
+                  ))}
                 </div>
               </article>
             ))}
@@ -213,6 +220,13 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
         )}
         {teacher.otherStrengths && <div className="mt-3"><DetailItem label="Ưu điểm khác" value={teacher.otherStrengths} /></div>}
       </section>
+      {certificateImage && (
+        <ImageLightbox
+          src={certificateImage.src}
+          alt={certificateImage.alt}
+          onClose={() => setCertificateImage(null)}
+        />
+      )}
     </div>
   )
 }

@@ -40,7 +40,7 @@ export function ResetPasswordPage() {
     setResetting(true)
     try {
       await resetTeacherPassword(resetTeacher.id)
-      toast.success(`✅ Đã reset password cho giáo viên ${resetTeacher.name}`)
+      toast.success(`✅ Đã reset password cho gia sư ${resetTeacher.name}`)
       setResetTeacher(null)
     } catch (err: any) {
       toast.error('Lỗi: ' + err.message)
@@ -68,9 +68,9 @@ export function ResetPasswordPage() {
     }
 
     setResettingAll(false)
-    toast.success(`✅ Đã reset password cho ${successCount}/${teachers.length} giáo viên`)
+    toast.success(`✅ Đã reset password cho ${successCount}/${teachers.length} gia sư`)
     if (errorCount > 0) {
-      toast.error(`⚠️ ${errorCount} giáo viên thất bại`)
+      toast.error(`⚠️ ${errorCount} gia sư thất bại`)
     }
     setResetAll(false)
   }
@@ -79,8 +79,8 @@ export function ResetPasswordPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Reset Mật khẩu Giáo viên</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Thiết lập lại mật khẩu thành 1234560 cho tất cả giáo viên</p>
+          <h1 className="text-2xl font-bold text-slate-900">Reset Mật khẩu Gia sư</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Thiết lập lại mật khẩu thành 1234560 cho tất cả gia sư</p>
         </div>
         <Button
           onClick={() => setResetAll(true)}
@@ -96,12 +96,12 @@ export function ResetPasswordPage() {
         <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
           <p className="font-semibold mb-1">ℹ️ Mục đích của trang này:</p>
-          <p>Giáo viên được tạo trước đó có thể chưa được set password = 1234560. Trang này sẽ thiết lập lại mật khẩu cho tất cả giáo viên thành <strong>1234560</strong> để họ có thể đăng nhập.</p>
+          <p>Gia sư được tạo trước đó có thể chưa được set password = 1234560. Trang này sẽ thiết lập lại mật khẩu cho tất cả gia sư thành <strong>1234560</strong> để họ có thể đăng nhập.</p>
         </div>
       </div>
 
       <Input
-        placeholder="Tìm theo tên hoặc mã giáo viên..."
+        placeholder="Tìm theo tên hoặc mã gia sư..."
         leftIcon={<Search className="w-4 h-4" />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -113,7 +113,7 @@ export function ResetPasswordPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<GraduationCap className="w-8 h-8" />}
-          title="Không tìm thấy giáo viên"
+          title="Không tìm thấy gia sư"
         />
       ) : (
         <Card padding="none" className="hidden md:block">
@@ -121,7 +121,7 @@ export function ResetPasswordPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200">
                 <tr>
-                  {['Mã', 'Tên giáo viên', 'Môn dạy', 'Level', 'Hành động'].map((h) => (
+                  {['Mã', 'Tên gia sư', 'Môn dạy', 'Level', 'Hành động'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -175,7 +175,7 @@ export function ResetPasswordPage() {
         onClose={() => setResetTeacher(null)}
         onConfirm={handleReset}
         title="Reset mật khẩu"
-        description={`Thiết lập lại mật khẩu cho giáo viên ${resetTeacher?.name}?`}
+        description={`Thiết lập lại mật khẩu cho gia sư ${resetTeacher?.name}?`}
         consequence={`Mật khẩu sẽ được thiết lập thành: 1234560`}
         confirmLabel="Reset"
         confirmVariant="primary"
@@ -187,9 +187,9 @@ export function ResetPasswordPage() {
         open={resetAll}
         onClose={() => setResetAll(false)}
         onConfirm={handleResetAll}
-        title="Reset mật khẩu tất cả giáo viên"
-        description={`Thiết lập lại mật khẩu cho tất cả ${teachers.length} giáo viên?`}
-        consequence={`Tất cả giáo viên sẽ có mật khẩu: 1234560. Hành động này sẽ mất một chút thời gian...`}
+        title="Reset mật khẩu tất cả gia sư"
+        description={`Thiết lập lại mật khẩu cho tất cả ${teachers.length} gia sư?`}
+        consequence={`Tất cả gia sư sẽ có mật khẩu: 1234560. Hành động này sẽ mất một chút thời gian...`}
         confirmLabel="Reset Tất cả"
         confirmVariant="primary"
         loading={resettingAll}

@@ -33,7 +33,7 @@ const ECOSYSTEM_ITEMS = [
     Icon: GraduationCap,
     eyebrow: '123 TEACHERS',
     title: 'Đội ngũ tinh tuyển',
-    copy: 'Giáo viên đạt chuẩn, trải qua 60+ giờ đào tạo nội bộ và có trình độ từ B2+.',
+    copy: 'Gia sư đạt chuẩn, trải qua 60+ giờ đào tạo nội bộ và có trình độ từ B2+.',
     tone: 'mint',
   },
   {
@@ -163,7 +163,7 @@ const BRAND_TIMELINE = [
   {
     year: '2023',
     title: 'Kiến tạo hệ sinh thái',
-    copy: 'Chương trình, giáo viên, quy trình đào tạo và công nghệ được kết nối trong một hệ thống thống nhất.',
+    copy: 'Chương trình, gia sư, quy trình đào tạo và công nghệ được kết nối trong một hệ thống thống nhất.',
   },
   {
     year: '2024',
@@ -178,7 +178,7 @@ const BRAND_TIMELINE = [
   {
     year: '2026',
     title: 'Kết nối quốc tế',
-    copy: 'Cộng đồng học viên được kết nối với giáo viên, kiến thức và cơ hội tại hơn 10 quốc gia.',
+    copy: 'Cộng đồng học viên được kết nối với gia sư, kiến thức và cơ hội tại hơn 10 quốc gia.',
   },
 ] as const
 
@@ -188,14 +188,14 @@ const AUDIENCE_SEGMENTS = [
     title: 'Trẻ em',
     copy: 'Xây dựng môi trường 100% tiếng Anh từ sớm, giúp trẻ hình thành tư duy và phản xạ ngôn ngữ một cách tự nhiên.',
     image: '/audience-children-english-2026.jpg',
-    imageAlt: 'Trẻ em học tiếng Anh tương tác cùng giáo viên',
+    imageAlt: 'Trẻ em học tiếng Anh tương tác cùng gia sư',
   },
   {
     Icon: GraduationCap,
     title: 'Thanh thiếu niên',
     copy: 'Lộ trình từ củng cố nền tảng đến luyện thi IELTS, TOEIC, Cambridge và các kỳ thi học thuật.',
     image: '/audience-teen-english-2026.jpg',
-    imageAlt: 'Thanh thiếu niên ôn luyện tiếng Anh học thuật cùng giáo viên',
+    imageAlt: 'Thanh thiếu niên ôn luyện tiếng Anh học thuật cùng gia sư',
   },
   {
     Icon: BriefcaseBusiness,
@@ -475,7 +475,7 @@ export function NationalBrandStory() {
                 </span>
                 <h2>Một hệ sinh thái học tập.</h2>
                 <p>
-                  Kết nối phương pháp, lộ trình, giáo viên và công nghệ trong một trải nghiệm thống nhất.
+                  Kết nối phương pháp, lộ trình, gia sư và công nghệ trong một trải nghiệm thống nhất.
                 </p>
               </div>
 

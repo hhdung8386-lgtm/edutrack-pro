@@ -610,7 +610,7 @@ export function AttendancePage() {
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         </div>
                       )}
-                      {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, giáo viên vẫn tự gỡ để gửi điểm danh */}
+                      {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, gia sư vẫn tự gỡ để gửi điểm danh */}
                       <button type="button" onClick={() => removeImage(i)}
                         className="absolute top-0.5 right-0.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center"
                         aria-label={`Remove image ${i + 1}`}>

@@ -65,7 +65,7 @@ const DEFAULT_GOALS = {
   
   kids_a: `Sau khi hoàn thành lộ trình được đề xuất, học viên có thể:
 - Làm quen và sử dụng thành thạo từ vựng, mẫu câu giao tiếp đơn giản theo chủ đề.
-- Tự tin tương tác phản xạ Nghe - Nói tự nhiên với giáo viên nước ngoài/Việt Nam.
+- Tự tin tương tác phản xạ Nghe - Nói tự nhiên với gia sư nước ngoài/Việt Nam.
 - Cải thiện kỹ năng đọc hiểu truyện ngắn và viết câu tiếng Anh cơ bản.
 - Phát triển niềm yêu thích ngôn ngữ và xây dựng nền tảng ngữ âm vững chắc.`,
   
@@ -262,9 +262,9 @@ export default function TeacherEvaluationsPage() {
       toast.error(`Vui lòng chọn cấp độ bắt đầu cho ${courseMissingStartLevel.label}`)
       return
     }
-    // Ảnh buổi học là bắt buộc: phải có mặt cả giáo viên và học sinh.
+    // Ảnh buổi học là bắt buộc: phải có mặt cả gia sư và học sinh.
     if (!imageUrl) {
-      toast.error('Vui lòng tải lên ảnh buổi học có mặt giáo viên và học sinh')
+      toast.error('Vui lòng tải lên ảnh buổi học có mặt gia sư và học sinh')
       return
     }
 
@@ -313,7 +313,7 @@ export default function TeacherEvaluationsPage() {
       } else {
         // Find teacher display name
         const teacherSnap = await getDoc(doc(db, 'teachers', teacherId!))
-        const teacherName = teacherSnap.exists() ? (teacherSnap.data()?.name || 'Giáo viên') : 'Giáo viên'
+        const teacherName = teacherSnap.exists() ? (teacherSnap.data()?.name || 'Gia sư') : 'Gia sư'
         
         await addDoc(collection(db, 'evaluations'), {
           ...payload,
@@ -828,7 +828,7 @@ export default function TeacherEvaluationsPage() {
                     Ảnh buổi học <span className="text-rose-500">*</span>
                   </label>
                   <p className="text-[11px] font-medium leading-5 text-slate-500">
-                    Bắt buộc tải lên ảnh chụp buổi học có mặt cả <strong className="font-bold text-slate-700">giáo viên và học sinh</strong>.
+                    Bắt buộc tải lên ảnh chụp buổi học có mặt cả <strong className="font-bold text-slate-700">gia sư và học sinh</strong>.
                     Ảnh này được gửi kèm phiếu đánh giá cho phụ huynh.
                   </p>
                   <div

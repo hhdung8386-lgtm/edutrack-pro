@@ -69,7 +69,7 @@ const DEFAULT_GOALS = {
   
   kids_a: `Sau khi hoàn thành lộ trình được đề xuất, học viên có thể:
 - Làm quen và sử dụng thành thạo từ vựng, mẫu câu giao tiếp đơn giản theo chủ đề.
-- Tự tin tương tác phản xạ Nghe - Nói tự nhiên với giáo viên nước ngoài/Việt Nam.
+- Tự tin tương tác phản xạ Nghe - Nói tự nhiên với gia sư nước ngoài/Việt Nam.
 - Cải thiện kỹ năng đọc hiểu truyện ngắn và viết câu tiếng Anh cơ bản.
 - Phát triển niềm yêu thích ngôn ngữ và xây dựng nền tảng ngữ âm vững chắc.`,
   
@@ -459,7 +459,7 @@ export default function AdminEvaluationsPage() {
       {/* Filter Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         <Input
-          placeholder="Tìm theo tên học sinh hoặc giáo viên..."
+          placeholder="Tìm theo tên học sinh hoặc gia sư..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e: any) => setSearch(e.target.value)}
@@ -529,7 +529,7 @@ export default function AdminEvaluationsPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-y-2 text-xs border-t border-slate-100 pt-4">
-                  <span className="text-slate-400">Giáo viên đánh giá:</span>
+                  <span className="text-slate-400">Gia sư đánh giá:</span>
                   <span className="font-bold text-slate-700 text-right">{item.teacherName || 'Chưa rõ'}</span>
                   
                   <span className="text-slate-400">Kết quả đề xuất:</span>
@@ -657,9 +657,9 @@ export default function AdminEvaluationsPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-600">Tên giáo viên phụ trách</label>
+                    <label className="text-xs font-bold text-slate-600">Tên gia sư phụ trách</label>
                     <Input 
-                      placeholder="Họ tên giáo viên..." 
+                      placeholder="Họ tên gia sư..."
                       value={teacherName}
                       onChange={(e: any) => setTeacherName(e.target.value)}
                     />
@@ -973,7 +973,7 @@ export default function AdminEvaluationsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-600">Ảnh kỷ niệm buổi học thử (Giáo viên & Học sinh)</label>
+                  <label className="text-xs font-bold text-slate-600">Ảnh kỷ niệm buổi học thử (Gia sư & Học sinh)</label>
                   <div className="flex flex-col sm:flex-row gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-slate-150">
                     <input 
                       type="file" 

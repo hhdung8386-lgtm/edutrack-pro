@@ -376,14 +376,14 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
       <form id="subject-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-6">
         <Input label="Tên môn học *" placeholder="Tiếng Anh" error={errors.name?.message} {...register('name')} />
         
-        {/* Giá giáo viên theo quốc gia & tiền tệ */}
+        {/* Giá gia sư theo quốc gia & tiền tệ */}
         <div className="border border-slate-200 rounded-2xl p-5 space-y-4 bg-slate-50/50">
           <div className="flex items-start gap-2">
             <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
               <Globe className="w-4 h-4" />
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-800">Giá giáo viên theo quốc gia & tiền tệ</p>
+              <p className="text-sm font-bold text-slate-800">Giá gia sư theo quốc gia & tiền tệ</p>
               <p className="text-xs text-slate-500 mt-0.5">Mỗi quốc gia sẽ có tiền tệ và đơn giá riêng.</p>
             </div>
           </div>
@@ -539,7 +539,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
             <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
             <div className="text-[11px] text-blue-800 leading-relaxed font-medium">
               <p className="font-bold">Giá được tính theo đơn vị tiền tệ của từng quốc gia.</p>
-              <p className="mt-0.5 text-blue-600/90">Ví dụ: Giáo viên Philippines: ₱6/phút, Giáo viên Mỹ: $0.12/phút,...</p>
+              <p className="mt-0.5 text-blue-600/90">Ví dụ: Gia sư Philippines: ₱6/phút, Gia sư Mỹ: $0.12/phút,...</p>
             </div>
           </div>
         </div>

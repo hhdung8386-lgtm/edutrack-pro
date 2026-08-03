@@ -158,7 +158,7 @@ export function PayrollPage() {
         await flushIfFull()
       }
       if (ops > 0) await batch.commit()
-      toast.success(`Đã đánh dấu thanh toán cho ${selected.size} giáo viên`)
+      toast.success(`Đã đánh dấu thanh toán cho ${selected.size} gia sư`)
       setSelected(new Set())
     } catch {
       toast.error('Có lỗi xảy ra')
@@ -350,7 +350,7 @@ export function PayrollPage() {
 
   const exportCSV = () => {
     const rows = [
-      ['Giáo viên', 'Level', 'Môn', 'Phút', 'Giá/phút', 'Lương'],
+      ['Gia sư', 'Level', 'Môn', 'Phút', 'Giá/phút', 'Lương'],
       ...payrolls.map((p) => {
         const t = teachers.find((t) => t.id === p.teacherId)
         return [t?.name, p.level, '', p.minutes, p.pricePerMinute, p.amount]
@@ -369,7 +369,7 @@ export function PayrollPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Lương giáo viên</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Lương gia sư</h1>
         </div>
         <div className="flex gap-2">
           {selected.size > 0 && (
@@ -404,7 +404,7 @@ export function PayrollPage() {
         
         <div className="w-full sm:w-auto">
           <Input
-            placeholder="Tìm giáo viên..."
+            placeholder="Tìm gia sư..."
             leftIcon={<Search className="w-4 h-4" />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -417,9 +417,9 @@ export function PayrollPage() {
       <Card className="border-emerald-500/20 bg-emerald-500/5">
         <p className="text-sm text-slate-500">Tổng lương phải trả {monthLabel}</p>
         <p className="text-4xl font-bold text-emerald-400 mt-1">{formatTotals()}</p>
-        <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} giáo viên · {payrolls.length} buổi dạy</p>
+        <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} gia sư · {payrolls.length} buổi dạy</p>
         <p className="text-[11px] text-slate-400 italic mt-2">
-          * Lưu ý: Lương hiển thị của từng giáo viên có thu nhập trên 5.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
+          * Lưu ý: Lương hiển thị của từng gia sư có thu nhập trên 5.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
         </p>
       </Card>
 
@@ -449,18 +449,18 @@ export function PayrollPage() {
           <label className={`flex items-center gap-2.5 text-sm font-medium select-none ${unpaidTeacherIds.length === 0 ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'}`}>
             <input
               type="checkbox"
-              aria-label="Chọn tất cả giáo viên chưa trả lương"
+              aria-label="Chọn tất cả gia sư chưa trả lương"
               checked={allUnpaidSelected}
               disabled={unpaidTeacherIds.length === 0}
               ref={(el) => { if (el) el.indeterminate = !allUnpaidSelected && selected.size > 0 }}
               onChange={toggleSelectAll}
               className="w-4 h-4 accent-indigo-500"
             />
-            Chọn tất cả chưa trả ({unpaidTeacherIds.length} giáo viên)
+            Chọn tất cả chưa trả ({unpaidTeacherIds.length} gia sư)
           </label>
           {selected.size > 0 && (
             <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1">
-              Đã chọn {selected.size} giáo viên — bấm "Đánh dấu đã trả" để thanh toán 1 lần
+              Đã chọn {selected.size} gia sư — bấm "Đánh dấu đã trả" để thanh toán 1 lần
             </span>
           )}
         </div>
@@ -476,7 +476,7 @@ export function PayrollPage() {
             >
               <input
                 type="checkbox"
-                aria-label={`Chọn giáo viên ${teacher.name}`}
+                aria-label={`Chọn gia sư ${teacher.name}`}
                 checked={selected.has(teacher.id)}
                 onChange={(e) => {
                   e.stopPropagation()
@@ -699,7 +699,7 @@ export function PayrollPage() {
   )
 }
 
-// Thanh thêm Thưởng / Khấu trừ cho một giáo viên trong tháng đang xem.
+// Thanh thêm Thưởng / Khấu trừ cho một gia sư trong tháng đang xem.
 // Tạo doc payroll type='adjustment' (lessonId rỗng, minutes 0) — tự cộng vào tổng lương,
 // đi theo luồng "Đánh dấu đã trả" và xuất CSV sẵn có.
 function AdjustmentBar({ teacherId, teacherName, teacherLevel, month, currency, adminUid }: {
@@ -777,7 +777,7 @@ function AdjustmentBar({ teacherId, teacherName, teacherLevel, month, currency, 
     <div className={`px-5 py-3.5 border-t space-y-2.5 ${mode === 'bonus' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-rose-50/50 border-rose-100'}`}>
       <p className={`text-xs font-bold flex items-center gap-1.5 ${mode === 'bonus' ? 'text-emerald-700' : 'text-rose-600'}`}>
         {mode === 'bonus' ? <Gift className="w-4 h-4" /> : <MinusCircle className="w-4 h-4" />}
-        {mode === 'bonus' ? 'Thêm thưởng cho giáo viên' : 'Thêm khấu trừ lương'}
+        {mode === 'bonus' ? 'Thêm thưởng cho gia sư' : 'Thêm khấu trừ lương'}
       </p>
       <div className="flex flex-col sm:flex-row gap-2">
         <input

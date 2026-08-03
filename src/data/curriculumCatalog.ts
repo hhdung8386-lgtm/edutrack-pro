@@ -185,7 +185,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         startLevel: 4,
         endLevel: 9,
         description:
-          'Dành cho học viên từ trình độ trung cấp trở lên. Luyện hội thoại tự nhiên với giáo viên, đồng thời cải thiện phát âm, ngữ pháp, vốn từ và sự tự tin khi giao tiếp trong các tình huống thực tế.',
+          'Dành cho học viên từ trình độ trung cấp trở lên. Luyện hội thoại tự nhiên với gia sư, đồng thời cải thiện phát âm, ngữ pháp, vốn từ và sự tự tin khi giao tiếp trong các tình huống thực tế.',
       },
       {
         id: 'phat-am-chuan',

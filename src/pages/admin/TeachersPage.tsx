@@ -143,7 +143,7 @@ function StatusSelector({ teacher, onRetire }: { teacher: Teacher; onRetire: (te
         }, { merge: true })
       }
       await batch.commit()
-      toast.success(`Đã chuyển giáo viên sang "${STATUS_STYLES[status].label}"`)
+      toast.success(`Đã chuyển gia sư sang "${STATUS_STYLES[status].label}"`)
     } catch {
       toast.error('Lỗi khi cập nhật trạng thái')
     } finally {
@@ -159,7 +159,7 @@ function StatusSelector({ teacher, onRetire }: { teacher: Teacher; onRetire: (te
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
         disabled={saving}
         className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${style.badge} ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-        aria-label="Đổi trạng thái giáo viên"
+        aria-label="Đổi trạng thái gia sư"
       >
         <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
         {style.label}
@@ -300,7 +300,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       (err) => {
         console.error(err)
         setTeachers([])
-        toast.error('Không có quyền truy cập danh sách giáo viên hoặc lỗi kết nối')
+        toast.error('Không có quyền truy cập danh sách gia sư hoặc lỗi kết nối')
         setLoading(false)
       }
     )
@@ -452,10 +452,10 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       batch.delete(doc(db, 'teachers', deleteTeacher.id))
       batch.delete(doc(db, 'publicTeacherProfiles', deleteTeacher.id))
       await batch.commit()
-      toast.success('Xóa giáo viên thành công')
+      toast.success('Xóa gia sư thành công')
       setDeleteTeacher(null)
     } catch (err: any) {
-      toast.error('Lỗi khi xóa giáo viên: ' + err.message)
+      toast.error('Lỗi khi xóa gia sư: ' + err.message)
     } finally {
       setDeleting(false)
     }
@@ -658,7 +658,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <Input
-          placeholder="Tìm theo tên hoặc mã giáo viên..."
+          placeholder="Tìm theo tên hoặc mã gia sư..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -667,12 +667,12 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
 
         <div className="flex gap-3 items-center flex-wrap">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-            <span className="whitespace-nowrap">Số giáo viên</span>
+            <span className="whitespace-nowrap">Số gia sư</span>
             <select
               value={limitVal}
               onChange={(event) => setLimitVal(Number(event.target.value))}
               className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-              aria-label="Chọn số lượng giáo viên cần tải"
+              aria-label="Chọn số lượng gia sư cần tải"
             >
               {[20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000].map((count) => (
                 <option key={count} value={count}>{count}</option>
@@ -811,7 +811,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
@@ -1011,8 +1011,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         open={!!deleteTeacher}
         onClose={() => setDeleteTeacher(null)}
         onConfirm={handleDelete}
-        title="Xóa giáo viên"
-        description={`Bạn có chắc chắn muốn xóa giáo viên ${deleteTeacher?.name}?`}
+        title="Xóa gia sư"
+        description={`Bạn có chắc chắn muốn xóa gia sư ${deleteTeacher?.name}?`}
         consequence="Hành động này không thể hoàn tác. Tất cả dữ liệu liên quan sẽ bị xóa."
         confirmLabel="Xóa"
         confirmVariant="danger"

@@ -205,7 +205,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
                 'Học mọi lúc, mọi nơi, linh hoạt thời gian. Chỉ cần 25 phút mỗi ngày, học trên điện thoại, máy tính, tablet.',
                 'Lộ trình cá nhân hóa từ cơ bản đến nâng cao. Đo lường trình độ và mục tiêu riêng, giúp tiến bộ nhanh chóng.',
                 'Phương pháp học thực tế, dễ áp dụng. Thực hành tương tác giao tiếp 1-1, phản xạ tự nhiên.',
-                'Giáo viên giàu kinh nghiệm, bằng cấp quốc tế. Dạy tận tâm, sửa lỗi nhanh chóng, đồng hành cùng bạn.'
+                'Gia sư giàu kinh nghiệm, bằng cấp quốc tế. Dạy tận tâm, sửa lỗi nhanh chóng, đồng hành cùng bạn.'
               ].map((bullet, idx) => (
                 <li key={idx} className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-5 h-5 bg-[#2563EB] text-white rounded-full flex items-center justify-center mt-0.5 shadow-sm">
@@ -241,7 +241,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
             {[
               { step: '1', title: 'Kiểm tra trình độ miễn phí', desc: 'Xác định rõ điểm mạnh, điểm yếu.' },
               { step: '2', title: 'Xây dựng lộ trình riêng', desc: 'Cá nhân hóa theo mục tiêu và thời gian của bạn.' },
-              { step: '3', title: 'Học 1 kèm 1 cùng giáo viên', desc: 'Tương tác trực tiếp, sửa lỗi ngay lập tức.' },
+              { step: '3', title: 'Học 1 kèm 1 cùng gia sư', desc: 'Tương tác trực tiếp, sửa lỗi ngay lập tức.' },
               { step: '4', title: 'Theo dõi & đánh giá sự tiến bộ', desc: 'Luyện tập đều đặn để đạt mục tiêu nhanh hơn.' }
             ].map((item, idx) => (
               <div key={idx} className="relative flex flex-col items-center">
@@ -317,7 +317,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
               </h3>
               <ul className="space-y-4 font-jakarta font-semibold text-xs sm:text-sm text-slate-600">
                 {[
-                  'Giáo viên giàu kinh nghiệm. Hỗ trợ 1-1 tận tâm.',
+                  'Gia sư giàu kinh nghiệm. Hỗ trợ 1-1 tận tâm.',
                   'Kho tài liệu hơn 10.000+ bài học. Học mọi lúc, mọi nơi.',
                   'Luyện tập 24/7. Thực hành linh hoạt.',
                   'Ưu đãi học phí đặc biệt. Nhiều chương trình hấp dẫn.'
@@ -372,7 +372,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
         <div className="max-w-7xl mx-auto">
           
           <h2 className="text-center font-quicksand font-extrabold text-2xl sm:text-3xl text-slate-800 tracking-tight flex flex-col gap-1 items-center uppercase mb-12">
-            <span>ĐỘI NGŨ GIÁO VIÊN</span>
+            <span>ĐỘI NGŨ GIA SƯ</span>
             <span className="text-xs sm:text-sm text-slate-400 font-bold tracking-widest normal-case font-jakarta mt-2">Giàu kinh nghiệm - Nhiệt huyết - Tận tâm</span>
           </h2>
 
@@ -525,7 +525,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
               <div className="space-y-4 font-jakarta">
                 {[
                   { title: 'Voucher học phí', desc: 'đến 30-50%', icon: Gift, color: 'text-rose-500 bg-rose-50 border-rose-100' },
-                  { title: 'Tặng buổi học thử', desc: '1 kèm 1 cùng giáo viên', icon: Calendar, color: 'text-amber-500 bg-amber-50 border-amber-100' },
+                  { title: 'Tặng buổi học thử', desc: '1 kèm 1 cùng gia sư', icon: Calendar, color: 'text-amber-500 bg-amber-50 border-amber-100' },
                   { title: 'Quà tặng độc quyền', desc: 'từ 123English', icon: Award, color: 'text-blue-500 bg-blue-50 border-blue-100' }
                 ].map((reward, rIdx) => (
                   <div key={rIdx} className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-amber-100/45 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
@@ -619,11 +619,11 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
 
           <div className="space-y-3 font-jakarta font-bold text-sm">
             {[
-              { q: 'Tôi bị mất gốc hoàn toàn, học khóa học này có theo kịp không?', a: 'Hoàn toàn được. Lộ trình học 1 kèm 1 được thiết kế riêng bắt đầu từ những kiến thức căn bản nhất, giáo viên sẽ đi theo tốc độ tiếp thu của bạn, giúp bạn xây lại nền tảng vững chắc.', idx: 0 },
-              { q: 'Lịch học có linh hoạt không? Tôi đi học/đi làm bận rộn có tự sắp xếp được không?', a: 'Lịch học cực kỳ linh hoạt từ 8:00 đến 23:00 hàng ngày. Bạn có thể tự chọn khung giờ rảnh và đăng ký trước với giáo viên qua ứng dụng học tập.', idx: 1 },
+              { q: 'Tôi bị mất gốc hoàn toàn, học khóa học này có theo kịp không?', a: 'Hoàn toàn được. Lộ trình học 1 kèm 1 được thiết kế riêng bắt đầu từ những kiến thức căn bản nhất, gia sư sẽ đi theo tốc độ tiếp thu của bạn, giúp bạn xây lại nền tảng vững chắc.', idx: 0 },
+              { q: 'Lịch học có linh hoạt không? Tôi đi học/đi làm bận rộn có tự sắp xếp được không?', a: 'Lịch học cực kỳ linh hoạt từ 8:00 đến 23:00 hàng ngày. Bạn có thể tự chọn khung giờ rảnh và đăng ký trước với gia sư qua ứng dụng học tập.', idx: 1 },
               { q: 'Phương pháp 25 phút mỗi ngày có thực sự hiệu quả so với học trực tiếp 1-2 tiếng?', a: 'Nghiên cứu chỉ ra rằng 25 phút tập trung tương tác 1 kèm 1 trực tiếp có hiệu quả hơn nhiều so với 90 phút học nhóm thụ động. Việc luyện phản xạ đều đặn mỗi ngày giúp não bộ ghi nhớ tốt hơn.', idx: 2 },
               { q: 'Trung tâm có cam kết đầu ra bằng văn bản không?', a: 'Có. 123English cam kết đầu ra bằng văn bản rõ ràng. Nếu học viên đi học đầy đủ và làm bài tập theo lộ trình mà không tiến bộ, trung tâm cam kết hoàn học phí hoặc hỗ trợ học lại miễn phí.', idx: 3 },
-              { q: 'Tôi có thể đổi giáo viên nếu cảm thấy không hợp phương pháp không?', a: 'Được. Bạn có thể yêu cầu đổi giáo viên bất kỳ lúc nào nếu cảm thấy không hài lòng hoặc không phù hợp với phong cách giảng dạy, bộ phận học vụ sẽ hỗ trợ ngay lập tức.', idx: 4 }
+              { q: 'Tôi có thể đổi gia sư nếu cảm thấy không hợp phương pháp không?', a: 'Được. Bạn có thể yêu cầu đổi gia sư bất kỳ lúc nào nếu cảm thấy không hài lòng hoặc không phù hợp với phong cách giảng dạy, bộ phận học vụ sẽ hỗ trợ ngay lập tức.', idx: 4 }
             ].map((faq) => (
               <div key={faq.idx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden transition-all duration-200 shadow-sm">
                 <button

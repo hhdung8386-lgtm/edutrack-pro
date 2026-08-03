@@ -181,10 +181,10 @@ export function bookingConflictMessage(conflict: BookingConflict, language: 'vi'
   const time = `${existing.requestedStart}-${existing.requestedEnd}`
   const date = formatBookingDate(existing.requestedDate || candidate.requestedDate)
   if (reasons.includes('teacher') && reasons.includes('student')) {
-    return `Không thể đặt trùng: ${existing.teacherName || 'giáo viên'} và ${existing.studentName || 'học viên'} đã có đúng ca ${time}, ${date}.`
+    return `Không thể đặt trùng: ${existing.teacherName || 'gia sư'} và ${existing.studentName || 'học viên'} đã có đúng ca ${time}, ${date}.`
   }
   if (reasons.includes('teacher')) {
-    return `Không thể đặt trùng: giáo viên ${existing.teacherName || existing.teacherCode || ''} đã có lớp với ${existing.studentName || existing.studentCode || 'học viên khác'} lúc ${time}, ${date}.`
+    return `Không thể đặt trùng: gia sư ${existing.teacherName || existing.teacherCode || ''} đã có lớp với ${existing.studentName || existing.studentCode || 'học viên khác'} lúc ${time}, ${date}.`
   }
-  return `Không thể đặt trùng: học viên ${existing.studentName || existing.studentCode || ''} đã có lớp với ${existing.teacherName || existing.teacherCode || 'giáo viên khác'} lúc ${time}, ${date}.`
+  return `Không thể đặt trùng: học viên ${existing.studentName || existing.studentCode || ''} đã có lớp với ${existing.teacherName || existing.teacherCode || 'gia sư khác'} lúc ${time}, ${date}.`
 }

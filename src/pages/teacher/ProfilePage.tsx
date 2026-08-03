@@ -525,7 +525,7 @@ export function ProfilePage() {
             )}
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                {lang === 'vi' ? 'Hồ sơ giáo viên (bắt buộc)' : 'Teacher Profile (required)'}
+                {lang === 'vi' ? 'Hồ sơ gia sư (bắt buộc)' : 'Teacher Profile (required)'}
               </h3>
               <p className={`text-xs mt-0.5 font-medium ${missing.length > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                 {missing.length > 0
@@ -579,7 +579,7 @@ export function ProfilePage() {
                 autoComplete="name"
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('name')}`} />
               <p className="mt-1 text-[10px] text-slate-400">
-                {lang === 'vi' ? 'Tên này sẽ hiển thị trong danh sách giáo viên của Admin.' : 'This name will appear in the Admin teacher list.'}
+                {lang === 'vi' ? 'Tên này sẽ hiển thị trong danh sách gia sư của Admin.' : 'This name will appear in the Admin teacher list.'}
               </p>
             </div>
             <div>

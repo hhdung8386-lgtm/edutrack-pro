@@ -306,7 +306,7 @@ export function ChuongTrinhHocPage() {
             <div className="max-w-3xl">
               <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng giáo trình</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
-                Nội dung giúp giáo viên, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.
+                Nội dung giúp gia sư, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.
               </p>
             </div>
 

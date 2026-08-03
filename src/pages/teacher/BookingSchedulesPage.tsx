@@ -1078,7 +1078,7 @@ export function BookingSchedulesPage() {
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       </div>
                     )}
-                    {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, giáo viên vẫn tự gỡ để gửi điểm danh */}
+                    {/* Cho phép gỡ ảnh cả khi đang tải — nếu upload bị kẹt, gia sư vẫn tự gỡ để gửi điểm danh */}
                     <button
                       type="button"
                       onClick={() => removeImage(idx)}

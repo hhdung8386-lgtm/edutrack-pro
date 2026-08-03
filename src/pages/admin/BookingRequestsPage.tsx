@@ -113,7 +113,7 @@ export function BookingRequestsPage() {
       },
       (error) => {
         console.error('Error loading booking requests:', error)
-        toast.error('Không thể tải yêu cầu chọn giáo viên')
+        toast.error('Không thể tải yêu cầu chọn gia sư')
         setLoading(false)
       }
     )
@@ -411,7 +411,7 @@ export function BookingRequestsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-600">Học vụ</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Yêu cầu chọn giáo viên</h1>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">Yêu cầu chọn gia sư</h1>
           <p className="mt-1 text-sm text-slate-500">
             Xác nhận yêu cầu để giữ phút, hoặc từ chối/nhả chỗ khi lịch không còn phù hợp.
           </p>
@@ -438,7 +438,7 @@ export function BookingRequestsPage() {
             <div className="min-w-0">
               <p className="font-black">Có {upcomingConflicts.length} cặp yêu cầu đang trùng lịch</p>
               <p className="mt-1 text-sm text-rose-700">
-                Hệ thống sẽ chặn xác nhận ca bị trùng. Vui lòng kiểm tra lại giáo viên và học viên trước khi duyệt.
+                Hệ thống sẽ chặn xác nhận ca bị trùng. Vui lòng kiểm tra lại gia sư và học viên trước khi duyệt.
               </p>
               <div className="mt-3 grid gap-2 text-sm lg:grid-cols-2">
                 {upcomingConflicts.slice(0, 4).map((conflict) => (
@@ -460,7 +460,7 @@ export function BookingRequestsPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm học viên, mã học viên, giáo viên..."
+              placeholder="Tìm học viên, mã học viên, gia sư..."
               className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
             />
           </label>
@@ -488,7 +488,7 @@ export function BookingRequestsPage() {
         <EmptyState
           icon={<CalendarClock className="h-8 w-8" />}
           title="Chưa có yêu cầu phù hợp"
-          description="Các yêu cầu phụ huynh gửi từ trang giáo viên sẽ hiển thị tại đây."
+          description="Các yêu cầu phụ huynh gửi từ trang gia sư sẽ hiển thị tại đây."
         />
       ) : (
         <div className="grid gap-4">
@@ -519,7 +519,7 @@ export function BookingRequestsPage() {
                         <p className="mt-2 text-sm text-slate-500">{request.subjectName || 'Chưa có môn học'}</p>
                       </div>
                       <div className="rounded-2xl bg-amber-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-600">Giáo viên yêu cầu</p>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-600">Gia sư yêu cầu</p>
                         <p className="mt-1 text-lg font-bold text-slate-900">{request.teacherName}</p>
                         <p className="mt-1 font-mono text-xs font-semibold text-amber-700">{request.teacherCode}</p>
                         <p className="mt-2 text-sm font-semibold text-slate-700">
@@ -606,7 +606,7 @@ export function BookingRequestsPage() {
         onClose={() => setConfirming(null)}
         onConfirm={handleConfirm}
         title="Xác nhận giữ chỗ"
-        description={confirming ? `Giữ ${confirming.requestedMinutes} phút cho ${confirming.studentName} với giáo viên ${confirming.teacherName}.` : ''}
+        description={confirming ? `Giữ ${confirming.requestedMinutes} phút cho ${confirming.studentName} với gia sư ${confirming.teacherName}.` : ''}
         confirmLabel="Xác nhận"
         loading={actioning}
       >
@@ -624,7 +624,7 @@ export function BookingRequestsPage() {
         onClose={() => setRejecting(null)}
         onConfirm={handleReject}
         title="Từ chối yêu cầu"
-        description={rejecting ? `Từ chối yêu cầu chọn giáo viên của ${rejecting.studentName}.` : ''}
+        description={rejecting ? `Từ chối yêu cầu chọn gia sư của ${rejecting.studentName}.` : ''}
         confirmLabel="Từ chối"
         confirmVariant="danger"
         loading={actioning}
@@ -632,7 +632,7 @@ export function BookingRequestsPage() {
         <textarea
           value={adminNote}
           onChange={(event) => setAdminNote(event.target.value)}
-          placeholder="Lý do từ chối hoặc giáo viên/lịch thay thế..."
+          placeholder="Lý do từ chối hoặc gia sư/lịch thay thế..."
           className="mt-3 w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100"
           rows={3}
         />

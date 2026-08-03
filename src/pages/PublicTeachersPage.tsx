@@ -310,7 +310,7 @@ function getNextSchedule(availability?: TeacherAvailability) {
 
 function summarizeBio(teacher: Teacher) {
   const source = teacher.bio || teacher.studentResults || teacher.otherStrengths || ''
-  if (!source) return 'Hồ sơ đang được cập nhật. Học vụ sẽ tư vấn giáo viên phù hợp theo mục tiêu học của học viên.'
+  if (!source) return 'Hồ sơ đang được cập nhật. Học vụ sẽ tư vấn gia sư phù hợp theo mục tiêu học của học viên.'
   return source.length > 145 ? `${source.slice(0, 145).trim()}...` : source
 }
 
@@ -360,7 +360,7 @@ function TeacherPhoto({ teacher }: { teacher: Teacher }) {
     return (
       <img
         src={teacher.photoURL}
-        alt={`Ảnh giáo viên ${getTeacherDisplayName(teacher)}${isSystemCode(teacher.code) ? ` (${teacher.name})` : ''}`}
+        alt={`Ảnh gia sư ${getTeacherDisplayName(teacher)}${isSystemCode(teacher.code) ? ` (${teacher.name})` : ''}`}
         className="h-full w-full object-cover"
         loading="lazy"
       />
@@ -529,7 +529,7 @@ function TeacherCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
-                {compact ? 'Giáo viên 1 kèm 1' : subjectNames.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
+                {compact ? 'Gia sư 1 kèm 1' : subjectNames.slice(0, 2).join(', ') || 'Gia sư 1 kèm 1'}
               </p>
               <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">
                 <div className="truncate">{getTeacherDisplayName(teacher)}</div>
@@ -559,7 +559,7 @@ function TeacherCard({
             )}
             {teacher.isForeignTeacher && (
               <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
-                Giáo viên nước ngoài
+                Gia sư nước ngoài
               </span>
             )}
             {chips.map((chip) => (
@@ -906,7 +906,7 @@ function TeacherBookingPage({
                 })}
                 {!teacher.hasAvailableSchedule && (
                   <div className="rounded-xl border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm font-semibold text-slate-600">
-                    Giáo viên chưa cập nhật lịch rảnh. Phụ huynh vẫn có thể gửi ghi chú để học vụ tư vấn.
+                    Gia sư chưa cập nhật lịch rảnh. Phụ huynh vẫn có thể gửi ghi chú để học vụ tư vấn.
                   </div>
                 )}
               </div>
@@ -1035,7 +1035,7 @@ function TeacherBookingPage({
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
                     rows={3}
-                    placeholder="Ví dụ: bé muốn học thử với giáo viên này vào buổi tối, ưu tiên thứ 3 hoặc thứ 5."
+                    placeholder="Ví dụ: bé muốn học thử với gia sư này vào buổi tối, ưu tiên thứ 3 hoặc thứ 5."
                     className="mt-2 w-full resize-none rounded-xl border border-sky-100 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0f766e] focus:ring-4 focus:ring-teal-100"
                   />
                 </label>
@@ -1155,7 +1155,7 @@ export function PublicTeachersPage() {
   }, [lastDoc])
 
   useEffect(() => {
-    document.title = 'Đội ngũ giáo viên 123English'
+    document.title = 'Đội ngũ gia sư 123English'
     loadTeachers(true)
   }, [])
 
@@ -1245,19 +1245,19 @@ export function PublicTeachersPage() {
           <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.15em] text-[#A76500]">
-                Đội ngũ giáo viên tâm huyết và chuyên nghiệp
+                Đội ngũ gia sư tâm huyết và chuyên nghiệp
               </p>
               <h1 className="mt-3 text-4xl font-black leading-[1.08] tracking-[-0.04em] text-[#10213A] sm:text-5xl">
                 Chất lượng giảng dạy bắt đầu từ người đồng hành phù hợp.
               </h1>
               <p className="mt-5 max-w-2xl text-base font-medium leading-8 text-slate-600">
-                Tìm hiểu tiêu chuẩn tuyển chọn, quy trình kiểm định và chọn giáo viên đang có lịch phù hợp với học viên.
+                Tìm hiểu tiêu chuẩn tuyển chọn, quy trình kiểm định và chọn gia sư đang có lịch phù hợp với học viên.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <div className="rounded-2xl border border-[#F1DE98] bg-[#FFFBEB] px-4 py-3">
                 <p className="text-xl font-black tabular-nums text-[#10213A]">{formatRoundedHundredPlus(summaryCounts.teachers)}</p>
-                <p className="mt-1 text-[11px] font-bold text-slate-500">giáo viên</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-500">gia sư</p>
               </div>
               <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
                 <p className="text-xl font-black tabular-nums text-[#10213A]">{formatRoundedHundredPlus(summaryCounts.students)}</p>
@@ -1279,10 +1279,10 @@ export function PublicTeachersPage() {
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#0E8BC4]">Gợi ý phù hợp</p>
                 <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-[#10213A] sm:text-4xl">
-                  Chọn giáo viên cho con ngay
+                  Chọn gia sư cho con ngay
                 </h2>
                 <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                  Danh sách được lấy từ hồ sơ giáo viên đang hoạt động và thay đổi sau mỗi lần truy cập.
+                  Danh sách được lấy từ hồ sơ gia sư đang hoạt động và thay đổi sau mỗi lần truy cập.
                 </p>
               </div>
               <a
@@ -1309,7 +1309,7 @@ export function PublicTeachersPage() {
               ))}
               {!loading && teachers.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-600">
-                  Chưa có hồ sơ giáo viên công khai.
+                  Chưa có hồ sơ gia sư công khai.
                 </div>
               )}
             </div>
@@ -1324,7 +1324,7 @@ export function PublicTeachersPage() {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Tìm tên giáo viên, môn dạy, chứng chỉ, trường học..."
+                  placeholder="Tìm tên gia sư, môn dạy, chứng chỉ, trường học..."
                   className="h-12 w-full rounded-xl border border-[#eadfbd] bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#d6a600] focus:ring-4 focus:ring-[#ffde63]/30"
                 />
               </label>
@@ -1351,7 +1351,7 @@ export function PublicTeachersPage() {
               </div>
             </div>
             <p className="mt-3 text-xs font-medium text-slate-500">
-              Bộ lọc chỉ áp dụng trên danh sách đã tải. Bấm Xem thêm để mở rộng thêm hồ sơ giáo viên.
+              Bộ lọc chỉ áp dụng trên danh sách đã tải. Bấm Xem thêm để mở rộng thêm hồ sơ gia sư.
             </p>
           </div>
 
@@ -1380,7 +1380,7 @@ export function PublicTeachersPage() {
                       <div className="h-12 rounded-xl bg-slate-50" />
                     </div>
                     {index === 0 && (
-                      <p className="mt-5 text-center text-xs font-bold text-slate-400">Đang tải hồ sơ giáo viên...</p>
+                      <p className="mt-5 text-center text-xs font-bold text-slate-400">Đang tải hồ sơ gia sư...</p>
                     )}
                   </div>
                 ))
@@ -1392,9 +1392,9 @@ export function PublicTeachersPage() {
           {!loading && filteredTeachers.length === 0 && (
             <div className="mt-8 rounded-3xl border border-dashed border-[#d9c36c] bg-white p-10 text-center">
               <BookOpen className="mx-auto h-10 w-10 text-[#c89000]" />
-              <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy giáo viên phù hợp trong danh sách đã tải</h2>
+              <h2 className="mt-4 text-xl font-black text-slate-950">Chưa tìm thấy gia sư phù hợp trong danh sách đã tải</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                Thử đổi bộ lọc hoặc bấm Xem thêm để tải thêm giáo viên. Học vụ vẫn có thể tư vấn theo mã học viên và lịch học hiện tại.
+                Thử đổi bộ lọc hoặc bấm Xem thêm để tải thêm gia sư. Học vụ vẫn có thể tư vấn theo mã học viên và lịch học hiện tại.
               </p>
             </div>
           )}
@@ -1407,10 +1407,10 @@ export function PublicTeachersPage() {
                 disabled={loadingMore}
                 className="rounded-full bg-[#FFC107] px-7 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-[#f0ae00] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loadingMore ? 'Đang tải thêm...' : 'Xem thêm giáo viên'}
+                {loadingMore ? 'Đang tải thêm...' : 'Xem thêm gia sư'}
               </button>
             ) : (
-              <p className="text-sm font-semibold text-slate-500">Đã tải hết danh sách giáo viên hiện có.</p>
+              <p className="text-sm font-semibold text-slate-500">Đã tải hết danh sách gia sư hiện có.</p>
             )}
           </div>
         </section>

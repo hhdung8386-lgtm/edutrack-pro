@@ -48,7 +48,7 @@ export function PublicTeacherProfilePage() {
           teacherSnapshot.data() as PublicTeacherProfile,
         )
         setTeacher(safeTeacher)
-        document.title = `${safeTeacher.code || safeTeacher.name} | Giáo viên 123English`
+        document.title = `${safeTeacher.code || safeTeacher.name} | Gia sư 123English`
       } catch (error) {
         console.error('Error loading public teacher profile:', error)
         if (active) setNotFound(true)
@@ -71,10 +71,10 @@ export function PublicTeacherProfilePage() {
           <div className="mx-auto max-w-5xl">
             <Link to="/giao-vien" className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-amber-700">
               <ArrowLeft className="h-4 w-4" />
-              Đội ngũ giáo viên
+              Đội ngũ gia sư
             </Link>
             <div className="mt-5 max-w-2xl">
-              <h1 className="text-3xl font-black tracking-tight text-[#10213A] sm:text-4xl">Hồ sơ giáo viên 123English</h1>
+              <h1 className="text-3xl font-black tracking-tight text-[#10213A] sm:text-4xl">Hồ sơ gia sư 123English</h1>
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600 sm:text-base">
                 Thông tin chuyên môn, kinh nghiệm giảng dạy và chứng chỉ đã được cập nhật trên hệ thống.
               </p>
@@ -89,10 +89,10 @@ export function PublicTeacherProfilePage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-12 text-center">
                 <h2 className="text-xl font-black text-slate-900">Hồ sơ hiện không khả dụng</h2>
                 <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-600">
-                  Hồ sơ này không tồn tại hoặc giáo viên hiện không ở trạng thái giảng dạy.
+                  Hồ sơ này không tồn tại hoặc gia sư hiện không ở trạng thái giảng dạy.
                 </p>
                 <Link to="/giao-vien" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#FFC107] px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-[#eaae00] active:scale-[0.98]">
-                  Xem đội ngũ giáo viên
+                  Xem đội ngũ gia sư
                 </Link>
               </div>
             )}
