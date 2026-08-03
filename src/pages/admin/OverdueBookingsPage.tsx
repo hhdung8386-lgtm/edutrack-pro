@@ -172,7 +172,8 @@ export function OverdueBookingsPage() {
       const k = `${l.studentId}|${l.date}`
       if (!byStudentDate.has(k)) byStudentDate.set(k, [])
       byStudentDate.get(k)!.push(l)
-      if (l.status !== 'rejected') teacherDate.add(`${l.teacherId}|${l.date}`)
+      // Buổi bị từ chối hoặc gia sư tự huỷ coi như chưa từng điểm danh
+      if (l.status !== 'rejected' && l.status !== 'cancelled') teacherDate.add(`${l.teacherId}|${l.date}`)
     })
 
     return overdue.map((booking) => {

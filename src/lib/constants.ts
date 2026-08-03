@@ -120,6 +120,22 @@ export function getToday(): string {
   return now.toISOString().split('T')[0]
 }
 
+/**
+ * Ngày nghiệp vụ của hệ thống luôn theo múi giờ Việt Nam, không theo UTC của trình duyệt.
+ * `getToday()` dựa trên UTC nên trong khung 00:00–07:00 giờ VN sẽ trả về NGÀY HÔM TRƯỚC —
+ * đủ để gia sư điểm danh lệch ngày so với lịch đã xếp.
+ */
+export function getVietnamDateISO(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${value.year}-${value.month}-${value.day}`
+}
+
 export function maskPhone(phone: string): string {
   if (phone.length <= 4) return phone
   return phone.slice(0, 2) + 'xx' + phone.slice(-4)

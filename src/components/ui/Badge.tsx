@@ -57,6 +57,7 @@ export function StatusBadge({ status, type = 'student' }: { status: string; type
     pending: { variant: 'warning', label: 'Chờ duyệt', pulse: true },
     approved: { variant: 'success', label: 'Đã duyệt' },
     rejected: { variant: 'danger', label: 'Từ chối' },
+    cancelled: { variant: 'default', label: 'Gia sư đã huỷ' },
     active: { variant: 'success', label: type === 'teacher' ? 'Đang dạy' : 'Đang học' },
     inactive: { variant: 'slate', label: 'Tạm dừng' },
     resigned: { variant: 'danger', label: 'Nghỉ dạy' },

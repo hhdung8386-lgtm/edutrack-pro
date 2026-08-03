@@ -1841,6 +1841,7 @@ export function StudentDetailPage() {
                       <option value="pending">Chờ duyệt</option>
                       <option value="approved">Đã duyệt</option>
                       <option value="rejected">Từ chối</option>
+                      <option value="cancelled">Gia sư đã huỷ</option>
                     </select>
                   </th>
                   <th className="px-2 pb-3">

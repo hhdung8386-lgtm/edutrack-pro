@@ -17,9 +17,15 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
-import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle } from 'lucide-react'
+import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2 } from 'lucide-react'
 import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
+import {
+  auditLessonForAdmin, describeDailyCount, describeSchedule, formatShortDate,
+  isActiveAttendance,
+  type AttendanceAudit, type AuditMessage,
+} from '@/lib/attendanceAudit'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -27,6 +33,38 @@ const TABS = [
   { key: 'rejected', label: 'Từ chối', color: 'text-rose-400' },
   { key: 'all', label: 'Tất cả', color: 'text-slate-600' },
 ]
+
+/** Hiển thị một kết luận đối chiếu (lịch đã sắp / số lần điểm danh trong ngày). */
+function AuditNotice({ message, compactWhenFine = false }: { message: AuditMessage | null; compactWhenFine?: boolean }) {
+  if (!message) return null
+
+  if (compactWhenFine && (message.tone === 'ok' || message.tone === 'info')) {
+    return (
+      <p className={`flex items-center gap-1.5 text-[11px] font-semibold ${message.tone === 'ok' ? 'text-emerald-600' : 'text-slate-400'}`}>
+        <CalendarCheck2 className="h-3.5 w-3.5 flex-shrink-0" />
+        {message.title}
+        {message.detail && message.tone === 'ok' ? ` · ${message.detail}` : ''}
+      </p>
+    )
+  }
+
+  const tones: Record<string, string> = {
+    ok: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    info: 'border-slate-200 bg-slate-50 text-slate-500',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    danger: 'border-rose-200 bg-rose-50 text-rose-700',
+  }
+
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${tones[message.tone]}`}>
+      <p className="flex items-start gap-2 text-xs font-bold">
+        {message.tone === 'ok' ? <CalendarCheck2 className="mt-0.5 h-4 w-4 flex-shrink-0" /> : <CalendarX2 className="mt-0.5 h-4 w-4 flex-shrink-0" />}
+        {message.title}
+      </p>
+      {message.detail && <p className="mt-0.5 pl-6 text-[11px] font-semibold opacity-90">{message.detail}</p>}
+    </div>
+  )
+}
 
 export function ApprovalsPage() {
   const { user } = useAuthStore()
@@ -47,11 +85,38 @@ export function ApprovalsPage() {
 
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
+  const [copiedLessonId, setCopiedLessonId] = useState<string | null>(null)
+  // Đối chiếu lịch + số lần điểm danh trong ngày, chạy ngay khi mở hộp thoại duyệt
+  const [approveAudit, setApproveAudit] = useState<{ lessonId: string; audit: AttendanceAudit } | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+
+  const handleCopyLesson = async (lesson: Lesson) => {
+    const ok = await copyTextToClipboard(buildLessonParentMessage(lesson))
+    if (ok) {
+      setCopiedLessonId(lesson.id)
+      toast.success('Đã copy nội dung buổi học, có thể gửi phụ huynh')
+      setTimeout(() => setCopiedLessonId((current) => (current === lesson.id ? null : current)), 2500)
+    } else {
+      toast.error('Trình duyệt không cho phép copy, vui lòng bôi đen và copy thủ công')
+    }
+  }
 
   const openApproveModal = async (lesson: Lesson) => {
     setApprovingLesson(lesson)
     setApproveSubjectId(lesson.subjectId || '')
     setApproveStudentSubjects([])
+    setApproveAudit(null)
+    setAuditLoading(true)
+    auditLessonForAdmin({
+      id: lesson.id,
+      teacherId: lesson.teacherId,
+      studentId: lesson.studentId,
+      date: lesson.date,
+      minutes: lesson.minutes,
+    })
+      .then((result) => setApproveAudit({ lessonId: lesson.id, audit: result }))
+      .catch((err) => console.error('[approve-audit]', err))
+      .finally(() => setAuditLoading(false))
     try {
       const studentSnap = await getDoc(doc(db, 'students', lesson.studentId))
       if (studentSnap.exists()) {
@@ -190,6 +255,15 @@ export function ApprovalsPage() {
     l.studentName.toLowerCase().includes(search.toLowerCase()) ||
     l.teacherName.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Đếm số buổi CÙNG học viên + CÙNG ngày ngay trong danh sách đang tải (không tốn truy vấn).
+  // Tab "Chờ duyệt" tải toàn bộ buổi chờ nên phát hiện được gần như trọn vẹn ca điểm danh dư.
+  const sameDayCounts = new Map<string, number>()
+  for (const lesson of lessons) {
+    if (!isActiveAttendance(lesson)) continue
+    const key = `${lesson.studentId}|${lesson.date}`
+    sameDayCounts.set(key, (sameDayCounts.get(key) || 0) + 1)
+  }
 
   const pendingCount = totalCounts.pending
 
@@ -575,6 +649,19 @@ export function ApprovalsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-slate-700">{lesson.date}</span>
                       <StatusBadge status={lesson.status} />
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLesson(lesson)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                          copiedLessonId === lesson.id
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                        title="Copy nội dung buổi học để gửi phụ huynh"
+                      >
+                        {copiedLessonId === lesson.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedLessonId === lesson.id ? 'Đã copy' : 'Copy buổi học'}
+                      </button>
                     </div>
 
                     {isOutOfMinutes && lesson.status === 'pending' && (
@@ -583,6 +670,12 @@ export function ApprovalsPage() {
                         <span>CẢNH BÁO: Học viên này đã HẾT QUỸ PHÚT HỌC! (Quỹ còn lại: 0 phút)</span>
                       </div>
                     )}
+
+                    {/* Đối chiếu lịch đã sắp + điểm danh dư trong ngày */}
+                    <div className="space-y-1.5">
+                      <AuditNotice message={describeDailyCount(sameDayCounts.get(`${lesson.studentId}|${lesson.date}`) || 0)} />
+                      <AuditNotice message={describeSchedule(lesson.scheduleCheck)} compactWhenFine />
+                    </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
                       <div>
@@ -706,6 +799,27 @@ export function ApprovalsPage() {
           loading={approving}
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-3">
+            {/* Đối chiếu tươi ngay trước khi trừ kim cương: lịch đã sắp + buổi trùng ngày */}
+            {auditLoading && !approveAudit && (
+              <p className="text-xs font-semibold text-slate-400">Đang đối chiếu lịch đã sắp…</p>
+            )}
+            {approveAudit?.lessonId === approvingLesson.id && (
+              <div className="space-y-1.5">
+                <AuditNotice message={describeSchedule(approveAudit.audit.schedule)} />
+                <AuditNotice message={describeDailyCount(approveAudit.audit.sameDayLessons.length)} />
+                {approveAudit.audit.sameDayLessons.length > 1 && (
+                  <ul className="space-y-0.5 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                    {approveAudit.audit.sameDayLessons.map((item) => (
+                      <li key={item.id} className={item.id === approvingLesson.id ? 'text-indigo-600' : ''}>
+                        {formatShortDate(item.date)} · {item.teacherName} · {item.minutes} phút ·{' '}
+                        {item.status === 'approved' ? 'đã duyệt' : 'chờ duyệt'}
+                        {item.id === approvingLesson.id ? ' (buổi đang duyệt)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-500">Học viên</span>
               <span className="text-slate-700 font-semibold">{approvingLesson.studentName}</span>

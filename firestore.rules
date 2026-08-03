@@ -256,10 +256,26 @@ service cloud.firestore {
           && remaining > 0;
       }
 
+      // Gia sư được TỰ HUỶ buổi điểm danh CỦA MÌNH khi buổi đó CHƯA được duyệt.
+      // Huỷ mềm: chỉ đổi trạng thái + ghi dấu vết, không xoá dữ liệu, không đụng
+      // buổi đã duyệt (đã trừ kim cương và đã sinh bảng lương).
+      function isTeacherSelfCancelLesson() {
+        return isTeacher()
+          && getTeacherId() == resource.data.teacherId
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == 'teacher:' + resource.data.teacherId
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.cancelledReason is string
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancelledAt', 'cancelledBy', 'cancelledReason', 'updatedAt'
+          ]);
+      }
+
       allow create: if isTeacher() && getTeacherId() == request.resource.data.teacherId && studentCanBeMarked();
-      allow read: if isAdmin() 
+      allow read: if isAdmin()
                    || (isTeacher() && getTeacherId() == resource.data.teacherId);
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isTeacherSelfCancelLesson();
       allow delete: if false;
     }
 

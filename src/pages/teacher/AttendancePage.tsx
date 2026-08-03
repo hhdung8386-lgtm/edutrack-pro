@@ -15,14 +15,20 @@ import {
   validateLessonReport, composeLessonComment, lessonReportFields,
 } from '@/components/lessons/lessonReport'
 import { Card } from '@/components/ui/Card'
+import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
-import { getToday, MINUTE_PRESETS } from '@/lib/constants'
-import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react'
+import { getVietnamDateISO, MINUTE_PRESETS } from '@/lib/constants'
+import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink, CalendarX2 } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import {
+  auditTeacherAttendance, describeDailyCount, describeSchedule,
+  formatShortDate, MAX_DAILY_ATTENDANCE_PER_STUDENT,
+  type AttendanceAudit, type AuditMessage,
+} from '@/lib/attendanceAudit'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -62,6 +68,10 @@ export function AttendancePage() {
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
+  // Cảnh báo cần gia sư xác nhận trước khi gửi (sai lịch / trùng buổi trong ngày)
+  const [auditPrompt, setAuditPrompt] = useState<{ data: FormData; audit: AttendanceAudit; issues: AuditMessage[] } | null>(null)
+  // Chặn cứng: vượt số lần điểm danh cho phép trong ngày — hiển thị cố định, không trôi như toast
+  const [dailyLimitBlock, setDailyLimitBlock] = useState<{ count: number; date: string } | null>(null)
 
   const getErrorMessage = (errKey?: string) => {
     if (!errKey) return undefined
@@ -73,7 +83,8 @@ export function AttendancePage() {
     return errKey
   }
 
-  const today = getToday()
+  // Ngày mặc định theo giờ Việt Nam để không bị lệch 1 ngày khi điểm danh khuya
+  const today = getVietnamDateISO()
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -86,6 +97,8 @@ export function AttendancePage() {
     setNotFound(false)
     setStudent(null)
     setBlockedStudent(null)
+    setDailyLimitBlock(null)
+    setAuditPrompt(null)
 
     try {
       const q = query(collection(db, 'students'), where('code', '==', code.trim().toUpperCase()))
@@ -188,7 +201,9 @@ export function AttendancePage() {
     }
   }
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = (data: FormData) => submitAttendance(data)
+
+  const submitAttendance = async (data: FormData, opts: { audit?: AttendanceAudit } = {}) => {
     if (!student || !teacherId) return
     if (images.some((i) => i.uploading)) {
       toast.warning(t('attendance.uploading'))
@@ -269,6 +284,45 @@ export function AttendancePage() {
         return
       }
 
+      // ĐỐI CHIẾU TRƯỚC KHI GHI: lịch đã xếp + số lần điểm danh trong ngày.
+      // Lỗi truy vấn (mạng/quyền) KHÔNG được chặn điểm danh — chỉ bỏ qua phần cảnh báo.
+      let audit: AttendanceAudit | null = opts.audit ?? null
+      if (!audit) {
+        try {
+          audit = await auditTeacherAttendance({
+            teacherId,
+            studentId: student.id,
+            date: data.date,
+            minutes: selectedMinutes,
+          })
+        } catch (err) {
+          console.error('[attendance-audit]', err)
+        }
+      }
+
+      if (audit) {
+        const nextCount = audit.sameDayByTeacher + 1
+        if (nextCount > MAX_DAILY_ATTENDANCE_PER_STUDENT) {
+          setDailyLimitBlock({ count: audit.sameDayByTeacher, date: data.date })
+          toast.error(lang === 'vi'
+            ? `Đã có ${audit.sameDayByTeacher} buổi điểm danh cho học viên này trong ngày ${formatShortDate(data.date)}. Vượt giới hạn ${MAX_DAILY_ATTENDANCE_PER_STUDENT} buổi/ngày — vui lòng liên hệ giáo vụ.`
+            : `This student already has ${audit.sameDayByTeacher} attendances on ${formatShortDate(data.date)} — above the limit of ${MAX_DAILY_ATTENDANCE_PER_STUDENT} per day. Please contact the academic team.`)
+          return
+        }
+
+        if (!opts.audit) {
+          const issues: AuditMessage[] = []
+          const dailyMsg = describeDailyCount(nextCount, lang === 'vi' ? 'vi' : 'en')
+          if (dailyMsg) issues.push(dailyMsg)
+          const scheduleMsg = describeSchedule(audit.schedule, lang === 'vi' ? 'vi' : 'en')
+          if (scheduleMsg && (scheduleMsg.tone === 'danger' || scheduleMsg.tone === 'warning')) issues.push(scheduleMsg)
+          if (issues.length > 0) {
+            setAuditPrompt({ data, audit, issues })
+            return
+          }
+        }
+      }
+
       const currentRemainingMinutes = selectedPkg.remainingMinutes
       const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
 
@@ -304,9 +358,13 @@ export function AttendancePage() {
         pricePerMinute: subject?.pricePerMinute ?? 0,
         currency: subject?.currency || 'VND',
         salary: 0,
+        // Dấu vết đối chiếu lịch để giáo vụ soát lại khi duyệt (không tốn truy vấn thêm)
+        ...(audit ? { scheduleCheck: audit.schedule, sameDayCount: audit.sameDayByTeacher + 1 } : {}),
         createdAt: serverTimestamp(),
       })
 
+      setAuditPrompt(null)
+      setDailyLimitBlock(null)
       setSubmitted(true)
       toast.success(t('attendance.submit_success'))
       setTimeout(() => {
@@ -365,7 +423,7 @@ export function AttendancePage() {
             autoCorrect="off"
           />
           {code && (
-            <button onClick={() => { setCode(''); setStudent(null); setNotFound(false); setBlockedStudent(null) }}
+            <button onClick={() => { setCode(''); setStudent(null); setNotFound(false); setBlockedStudent(null); setDailyLimitBlock(null) }}
               className="p-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               aria-label="Clear">
               <X className="w-5 h-5" />
@@ -404,6 +462,27 @@ export function AttendancePage() {
               >
                 Tra mã học viên khác
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chặn cứng: cùng học viên + cùng gia sư đã điểm danh quá số lần cho phép trong ngày */}
+      {dailyLimitBlock && (
+        <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-bold text-rose-700">
+                {lang === 'vi'
+                  ? `Không thể điểm danh quá ${MAX_DAILY_ATTENDANCE_PER_STUDENT} lần/ngày cho 1 học viên`
+                  : `Cannot record more than ${MAX_DAILY_ATTENDANCE_PER_STUDENT} attendances per day for one student`}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-rose-600 font-semibold">
+                {lang === 'vi'
+                  ? `Ngày ${formatShortDate(dailyLimitBlock.date)} đã có ${dailyLimitBlock.count} buổi điểm danh của bạn cho học viên này. Nếu buổi trước bị ghi nhầm, hãy huỷ ở mục Lịch sử (khi chưa duyệt) hoặc liên hệ giáo vụ.`
+                  : `On ${formatShortDate(dailyLimitBlock.date)} you already recorded ${dailyLimitBlock.count} sessions for this student. If a previous one was wrong, cancel it in History (while still pending) or contact the academic team.`}
+              </p>
             </div>
           </div>
         </div>
@@ -641,6 +720,62 @@ export function AttendancePage() {
           </>
         )
       })()}
+
+      {/* Xác nhận khi buổi điểm danh có dấu hiệu bất thường (sai lịch / trùng ngày) */}
+      {auditPrompt && (
+        <Modal
+          open
+          onClose={() => setAuditPrompt(null)}
+          title={lang === 'vi' ? 'Kiểm tra lại buổi điểm danh' : 'Please double-check this attendance'}
+          footer={
+            <div className="flex gap-3 justify-end">
+              <Button variant="ghost" onClick={() => setAuditPrompt(null)}>
+                {lang === 'vi' ? 'Sửa lại' : 'Edit again'}
+              </Button>
+              <Button
+                variant="primary"
+                loading={submitting}
+                onClick={() => {
+                  const payload = auditPrompt
+                  setAuditPrompt(null)
+                  submitAttendance(payload.data, { audit: payload.audit })
+                }}
+              >
+                {lang === 'vi' ? 'Vẫn gửi điểm danh' : 'Submit anyway'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              {lang === 'vi'
+                ? 'Hệ thống phát hiện điểm chưa khớp giữa buổi điểm danh và lịch đã sắp:'
+                : 'The system found mismatches between this attendance and the arranged schedule:'}
+            </p>
+            {auditPrompt.issues.map((issue, i) => (
+              <div
+                key={i}
+                className={`rounded-xl border px-3 py-2.5 ${
+                  issue.tone === 'danger'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-amber-200 bg-amber-50 text-amber-800'
+                }`}
+              >
+                <p className="flex items-start gap-2 text-sm font-bold">
+                  <CalendarX2 className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  {issue.title}
+                </p>
+                {issue.detail && <p className="mt-1 pl-6 text-xs font-medium">{issue.detail}</p>}
+              </div>
+            ))}
+            <p className="text-xs text-slate-500">
+              {lang === 'vi'
+                ? 'Nếu buổi dạy đúng như vậy, bạn vẫn gửi được — giáo vụ sẽ thấy ghi chú này khi duyệt.'
+                : 'If the session really happened this way you can still submit — the academic team will see this note when approving.'}
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

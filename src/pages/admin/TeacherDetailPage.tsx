@@ -1107,7 +1107,7 @@ export function TeacherDetailPage() {
           `${l.minutes}'`,
           l.pricePerMinute,
           estSalary,
-          l.status === 'approved' ? 'Đã duyệt' : l.status === 'pending' ? 'Chờ duyệt' : 'Từ chối',
+          l.status === 'approved' ? 'Đã duyệt' : l.status === 'pending' ? 'Chờ duyệt' : l.status === 'cancelled' ? 'Gia sư đã huỷ' : 'Từ chối',
           paymentStatus
         ]
       }),
@@ -2102,14 +2102,17 @@ export function TeacherDetailPage() {
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70'
                               : l.status === 'pending'
                               ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/70'
+                              : l.status === 'cancelled'
+                              ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200/70'
                               : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100/70'
                             }`}
                         >
                           {l.status === 'approved' && <Check className="w-3 h-3 text-emerald-600" />}
                           {l.status === 'pending' && <Hourglass className="w-3 h-3 text-amber-600" />}
                           {l.status === 'rejected' && <X className="w-3 h-3 text-rose-600" />}
+                          {l.status === 'cancelled' && <X className="w-3 h-3 text-slate-500" />}
                           <span>
-                            {l.status === 'approved' ? 'Đã duyệt' : l.status === 'pending' ? 'Chờ duyệt' : 'Từ chối'}
+                            {l.status === 'approved' ? 'Đã duyệt' : l.status === 'pending' ? 'Chờ duyệt' : l.status === 'cancelled' ? 'Gia sư đã huỷ' : 'Từ chối'}
                           </span>
                           <ChevronDown className="w-3 h-3 text-slate-400" />
                         </button>

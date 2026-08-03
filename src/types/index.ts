@@ -198,7 +198,8 @@ export interface Lesson {
   subjectId: string
   subjectName: string
   date: string
-  minutes: 25 | 50 | 75 | 100
+  /** 0 phút = vắng có phép (vẫn ghi nhận buổi nhưng không tính giờ dạy). */
+  minutes: 0 | 25 | 50 | 75 | 100
   comment: string
   homework: string
   book?: string
@@ -206,9 +207,13 @@ export interface Lesson {
   report?: LessonReport | null
   rating?: number | null
   imageURLs: string[]
-  status: 'pending' | 'approved' | 'rejected'
+  /** 'cancelled' = gia sư tự huỷ buổi điểm danh của mình khi CHƯA được duyệt. */
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
   attendanceStatus?: 'present' | 'with_permission' | 'without_permission'
   rejectedReason?: string
+  cancelledAt?: Timestamp
+  cancelledBy?: string
+  cancelledReason?: string
   sessionsBeforeApproval: number
   sessionsAfterApproval: number
   minutesBeforeApproval?: number
@@ -227,6 +232,23 @@ export interface Lesson {
   currency?: string
   points?: number
   pointsPer25Minutes?: number
+  /** Kết quả đối chiếu với lịch đã xếp tại thời điểm gia sư gửi điểm danh. */
+  scheduleCheck?: LessonScheduleCheckSnapshot
+  /** Số buổi điểm danh của cùng học viên + cùng gia sư trong ngày, tính cả buổi này. */
+  sameDayCount?: number
+}
+
+/** Ảnh chụp kết quả đối chiếu lịch, lưu kèm buổi dạy để giáo vụ xem lại không tốn truy vấn. */
+export interface LessonScheduleCheckSnapshot {
+  status: 'matched' | 'mismatch_day' | 'other_teacher' | 'no_booking'
+  scheduledDates: string[]
+  bookingId?: string
+  bookingStart?: string
+  bookingEnd?: string
+  minutesMismatch?: number
+  otherTeacherNames?: string[]
+  checkedAt: string
+  windowDays: number
 }
 
 export interface Payroll {
