@@ -10,7 +10,7 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
@@ -19,6 +19,7 @@ import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { useAuthStore } from '@/stores/authStore'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
+type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
 interface Branch { id: string; name: string; status: string }
 type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
 
@@ -202,6 +203,10 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
   const [profileFilter, setProfileFilter] = useState<ProfileFilter>(() => (sessionStorage.getItem('teachers_profileFilter') as ProfileFilter) || 'all')
+  const [sortBy, setSortBy] = useState<TeacherSort>(() => {
+    const stored = sessionStorage.getItem('teachers_sortBy')
+    return stored === 'minutes_desc' || stored === 'minutes_asc' ? stored : 'newest'
+  })
   const [branches, setBranches] = useState<Branch[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editTeacher, setEditTeacher] = useState<Teacher | null>(null)
@@ -234,8 +239,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     sessionStorage.setItem('teachers_statusFilter', statusFilter)
     sessionStorage.setItem('teachers_branchFilter', branchFilter)
     sessionStorage.setItem('teachers_profileFilter', profileFilter)
+    sessionStorage.setItem('teachers_sortBy', sortBy)
     sessionStorage.setItem('teachers_limitVal', String(limitVal))
-  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, limitVal])
+  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, sortBy, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -364,7 +370,19 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile
   })
 
-  const visibleTeachers = limitVal > 0 ? filtered.slice(0, limitVal) : filtered
+  const getApprovedMinutes = (teacher: Teacher) => (
+    minutesMap[teacher.id] ?? (Number((teacher as Teacher & { totalApprovedMinutes?: number }).totalApprovedMinutes) || 0)
+  )
+
+  const sortedTeachers = sortBy === 'newest'
+    ? filtered
+    : [...filtered].sort((a, b) => {
+        const minuteDifference = getApprovedMinutes(a) - getApprovedMinutes(b)
+        if (minuteDifference !== 0) return sortBy === 'minutes_desc' ? -minuteDifference : minuteDifference
+        return a.name.localeCompare(b.name, 'vi')
+      })
+
+  const visibleTeachers = limitVal > 0 ? sortedTeachers.slice(0, limitVal) : sortedTeachers
 
   const profileCounts = directoryTeachers.reduce((counts, teacher) => {
     const compliance = getTeacherCertificateCompliance(teacher)
@@ -628,6 +646,17 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             </select>
           </label>
 
+          <select
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as TeacherSort)}
+            className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+            aria-label="Sắp xếp gia sư theo tổng phút dạy"
+          >
+            <option value="newest">Mới tạo gần đây</option>
+            <option value="minutes_desc">Dạy nhiều nhất</option>
+            <option value="minutes_asc">Dạy ít nhất</option>
+          </select>
+
           {category !== 'resigned' && (
             <div className="flex bg-slate-100/80 p-1 rounded-xl overflow-x-auto hide-scrollbar">
               {['all', 'active', 'inactive'].map((status) => (
@@ -747,7 +776,24 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => (
+                    {['Mã', 'Tên giáo viên', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                      <th
+                        key={h}
+                        className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
+                        aria-sort={sortBy === 'minutes_desc' ? 'descending' : sortBy === 'minutes_asc' ? 'ascending' : 'none'}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSortBy((current) => current === 'minutes_desc' ? 'minutes_asc' : 'minutes_desc')}
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-1.5 font-bold transition hover:bg-violet-50 hover:text-violet-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                          aria-label={sortBy === 'minutes_desc' ? 'Sắp xếp gia sư dạy ít nhất' : 'Sắp xếp gia sư dạy nhiều nhất'}
+                          title={sortBy === 'minutes_desc' ? 'Đang xếp dạy nhiều nhất; nhấn để đảo chiều' : sortBy === 'minutes_asc' ? 'Đang xếp dạy ít nhất; nhấn để đảo chiều' : 'Sắp xếp theo tổng phút dạy'}
+                        >
+                          {h}
+                          {sortBy === 'minutes_desc' ? <ArrowDown className="h-3.5 w-3.5" /> : sortBy === 'minutes_asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5" />}
+                        </button>
+                      </th>
+                    ) : (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -808,7 +854,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-violet-600 font-semibold text-sm">
-                          {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'
+                          {getApprovedMinutes(teacher).toLocaleString('vi-VN')}'
                         </span>
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -881,8 +927,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Level ×{teacher.level}
-                      {(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0) > 0
-                        ? ` · ${(minutesMap[teacher.id] ?? Number((teacher as any).totalApprovedMinutes) ?? 0).toLocaleString('vi-VN')}'`
+                      {getApprovedMinutes(teacher) > 0
+                        ? ` · ${getApprovedMinutes(teacher).toLocaleString('vi-VN')}'`
                         : ''}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
