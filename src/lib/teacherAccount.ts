@@ -31,6 +31,7 @@ export async function retireTeacherAccount({
     query(collection(db, 'users'), where('teacherId', '==', teacherId))
   )
   const teacherRef = doc(db, 'teachers', teacherId)
+  const publicProfileRef = doc(db, 'publicTeacherProfiles', teacherId)
   const queriedUserRefs = usersSnapshot.docs.map(userDocument => userDocument.ref)
   const logRef = doc(collection(db, 'adminLogs'))
 
@@ -85,6 +86,15 @@ export async function retireTeacherAccount({
       resignedBy: adminId || 'admin',
       updatedAt: serverTimestamp(),
     })
+
+    // Hồ sơ gửi phụ huynh phải ngừng công khai cùng lúc với tài khoản gia sư.
+    // Dùng set/merge để cả hồ sơ đã xuất bản lẫn hồ sơ chưa từng xuất bản đều
+    // kết thúc ở trạng thái không thể đọc công khai.
+    transaction.set(publicProfileRef, {
+      isPublished: false,
+      unpublishedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
 
     currentUserSnaps.forEach(userSnap => {
       if (!userSnap.exists()) return

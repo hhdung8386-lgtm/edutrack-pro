@@ -606,6 +606,32 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Sanitized teacher profiles shared with parents.
+    match /publicTeacherProfiles/{teacherId} {
+      function hasOnlyPublicProfileFields() {
+        return request.resource.data.keys().hasOnly([
+          'code', 'releasedNickname', 'name', 'subjectIds', 'subjectNames',
+          'level', 'bio', 'photoURL', 'status', 'country', 'totalApprovedMinutes',
+          'yob', 'livingArea', 'trainedAt123English', 'degreeType', 'university',
+          'major', 'gradYear', 'gpa', 'academicAwards', 'scholarship', 'ielts',
+          'toeic', 'toefl', 'cefr', 'tesolTefl', 'pedagogicalCert', 'otherCerts',
+          'certificates', 'teachingYears', 'studentsTaughtCount',
+          'studentAgesTaught', 'teachingFormats', 'studentResults', 'strengths',
+          'otherStrengths', 'languagesTaught', 'academicSubjectsTaught',
+          'isPublished', 'publishedAt', 'unpublishedAt', 'updatedAt'
+        ]);
+      }
+
+      allow read: if resource.data.isPublished == true
+        && resource.data.status == 'active';
+      allow create, update: if isAdmin()
+        && request.resource.data.isPublished is bool
+        && (request.resource.data.isPublished == false
+          || request.resource.data.status == 'active')
+        && hasOnlyPublicProfileFields();
+      allow delete: if isAdmin();
+    }
+
     // Catch-all deny
     match /{document=**} {
       allow read, write: if false;

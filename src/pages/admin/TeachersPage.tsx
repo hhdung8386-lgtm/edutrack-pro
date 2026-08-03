@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, onSnapshot, writeBatch } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher, TeacherDirectoryCategory } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -24,10 +24,18 @@ interface Branch { id: string; name: string; status: string }
 type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
 
 async function commitTeacherUpdates(teacherIds: string[], values: Record<string, unknown>) {
-  for (let index = 0; index < teacherIds.length; index += 450) {
+  const batchSize = values.isTester === true ? 225 : 450
+  for (let index = 0; index < teacherIds.length; index += batchSize) {
     const batch = writeBatch(db)
-    teacherIds.slice(index, index + 450).forEach((teacherId) => {
+    teacherIds.slice(index, index + batchSize).forEach((teacherId) => {
       batch.update(doc(db, 'teachers', teacherId), values)
+      if (values.isTester === true) {
+        batch.set(doc(db, 'publicTeacherProfiles', teacherId), {
+          isPublished: false,
+          unpublishedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      }
     })
     await batch.commit()
   }
@@ -122,7 +130,19 @@ function StatusSelector({ teacher, onRetire }: { teacher: Teacher; onRetire: (te
     }
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'teachers', teacher.id), { status })
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'teachers', teacher.id), {
+        status,
+        updatedAt: serverTimestamp(),
+      })
+      if (status === 'inactive') {
+        batch.set(doc(db, 'publicTeacherProfiles', teacher.id), {
+          isPublished: false,
+          unpublishedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      }
+      await batch.commit()
       toast.success(`Đã chuyển giáo viên sang "${STATUS_STYLES[status].label}"`)
     } catch {
       toast.error('Lỗi khi cập nhật trạng thái')
@@ -404,7 +424,19 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const toggleTester = async (teacher: Teacher) => {
     const next = !teacher.isTester
     try {
-      await updateDoc(doc(db, 'teachers', teacher.id), { isTester: next })
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'teachers', teacher.id), {
+        isTester: next,
+        updatedAt: serverTimestamp(),
+      })
+      if (next) {
+        batch.set(doc(db, 'publicTeacherProfiles', teacher.id), {
+          isPublished: false,
+          unpublishedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      }
+      await batch.commit()
       setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? { ...t, isTester: next } : t)))
       toast.success(next ? `Đã thêm ${teacher.name} vào nhóm Tester` : `Đã bỏ ${teacher.name} khỏi nhóm Tester`)
     } catch (err: any) {
@@ -416,7 +448,10 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     if (!deleteTeacher) return
     setDeleting(true)
     try {
-      await deleteDoc(doc(db, 'teachers', deleteTeacher.id))
+      const batch = writeBatch(db)
+      batch.delete(doc(db, 'teachers', deleteTeacher.id))
+      batch.delete(doc(db, 'publicTeacherProfiles', deleteTeacher.id))
+      await batch.commit()
       toast.success('Xóa giáo viên thành công')
       setDeleteTeacher(null)
     } catch (err: any) {
