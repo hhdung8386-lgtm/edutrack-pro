@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -132,6 +132,8 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
   const [generatedCode, setGeneratedCode] = useState('')
 
   const isEdit = !!teacher
+  const isReactivation = teacher?.status === 'resigned'
+  const initialTeacherUpdatedAt = useRef(teacher?.updatedAt?.toMillis?.() ?? null)
   const certificateCompliance = getTeacherCertificateCompliance({ certificates })
 
   // Upload ảnh chứng chỉ lên Firebase Storage (thay vì nhét base64 vào Firestore —
@@ -372,7 +374,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         const teacherRef = doc(db, 'teachers', teacher.id)
         const teacherUpdateData = {
           code: newUsername || teacher.code,
-          status: teacher.status === 'resigned' && newUsername.trim() ? 'active' as const : teacher.status,
+          status: isReactivation && newUsername.trim() ? 'active' as const : teacher.status,
           name: finalName || teacher.name,
           level: data.level,
           pointsPer25Minutes: normalizedStudentPoints,
@@ -387,15 +389,16 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           isTester,
           ...interviewData,
           photoURL,
+          ...(isReactivation ? { resignedAt: null, resignedBy: '' } : {}),
           updatedAt: serverTimestamp(),
         }
         let teacherUpdatedWithAccount = false
 
         // If nickname changed, verify uniqueness
-        if (newUsername && newUsername !== teacher.code) {
+        if (newUsername && (newUsername !== teacher.code || isReactivation)) {
           const checkQuery = query(collection(db, 'teachers'), where('code', '==', newUsername))
           const checkSnap = await getDocsFromServer(checkQuery)
-          if (!checkSnap.empty) {
+          if (checkSnap.docs.some((teacherDocument) => teacherDocument.id !== teacher.id)) {
             toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi gia sư khác!`)
             return
           }
@@ -422,7 +425,25 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
                 await secondaryAuth.signOut()
                 finalUid = credential.user.uid
               } catch (signInErr) {
-                console.error('Failed to sign in/get existing auth user:', signInErr)
+                // Khi kích hoạt lại, tài khoản Auth có thể vẫn tồn tại với mật khẩu
+                // do gia sư đã đổi. Dùng đúng UID đã liên kết trong users/{uid}
+                // thay vì tạo tài khoản trùng hoặc chặn việc đồng bộ trạng thái.
+                if (isReactivation) {
+                  const linkedUsers = await getDocsFromServer(
+                    query(collection(db, 'users'), where('teacherId', '==', teacher.id)),
+                  )
+                  const normalizedEmail = finalEmail.trim().toLowerCase()
+                  const normalizedUsername = newUsername.trim().toLowerCase()
+                  const matchingUsers = linkedUsers.docs.filter((userDocument) => {
+                    const userData = userDocument.data()
+                    const email = typeof userData.email === 'string' ? userData.email.trim().toLowerCase() : ''
+                    const username = typeof userData.username === 'string' ? userData.username.trim().toLowerCase() : ''
+                    const releasedUsername = typeof userData.releasedUsername === 'string' ? userData.releasedUsername.trim().toLowerCase() : ''
+                    return email === normalizedEmail || username === normalizedUsername || releasedUsername === normalizedUsername
+                  })
+                  if (matchingUsers.length === 1) finalUid = matchingUsers[0].id
+                }
+                if (!finalUid) console.error('Failed to identify existing auth user for reactivation:', signInErr)
               }
             } else {
               console.error('Failed to provision new auth account:', err)
@@ -453,8 +474,16 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
 
             await runTransaction(db, async transaction => {
               const currentTeacherSnap = await transaction.get(teacherRef)
+              const currentUpdatedAt = currentTeacherSnap.exists()
+                ? currentTeacherSnap.data().updatedAt?.toMillis?.() ?? null
+                : null
 
-              if (!currentTeacherSnap.exists() || currentTeacherSnap.data().code !== teacher.code) {
+              if (!currentTeacherSnap.exists()
+                || currentTeacherSnap.data().code !== teacher.code
+                || (isReactivation && (
+                  currentTeacherSnap.data().status !== 'resigned'
+                  || currentUpdatedAt !== initialTeacherUpdatedAt.current
+                ))) {
                 throw new Error('Hồ sơ gia sư đã được thay đổi ở nơi khác. Vui lòng tải lại trước khi đổi nickname.')
               }
 
@@ -532,7 +561,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         if (!teacherUpdatedWithAccount) {
           await updateDoc(teacherRef, teacherUpdateData)
         }
-        toast.success('Đã cập nhật gia sư')
+        toast.success(isReactivation ? 'Đã kích hoạt lại gia sư và đồng bộ tài khoản đăng nhập' : 'Đã cập nhật gia sư')
       } else {
         // CREATE mode - Admin creates account for teacher
         if (!newUsername) {
@@ -677,7 +706,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       open
       onClose={onClose}
       size="xl"
-      title={isEdit ? 'Chỉnh sửa gia sư' : 'Thêm gia sư mới'}
+      title={isReactivation ? 'Kích hoạt lại gia sư' : isEdit ? 'Chỉnh sửa gia sư' : 'Thêm gia sư mới'}
       footer={
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={onClose}>Hủy</Button>
@@ -700,7 +729,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
               await onSubmit({ name: nameVal, level: levelVal, bio: bioVal, country: countryVal })
             }}
           >
-            {isEdit ? 'Lưu thay đổi' : 'Tạo gia sư'}
+            {isReactivation ? 'Kích hoạt lại' : isEdit ? 'Lưu thay đổi' : 'Tạo gia sư'}
           </Button>
         </div>
       }

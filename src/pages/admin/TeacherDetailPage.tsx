@@ -98,7 +98,9 @@ export function TeacherDetailPage() {
 
   const handleToggleStatus = async () => {
     if (!teacher) return
-    if (teacher.status === 'resigned' && !(teacher.code || '').trim()) {
+    // Hồ sơ nghỉ dạy luôn phải đi qua modal để đồng bộ lại nickname, users/{uid}
+    // và tài khoản đăng nhập; chỉ đổi status sẽ tạo trạng thái kích hoạt dở dang.
+    if (teacher.status === 'resigned') {
       setShowEdit(true)
       return
     }
@@ -1183,8 +1185,10 @@ export function TeacherDetailPage() {
             >
               {teacher.status === 'active'
                 ? 'Tạm dừng dạy'
-                : teacher.status === 'resigned' && !teacher.code
-                  ? 'Cấp nickname để dạy lại'
+                : teacher.status === 'resigned'
+                  ? teacher.code
+                    ? 'Kích hoạt lại & đồng bộ đăng nhập'
+                    : 'Cấp nickname để dạy lại'
                   : 'Kích hoạt dạy'}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>

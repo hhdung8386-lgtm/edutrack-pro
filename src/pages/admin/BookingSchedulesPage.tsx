@@ -29,6 +29,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
+import { TeacherProfileDetails } from '@/components/teachers/TeacherProfileDetails'
 import { calculateLessonPoints, getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import {
@@ -40,7 +41,6 @@ import {
   buildTeacherSubjectFilterOptions,
   normalizeTeacherSubjectLabel,
   teacherMatchesSubjectFilters,
-  teacherSubjectLabels,
   type TeacherSubjectGroup,
 } from '@/lib/teacherSubjects'
 
@@ -225,6 +225,7 @@ export function BookingSchedulesPage() {
   const { user } = useAuthStore()
   const [searchParams] = useSearchParams()
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [approvedMinutesByTeacher, setApprovedMinutesByTeacher] = useState<Record<string, number>>({})
   const [subjects, setSubjects] = useState<Subject[]>([])
   // Allow deep-linking to a specific teacher's schedule (e.g. from the student
   // lesson history page): /admin/booking-schedules?teacherId=...
@@ -262,6 +263,7 @@ export function BookingSchedulesPage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [showCancelBatchModal, setShowCancelBatchModal] = useState(false)
   const [profileTeacher, setProfileTeacher] = useState<Teacher | null>(null)
+  const [teacherListSort, setTeacherListSort] = useState<'name' | 'minutes_desc' | 'minutes_asc'>('minutes_desc')
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null)
 
   // Form states inside Schedule Modal
@@ -290,9 +292,13 @@ export function BookingSchedulesPage() {
     async function loadTeachersAndAvailability() {
       setLoading(true)
       try {
-        const [teachersSnap, availSnap] = await Promise.all([
+        const [teachersSnap, availSnap, approvedLessonsSnap] = await Promise.all([
           getDocs(query(collection(db, 'teachers'), where('status', '==', 'active'))),
-          getDocs(collection(db, 'teacherAvailability'))
+          getDocs(collection(db, 'teacherAvailability')),
+          getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved'))).catch((error) => {
+            console.error('Error loading approved lesson minutes:', error)
+            return null
+          }),
         ])
 
         const items = teachersSnap.docs
@@ -310,6 +316,20 @@ export function BookingSchedulesPage() {
           avMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() } as TeacherAvailability
         })
         setAllAvailabilities(avMap)
+
+        if (approvedLessonsSnap) {
+          const approvedMinutes = Object.fromEntries(items.map((teacher) => [teacher.id, 0])) as Record<string, number>
+          approvedLessonsSnap.docs.forEach((lessonDocument) => {
+            const lesson = lessonDocument.data()
+            const teacherId = typeof lesson.teacherId === 'string' ? lesson.teacherId : ''
+            if (!teacherId) return
+            approvedMinutes[teacherId] = (approvedMinutes[teacherId] || 0) + (Number(lesson.minutes) || 0)
+          })
+          setApprovedMinutesByTeacher(approvedMinutes)
+        } else {
+          // Chỉ dùng field tổng lưu sẵn khi truy vấn buổi học thật sự thất bại.
+          setApprovedMinutesByTeacher({})
+        }
       } catch (error) {
         console.error('Error loading teachers/availability:', error)
         toast.error('Không tải được danh sách giáo viên')
@@ -620,6 +640,19 @@ export function BookingSchedulesPage() {
     }
 
     return true
+  })
+
+  const getTeacherApprovedMinutes = (teacher: Teacher) => (
+    approvedMinutesByTeacher[teacher.id] ?? (Number(teacher.totalApprovedMinutes) || 0)
+  )
+
+  const displayedTeachers = [...filteredTeachers].sort((left, right) => {
+    const leftNickname = left.code || left.releasedNickname || ''
+    const rightNickname = right.code || right.releasedNickname || ''
+    if (teacherListSort === 'name') return leftNickname.localeCompare(rightNickname, 'vi')
+    const minuteDifference = getTeacherApprovedMinutes(left) - getTeacherApprovedMinutes(right)
+    if (minuteDifference !== 0) return teacherListSort === 'minutes_desc' ? -minuteDifference : minuteDifference
+    return leftNickname.localeCompare(rightNickname, 'vi')
   })
 
   const isCellOpen = (day: DayOfWeek, start: string) => {
@@ -1398,7 +1431,7 @@ export function BookingSchedulesPage() {
           </div>
           {selectedTeacher && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
-              {selectedTeacher.code} · {selectedTeacher.name}
+              {selectedTeacher.code || selectedTeacher.releasedNickname || 'Chưa cấp nickname'}
             </div>
           )}
         </div>
@@ -1775,9 +1808,21 @@ export function BookingSchedulesPage() {
                 {loading ? 'Đang tải dữ liệu...' : `${filteredTeachers.length}/${teachers.length} gia sư phù hợp`}
               </p>
             </div>
-            {selectedTeacher && !filteredTeachers.some((teacher) => teacher.id === selectedTeacher.id) && (
-              <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">Ngoài bộ lọc</span>
-            )}
+            <div className="flex flex-col items-end gap-2">
+              {selectedTeacher && !filteredTeachers.some((teacher) => teacher.id === selectedTeacher.id) && (
+                <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">Ngoài bộ lọc</span>
+              )}
+              <select
+                value={teacherListSort}
+                onChange={(event) => setTeacherListSort(event.target.value as 'name' | 'minutes_desc' | 'minutes_asc')}
+                className="min-h-9 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-400"
+                aria-label="Sắp xếp danh sách gia sư theo số phút đã dạy"
+              >
+                <option value="minutes_desc">Dạy nhiều nhất</option>
+                <option value="minutes_asc">Dạy ít nhất</option>
+                <option value="name">Nickname A-Z</option>
+              </select>
+            </div>
           </div>
 
           <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1 xl:max-h-[calc(100vh-13rem)]">
@@ -1808,11 +1853,9 @@ export function BookingSchedulesPage() {
                   Xóa tất cả bộ lọc
                 </button>
               </div>
-            ) : filteredTeachers.map((teacher) => {
-              const subjectLabels = teacherSubjectLabels(teacher, subjects)
-              const subjectSummary = subjectLabels.length > 0
-                ? `${subjectLabels.slice(0, 2).join(', ')}${subjectLabels.length > 2 ? ` +${subjectLabels.length - 2}` : ''}`
-                : 'Chưa khai báo môn'
+            ) : displayedTeachers.map((teacher) => {
+              const nickname = teacher.code || teacher.releasedNickname || 'Chưa cấp nickname'
+              const approvedMinutes = getTeacherApprovedMinutes(teacher)
 
               return (
                 <div
@@ -1834,21 +1877,20 @@ export function BookingSchedulesPage() {
                     className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-400"
                   >
                     {teacher.photoURL ? (
-                      <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 flex-none rounded-xl object-cover" />
+                      <img src={teacher.photoURL} alt={nickname} className="h-11 w-11 flex-none rounded-xl object-cover" />
                     ) : (
                       <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-indigo-50 text-sm font-black text-indigo-700">
-                        {teacher.name.slice(0, 2).toUpperCase()}
+                        {nickname.slice(0, 2).toUpperCase()}
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-black text-slate-900">{teacher.name}</span>
-                      <span className="block truncate text-xs font-semibold text-slate-500">{teacher.code}</span>
+                      <span className="block truncate text-sm font-black text-slate-900">{nickname}</span>
                       <span className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-slate-500">
                         <Globe2 className="h-3 w-3 flex-none" />
                         {teacher.country ? countryLabel(teacher.country.trim().toUpperCase()) : 'Chưa cập nhật quốc gia'}
                       </span>
-                      <span className="mt-0.5 block truncate text-[11px] text-slate-500" title={subjectLabels.join(', ')}>
-                        Môn: {subjectSummary}
+                      <span className="mt-0.5 block truncate text-[11px] font-bold text-violet-700">
+                        {approvedMinutes.toLocaleString('vi-VN')} phút đã dạy
                       </span>
                     </span>
                   </button>
@@ -1856,7 +1898,7 @@ export function BookingSchedulesPage() {
                     type="button"
                     onClick={() => setProfileTeacher(teacher)}
                     className="min-h-10 flex-none rounded-lg border border-indigo-200 bg-white px-2.5 text-[11px] font-extrabold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-                    aria-label={`Xem profile ${teacher.code}`}
+                    aria-label={`Xem profile ${nickname}`}
                   >
                     Profile
                   </button>
@@ -2041,61 +2083,12 @@ export function BookingSchedulesPage() {
       </div>
 
       {profileTeacher && (
-        <Modal open size="sm" onClose={() => setProfileTeacher(null)} title="Profile gia sư">
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-              {profileTeacher.photoURL ? (
-                <img
-                  src={profileTeacher.photoURL}
-                  alt={profileTeacher.code}
-                  className="h-16 w-16 flex-none rounded-2xl object-cover"
-                />
-              ) : (
-                <div className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl bg-indigo-50 text-lg font-black text-indigo-700">
-                  {profileTeacher.code.slice(0, 2).toUpperCase()}
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-lg font-black text-slate-900">{profileTeacher.code}</p>
-                <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-                  <Globe2 className="h-4 w-4 flex-none" />
-                  {profileTeacher.country
-                    ? countryLabel(profileTeacher.country.trim().toUpperCase())
-                    : 'Chưa cập nhật quốc gia'}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kinh nghiệm</p>
-                <p className="mt-1 text-sm font-extrabold text-slate-800">
-                  {typeof profileTeacher.teachingYears === 'number'
-                    ? `${profileTeacher.teachingYears} năm`
-                    : 'Chưa cập nhật'}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">IELTS</p>
-                <p className="mt-1 text-sm font-extrabold text-slate-800">{profileTeacher.ielts || 'Chưa cập nhật'}</p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Môn giảng dạy</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {teacherSubjectLabels(profileTeacher, subjects).length > 0 ? (
-                  teacherSubjectLabels(profileTeacher, subjects).map((label) => (
-                    <span key={label} className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700">
-                      {label}
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-sm font-semibold text-slate-500">Chưa cập nhật môn</p>
-                )}
-              </div>
-            </div>
-          </div>
+        <Modal open size="xl" onClose={() => setProfileTeacher(null)} title="Profile gia sư">
+          <TeacherProfileDetails
+            teacher={profileTeacher}
+            subjects={subjects}
+            totalApprovedMinutes={getTeacherApprovedMinutes(profileTeacher)}
+          />
         </Modal>
       )}
 
