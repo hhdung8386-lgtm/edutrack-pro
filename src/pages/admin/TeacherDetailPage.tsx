@@ -14,7 +14,7 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2 } from 'lucide-react'
-import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
+import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD, PERSONAL_INCOME_TAX_THRESHOLD_VND } from '@/lib/constants'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
@@ -1413,7 +1413,7 @@ export function TeacherDetailPage() {
               <Wallet className="w-6 h-6 text-emerald-500" />
             </div>
             <div>
-              {isVndOnly && totalSalary > 2000000 ? (
+              {isVndOnly && totalSalary > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                 <div className="space-y-0.5">
                   <p className="text-xs text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalary, 'VND')}</span></p>
                   <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(totalSalary * 0.9, 'VND')}</p>
@@ -1711,7 +1711,7 @@ export function TeacherDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-center">
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Đã duyệt</p>
-                {isVndMonth && approvedSalaryMonth > 2000000 ? (
+                {isVndMonth && approvedSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                   <div className="space-y-0.5">
                     <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(approvedSalaryMonth, 'VND')}</span></p>
                     <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(approvedSalaryMonth * 0.9, 'VND')}</p>
@@ -1729,7 +1729,7 @@ export function TeacherDetailPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Tổng lương tháng {Number(mMon) || ''}</p>
-                {isVndMonth && totalSalaryMonth > 2000000 ? (
+                {isVndMonth && totalSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                   <div className="space-y-0.5">
                     <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalaryMonth, 'VND')}</span></p>
                     <p className="text-lg font-bold text-emerald-600">Dự kiến sau trừ: {formatMoney(totalSalaryMonth * 0.9, 'VND')}</p>
@@ -1788,7 +1788,7 @@ export function TeacherDetailPage() {
                 <div className="space-y-1">
                   <p>Lương tháng chỉ tính các buổi đã duyệt.</p>
                   <p className="text-[11px] text-slate-500 italic">
-                    * Đối với gia sư có tổng lương tháng trên 2.000.000 đ, hệ thống tự động khấu trừ 10% thuế TNCN theo quy định.
+                    * Đối với gia sư có tổng lương tháng trên 5.000.000 đ, hệ thống tự động khấu trừ 10% thuế TNCN theo quy định.
                   </p>
                 </div>
               </div>
@@ -2202,7 +2202,7 @@ export function TeacherDetailPage() {
                 <span className="text-slate-500">Lương chưa trừ thuế:</span>
                 <span className="font-bold text-slate-700">{approvedSalaryMonthLabel}</span>
               </div>
-              {isVndMonth && approvedSalaryMonth > 2000000 ? (
+              {isVndMonth && approvedSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                 <>
                   <div className="flex justify-between text-sm text-rose-500 font-medium">
                     <span>Thuế TNCN khấu trừ (10%):</span>
@@ -2222,9 +2222,9 @@ export function TeacherDetailPage() {
                 <span className="text-slate-500">Chưa thanh toán (Chờ trả - Gross):</span>
                 <span className="font-bold text-amber-500">{unpaidPayrollMonthLabel}</span>
               </div>
-              {isVndMonth && approvedSalaryMonth > 2000000 && (
+              {isVndMonth && approvedSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND && (
                 <div className="text-[10px] text-slate-400 italic border-t border-slate-200/30 pt-2 text-right">
-                  * Lương thực nhận của tháng sẽ khấu trừ 10% do tổng thu nhập vượt quá 2.000.000đ.
+                  * Lương thực nhận của tháng sẽ khấu trừ 10% do tổng thu nhập vượt quá 5.000.000đ.
                 </div>
               )}
             </div>
@@ -2242,7 +2242,7 @@ export function TeacherDetailPage() {
             </div>
             <div>
               <p className="text-xs text-slate-400 font-semibold">Tổng lương tháng {Number(mMon) || ''}</p>
-              {isVndMonth && totalSalaryMonth > 2000000 ? (
+              {isVndMonth && totalSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                 <>
                   <p className="text-[11px] text-slate-400 line-through leading-none mt-0.5">{formatMoney(totalSalaryMonth, 'VND')}</p>
                   <p className="text-base font-extrabold text-slate-800 leading-tight">{formatMoney(totalSalaryMonth * 0.9, 'VND')}</p>
@@ -2265,7 +2265,7 @@ export function TeacherDetailPage() {
             <div>
               <p className="text-xs text-slate-400 font-semibold">Đã duyệt</p>
               <p className="text-base font-extrabold text-emerald-600 mt-0.5">{approvedInMonth.length} buổi</p>
-              {isVndMonth && approvedSalaryMonth > 2000000 ? (
+              {isVndMonth && approvedSalaryMonth > PERSONAL_INCOME_TAX_THRESHOLD_VND ? (
                 <p className="text-[10px] text-slate-400 mt-0.5">
                   <span className="line-through">{formatMoney(approvedSalaryMonth, 'VND')}</span>
                   <span className="text-emerald-600 font-semibold ml-1">→ {formatMoney(approvedSalaryMonth * 0.9, 'VND')}</span>
@@ -2295,7 +2295,7 @@ export function TeacherDetailPage() {
               <span className="text-xs font-semibold">Lương tháng {Number(mMon) || ''} chỉ tính các buổi đã duyệt.</span>
             </div>
             <div className="text-[10px] text-slate-500 italic mt-1 leading-normal">
-              * Gia sư có tổng lương tháng trên 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN.
+              * Gia sư có tổng lương tháng trên 5.000.000 đ sẽ bị khấu trừ 10% thuế TNCN.
             </div>
           </div>
         </div>

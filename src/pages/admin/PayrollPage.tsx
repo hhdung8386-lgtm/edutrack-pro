@@ -5,7 +5,7 @@ import { Payroll, Teacher, Lesson, Student, StudentSubject } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { formatVND, getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute } from '@/lib/constants'
+import { formatVND, getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute, PERSONAL_INCOME_TAX_THRESHOLD_VND } from '@/lib/constants'
 import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2 } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
@@ -419,7 +419,7 @@ export function PayrollPage() {
         <p className="text-4xl font-bold text-emerald-400 mt-1">{formatTotals()}</p>
         <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} giáo viên · {payrolls.length} buổi dạy</p>
         <p className="text-[11px] text-slate-400 italic mt-2">
-          * Lưu ý: Lương hiển thị của từng giáo viên có thu nhập trên 2.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
+          * Lưu ý: Lương hiển thị của từng giáo viên có thu nhập trên 5.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
         </p>
       </Card>
 
@@ -526,7 +526,7 @@ export function PayrollPage() {
                   }
                   const teacherCurrency = tp[0]?.currency || 'VND'
                   const isVND = teacherCurrency === 'VND'
-                  if (isVND && total > 2000000) {
+                  if (isVND && total > PERSONAL_INCOME_TAX_THRESHOLD_VND) {
                     return (
                       <div className="text-right flex flex-col justify-end items-end">
                         <p className="text-[10px] text-slate-400 line-through leading-none">{formatVND(total)}</p>
@@ -646,7 +646,7 @@ export function PayrollPage() {
                       }
                       const teacherCurrency = tp[0]?.currency || 'VND'
                       const isVND = teacherCurrency === 'VND'
-                      if (isVND && total > 2000000) {
+                      if (isVND && total > PERSONAL_INCOME_TAX_THRESHOLD_VND) {
                         return (
                           <>
                             <tr className="bg-slate-50/50">
@@ -663,7 +663,7 @@ export function PayrollPage() {
                             </tr>
                             <tr>
                               <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
-                                * Thu nhập tháng vượt quá 2.000.000 đ sẽ bị khấu trừ 10% thuế TNCN theo quy định.
+                                * Thu nhập tháng vượt quá 5.000.000 đ sẽ bị khấu trừ 10% thuế TNCN theo quy định.
                               </td>
                             </tr>
                           </>
