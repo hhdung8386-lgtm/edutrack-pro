@@ -510,7 +510,7 @@ function TeacherCard({
 }) {
   const highlights = buildHighlights(teacher)
   const strengths = (teacher.strengths || []).map((key) => STRENGTH_LABELS[key] || key).slice(0, 3)
-  const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, compact ? 3 : 6)
+  const chips = [...teacher.priorityReasons, ...highlights, ...strengths].slice(0, 6)
   const subjectNames = visibleTeacherSubjectNames(teacher.subjectNames)
 
   return (
@@ -529,7 +529,7 @@ function TeacherCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#98720a]">
-                {subjectNames.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
+                {compact ? 'Giáo viên 1 kèm 1' : subjectNames.slice(0, 2).join(', ') || 'Giáo viên 1 kèm 1'}
               </p>
               <h3 className="mt-1 text-xl font-black tracking-tight text-slate-950">
                 <div className="truncate">{getTeacherDisplayName(teacher)}</div>
@@ -546,9 +546,11 @@ function TeacherCard({
             </div>
           </div>
 
-          {!compact && <p className="mt-3 text-sm leading-6 text-slate-600">{summarizeBio(teacher)}</p>}
+          <p className={`${compact ? 'mt-2 line-clamp-2 text-xs leading-5' : 'mt-3 text-sm leading-6'} text-slate-600`}>
+            {summarizeBio(teacher)}
+          </p>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          {!compact && <div className="mt-4 flex flex-wrap gap-2">
             {teacher.hasAvailableSchedule && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
                 <Clock3 className="h-3.5 w-3.5" />
@@ -565,7 +567,7 @@ function TeacherCard({
                 {chip}
               </span>
             ))}
-          </div>
+          </div>}
 
           <div className={compact ? 'mt-3 text-xs text-slate-500' : 'mt-auto grid gap-3 pt-5 sm:grid-cols-3'}>
             <div className="flex items-center gap-2 text-sm text-slate-600">

@@ -1456,11 +1456,11 @@ export function BookingSchedulesPage() {
               )}
             </div>
 
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
+            <div className="relative space-y-1.5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Môn gia sư dạy
               </p>
-              <details className="group rounded-xl border border-slate-200 bg-white">
+              <details className="group relative rounded-xl border border-slate-200 bg-white">
                 <summary
                   aria-label="Mở bộ lọc môn gia sư dạy"
                   className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-indigo-400 [&::-webkit-details-marker]:hidden"
@@ -1476,7 +1476,7 @@ export function BookingSchedulesPage() {
                   <ChevronDown className="h-4 w-4 flex-none text-slate-400 transition group-open:rotate-180" />
                 </summary>
 
-                <div className="space-y-3 border-t border-slate-100 p-3">
+                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 space-y-3 rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_48px_rgba(15,23,42,0.16)]">
                   <label className="relative block">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                     <input

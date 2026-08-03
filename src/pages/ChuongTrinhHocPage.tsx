@@ -63,7 +63,7 @@ const LEVEL_STAGES = [
   {
     levels: '1',
     title: 'Nền tảng',
-    note: 'Làm quen, phát âm và phản xạ cơ bản',
+    note: 'Từ vựng, mẫu câu cơ bản.',
     span: 1,
     surface: 'bg-[#FFF6CF]',
     text: 'text-[#8A5800]',
@@ -71,7 +71,7 @@ const LEVEL_STAGES = [
   {
     levels: '2-5',
     title: 'Thực chiến',
-    note: 'Giao tiếp, học thuật và ứng dụng',
+    note: 'Phát triển kỹ năng giao tiếp, học thuật và ứng dụng tiếng Anh vào các tình huống thực tế.',
     span: 4,
     surface: 'bg-[#EAF8FD]',
     text: 'text-[#087AA1]',
@@ -79,7 +79,7 @@ const LEVEL_STAGES = [
   {
     levels: '6-9',
     title: 'Chuyên sâu',
-    note: 'Diễn đạt chuyên sâu và tự chủ',
+    note: 'Nâng cao khả năng diễn đạt, tư duy ngôn ngữ và sử dụng tiếng Anh một cách tự chủ, linh hoạt.',
     span: 4,
     surface: 'bg-[#EAF8F2]',
     text: 'text-[#08795A]',
@@ -115,7 +115,7 @@ function LevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudie
 
 function DesktopMatrix() {
   return (
-    <div className="hidden overflow-hidden rounded-[1.75rem] border-2 border-[#FFC107] bg-white shadow-[0_22px_64px_rgba(217,141,0,0.12)] md:block">
+    <div className="hidden overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_22px_64px_rgba(35,55,80,0.08)] md:block">
       {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng L1..L9 */}
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
         <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
@@ -128,10 +128,9 @@ function DesktopMatrix() {
               className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
               style={{ gridColumn: `span ${stage.span}` }}
             >
-              <p className={`text-sm font-black ${stage.text}`}>
-                {stage.levels}: {stage.title}
-              </p>
-              <p className="mt-0.5 hidden text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
+              <p className={`text-sm font-black ${stage.text}`}>Level {stage.levels}</p>
+              <p className={`mt-0.5 text-xs font-black ${stage.text}`}>{stage.title}</p>
+              <p className="mt-1 hidden max-w-[34rem] text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
             </div>
           ))}
         </div>
@@ -196,15 +195,16 @@ function MobileMatrix() {
   return (
     <div className="space-y-5 md:hidden">
       {/* Ba chặng năng lực — bản rút gọn cho điện thoại */}
-      <div className="overflow-hidden rounded-2xl border-2 border-[#FFC107]">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <p className="bg-[#FFC107] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#10213A]">
           Lộ trình 9 cấp độ
         </p>
         <div className="grid grid-cols-3 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
             <div key={stage.title} className={`px-2 py-2.5 text-center ${stage.surface}`}>
-              <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.levels}</p>
+              <p className={`text-xs font-black leading-4 ${stage.text}`}>Level {stage.levels}</p>
               <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.title}</p>
+              <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">{stage.note}</p>
             </div>
           ))}
         </div>

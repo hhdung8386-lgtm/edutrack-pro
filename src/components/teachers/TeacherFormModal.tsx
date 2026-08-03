@@ -188,6 +188,23 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       if (teacher.gender) {
         setGender(teacher.gender)
       }
+
+      if (teacher.status === 'resigned' && !teacher.code) {
+        let active = true
+        generateUniqueEnglishName(teacher.gender || 'female')
+          .then((code) => {
+            if (!active) return
+            setGeneratedCode(code)
+            setNewUsername(code)
+          })
+          .catch((err) => {
+            console.error('Generate replacement teacher nickname failed:', err)
+            if (active) toast.error('Không thể sinh nickname mới. Vui lòng bấm Sinh tên để thử lại.')
+          })
+        return () => {
+          active = false
+        }
+      }
     }
   }, [isEdit, teacher])
 
@@ -211,7 +228,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
     const newErrors: Record<string, string> = {}
     let firstErrorFieldId = ''
 
-    if (!isEdit && !newUsername.trim()) {
+    if (!newUsername.trim()) {
       newErrors.username = 'Vui lòng nhập tên tài khoản'
       if (!firstErrorFieldId) firstErrorFieldId = 'field-username'
     }
@@ -355,6 +372,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         const teacherRef = doc(db, 'teachers', teacher.id)
         const teacherUpdateData = {
           code: newUsername || teacher.code,
+          status: teacher.status === 'resigned' && newUsername.trim() ? 'active' as const : teacher.status,
           name: finalName || teacher.name,
           level: data.level,
           pointsPer25Minutes: normalizedStudentPoints,

@@ -98,6 +98,10 @@ export function TeacherDetailPage() {
 
   const handleToggleStatus = async () => {
     if (!teacher) return
+    if (teacher.status === 'resigned' && !(teacher.code || '').trim()) {
+      setShowEdit(true)
+      return
+    }
     if (teacher.status !== 'active' && !(teacher.code || '').trim()) {
       toast.error('Hãy cấp nickname đăng nhập mới trước khi kích hoạt lại gia sư')
       setShowEdit(true)
@@ -194,8 +198,11 @@ export function TeacherDetailPage() {
   useEffect(() => {
     if (!id) return
 
-    getDoc(doc(db, 'teachers', id)).then((snap) => {
+    const unsubTeacher = onSnapshot(doc(db, 'teachers', id), (snap) => {
       if (snap.exists()) setTeacher({ id: snap.id, ...snap.data() } as Teacher)
+      setLoading(false)
+    }, (error) => {
+      console.error('Subscribe teacher profile failed:', error)
       setLoading(false)
     })
 
@@ -220,6 +227,7 @@ export function TeacherDetailPage() {
     }).catch(console.error)
 
     return () => {
+      unsubTeacher()
       unsubLessons()
       unsubPayrolls()
     }
