@@ -30,7 +30,7 @@ import {
 } from 'recharts'
 import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { rewardMonthKey } from '@/lib/rewards'
-import { parseLegacyLessonReport } from '@/components/lessons/lessonReport'
+import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 
@@ -2637,16 +2637,31 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               </div>
             )}
 
-            {detailLesson.homework && (
+            {(detailLesson.homework || (detailLesson.homeworkItems?.length ?? 0) > 0) && (
               <div className="rounded-2xl border border-amber-100 bg-amber-50/65 p-4">
                 <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-amber-700">
                   <ClipboardCheck className="h-4 w-4" />
                   {lang === 'vi' ? 'Bài tập về nhà' : 'Homework'}
                 </p>
-                <div className="relative pl-4">
-                  <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-amber-400 rounded-full" />
-                  <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">{cleanLessonText(detailLesson.homework)}</p>
-                </div>
+                {/* Buổi mới có bài tập theo loại; buổi CŨ chỉ có chuỗi -> giữ nguyên cách hiển thị cũ */}
+                {detailLesson.homeworkItems && detailLesson.homeworkItems.length > 0 ? (
+                  <div className="space-y-2">
+                    {detailLesson.homeworkItems.map((item, idx) => (
+                      <div key={`${item.type}-${idx}`} className="relative pl-4">
+                        <span className="absolute bottom-1 left-0 top-1 w-[3px] rounded-full bg-amber-400" />
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                          {(lang === 'vi' ? HOMEWORK_TYPE_LABELS_VI : HOMEWORK_TYPE_LABELS_EN)[item.type]}
+                        </p>
+                        <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">{cleanLessonText(item.content)}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="relative pl-4">
+                    <span className="absolute left-0 top-1 bottom-1 w-[3px] bg-amber-400 rounded-full" />
+                    <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">{cleanLessonText(detailLesson.homework)}</p>
+                  </div>
+                )}
               </div>
             )}
 

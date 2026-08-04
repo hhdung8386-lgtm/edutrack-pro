@@ -534,7 +534,12 @@ export function NationalBrandStory() {
               </article>
             ))}
           </div>
+        </div>
+      </section>
 
+      {/* Hành trình phát triển tách thành khối riêng, nền xanh để phân biệt với khối "Về 123English" */}
+      <section className="national-section national-section-journey">
+        <div className="national-container">
           <div className="national-growth-story">
             <div className="national-growth-heading">
               <h3>Hành trình phát triển</h3>

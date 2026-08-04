@@ -566,13 +566,22 @@
   text-wrap: pretty;
 }
 
+/* Khối "Hành trình phát triển" tách khỏi khối vàng "Về 123English" — nền xanh thương hiệu */
+.national-section-journey {
+  padding-top: clamp(4rem, 7vw, 6rem);
+  padding-bottom: clamp(4.5rem, 8vw, 7rem);
+  background:
+    radial-gradient(circle at 6% 6%, rgb(255 255 255 / 0.9), transparent 24rem),
+    radial-gradient(circle at 92% 16%, rgb(32 179 229 / 0.18), transparent 24rem),
+    linear-gradient(180deg, #f2fbff 0%, #e4f5fd 58%, #f4fcff 100%);
+}
+
 .national-growth-story {
-  margin-top: clamp(2.5rem, 5vw, 4rem);
   padding: clamp(1.5rem, 3vw, 2.5rem);
-  border: 1px solid rgb(232 197 19 / 0.3);
+  border: 1px solid rgb(32 179 229 / 0.28);
   border-radius: 2rem;
-  background: rgb(255 255 255 / 0.74);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 30px 72px -58px rgb(128 102 0 / 0.5);
+  background: rgb(255 255 255 / 0.78);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 30px 72px -58px rgb(14 126 186 / 0.5);
 }
 
 .national-growth-heading {
@@ -1170,7 +1179,13 @@
   .national-section-trust {
     overflow: hidden;
     padding-top: 4.25rem;
-    padding-bottom: 5rem;
+    padding-bottom: 4.5rem;
+  }
+
+  .national-section-journey {
+    overflow: hidden;
+    padding-top: 3.5rem;
+    padding-bottom: 4.5rem;
   }
 
   .national-trust-heading h2 {
@@ -1219,7 +1234,6 @@
   }
 
   .national-growth-story {
-    margin-top: 2.6rem;
     padding: 1.25rem;
     border-radius: 1.5rem;
   }

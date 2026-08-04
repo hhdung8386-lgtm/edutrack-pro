@@ -44,6 +44,15 @@ export function isActiveAttendance(lesson: Pick<Lesson, 'status'>): boolean {
   return !INACTIVE_LESSON_STATUSES.has(lesson.status)
 }
 
+/**
+ * Buổi được tính khi dò "điểm danh dư trong ngày".
+ * Buổi vắng ghi theo ca 25 phút liền sau là bản ghi có chủ đích (0 phút, không tính
+ * tiền lần 2) nên KHÔNG được coi là điểm danh dư, tránh báo động giả cho giáo vụ.
+ */
+export function countsAsDailyAttendance(lesson: Pick<Lesson, 'status' | 'absenceFollowUpOf'>): boolean {
+  return isActiveAttendance(lesson) && !lesson.absenceFollowUpOf
+}
+
 export function shiftDate(date: string, days: number): string {
   const base = new Date(`${date}T00:00:00`)
   if (Number.isNaN(base.getTime())) return date
@@ -189,7 +198,7 @@ export async function auditTeacherAttendance(input: {
     fetchStudentBookingsAround(input.studentId, input.date),
     fetchTeacherDayLessons(input.teacherId, input.studentId, input.date),
   ])
-  const sameDayLessons = dayLessons.filter(isActiveAttendance)
+  const sameDayLessons = dayLessons.filter(countsAsDailyAttendance)
   return {
     schedule: evaluateLessonSchedule(bookings, input),
     sameDayLessons,
@@ -209,7 +218,7 @@ export async function auditLessonForAdmin(lesson: {
     fetchStudentBookingsAround(lesson.studentId, lesson.date),
     fetchStudentDayLessons(lesson.studentId, lesson.date),
   ])
-  const sameDayLessons = dayLessons.filter(isActiveAttendance)
+  const sameDayLessons = dayLessons.filter(countsAsDailyAttendance)
   return {
     schedule: evaluateLessonSchedule(bookings, lesson),
     sameDayLessons,

@@ -246,6 +246,8 @@ export function BookingSchedulesPage() {
   // Smart filter states
   const [filterGender, setFilterGender] = useState<'all' | 'male' | 'female'>('all')
   const [filterIelts, setFilterIelts] = useState(false)
+  const [filterToeic, setFilterToeic] = useState(false)
+  const [filterToefl, setFilterToefl] = useState(false)
   const [filterExp, setFilterExp] = useState(false)
   const [filterYob, setFilterYob] = useState('')
   const [filterCountry, setFilterCountry] = useState('')
@@ -579,16 +581,15 @@ export function BookingSchedulesPage() {
       if (g !== filterGender) return false
     }
 
-    // 3. IELTS filter
-    if (filterIelts) {
-      const hasIeltsScore = !!teacher.ielts
-      const hasIeltsCert = teacher.certificates?.some(
-        (c) => c.title?.toLowerCase().includes('ielts')
-      )
-      if (!hasIeltsScore && !hasIeltsCert) {
-        return false
-      }
+    // 3. Chứng chỉ ngoại ngữ: có điểm HOẶC có chứng chỉ chứa từ khoá.
+    // Chọn nhiều chip = gia sư phải thoả TẤT CẢ chip đã chọn.
+    const hasCertificate = (keyword: string, score?: string) => {
+      if (score && String(score).trim()) return true
+      return !!teacher.certificates?.some((c) => c.title?.toLowerCase().includes(keyword))
     }
+    if (filterIelts && !hasCertificate('ielts', teacher.ielts)) return false
+    if (filterToeic && !hasCertificate('toeic', teacher.toeic)) return false
+    if (filterToefl && !hasCertificate('toefl', teacher.toefl)) return false
 
     // 4. Experience > 1 year filter
     if (filterExp) {
@@ -1469,12 +1470,14 @@ export function BookingSchedulesPage() {
           <div className="contents">
             <div className="hidden">
               <span className="text-xs font-black uppercase tracking-wider text-slate-400">Bộ lọc hồ sơ</span>
-              {(filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0) && (
+              {(filterGender !== 'all' || filterIelts || filterToeic || filterToefl || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0) && (
                 <button
                   type="button"
                   onClick={() => {
                     setFilterGender('all');
                     setFilterIelts(false);
+                    setFilterToeic(false);
+                    setFilterToefl(false);
                     setFilterExp(false);
                     setFilterYob('');
                     setFilterCountry('');
@@ -1676,19 +1679,26 @@ export function BookingSchedulesPage() {
 
             {/* Checkable Chips */}
             <div className="grid self-start grid-cols-2 items-start gap-1.5 pt-5 sm:col-span-2 lg:col-span-2 2xl:col-span-2">
-              <button
-                type="button"
-                onClick={() => setFilterIelts(!filterIelts)}
-                aria-pressed={filterIelts}
-                className={`h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
-                  filterIelts
-                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                    : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
-                }`}
-              >
-                <GraduationCap className="h-3.5 w-3.5" />
-                <span>IELTS Cert</span>
-              </button>
+              {([
+                { key: 'ielts', label: 'IELTS Cert', active: filterIelts, toggle: () => setFilterIelts(!filterIelts) },
+                { key: 'toeic', label: 'TOEIC Cert', active: filterToeic, toggle: () => setFilterToeic(!filterToeic) },
+                { key: 'toefl', label: 'TOEFL Cert', active: filterToefl, toggle: () => setFilterToefl(!filterToefl) },
+              ]).map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.toggle}
+                  aria-pressed={chip.active}
+                  className={`h-10 justify-center rounded-lg border px-2.5 py-1.5 text-xs font-bold transition flex items-center gap-1.5 ${
+                    chip.active
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                  }`}
+                >
+                  <GraduationCap className="h-3.5 w-3.5" />
+                  <span>{chip.label}</span>
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={() => setFilterExp(!filterExp)}
@@ -1724,13 +1734,15 @@ export function BookingSchedulesPage() {
           <div className="grid gap-3 border-t border-slate-100 pt-4 sm:col-span-2 lg:col-span-4 lg:grid-cols-4 lg:items-end 2xl:col-span-10">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-slate-400">Lọc theo lịch trống</span>
-              {(search || filterGender !== 'all' || filterIelts || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0 || filterDays.length > 0 || timeWindow !== '24h') && (
+              {(search || filterGender !== 'all' || filterIelts || filterToeic || filterToefl || filterExp || filterYob || filterCountry || filterSubjectKeys.length > 0 || filterDays.length > 0 || timeWindow !== '24h') && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearch('')
                     setFilterGender('all')
                     setFilterIelts(false)
+                    setFilterToeic(false)
+                    setFilterToefl(false)
                     setFilterExp(false)
                     setFilterYob('')
                     setFilterCountry('')
