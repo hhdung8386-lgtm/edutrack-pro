@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History } from 'lucide-react'
@@ -17,7 +17,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
 import {
   LessonReportDraft, emptyLessonReport,
-  validateLessonReport, composeLessonComment, lessonReportFields,
+  validateLessonReport, composeLessonComment, composeHomeworkText, lessonReportFields,
 } from '@/components/lessons/lessonReport'
 
 const isAttendanceAllowed = (booking: BookingRequest) => {
@@ -28,6 +28,41 @@ const isAttendanceAllowed = (booking: BookingRequest) => {
   const vnTimeMs = utcMs - 7 * 60 * 60 * 1000 // Convert Vietnam (GMT+7) local to UTC time
   const allowedTimeMs = vnTimeMs + 5 * 60 * 1000 // 5 minutes after class ends
   return new Date().getTime() >= allowedTimeMs
+}
+
+/**
+ * Khoảng nghỉ tối đa (phút) vẫn coi hai ca là LIỀN NHAU.
+ * Lưới lịch xếp theo bước 30 phút nên hai ca 25 phút liền nhau cách nhau đúng 5 phút
+ * (vd 02:00–02:25 và 02:30–02:55); dùng 10 phút để bao cả trường hợp không có khoảng nghỉ.
+ */
+const CONSECUTIVE_SLOT_GAP_MINUTES = 10
+
+/**
+ * Ca 25 phút LIỀN SAU của cùng học viên trong cùng ngày (giờ Việt Nam).
+ *
+ * Một buổi 50 phút đôi khi được xếp thành 2 ca 25 phút liền nhau. Học viên đã vắng
+ * ca đầu thì chắc chắn vắng luôn ca sau, nên hệ thống ghi vắng cả hai — nhưng chỉ
+ * tính tiền MỘT lần 25 phút (ca sau ghi 0 phút nên lương = 0).
+ *
+ * So khớp trên dữ liệu GỐC (giờ VN), không dùng bản đã đổi múi giờ của gia sư.
+ */
+export function findConsecutiveBooking(
+  bookings: BookingRequest[],
+  current: BookingRequest | null | undefined,
+): BookingRequest | null {
+  if (!current?.requestedDate || !current?.requestedEnd) return null
+  if (Number(current.requestedMinutes) !== 25) return null
+  const currentEnd = timeToMinutes(current.requestedEnd)
+  return bookings.find((booking) => {
+    if (booking.id === current.id) return false
+    if (booking.studentId !== current.studentId) return false
+    if (booking.status !== 'confirmed' || booking.lessonId) return false
+    if ((booking.requestedDate || '') !== current.requestedDate) return false
+    if (Number(booking.requestedMinutes) !== 25) return false
+    if (!booking.requestedStart) return false
+    const gap = timeToMinutes(booking.requestedStart) - currentEnd
+    return gap >= 0 && gap <= CONSECUTIVE_SLOT_GAP_MINUTES
+  }) || null
 }
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -155,6 +190,8 @@ export function BookingSchedulesPage() {
   const [timeWindow, setTimeWindow] = useState<string>('24h')
 
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
+  // Buổi điểm danh ĐÃ HUỶ của chính gia sư — dùng để mở lại ca cho điểm danh lần nữa
+  const [cancelledLessons, setCancelledLessons] = useState<Lesson[]>([])
   const [students, setStudents] = useState<Record<string, Student>>({})
   const [loading, setLoading] = useState(true)
   const [teacher, setTeacher] = useState<Teacher | null>(null)
@@ -246,12 +283,67 @@ export function BookingSchedulesPage() {
     })
   }, [bookingRequests, teacher?.timezoneOffset])
 
-  const [pendingAttendanceBookings, setPendingAttendanceBookings] = useState<BookingRequest[]>([])
+  // Ca 25 phút liền sau của ca đang điểm danh — chỉ dùng khi học viên VẮNG.
+  // Dò trên dữ liệu gốc (giờ VN) để không lệch khi gia sư ở múi giờ khác.
+  const absenceFollowUpBooking = useMemo(() => {
+    if (!selectedBooking || attendanceStatus === 'present') return null
+    const rawCurrent = bookingRequests.find((booking) => booking.id === selectedBooking.id)
+    return findConsecutiveBooking(bookingRequests, rawCurrent)
+  }, [bookingRequests, selectedBooking, attendanceStatus])
+
+  const [confirmedBookings, setConfirmedBookings] = useState<BookingRequest[]>([])
+
+  const cancelledLessonIds = useMemo(
+    () => new Set(cancelledLessons.map((lesson) => lesson.id)),
+    [cancelledLessons],
+  )
+
+  /**
+   * Ca coi như CHƯA điểm danh: chưa có buổi, hoặc buổi đang liên kết ĐÃ BỊ HUỶ.
+   * Đối chiếu theo `lessonId` hiện tại nên khi gia sư điểm danh lại, ca tự chuyển
+   * về trạng thái đã điểm danh. Cũng xử lý được dữ liệu CŨ bị huỷ trước bản vá này.
+   */
+  const isAwaitingAttendance = useCallback(
+    (booking: BookingRequest) => !booking.lessonId || cancelledLessonIds.has(booking.lessonId),
+    [cancelledLessonIds],
+  )
+
+  const pendingAttendanceBookings = useMemo(() => {
+    const todayStr = getToday()
+    return confirmedBookings
+      .filter((b) => isAwaitingAttendance(b) && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
+      .sort((a, b) => {
+        if (a.requestedDate !== b.requestedDate) {
+          return (a.requestedDate || '').localeCompare(b.requestedDate || '')
+        }
+        return (a.requestedStart || '').localeCompare(b.requestedStart || '')
+      })
+  }, [confirmedBookings, isAwaitingAttendance])
+
+  // Buổi đã huỷ của gia sư. Dùng truy vấn 1 điều kiện (giống trang Lịch sử buổi dạy)
+  // rồi lọc phía client để KHÔNG phát sinh composite index mới trên Firestore.
+  useEffect(() => {
+    if (!teacherId) {
+      setCancelledLessons([])
+      return
+    }
+    const q = query(collection(db, 'lessons'), where('teacherId', '==', teacherId))
+    return onSnapshot(q, (snap) => {
+      setCancelledLessons(
+        snap.docs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Lesson))
+          .filter((lesson) => lesson.status === 'cancelled'),
+      )
+    }, (error) => {
+      // Không chặn màn hình: chỉ mất khả năng tự mở lại ca đã huỷ
+      console.error('Error loading cancelled lessons:', error)
+    })
+  }, [teacherId])
 
   // Load pending attendance bookings in real-time
   useEffect(() => {
     if (!teacherId) {
-      setPendingAttendanceBookings([])
+      setConfirmedBookings([])
       return
     }
 
@@ -265,20 +357,15 @@ export function BookingSchedulesPage() {
       const todayStr = getToday()
       const list = snap.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
-        .filter((b) => !b.lessonId && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
-      
-      // Sort oldest first
-      list.sort((a, b) => {
-        if (a.requestedDate !== b.requestedDate) {
-          return (a.requestedDate || '').localeCompare(b.requestedDate || '')
-        }
-        return (a.requestedStart || '').localeCompare(b.requestedStart || '')
-      })
 
-      setPendingAttendanceBookings(list)
+      setConfirmedBookings(list)
 
       // Fetch student details if needed
-      const studentIdsToFetch = Array.from(new Set(list.map(b => b.studentId)))
+      const studentIdsToFetch = Array.from(new Set(
+        list
+          .filter((b) => (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
+          .map(b => b.studentId),
+      ))
       if (studentIdsToFetch.length > 0) {
         Promise.all(studentIdsToFetch.map(id => getDoc(doc(db, 'students', id)))).then(snaps => {
           setStudents(prev => {
@@ -460,6 +547,8 @@ export function BookingSchedulesPage() {
       const minutes = attendanceStatus === 'present'
         ? selectedBooking.requestedMinutes
         : (attendanceStatus === 'without_permission' ? 25 : 0)
+      // Học viên vắng -> ca 25 phút liền sau cũng vắng, nhưng KHÔNG tính tiền lần 2.
+      const followUpBooking = isPresent ? null : absenceFollowUpBooking
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
@@ -531,11 +620,11 @@ export function BookingSchedulesPage() {
           // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
           // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
           comment: isPresent ? composeLessonComment(report) : '',
-          homework: isPresent ? report.homework.trim() : '',
+          homework: isPresent ? composeHomeworkText(report.homeworkItems) : '',
           book: bookTitle,
           ...(isPresent
             ? lessonReportFields(report)
-            : { pages: '', report: null, rating: null }),
+            : { pages: '', report: null, rating: null, homeworkItems: [] }),
           imageURLs: images.map((i) => i.storageURL).filter(Boolean),
           attendanceStatus,
           status: 'pending',
@@ -554,9 +643,52 @@ export function BookingSchedulesPage() {
         tx.update(bookingRef, {
           lessonId: lessonRef.id,
         })
+
+        // 3. Ca 25 phút liền sau: ghi vắng theo, 0 phút -> lương = 0 (chỉ tính tiền 1 lần)
+        if (followUpBooking) {
+          const followUpLessonRef = doc(collection(db, 'lessons'))
+          tx.set(followUpLessonRef, {
+            studentId: studentData.id,
+            studentCode: studentData.code,
+            studentName: studentData.name,
+            teacherId,
+            teacherCode: teacherData.code,
+            teacherName: teacherData.name,
+            subjectId: followUpBooking.subjectId || '',
+            subjectName: followUpBooking.subjectName || '',
+            date: followUpBooking.requestedDate || getToday(),
+            minutes: 0,
+            comment: '',
+            homework: '',
+            homeworkItems: [],
+            book: bookTitle,
+            pages: '',
+            report: null,
+            rating: null,
+            imageURLs: [],
+            attendanceStatus,
+            status: 'pending',
+            sessionsBeforeApproval: studentData.remainingSessions,
+            sessionsAfterApproval: studentData.remainingSessions,
+            minutesBeforeApproval: currentRemainingMinutes,
+            minutesAfterApproval: currentRemainingMinutes,
+            teacherLevel: teacherData.level ?? 1,
+            pricePerMinute,
+            salary: 0,
+            bookingRequestId: followUpBooking.id,
+            // Dấu vết: buổi vắng "ăn theo" ca trước, huỷ ca trước thì huỷ luôn buổi này
+            absenceFollowUpOf: lessonRef.id,
+            createdAt: serverTimestamp(),
+          })
+          tx.update(doc(db, 'bookingRequests', followUpBooking.id), {
+            lessonId: followUpLessonRef.id,
+          })
+        }
       })
 
-      toast.success('Gửi báo cáo điểm danh thành công!')
+      toast.success(followUpBooking
+        ? 'Đã ghi vắng cho cả ca liền sau — chỉ tính tiền 1 lần 25 phút.'
+        : 'Gửi báo cáo điểm danh thành công!')
       setShowAttendanceModal(false)
       setShowDetailModal(false)
       setSelectedBooking(null)
@@ -674,17 +806,17 @@ export function BookingSchedulesPage() {
                             type="button"
                             onClick={() => handleCellClick(booking)}
                             className={`w-full py-1.5 px-0.5 rounded-xl text-center block transition shadow-sm ${
-                              booking.lessonId
+                              !isAwaitingAttendance(booking)
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                                 : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/50'
                             }`}
                           >
                             <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-0.5">
-                              {booking.lessonId && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
+                              {!isAwaitingAttendance(booking) && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
                               <span>{booking.studentCode}</span>
                             </div>
                             <div className={`text-[9px] font-bold truncate leading-tight mt-0.5 max-w-full px-1 block ${
-                              booking.lessonId ? 'text-emerald-700/80' : 'text-amber-800/80'
+                              !isAwaitingAttendance(booking) ? 'text-emerald-700/80' : 'text-amber-800/80'
                             }`} title={booking.studentName}>
                               {booking.studentName}
                             </div>
@@ -733,7 +865,7 @@ export function BookingSchedulesPage() {
                 <History className="h-4 w-4" />
                 {lang === 'vi' ? 'Xem lịch sử học' : 'View learning history'}
               </Button>
-              {!selectedBooking.lessonId && (() => {
+              {isAwaitingAttendance(selectedBooking) && (() => {
                 const student = students[selectedBooking.studentId]
                 if (student?.status === 'reserved') {
                   return (
@@ -810,9 +942,9 @@ export function BookingSchedulesPage() {
                 <div>
                   <span className="text-slate-500 font-semibold">{t('sched.attendance')} </span>
                   <span className={`px-2 py-0.5 rounded-full font-bold ${
-                    selectedBooking.lessonId ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    !isAwaitingAttendance(selectedBooking) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                   }`}>
-                    {selectedBooking.lessonId ? t('sched.completed') : t('sched.not_checked')}
+                    {!isAwaitingAttendance(selectedBooking) ? t('sched.completed') : t('sched.not_checked')}
                   </span>
                 </div>
               </div>
@@ -1047,6 +1179,25 @@ export function BookingSchedulesPage() {
                 ))}
               </div>
             </div>
+
+            {/* Ca liền sau sẽ bị ghi vắng theo — báo trước để gia sư không bị bất ngờ */}
+            {absenceFollowUpBooking && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                <div className="text-xs leading-relaxed text-amber-800">
+                  <p className="font-bold">
+                    {lang === 'vi'
+                      ? `Ca liền sau ${absenceFollowUpBooking.requestedStart}–${absenceFollowUpBooking.requestedEnd} cũng sẽ được ghi vắng.`
+                      : `The next slot ${absenceFollowUpBooking.requestedStart}–${absenceFollowUpBooking.requestedEnd} will be marked absent too.`}
+                  </p>
+                  <p className="mt-0.5 font-semibold text-amber-700">
+                    {lang === 'vi'
+                      ? 'Chỉ tính tiền 1 lần 25 phút — ca sau ghi 0 phút nên không cộng thêm lương.'
+                      : 'Paid once for 25 minutes only — the follow-up slot is logged as 0 minutes.'}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Book/Materials input */}
             <div className="space-y-1.5">

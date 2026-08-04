@@ -21,9 +21,10 @@ import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Che
 import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
+import { teacherDisplayName } from '@/lib/teacherDisplay'
 import {
   auditLessonForAdmin, describeDailyCount, describeSchedule, formatShortDate,
-  isActiveAttendance,
+  countsAsDailyAttendance,
   type AttendanceAudit, type AuditMessage,
 } from '@/lib/attendanceAudit'
 
@@ -251,16 +252,21 @@ export function ApprovalsPage() {
     })
   }, [lessons])
 
-  const filteredLessons = lessons.filter(l =>
-    l.studentName.toLowerCase().includes(search.toLowerCase()) ||
-    l.teacherName.toLowerCase().includes(search.toLowerCase())
-  )
+  // Tìm được cả theo nickname (đang hiển thị) lẫn tên thật/mã gia sư, tránh giáo vụ
+  // gõ đúng tên mà không ra kết quả sau khi màn hình đổi sang hiển thị nickname.
+  const filteredLessons = lessons.filter(l => {
+    const keyword = search.toLowerCase()
+    if (!keyword) return true
+    return l.studentName.toLowerCase().includes(keyword)
+      || (l.teacherName || '').toLowerCase().includes(keyword)
+      || (l.teacherCode || '').toLowerCase().includes(keyword)
+  })
 
   // Đếm số buổi CÙNG học viên + CÙNG ngày ngay trong danh sách đang tải (không tốn truy vấn).
   // Tab "Chờ duyệt" tải toàn bộ buổi chờ nên phát hiện được gần như trọn vẹn ca điểm danh dư.
   const sameDayCounts = new Map<string, number>()
   for (const lesson of lessons) {
-    if (!isActiveAttendance(lesson)) continue
+    if (!countsAsDailyAttendance(lesson)) continue
     const key = `${lesson.studentId}|${lesson.date}`
     sameDayCounts.set(key, (sameDayCounts.get(key) || 0) + 1)
   }
@@ -466,6 +472,7 @@ export function ApprovalsPage() {
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: approvingLesson.comment || '',
             homework: approvingLesson.homework || '',
+            homeworkItems: approvingLesson.homeworkItems || [],
             book: approvingLesson.book || '',
             imageURLs: approvingLesson.imageURLs || [],
             status: 'approved',
@@ -685,7 +692,7 @@ export function ApprovalsPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Gia sư</p>
-                      <p className="text-slate-700">{lesson.teacherName}</p>
+                      <p className="text-slate-700">{teacherDisplayName(lesson.teacherCode, lesson.teacherName)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Môn học</p>
@@ -895,7 +902,7 @@ export function ApprovalsPage() {
           <div className="space-y-4">
             <p className="text-sm text-slate-500">
               Từ chối buổi của <span className="text-slate-700 font-medium">{rejectingLesson.studentName}</span> với{' '}
-              <span className="text-slate-700">{rejectingLesson.teacherName}</span>
+              <span className="text-slate-700">{teacherDisplayName(rejectingLesson.teacherCode, rejectingLesson.teacherName)}</span>
             </p>
             <Textarea
               label="Lý do từ chối *"

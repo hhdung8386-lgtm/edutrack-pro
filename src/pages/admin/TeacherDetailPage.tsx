@@ -639,6 +639,7 @@ export function TeacherDetailPage() {
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: lesson.comment || '',
             homework: lesson.homework || '',
+            homeworkItems: lesson.homeworkItems || [],
             book: lesson.book || '',
             pages: lesson.pages || '',
             report: lesson.report || null,

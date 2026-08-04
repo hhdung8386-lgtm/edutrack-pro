@@ -18,6 +18,15 @@ import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
+/**
+ * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
+ * Số buổi trên thẻ môn học được tính theo đơn vị 25 phút (points / 25), nên
+ * 1 buổi = 25 phút. Không dùng minutesPerSession của gói ở đây vì con số buổi
+ * đang hiển thị không dựa trên field đó.
+ */
+const MINUTES_PER_SESSION_UNIT = 25
+const sessionsToMinutes = (sessions25: number) => Math.max(0, Math.round(sessions25 * MINUTES_PER_SESSION_UNIT))
+
 function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
   const safeUsedMinutes = Math.max(0, usedMinutes)
   const remainingMinutes = Math.max(0, pkg.totalMinutes - safeUsedMinutes)
@@ -1024,6 +1033,7 @@ export function StudentDetailPage() {
             pointsPer25Minutes: Number(reApprovingLesson.pointsPer25Minutes ?? tData?.pointsPer25Minutes) || 25,
             comment: reApprovingLesson.comment || '',
             homework: reApprovingLesson.homework || '',
+            homeworkItems: reApprovingLesson.homeworkItems || [],
             book: reApprovingLesson.book || '',
             imageURLs: reApprovingLesson.imageURLs || [],
             status: 'approved',
@@ -1493,6 +1503,11 @@ export function StudentDetailPage() {
                   const bookedSessions = bookingRequests.filter((b) => b.subjectId === pkg.subjectId && !b.lessonId).length
                   const availablePoints = Math.max(0, pkg.remainingMinutes - bookedPoints)
                   const availableSessions25 = Math.floor(availablePoints / 25)
+                  // "Đã đặt" hiển thị theo thời lượng THỰC của các ca đang giữ chỗ,
+                  // vì kim cương của ca phụ thuộc bậc gia sư nên không suy ra được từ điểm.
+                  const bookedMinutes = bookingRequests
+                    .filter((b) => b.subjectId === pkg.subjectId && !b.lessonId)
+                    .reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
 
                   return (
                     <div className="grid grid-cols-4 gap-1.5 text-center bg-slate-50 rounded-xl p-3 mb-4 text-xs">
@@ -1500,16 +1515,19 @@ export function StudentDetailPage() {
                         <p className="font-bold text-slate-700 text-[13px]">{totalSessions25}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Tổng buổi</p>
                         <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-sky-600"><DiamondPointsIcon className="h-3 w-3" />{pkg.totalMinutes}</p>
+                        <p className="mt-0.5 text-[9px] leading-none text-slate-400">{sessionsToMinutes(totalSessions25)} phút</p>
                       </div>
                       <div>
                         <p className="font-bold text-indigo-500 text-[13px]">{usedSessions25}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã học</p>
                         <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-indigo-400"><DiamondPointsIcon className="h-3 w-3" />{pkg.usedMinutes}</p>
+                        <p className="mt-0.5 text-[9px] leading-none text-slate-400">{sessionsToMinutes(usedSessions25)} phút</p>
                       </div>
                       <div>
                         <p className="font-bold text-amber-600 text-[13px]">{bookedSessions}</p>
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-none">Đã đặt</p>
                         <p className="mt-1 inline-flex items-center gap-1 text-[9px] leading-none text-amber-500"><DiamondPointsIcon className="h-3 w-3" />{bookedPoints}</p>
+                        <p className="mt-0.5 text-[9px] leading-none text-slate-400">{bookedMinutes} phút</p>
                       </div>
                       <div>
                         <p className={`font-bold text-[13px] ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>
@@ -1519,6 +1537,7 @@ export function StudentDetailPage() {
                         <p className={`mt-1 inline-flex items-center gap-1 text-[9px] leading-none ${availablePoints <= 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
                           <DiamondPointsIcon className="h-3 w-3" />{availablePoints}
                         </p>
+                        <p className="mt-0.5 text-[9px] leading-none text-slate-400">{sessionsToMinutes(availableSessions25)} phút</p>
                       </div>
                     </div>
                   )

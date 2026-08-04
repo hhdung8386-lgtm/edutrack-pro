@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/Input'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
 import {
   LessonReportDraft, emptyLessonReport,
-  validateLessonReport, composeLessonComment, lessonReportFields,
+  validateLessonReport, composeLessonComment, composeHomeworkText, lessonReportFields,
 } from '@/components/lessons/lessonReport'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
@@ -342,11 +342,11 @@ export function AttendancePage() {
         // Ghép báo cáo có cấu trúc thành `comment` để các màn hình cũ hiển thị được;
         // đồng thời lưu bản có cấu trúc (pages/report/rating) bên dưới.
         comment: isPresent ? composeLessonComment(report) : '',
-        homework: isPresent ? report.homework.trim() : '',
+        homework: isPresent ? composeHomeworkText(report.homeworkItems) : '',
         book: data.book || '',
         ...(isPresent
           ? lessonReportFields(report)
-          : { pages: '', report: null, rating: null }),
+          : { pages: '', report: null, rating: null, homeworkItems: [] }),
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,
         status: 'pending',

@@ -8,6 +8,40 @@
  * dữ liệu cũ không bị ảnh hưởng.
  */
 
+/** 5 loại bài tập về nhà gia sư được chọn (tối đa 2 loại mỗi buổi). */
+export const HOMEWORK_TYPES = ['video', 'writing', 'reading', 'listening', 'vocabulary'] as const
+export type HomeworkType = (typeof HOMEWORK_TYPES)[number]
+
+/** Số loại bài tập tối đa cho một buổi. */
+export const MAX_HOMEWORK_TYPES = 2
+/** Độ dài tối đa cho nội dung giao của MỖI loại bài tập. */
+export const MAX_HOMEWORK_CONTENT_CHARS = 500
+
+export interface HomeworkItem {
+  type: HomeworkType
+  content: string
+}
+
+/**
+ * Nhãn tiếng Việt DÙNG ĐỂ LƯU (ghép vào chuỗi `homework` cũ cho phụ huynh đọc).
+ * Cố định theo tiếng Việt, không phụ thuộc ngôn ngữ giao diện của gia sư.
+ */
+export const HOMEWORK_TYPE_LABELS_VI: Record<HomeworkType, string> = {
+  video: 'Quay video',
+  writing: 'Bài viết',
+  reading: 'Đọc bài',
+  listening: 'Nghe & luyện phát âm',
+  vocabulary: 'Ôn tập từ vựng / Workbook',
+}
+
+export const HOMEWORK_TYPE_LABELS_EN: Record<HomeworkType, string> = {
+  video: 'Record a video',
+  writing: 'Writing',
+  reading: 'Reading',
+  listening: 'Listening & pronunciation',
+  vocabulary: 'Vocabulary / Workbook review',
+}
+
 export interface LessonReportDraft {
   pages: string
   knowledgeDone: boolean
@@ -16,7 +50,7 @@ export interface LessonReportDraft {
   gamesComment: string
   exercisesDone: boolean
   exercisesComment: string
-  homework: string
+  homeworkItems: HomeworkItem[]
   rating: number
 }
 
@@ -28,7 +62,7 @@ export const emptyLessonReport = (): LessonReportDraft => ({
   gamesComment: '',
   exercisesDone: false,
   exercisesComment: '',
-  homework: '',
+  homeworkItems: [],
   rating: 5,
 })
 
@@ -42,7 +76,7 @@ const wordCount = (val: string) => val.trim().split(/\s+/).filter(Boolean).lengt
 
 /** Trả về key lỗi i18n đầu tiên, hoặc null nếu hợp lệ. Chỉ gọi khi học viên có mặt. */
 /** Số ký tự tối thiểu cho phần nhận xét (gộp 3 mục) — chống nhận xét hời hợt. */
-export const MIN_REPORT_CHARS = 30
+export const MIN_REPORT_CHARS = 120
 
 /** Tổng số ký tự thực (đã bỏ khoảng trắng thừa) của 3 mục nhận xét. */
 export function lessonReportCharCount(d: Pick<LessonReportDraft, 'knowledgeComment' | 'gamesComment' | 'exercisesComment'>): number {
@@ -63,9 +97,39 @@ export function validateLessonReport(d: LessonReportDraft): string | null {
   // Bắt buộc nhận xét đủ chi tiết: tổng 3 mục tối thiểu MIN_REPORT_CHARS ký tự,
   // tránh tình trạng gia sư ghi hời hợt kiểu "good", "none".
   if (lessonReportCharCount(d) < MIN_REPORT_CHARS) return 'report.err_too_short'
-  if (!d.homework.trim()) return 'report.err_homework'
+  const homework = normalizeHomeworkItems(d.homeworkItems)
+  if (homework.length === 0) return 'report.err_homework'
+  if (homework.length > MAX_HOMEWORK_TYPES) return 'report.err_homework_max'
+  if (homework.some((item) => item.content.length > MAX_HOMEWORK_CONTENT_CHARS)) return 'report.err_homework_long'
   if (d.rating !== 4 && d.rating !== 5) return 'report.err_rating'
   return null
+}
+
+/** Bỏ loại trống/trùng và cắt khoảng trắng thừa — dùng chung cho validate, compose và lưu. */
+export function normalizeHomeworkItems(items: HomeworkItem[] | undefined | null): HomeworkItem[] {
+  const seen = new Set<HomeworkType>()
+  const result: HomeworkItem[] = []
+  for (const item of items || []) {
+    if (!item || !HOMEWORK_TYPES.includes(item.type) || seen.has(item.type)) continue
+    const content = (item.content || '').trim()
+    if (!content) continue
+    seen.add(item.type)
+    result.push({ type: item.type, content })
+  }
+  return result
+}
+
+/**
+ * Ghép các loại bài tập thành chuỗi `homework` cũ.
+ * Mọi màn hình cũ (cổng phụ huynh, tracking, lịch sử, nút copy) đọc chuỗi này nên
+ * KHÔNG được bỏ, dữ liệu buổi cũ cũng vẫn hiển thị y như trước.
+ */
+export function composeHomeworkText(items: HomeworkItem[] | undefined | null): string {
+  const normalized = normalizeHomeworkItems(items)
+  if (normalized.length === 0) return ''
+  return normalized
+    .map((item, index) => `${index + 1}. ${HOMEWORK_TYPE_LABELS_VI[item.type]}: ${item.content}`)
+    .join('\n')
 }
 
 /** Ghép báo cáo thành chuỗi `comment` (tiếng Việt cho phụ huynh) — tương thích mọi màn hình cũ. */
@@ -92,6 +156,9 @@ export function lessonReportFields(d: LessonReportDraft) {
       exercisesDone: d.exercisesDone,
       exercisesComment: d.exercisesComment.trim(),
     },
+    // Bản có cấu trúc của bài tập về nhà; chuỗi `homework` vẫn được ghi song song
+    // để mọi màn hình/dữ liệu cũ không bị ảnh hưởng.
+    homeworkItems: normalizeHomeworkItems(d.homeworkItems),
   }
 }
 

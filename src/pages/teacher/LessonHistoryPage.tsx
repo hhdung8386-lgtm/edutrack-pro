@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteField, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -149,14 +149,49 @@ export function LessonHistoryPage() {
     }
     setCancelling(true)
     try {
-      await updateDoc(doc(db, 'lessons', cancelTarget.id), {
+      // Huỷ buổi gốc + buổi vắng "ăn theo" ca liền sau (nếu có), rồi TRẢ ca đặt lịch
+      // về trạng thái chưa điểm danh để gia sư điểm danh lại được.
+      const followUps = allLessons.filter(
+        (lesson) => lesson.absenceFollowUpOf === cancelTarget.id && lesson.status === 'pending',
+      )
+      const cancelPayload = {
         status: 'cancelled',
         cancelledAt: serverTimestamp(),
         cancelledBy: `teacher:${teacherId}`,
         cancelledReason: cancelReason.trim(),
         updatedAt: serverTimestamp(),
-      })
-      toast.success(lang === 'vi' ? 'Đã huỷ buổi điểm danh' : 'Attendance cancelled')
+      }
+
+      await updateDoc(doc(db, 'lessons', cancelTarget.id), cancelPayload)
+      for (const followUp of followUps) {
+        await updateDoc(doc(db, 'lessons', followUp.id), cancelPayload)
+      }
+
+      // Gỡ liên kết trên ca đặt lịch. Phải XOÁ hẳn field `lessonId` (deleteField) —
+      // để lại chuỗi rỗng thì luồng học viên tự huỷ ca vẫn bị chặn bởi firestore.rules.
+      const bookingIds = [cancelTarget, ...followUps]
+        .map((lesson) => lesson.bookingRequestId)
+        .filter((id): id is string => !!id)
+      for (const bookingId of bookingIds) {
+        try {
+          await updateDoc(doc(db, 'bookingRequests', bookingId), {
+            lessonId: deleteField(),
+            updatedAt: serverTimestamp(),
+          })
+        } catch (err) {
+          // Buổi đã huỷ xong rồi; không mở lại được ca thì báo để giáo vụ xử lý tay
+          console.error('[cancel-lesson:reopen-booking]', bookingId, err)
+          toast.warning(lang === 'vi'
+            ? 'Đã huỷ buổi nhưng chưa mở lại được ca trên lịch. Vui lòng báo giáo vụ.'
+            : 'Lesson cancelled but the slot could not be reopened. Please contact the academic team.')
+        }
+      }
+
+      toast.success(bookingIds.length > 0
+        ? (lang === 'vi'
+          ? 'Đã huỷ buổi điểm danh — ca đã mở lại để điểm danh lại'
+          : 'Attendance cancelled — the slot is open for attendance again')
+        : (lang === 'vi' ? 'Đã huỷ buổi điểm danh' : 'Attendance cancelled'))
       setCancelTarget(null)
       setCancelReason('')
     } catch (err: unknown) {

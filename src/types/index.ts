@@ -187,6 +187,12 @@ export interface LessonReport {
   exercisesComment: string
 }
 
+/** Một loại bài tập về nhà đã giao (gia sư chọn tối đa 2 loại mỗi buổi). */
+export interface LessonHomeworkItem {
+  type: 'video' | 'writing' | 'reading' | 'listening' | 'vocabulary'
+  content: string
+}
+
 export interface Lesson {
   id: string
   studentId: string
@@ -201,7 +207,10 @@ export interface Lesson {
   /** 0 phút = vắng có phép (vẫn ghi nhận buổi nhưng không tính giờ dạy). */
   minutes: 0 | 25 | 50 | 75 | 100
   comment: string
+  /** Chuỗi bài tập về nhà (giữ nguyên cho mọi màn hình & dữ liệu cũ). */
   homework: string
+  /** Bản có cấu trúc của bài tập về nhà (buổi cũ không có field này). */
+  homeworkItems?: LessonHomeworkItem[]
   book?: string
   pages?: string
   report?: LessonReport | null
@@ -225,6 +234,11 @@ export interface Lesson {
   approvedAt?: Timestamp
   approvedBy?: string
   bookingRequestId?: string
+  /**
+   * Buổi vắng "ăn theo" ca 25 phút liền trước (id của buổi gốc).
+   * Buổi này luôn 0 phút để chỉ tính tiền MỘT lần 25 phút cho cả cụm.
+   */
+  absenceFollowUpOf?: string
   /** Đã nhả phần phút giữ chỗ của ca đặt lịch tương ứng hay chưa (chống nhả 2 lần). */
   bookingHoldConsumed?: boolean
   createdAt: Timestamp
