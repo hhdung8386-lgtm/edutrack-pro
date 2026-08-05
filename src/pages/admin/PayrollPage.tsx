@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Payroll, Teacher, Lesson, Student, StudentSubject } from '@/types'
@@ -14,7 +15,10 @@ import { useAuthStore } from '@/stores/authStore'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
-  const [month, setMonth] = useState(getCurrentMonth())
+  const [searchParams] = useSearchParams()
+  // Cho phép mở thẳng đúng tháng từ nơi khác (vd thẻ phiếu đánh giá đã cộng thưởng)
+  const monthParam = searchParams.get('month') || ''
+  const [month, setMonth] = useState(/^\d{4}-\d{2}$/.test(monthParam) ? monthParam : getCurrentMonth())
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
