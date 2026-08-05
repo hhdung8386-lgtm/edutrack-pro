@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where } from 'firebase/firestore'
+import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -128,7 +128,10 @@ export default function AdminEvaluationsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | EvalStatus>('pending')
   const [processingId, setProcessingId] = useState<string | null>(null)
-  
+  // Đối soát tháng của khoản thưởng đã cộng trước đây (xem khối "Đối soát" bên dưới)
+  const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, { month: string; paid: boolean }>>({})
+  const [fixingMonths, setFixingMonths] = useState(false)
+
   const [showForm, setShowForm] = useState(false)
   const [editingEval, setEditingEval] = useState<Evaluation | null>(null)
 
@@ -208,6 +211,27 @@ export default function AdminEvaluationsPage() {
       setLoading(false)
     })
     return unsub
+  }, [])
+
+  /**
+   * Nạp các dòng lương SINH TỪ PHIẾU ĐÁNH GIÁ để đối soát tháng.
+   * Chỉ lấy `type == 'adjustment'` (1 điều kiện -> không cần index mới), rồi lọc
+   * tiếp phía client theo `evaluationId` để KHÔNG đụng vào khoản thưởng/khấu trừ
+   * do giáo vụ tự thêm tay ở trang Lương (những khoản đó đã đúng tháng).
+   */
+  useEffect(() => {
+    const q = query(collection(db, 'payroll'), where('type', '==', 'adjustment'))
+    return onSnapshot(q, (snap) => {
+      const map: Record<string, { month: string; paid: boolean }> = {}
+      snap.docs.forEach((d) => {
+        const data = d.data() as { evaluationId?: string; month?: string; paid?: boolean; voided?: boolean }
+        if (!data.evaluationId || data.voided) return
+        map[d.id] = { month: data.month || '', paid: data.paid === true }
+      })
+      setRewardPayrolls(map)
+    }, (err) => {
+      console.error('[evaluations:reward-payrolls]', err)
+    })
   }, [])
 
   // Automatically update prefilled goals and curriculum when formType changes
@@ -457,6 +481,83 @@ export default function AdminEvaluationsPage() {
     return c
   }, [evaluations])
 
+  /**
+   * Khoản thưởng đang nằm SAI THÁNG.
+   *
+   * Lương tháng nào trả cho tháng đó (chốt mùng 10 tháng sau), nên khoản thưởng
+   * phải nằm ở tháng của buổi dạy thử. Các phiếu duyệt trước bản vá này bị ghi
+   * theo tháng bấm duyệt nên lệch — khối đối soát bên dưới đưa chúng về đúng tháng.
+   */
+  const misfiledRewards = useMemo(() => {
+    return evaluations
+      .filter((item) => evalStatusOf(item) === 'approved' && item.rewardPayrollId)
+      .map((item) => {
+        const payroll = rewardPayrolls[item.rewardPayrollId!]
+        if (!payroll || !payroll.month) return null
+        const correctMonth = evaluationRewardMonth(item)
+        if (payroll.month === correctMonth) return null
+        return {
+          evaluation: item,
+          payrollId: item.rewardPayrollId!,
+          currentMonth: payroll.month,
+          correctMonth,
+          paid: payroll.paid,
+        }
+      })
+      .filter(Boolean) as {
+        evaluation: Evaluation
+        payrollId: string
+        currentMonth: string
+        correctMonth: string
+        paid: boolean
+      }[]
+  }, [evaluations, rewardPayrolls])
+
+  /** Chuyển các khoản thưởng lệch về đúng tháng của buổi dạy thử. */
+  const handleFixRewardMonths = async () => {
+    if (misfiledRewards.length === 0) return
+    const paidCount = misfiledRewards.filter((item) => item.paid).length
+    const confirmText = [
+      `Chuyển ${misfiledRewards.length} khoản thưởng về đúng tháng của buổi dạy thử?`,
+      paidCount > 0
+        ? `Trong đó có ${paidCount} khoản ĐÃ THANH TOÁN — số tiền không đổi, chỉ đổi tháng ghi nhận.`
+        : '',
+      'Thao tác này chỉ đổi trường tháng, không cộng/trừ thêm tiền của ai.',
+    ].filter(Boolean).join('\n\n')
+    if (!window.confirm(confirmText)) return
+
+    setFixingMonths(true)
+    try {
+      // Ghi theo lô 200 doc/lần (giới hạn batch là 500, mỗi khoản tốn 2 ghi)
+      const CHUNK = 200
+      let done = 0
+      for (let i = 0; i < misfiledRewards.length; i += CHUNK) {
+        const batch = writeBatch(db)
+        for (const item of misfiledRewards.slice(i, i + CHUNK)) {
+          batch.update(doc(db, 'payroll', item.payrollId), {
+            month: item.correctMonth,
+            // Dấu vết để đối chiếu về sau, không xoá thông tin cũ
+            monthBeforeFix: item.currentMonth,
+            monthFixedAt: serverTimestamp(),
+            monthFixedBy: user?.uid || 'admin',
+          })
+          batch.update(doc(db, 'evaluations', item.evaluation.id), {
+            rewardMonth: item.correctMonth,
+            updatedAt: serverTimestamp(),
+          })
+          done += 1
+        }
+        await batch.commit()
+      }
+      toast.success(`Đã chuyển ${done} khoản thưởng về đúng tháng của buổi dạy thử`)
+    } catch (err) {
+      console.error('fix reward months failed', err)
+      toast.error('Không chuyển được, vui lòng thử lại')
+    } finally {
+      setFixingMonths(false)
+    }
+  }
+
   const filtered = evaluations.filter(e => {
     const matchSearch = e.studentName.toLowerCase().includes(search.toLowerCase()) ||
       (e.teacherName || '').toLowerCase().includes(search.toLowerCase())
@@ -487,6 +588,52 @@ export default function AdminEvaluationsPage() {
           vào bảng lương tháng của gia sư đó
         </p>
       </div>
+
+      {/* Đối soát tháng: khoản thưởng duyệt trước đây bị ghi theo tháng bấm duyệt.
+          Lương tháng nào trả cho tháng đó nên phải đưa về tháng của buổi dạy thử. */}
+      {misfiledRewards.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-amber-900">
+                {misfiledRewards.length} khoản thưởng đang nằm sai tháng
+              </p>
+              <p className="mt-1 text-xs font-semibold text-amber-800">
+                Các phiếu duyệt trước đây bị ghi vào tháng bấm duyệt. Lương tháng nào trả cho tháng đó,
+                nên khoản thưởng phải nằm ở tháng của buổi dạy thử.
+                {misfiledRewards.some((item) => item.paid) && (
+                  <> Có {misfiledRewards.filter((item) => item.paid).length} khoản đã thanh toán — chỉ đổi tháng ghi nhận, không đổi số tiền.</>
+                )}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              loading={fixingMonths}
+              onClick={handleFixRewardMonths}
+              className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl flex-shrink-0"
+            >
+              Chuyển về đúng tháng
+            </Button>
+          </div>
+          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-xl bg-white/70 p-2 text-[11px] font-semibold text-slate-600">
+            {misfiledRewards.slice(0, 30).map((item) => (
+              <li key={item.payrollId} className="flex flex-wrap items-center gap-x-2">
+                <span className="text-slate-800">{item.evaluation.teacherName || 'Gia sư'}</span>
+                <span className="text-slate-400">·</span>
+                <span>{item.evaluation.studentName || 'Không rõ tên'}</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-rose-500">{item.currentMonth}</span>
+                <span className="text-slate-400">→</span>
+                <span className="text-emerald-600">{item.correctMonth}</span>
+                {item.paid && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">đã trả</span>}
+              </li>
+            ))}
+            {misfiledRewards.length > 30 && (
+              <li className="pt-1 text-slate-400">… và {misfiledRewards.length - 30} khoản khác</li>
+            )}
+          </ul>
+        </div>
+      )}
 
       {/* Filter Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
