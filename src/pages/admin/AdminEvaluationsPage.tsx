@@ -42,6 +42,30 @@ interface Evaluation {
   /** Doc payroll đã tạo khi duyệt — dùng để chống cộng tiền 2 lần và để thu hồi. */
   rewardPayrollId?: string
   rewardAmount?: number
+  /** Tháng bảng lương đã nhận khoản thưởng (phiếu cũ chưa có -> suy từ approvedAt). */
+  rewardMonth?: string
+}
+
+/** Đổi Timestamp/Date/số của Firestore về `YYYY-MM`, không đọc được thì trả '' */
+function monthOfTimestamp(value: unknown): string {
+  const raw = value as { toDate?: () => Date; seconds?: number } | Date | undefined
+  let date: Date | null = null
+  if (raw instanceof Date) date = raw
+  else if (typeof raw?.toDate === 'function') date = raw.toDate()
+  else if (typeof raw?.seconds === 'number') date = new Date(raw.seconds * 1000)
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * Tháng bảng lương nhận khoản thưởng của một phiếu đánh giá.
+ *
+ * Phải theo tháng của BUỔI DẠY THỬ (phiếu được gia sư gửi), KHÔNG theo tháng
+ * duyệt — nếu không, phiếu tháng 7 duyệt sang tháng 8 sẽ rơi vào bảng lương
+ * tháng 8 và giáo vụ mở tháng 7 sẽ tưởng là "không được cộng vào lương".
+ */
+function evaluationRewardMonth(evaluation: { createdAt?: unknown }): string {
+  return monthOfTimestamp(evaluation.createdAt) || getCurrentMonth()
 }
 
 type EvalStatus = 'pending' | 'approved' | 'rejected'
@@ -330,7 +354,7 @@ export default function AdminEvaluationsPage() {
       const teacherSnap = await getDoc(doc(db, 'teachers', evaluation.teacherId))
       const teacherLevel = teacherSnap.exists() ? (teacherSnap.data()?.level ?? 1) : 1
       const teacherName = evaluation.teacherName || (teacherSnap.exists() ? teacherSnap.data()?.name : '') || 'Gia sư'
-      const month = getCurrentMonth()
+      const month = evaluationRewardMonth(evaluation)
 
       await runTransaction(db, async (tx) => {
         const evalRef = doc(db, 'evaluations', evaluation.id)
@@ -364,12 +388,14 @@ export default function AdminEvaluationsPage() {
           approvedBy: user?.uid || 'admin',
           rewardPayrollId: payrollRef.id,
           rewardAmount: EVALUATION_REWARD_AMOUNT,
+          // Ghi lại tháng đã cộng để giáo vụ biết mở bảng lương tháng nào
+          rewardMonth: month,
           rejectedReason: '',
           updatedAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Đã duyệt và cộng ${formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương tháng ${getCurrentMonth()} của ${teacherName}`)
+      toast.success(`Đã duyệt và cộng ${formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương tháng ${month} của ${teacherName}`)
     } catch (err: any) {
       console.error('approve evaluation failed', err)
       if (err?.message === 'ALREADY_APPROVED') toast.warning('Phiếu này đã được duyệt trước đó — không cộng tiền lần nữa')
@@ -546,9 +572,15 @@ export default function AdminEvaluationsPage() {
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                 {evalStatusOf(item) === 'approved' ? (
                   <div className="flex items-center justify-between gap-2">
+                    {/* Nêu rõ THÁNG đã cộng — phiếu duyệt trễ tháng vẫn tra được đúng bảng lương.
+                        Phiếu duyệt trước bản vá này chưa có rewardMonth -> suy ra từ ngày duyệt. */}
                     <p className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                      <Wallet className="w-3.5 h-3.5" />
+                      <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
                       Đã cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
+                      {(() => {
+                        const month = item.rewardMonth || monthOfTimestamp(item.approvedAt)
+                        return month ? ` tháng ${month}` : ''
+                      })()}
                     </p>
                     <button
                       type="button"
