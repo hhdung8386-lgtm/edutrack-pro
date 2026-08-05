@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
@@ -395,7 +396,12 @@ export default function AdminEvaluationsPage() {
         })
       })
 
-      toast.success(`Đã duyệt và cộng ${formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương tháng ${month} của ${teacherName}`)
+      const reward = formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)
+      // Phiếu cũ duyệt trễ sẽ rơi vào tháng cũ — nói rõ để giáo vụ mở đúng bảng lương,
+      // tránh tình trạng "đã duyệt mà không thấy cộng ở đâu".
+      toast.success(month === getCurrentMonth()
+        ? `Đã duyệt và cộng ${reward} vào lương tháng ${month} của ${teacherName}`
+        : `Đã duyệt và cộng ${reward} vào lương THÁNG ${month} của ${teacherName} (theo tháng của buổi dạy thử, không phải tháng này) — nhớ mở bảng lương tháng ${month} để chi trả.`)
     } catch (err: any) {
       console.error('approve evaluation failed', err)
       if (err?.message === 'ALREADY_APPROVED') toast.warning('Phiếu này đã được duyệt trước đó — không cộng tiền lần nữa')
@@ -574,14 +580,26 @@ export default function AdminEvaluationsPage() {
                   <div className="flex items-center justify-between gap-2">
                     {/* Nêu rõ THÁNG đã cộng — phiếu duyệt trễ tháng vẫn tra được đúng bảng lương.
                         Phiếu duyệt trước bản vá này chưa có rewardMonth -> suy ra từ ngày duyệt. */}
-                    <p className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                      <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
-                      Đã cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
-                      {(() => {
-                        const month = item.rewardMonth || monthOfTimestamp(item.approvedAt)
-                        return month ? ` tháng ${month}` : ''
-                      })()}
-                    </p>
+                    {(() => {
+                      const rewardMonth = item.rewardMonth || monthOfTimestamp(item.approvedAt)
+                      return (
+                        <p className="text-xs font-bold text-emerald-700 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                          <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>
+                            Đã cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
+                          </span>
+                          {rewardMonth && (
+                            <Link
+                              to={`/admin/payroll?month=${rewardMonth}`}
+                              className="underline decoration-emerald-400 underline-offset-2 hover:text-emerald-900"
+                              title="Mở bảng lương đúng tháng đã cộng khoản này"
+                            >
+                              tháng {rewardMonth}
+                            </Link>
+                          )}
+                        </p>
+                      )
+                    })()}
                     <button
                       type="button"
                       disabled={processingId === item.id}

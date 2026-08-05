@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteField, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Lesson } from '@/types'
+import { Lesson, Payroll } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { formatVND, formatVietnameseDate, getCurrentMonth } from '@/lib/constants'
-import { ChevronLeft, ChevronRight, History, ChevronDown, X, Info, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, History, ChevronDown, X, Info, Trash2, Gift } from 'lucide-react'
 import { format, subMonths, addMonths } from 'date-fns'
 
 function groupByDate(lessons: Lesson[]): [string, Lesson[]][] {
@@ -48,6 +48,9 @@ export function LessonHistoryPage() {
   // Tháng hiện tại trống nhưng vẫn còn lịch sử -> tự nhảy về tháng gần nhất có dữ liệu
   const [autoJumpedFrom, setAutoJumpedFrom] = useState<string | null>(null)
   const autoJumpDone = useRef(false)
+  // Khoản thưởng/khấu trừ của chính gia sư (vd thưởng phiếu đánh giá học sinh mới).
+  // Trước đây chỉ nằm ở bảng lương của giáo vụ nên gia sư không thấy ở đâu cả.
+  const [adjustments, setAdjustments] = useState<Payroll[]>([])
   const [cancelTarget, setCancelTarget] = useState<Lesson | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -95,6 +98,23 @@ export function LessonHistoryPage() {
     })
   }, [teacherId, retryVersion])
 
+  // Thưởng/khấu trừ của gia sư. Truy vấn 1 điều kiện rồi lọc phía client để KHÔNG
+  // phát sinh composite index mới; firestore.rules đã cho gia sư đọc payroll của mình.
+  useEffect(() => {
+    if (!teacherId) return
+    const q = query(collection(db, 'payroll'), where('teacherId', '==', teacherId))
+    return onSnapshot(q, (snap) => {
+      setAdjustments(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Payroll))
+          .filter((p) => p.type === 'adjustment' && !p.voided),
+      )
+    }, (err) => {
+      // Không chặn trang lịch sử: chỉ mất phần hiển thị thưởng
+      console.error('[lesson-history:adjustments]', err)
+    })
+  }, [teacherId, retryVersion])
+
   const scopedLessons = useMemo(
     () => (studentIdFilter ? allLessons.filter((l) => l.studentId === studentIdFilter) : allLessons),
     [allLessons, studentIdFilter],
@@ -108,8 +128,15 @@ export function LessonHistoryPage() {
       if (!m) continue
       counts.set(m, (counts.get(m) || 0) + 1)
     }
+    // Tháng chỉ có thưởng mà không có buổi dạy vẫn phải chọn được, nếu không
+    // gia sư sẽ không có cách nào mở tới đúng tháng chứa khoản thưởng.
+    if (!studentIdFilter) {
+      for (const item of adjustments) {
+        if (item.month && !counts.has(item.month)) counts.set(item.month, 0)
+      }
+    }
     return Array.from(counts.entries()).sort(([a], [b]) => b.localeCompare(a))
-  }, [scopedLessons])
+  }, [scopedLessons, adjustments, studentIdFilter])
 
   // Đổi bộ lọc học viên = tập dữ liệu khác -> cho phép tự chọn lại tháng một lần nữa
   useEffect(() => {
@@ -135,7 +162,14 @@ export function LessonHistoryPage() {
   )
 
   const approved = lessons.filter((l) => l.status === 'approved')
-  const totalSalary = approved.reduce((sum, l) => sum + (l.salary || 0), 0)
+  // Lương tháng = tiền các buổi đã duyệt + thưởng/khấu trừ của tháng đó.
+  // Bộ lọc theo học viên không áp cho khoản thưởng vì khoản này không gắn buổi nào.
+  const monthAdjustments = useMemo(
+    () => (studentIdFilter ? [] : adjustments.filter((p) => p.month === month)),
+    [adjustments, month, studentIdFilter],
+  )
+  const adjustmentTotal = monthAdjustments.reduce((sum, p) => sum + (p.amount || 0), 0)
+  const totalSalary = approved.reduce((sum, l) => sum + (l.salary || 0), 0) + adjustmentTotal
   const totalMinutes = approved.reduce((sum, l) => sum + l.minutes, 0)
   const groups = groupByDate(lessons)
   const latestLessonDate = scopedLessons[0]?.date || ''
@@ -283,6 +317,33 @@ export function LessonHistoryPage() {
           <p className="text-xs text-emerald-600/70 mt-0.5">{t('history.monthly_salary')}</p>
         </Card>
       </div>
+
+      {/* Thưởng / khấu trừ của tháng — vd thưởng phiếu đánh giá học sinh mới (buổi dạy thử).
+          Khoản này không gắn với buổi dạy nào nên trước đây gia sư không nhìn thấy ở đâu. */}
+      {monthAdjustments.length > 0 && (
+        <Card className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Gift className="h-4 w-4 text-emerald-500" />
+            <p className="text-sm font-bold text-slate-700">{t('history.adjustments')}</p>
+          </div>
+          <ul className="space-y-1.5">
+            {monthAdjustments.map((item) => {
+              const isBonus = (item.amount || 0) >= 0
+              return (
+                <li key={item.id} className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                  <span className="min-w-0 text-xs font-semibold text-slate-600">
+                    {item.adjustmentNote || (isBonus ? t('history.bonus') : t('history.deduction'))}
+                  </span>
+                  <span className={`flex-shrink-0 text-sm font-bold ${isBonus ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {isBonus ? '+' : ''}{formatVND(item.amount || 0)}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="text-[11px] text-slate-400">{t('history.adjustments_hint')}</p>
+        </Card>
+      )}
 
       {loadError ? (
         <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-6 text-center">
