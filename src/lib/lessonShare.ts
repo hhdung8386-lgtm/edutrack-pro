@@ -1,10 +1,15 @@
 import type { Lesson } from '@/types'
 import { formatShortDate } from '@/lib/attendanceAudit'
+import { teacherDisplayName } from '@/lib/teacherDisplay'
 
 /**
  * Soạn nội dung một buổi học để giáo vụ COPY gửi phụ huynh.
  * Chỉ gồm thông tin phụ huynh được phép thấy — không kèm lương, giá phút hay
  * ghi chú nội bộ.
+ *
+ * Hai quy ước bắt buộc khi gửi ra ngoài:
+ *  - Gia sư hiển thị bằng NICKNAME, không lộ tên thật.
+ *  - KHÔNG kèm thời lượng buổi học.
  */
 export function buildLessonParentMessage(lesson: Lesson): string {
   const lines: string[] = []
@@ -12,7 +17,8 @@ export function buildLessonParentMessage(lesson: Lesson): string {
   lines.push('')
   lines.push(`👦 Học viên: ${lesson.studentName}${lesson.studentCode ? ` (${lesson.studentCode})` : ''}`)
   lines.push(`📅 Ngày học: ${formatShortDate(lesson.date)}`)
-  if (lesson.teacherName) lines.push(`👩‍🏫 Gia sư: ${lesson.teacherName}`)
+  const teacherLabel = teacherDisplayName(lesson.teacherCode, lesson.teacherName)
+  if (teacherLabel) lines.push(`👩‍🏫 Gia sư: ${teacherLabel}`)
   if (lesson.subjectName) lines.push(`📚 Môn học: ${lesson.subjectName}`)
 
   const attendanceLabel = lesson.attendanceStatus === 'with_permission'
@@ -24,7 +30,7 @@ export function buildLessonParentMessage(lesson: Lesson): string {
 
   if (lesson.book) lines.push(`📖 Sách học: ${lesson.book}`)
   if (lesson.pages) lines.push(`📄 Trang học: ${lesson.pages}`)
-  if (lesson.minutes) lines.push(`⏱ Thời lượng: ${lesson.minutes} phút`)
+  // Không đưa thời lượng buổi học vào nội dung gửi phụ huynh (yêu cầu giáo vụ).
 
   if (lesson.comment?.trim()) {
     lines.push('')
