@@ -10,8 +10,10 @@ type AttendanceFeatureSnapshot = {
   error: boolean
 }
 
+// MẶC ĐỊNH KHÓA: chưa xác nhận được trạng thái thì coi như đang khóa, không bao giờ
+// tự mở trang Điểm danh độc lập khi chưa có lệnh rõ ràng của admin.
 let featureSnapshot: AttendanceFeatureSnapshot = {
-  enabled: true,
+  enabled: false,
   loading: true,
   error: false,
 }
@@ -51,7 +53,8 @@ function startFeatureListener() {
       if (!listenerActive || snapshot.metadata.fromCache) return
       clearTimeout(loadTimeout)
       publishFeatureSnapshot({
-        enabled: snapshot.data()?.teacherAttendancePageEnabled !== false,
+        // Phải là `=== true`: doc chưa có / field chưa có -> KHÓA (mặc định an toàn).
+        enabled: snapshot.data()?.teacherAttendancePageEnabled === true,
         loading: false,
         error: false,
       })
@@ -89,9 +92,11 @@ function retryFeatureListener() {
 /**
  * Công tắc chỉ dành cho trang Điểm danh độc lập của gia sư.
  *
- * Điểm danh từ Lịch dạy là luồng vận hành chính và không phụ thuộc công tắc này.
- * Mặc định mở để bản triển khai hiện tại khôi phục toàn bộ trang; admin có thể
- * khóa riêng trang độc lập sau khi đã thông báo cho gia sư.
+ * Điểm danh từ Lịch dạy là luồng vận hành chính và KHÔNG phụ thuộc công tắc này.
+ *
+ * MẶC ĐỊNH KHÓA (giáo vụ chốt 2026-08-06): gia sư chấm công theo lịch timetable.
+ * Khi cần điểm danh bù, gia sư báo admin -> admin mở khóa ở trang Lương gia sư,
+ * gia sư thao tác xong thì admin khóa lại.
  */
 export function useTeacherAttendanceFeature() {
   const snapshot = useSyncExternalStore(
