@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -69,6 +69,17 @@ function evaluationRewardMonth(evaluation: { createdAt?: unknown }): string {
   return monthOfTimestamp(evaluation.createdAt) || getCurrentMonth()
 }
 
+/** Ngày đánh giá dạng dd/mm/yyyy (đúng ngày hiển thị trên link phụ huynh). */
+function formatEvaluationDate(value: unknown): string {
+  const raw = value as { toDate?: () => Date; seconds?: number } | Date | undefined
+  let date: Date | null = null
+  if (raw instanceof Date) date = raw
+  else if (typeof raw?.toDate === 'function') date = raw.toDate()
+  else if (typeof raw?.seconds === 'number') date = new Date(raw.seconds * 1000)
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('vi-VN')
+}
+
 type EvalStatus = 'pending' | 'approved' | 'rejected'
 const evalStatusOf = (e: Evaluation): EvalStatus => e.status === 'approved' ? 'approved' : e.status === 'rejected' ? 'rejected' : 'pending'
 
@@ -129,8 +140,11 @@ export default function AdminEvaluationsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | EvalStatus>('pending')
   const [processingId, setProcessingId] = useState<string | null>(null)
   // Đối soát tháng của khoản thưởng đã cộng trước đây (xem khối "Đối soát" bên dưới)
-  const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, { month: string; paid: boolean }>>({})
+  const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, { evaluationId: string; month: string; paid: boolean }>>({})
   const [fixingMonths, setFixingMonths] = useState(false)
+  // Đã tự động đưa các khoản lệch về đúng tháng trong lần mở trang này chưa (chỉ chạy 1 lần)
+  const autoFixedRef = useRef(false)
+  const [autoFixedCount, setAutoFixedCount] = useState(0)
 
   const [showForm, setShowForm] = useState(false)
   const [editingEval, setEditingEval] = useState<Evaluation | null>(null)
@@ -222,11 +236,11 @@ export default function AdminEvaluationsPage() {
   useEffect(() => {
     const q = query(collection(db, 'payroll'), where('type', '==', 'adjustment'))
     return onSnapshot(q, (snap) => {
-      const map: Record<string, { month: string; paid: boolean }> = {}
+      const map: Record<string, { evaluationId: string; month: string; paid: boolean }> = {}
       snap.docs.forEach((d) => {
         const data = d.data() as { evaluationId?: string; month?: string; paid?: boolean; voided?: boolean }
         if (!data.evaluationId || data.voided) return
-        map[d.id] = { month: data.month || '', paid: data.paid === true }
+        map[d.id] = { evaluationId: data.evaluationId, month: data.month || '', paid: data.paid === true }
       })
       setRewardPayrolls(map)
     }, (err) => {
@@ -489,16 +503,23 @@ export default function AdminEvaluationsPage() {
    * theo tháng bấm duyệt nên lệch — khối đối soát bên dưới đưa chúng về đúng tháng.
    */
   const misfiledRewards = useMemo(() => {
-    return evaluations
-      .filter((item) => evalStatusOf(item) === 'approved' && item.rewardPayrollId)
-      .map((item) => {
-        const payroll = rewardPayrolls[item.rewardPayrollId!]
-        if (!payroll || !payroll.month) return null
-        const correctMonth = evaluationRewardMonth(item)
-        if (payroll.month === correctMonth) return null
+    // Duyệt TỪ PHÍA DÒNG LƯƠNG (không đi từ `rewardPayrollId` của phiếu): phiếu duyệt
+    // ở các bản rất cũ có thể thiếu `rewardPayrollId`, đi từ phiếu sẽ bỏ sót đúng
+    // những khoản đang lệch tháng mà giáo vụ cần.
+    const byId = new Map(evaluations.map((item) => [item.id, item]))
+    return Object.entries(rewardPayrolls)
+      .map(([payrollId, payroll]) => {
+        if (!payroll.month) return null
+        const evaluation = byId.get(payroll.evaluationId)
+        // Không tìm thấy phiếu (đã xoá) -> không đoán tháng, để nguyên cho giáo vụ xử lý tay
+        if (!evaluation) return null
+        // Dùng thẳng monthOfTimestamp: phiếu KHÔNG đọc được ngày đánh giá thì bỏ qua,
+        // tuyệt đối không lấy tháng hiện tại làm "tháng đúng" rồi kéo nhầm khoản đang đúng.
+        const correctMonth = monthOfTimestamp(evaluation.createdAt)
+        if (!correctMonth || payroll.month === correctMonth) return null
         return {
-          evaluation: item,
-          payrollId: item.rewardPayrollId!,
+          evaluation,
+          payrollId,
           currentMonth: payroll.month,
           correctMonth,
           paid: payroll.paid,
@@ -512,6 +533,35 @@ export default function AdminEvaluationsPage() {
         paid: boolean
       }[]
   }, [evaluations, rewardPayrolls])
+
+  /**
+   * Ghi tháng đúng cho danh sách khoản thưởng lệch. Trả về số khoản đã chuyển.
+   * Chỉ đổi trường tháng — không cộng/trừ tiền, không đụng cờ đã thanh toán.
+   */
+  const applyRewardMonthFix = async (items: typeof misfiledRewards) => {
+    // Ghi theo lô 200 khoản/lần (giới hạn batch là 500, mỗi khoản tốn 2 ghi)
+    const CHUNK = 200
+    let done = 0
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const batch = writeBatch(db)
+      for (const item of items.slice(i, i + CHUNK)) {
+        batch.update(doc(db, 'payroll', item.payrollId), {
+          month: item.correctMonth,
+          // Dấu vết để đối chiếu về sau, không xoá thông tin cũ
+          monthBeforeFix: item.currentMonth,
+          monthFixedAt: serverTimestamp(),
+          monthFixedBy: user?.uid || 'admin',
+        })
+        batch.update(doc(db, 'evaluations', item.evaluation.id), {
+          rewardMonth: item.correctMonth,
+          updatedAt: serverTimestamp(),
+        })
+        done += 1
+      }
+      await batch.commit()
+    }
+    return done
+  }
 
   /** Chuyển các khoản thưởng lệch về đúng tháng của buổi dạy thử. */
   const handleFixRewardMonths = async () => {
@@ -528,27 +578,7 @@ export default function AdminEvaluationsPage() {
 
     setFixingMonths(true)
     try {
-      // Ghi theo lô 200 doc/lần (giới hạn batch là 500, mỗi khoản tốn 2 ghi)
-      const CHUNK = 200
-      let done = 0
-      for (let i = 0; i < misfiledRewards.length; i += CHUNK) {
-        const batch = writeBatch(db)
-        for (const item of misfiledRewards.slice(i, i + CHUNK)) {
-          batch.update(doc(db, 'payroll', item.payrollId), {
-            month: item.correctMonth,
-            // Dấu vết để đối chiếu về sau, không xoá thông tin cũ
-            monthBeforeFix: item.currentMonth,
-            monthFixedAt: serverTimestamp(),
-            monthFixedBy: user?.uid || 'admin',
-          })
-          batch.update(doc(db, 'evaluations', item.evaluation.id), {
-            rewardMonth: item.correctMonth,
-            updatedAt: serverTimestamp(),
-          })
-          done += 1
-        }
-        await batch.commit()
-      }
+      const done = await applyRewardMonthFix(misfiledRewards)
       toast.success(`Đã chuyển ${done} khoản thưởng về đúng tháng của buổi dạy thử`)
     } catch (err) {
       console.error('fix reward months failed', err)
@@ -557,6 +587,35 @@ export default function AdminEvaluationsPage() {
       setFixingMonths(false)
     }
   }
+
+  /**
+   * TỰ ĐỘNG đưa khoản thưởng về đúng tháng ngay khi mở trang.
+   *
+   * Trước đây việc này phụ thuộc vào giáo vụ nhìn thấy khối cảnh báo rồi bấm nút,
+   * nên bảng lương gửi đi vẫn có khoản của phiếu tháng 7 nằm ở tháng 8. Thao tác
+   * CHỈ đổi trường `month` của dòng lương sinh từ phiếu đánh giá (`evaluationId`),
+   * giữ nguyên số tiền, cờ `paid` và mọi khoản thưởng/khấu trừ giáo vụ tự thêm;
+   * dấu vết cũ được ghi lại ở `monthBeforeFix` nên luôn đối chiếu ngược được.
+   */
+  useEffect(() => {
+    if (autoFixedRef.current) return
+    if (loading || misfiledRewards.length === 0) return
+    autoFixedRef.current = true
+    const items = misfiledRewards
+    setFixingMonths(true)
+    applyRewardMonthFix(items)
+      .then((done) => {
+        setAutoFixedCount(done)
+        toast.success(`Đã tự động chuyển ${done} khoản thưởng đánh giá về đúng tháng phát sinh (theo ngày đánh giá)`)
+      })
+      .catch((err) => {
+        console.error('auto fix reward months failed', err)
+        // Không chặn trang — khối cảnh báo + nút bấm tay bên dưới vẫn còn
+        autoFixedRef.current = false
+        toast.warning('Chưa tự chuyển được tháng của khoản thưởng — vui lòng bấm "Chuyển về đúng tháng"')
+      })
+      .finally(() => setFixingMonths(false))
+  }, [loading, misfiledRewards])
 
   const filtered = evaluations.filter(e => {
     const matchSearch = e.studentName.toLowerCase().includes(search.toLowerCase()) ||
@@ -589,8 +648,22 @@ export default function AdminEvaluationsPage() {
         </p>
       </div>
 
+      {/* Đã tự chuyển xong -> báo lại để giáo vụ biết mở bảng lương tháng nào kiểm tra */}
+      {autoFixedCount > 0 && misfiledRewards.length === 0 && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3">
+          <p className="text-sm font-black text-emerald-900">
+            Đã tự động chuyển {autoFixedCount} khoản thưởng đánh giá về đúng tháng phát sinh
+          </p>
+          <p className="mt-1 text-xs font-semibold text-emerald-800">
+            Tháng của khoản thưởng lấy theo NGÀY ĐÁNH GIÁ trên phiếu. Số tiền và trạng thái thanh toán giữ nguyên,
+            chỉ đổi tháng ghi nhận — mở lại bảng lương tháng tương ứng để kiểm tra trước khi gửi.
+          </p>
+        </div>
+      )}
+
       {/* Đối soát tháng: khoản thưởng duyệt trước đây bị ghi theo tháng bấm duyệt.
-          Lương tháng nào trả cho tháng đó nên phải đưa về tháng của buổi dạy thử. */}
+          Lương tháng nào trả cho tháng đó nên phải đưa về tháng của buổi dạy thử.
+          Trang tự chuyển ngay khi mở; khối này là phương án bấm tay nếu tự chuyển lỗi. */}
       {misfiledRewards.length > 0 && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -718,6 +791,12 @@ export default function AdminEvaluationsPage() {
                   <span className="font-bold text-slate-700 text-right">
                     {item.sessionsPerWeek}b/tuần ({item.minutesPerSession}')
                   </span>
+
+                  {/* Ngày đánh giá quyết định THÁNG của khoản thưởng — hiện ra để giáo vụ đối chiếu ngay */}
+                  <span className="text-slate-400">Ngày đánh giá:</span>
+                  <span className="font-bold text-slate-700 text-right">
+                    {formatEvaluationDate(item.createdAt) || 'Chưa rõ'}
+                  </span>
                 </div>
               </div>
 
@@ -728,7 +807,10 @@ export default function AdminEvaluationsPage() {
                     {/* Nêu rõ THÁNG đã cộng — phiếu duyệt trễ tháng vẫn tra được đúng bảng lương.
                         Phiếu duyệt trước bản vá này chưa có rewardMonth -> suy ra từ ngày duyệt. */}
                     {(() => {
-                      const rewardMonth = item.rewardMonth || monthOfTimestamp(item.approvedAt)
+                      // Ưu tiên THÁNG THẬT của dòng lương (đã nạp ở trên) để không hiện tháng cũ
+                      // khi phiếu chưa kịp cập nhật `rewardMonth`.
+                      const payrollMonth = item.rewardPayrollId ? rewardPayrolls[item.rewardPayrollId]?.month : ''
+                      const rewardMonth = payrollMonth || item.rewardMonth || monthOfTimestamp(item.approvedAt)
                       return (
                         <p className="text-xs font-bold text-emerald-700 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                           <Wallet className="w-3.5 h-3.5 flex-shrink-0" />

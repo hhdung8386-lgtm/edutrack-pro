@@ -107,6 +107,26 @@ const translations: Record<string, Record<Lang, string>> = {
   'report.err_homework_long': { vi: 'Nội dung mỗi loại bài tập không được quá 500 ký tự', en: 'Each homework type must not exceed 500 characters' },
   'report.err_rating': { vi: 'Vui lòng chấm điểm buổi học (4 hoặc 5 sao)', en: 'Please rate the lesson (4 or 5 stars)' },
 
+  // Buổi VẮNG KHÔNG PHÉP: bắt buộc dặn dò + giao bài tập + ảnh minh chứng
+  'absence.title': { vi: 'Bắt buộc trước khi gửi buổi vắng không phép', en: 'Required before submitting an unexcused absence' },
+  'absence.subtitle': { vi: 'Buổi vắng không phép vẫn được tính 25 phút, nên gia sư phải để lại dặn dò, giao bài tập và tải ít nhất 1 ảnh minh chứng thì mới gửi được điểm danh.', en: 'An unexcused absence is still paid as 25 minutes, so you must leave advice, assign homework and upload at least 1 proof image before submitting.' },
+  'absence.step_advice': { vi: 'Dặn dò', en: 'Advice' },
+  'absence.step_homework': { vi: 'Bài tập', en: 'Homework' },
+  'absence.step_image': { vi: 'Hình ảnh', en: 'Image' },
+  'absence.advice_label': { vi: 'Dặn dò cho học viên & phụ huynh', en: 'Advice for the student & parents' },
+  'absence.advice_placeholder': { vi: 'VD: Gia sư đã chờ hết 15 phút nhưng con không vào lớp. Nhờ phụ huynh nhắc con vào đúng giờ buổi sau, ôn lại Unit 3 và làm bài tập gia sư giao bên dưới trước buổi kế tiếp.', en: 'E.g., I waited 15 minutes but the student did not join. Please remind them to be on time next session, review Unit 3 and complete the homework assigned below.' },
+  'absence.advice_ok': { vi: '✓ Dặn dò đã đủ chi tiết ({n} ký tự)', en: '✓ Advice is detailed enough ({n} characters)' },
+  'absence.advice_need': { vi: 'Dặn dò còn quá ngắn: {n}/{min} ký tự — hãy nêu rõ lý do vắng và việc học viên cần làm trước buổi sau', en: 'Advice is too short: {n}/{min} characters — state what happened and what the student must do before the next session' },
+  'absence.homework_label': { vi: 'Bài tập giao cho buổi vắng (Bắt buộc)', en: 'Homework for the missed session (Required)' },
+  'absence.homework_hint': { vi: 'Chọn tối đa 2 loại bài tập và ghi rõ nội dung để học viên làm bù buổi vắng.', en: 'Choose up to 2 homework types and describe what the student must do to make up for the missed session.' },
+  'absence.image_ok': { vi: '✓ Đã có {n} ảnh minh chứng', en: '✓ {n} proof image(s) attached' },
+  'absence.image_need': { vi: 'Chưa có ảnh minh chứng — tải ít nhất 1 ảnh (bài tập đã giao hoặc màn hình lớp chờ học viên) ở mục Hình ảnh bên dưới', en: 'No proof image yet — upload at least 1 image (the assigned homework or the empty classroom screen) in the Images section below' },
+  'absence.err_advice_required': { vi: 'Học viên vắng không phép: vui lòng nhập phần dặn dò trước khi gửi', en: 'Unexcused absence: please write the advice before submitting' },
+  'absence.err_advice_short': { vi: 'Phần dặn dò quá ngắn — vui lòng viết tối thiểu 50 ký tự để phụ huynh nắm được tình hình', en: 'The advice is too short — please write at least 50 characters' },
+  'absence.err_advice_long': { vi: 'Phần dặn dò không được quá 1000 ký tự', en: 'The advice must not exceed 1000 characters' },
+  'absence.err_homework': { vi: 'Học viên vắng không phép: vui lòng chọn ít nhất 1 loại bài tập và nhập nội dung giao', en: 'Unexcused absence: please choose at least 1 homework type and enter its content' },
+  'absence.err_image': { vi: 'Học viên vắng không phép: vui lòng tải lên ít nhất 1 ảnh minh chứng', en: 'Unexcused absence: please upload at least 1 proof image' },
+
   // LessonHistoryPage
   'history.title': { vi: 'Lịch sử buổi dạy', en: 'Lesson history' },
   'history.lessons_taught': { vi: 'Buổi đã dạy', en: 'Lessons taught' },
