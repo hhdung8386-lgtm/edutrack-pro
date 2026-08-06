@@ -187,6 +187,14 @@ export interface LessonReport {
   exercisesComment: string
 }
 
+/**
+ * Phần bắt buộc của buổi VẮNG KHÔNG PHÉP (dặn dò gia sư gửi học viên/phụ huynh).
+ * Buổi cũ không có field này -> optional, màn hình cũ vẫn đọc `comment` như trước.
+ */
+export interface LessonAbsenceReport {
+  advice: string
+}
+
 /** Một loại bài tập về nhà đã giao (gia sư chọn tối đa 2 loại mỗi buổi). */
 export interface LessonHomeworkItem {
   type: 'video' | 'writing' | 'reading' | 'listening' | 'vocabulary'
@@ -214,6 +222,8 @@ export interface Lesson {
   book?: string
   pages?: string
   report?: LessonReport | null
+  /** Dặn dò bắt buộc khi vắng không phép (buổi cũ / buổi có mặt không có field này). */
+  absenceReport?: LessonAbsenceReport | null
   rating?: number | null
   imageURLs: string[]
   /** 'cancelled' = gia sư tự huỷ buổi điểm danh của mình khi CHƯA được duyệt. */

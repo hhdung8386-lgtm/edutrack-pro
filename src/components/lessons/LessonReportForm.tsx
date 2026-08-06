@@ -3,7 +3,7 @@ import { BookMarked, BookOpen, ChevronDown, ChevronUp, Headphones, PenLine, Star
 import type { LucideIcon } from 'lucide-react'
 import { useLanguageStore } from '@/stores/languageStore'
 import {
-  HOMEWORK_TYPES, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
+  HOMEWORK_TYPES, HomeworkItem, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
   MAX_HOMEWORK_TYPES, lessonReportCharCount, MIN_REPORT_CHARS,
 } from './lessonReport'
 
@@ -67,45 +67,45 @@ const HOMEWORK_ICONS: Record<HomeworkType, LucideIcon> = {
 }
 
 interface HomeworkPickerProps {
-  value: LessonReportDraft
-  onChange: (value: LessonReportDraft) => void
+  items: HomeworkItem[]
+  onChange: (items: HomeworkItem[]) => void
+  /** Cho phép đổi nhãn khi dùng lại ở buổi vắng không phép (bài tập giao bù). */
+  label?: string
+  hint?: string
 }
 
 /**
  * Bài tập về nhà: gia sư chọn TỐI ĐA 2 loại và điền nội dung cho từng loại.
  * Dữ liệu lưu có cấu trúc (homeworkItems) và vẫn ghép thành chuỗi `homework` cũ ở lớp lưu.
+ * Dùng chung cho buổi có mặt (LessonReportForm) và buổi vắng không phép (AbsenceReportForm).
  */
-function HomeworkPicker({ value, onChange }: HomeworkPickerProps) {
+export function HomeworkPicker({ items, onChange, label, hint }: HomeworkPickerProps) {
   const { t } = useLanguageStore()
   const [collapsed, setCollapsed] = useState<HomeworkType[]>([])
 
-  const items = value.homeworkItems || []
   const selectedCount = items.length
   const contentOf = (type: HomeworkType) => items.find((item) => item.type === type)?.content ?? ''
   const isSelected = (type: HomeworkType) => items.some((item) => item.type === type)
 
   const toggleType = (type: HomeworkType) => {
     if (isSelected(type)) {
-      onChange({ ...value, homeworkItems: items.filter((item) => item.type !== type) })
+      onChange(items.filter((item) => item.type !== type))
       return
     }
     if (selectedCount >= MAX_HOMEWORK_TYPES) return
     setCollapsed((current) => current.filter((key) => key !== type))
-    onChange({ ...value, homeworkItems: [...items, { type, content: '' }] })
+    onChange([...items, { type, content: '' }])
   }
 
   const setContent = (type: HomeworkType, content: string) => {
-    onChange({
-      ...value,
-      homeworkItems: items.map((item) => (item.type === type ? { ...item, content } : item)),
-    })
+    onChange(items.map((item) => (item.type === type ? { ...item, content } : item)))
   }
 
   return (
     <div className="space-y-2.5">
       <div className="space-y-0.5">
-        <span className="block text-sm font-bold text-slate-700">{t('report.homework_label')}</span>
-        <p className="text-[11px] leading-relaxed text-slate-500">{t('report.homework_hint')}</p>
+        <span className="block text-sm font-bold text-slate-700">{label || t('report.homework_label')}</span>
+        <p className="text-[11px] leading-relaxed text-slate-500">{hint || t('report.homework_hint')}</p>
       </div>
 
       <div className="space-y-2">
@@ -278,7 +278,10 @@ export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
       })()}
 
       {/* Bài tập về nhà — chọn tối đa 2 loại */}
-      <HomeworkPicker value={value} onChange={onChange} />
+      <HomeworkPicker
+        items={value.homeworkItems || []}
+        onChange={(homeworkItems) => onChange({ ...value, homeworkItems })}
+      />
 
       {/* Chấm điểm buổi học */}
       <div className="space-y-1.5">

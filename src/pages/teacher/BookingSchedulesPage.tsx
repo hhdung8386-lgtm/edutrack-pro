@@ -19,6 +19,11 @@ import {
   LessonReportDraft, emptyLessonReport,
   validateLessonReport, composeLessonComment, composeHomeworkText, lessonReportFields,
 } from '@/components/lessons/lessonReport'
+import { AbsenceReportForm } from '@/components/lessons/AbsenceReportForm'
+import {
+  AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
+  composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
+} from '@/components/lessons/absenceReport'
 
 const isAttendanceAllowed = (booking: BookingRequest) => {
   if (!booking.requestedDate || !booking.requestedEnd) return false
@@ -200,6 +205,8 @@ export function BookingSchedulesPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [book, setBook] = useState('')
   const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
+  // Vắng KHÔNG PHÉP: bắt buộc dặn dò + bài tập + ảnh minh chứng mới gửi được
+  const [absence, setAbsence] = useState<AbsenceReportDraft>(emptyAbsenceReport())
   const [images, setImages] = useState<ImageUpload[]>([])
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
 
@@ -514,6 +521,7 @@ export function BookingSchedulesPage() {
       return
     }
     const isPresent = attendanceStatus === 'present'
+    const isUnexcused = attendanceStatus === 'without_permission'
     const bookTitle = isPresent ? book.trim() : 'Học viên vắng'
 
     if (isPresent && !bookTitle) {
@@ -530,6 +538,16 @@ export function BookingSchedulesPage() {
       }
       // Báo cáo chi tiết bắt buộc khi học viên có mặt
       const errKey = validateLessonReport(report)
+      if (errKey) {
+        toast.warning(t(errKey))
+        return
+      }
+    }
+
+    // Vắng không phép vẫn được tính 25 phút -> bắt buộc dặn dò + bài tập + ảnh minh chứng
+    if (isUnexcused) {
+      const uploadedImages = images.filter((i) => i.storageURL).length
+      const errKey = validateAbsenceReport(absence, uploadedImages)
       if (errKey) {
         toast.warning(t(errKey))
         return
@@ -614,12 +632,20 @@ export function BookingSchedulesPage() {
           minutes,
           // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
           // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
-          comment: isPresent ? composeLessonComment(report) : '',
-          homework: isPresent ? composeHomeworkText(report.homeworkItems) : '',
+          comment: isPresent
+            ? composeLessonComment(report)
+            : (isUnexcused ? composeAbsenceComment(absence) : ''),
+          homework: isPresent
+            ? composeHomeworkText(report.homeworkItems)
+            : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
           book: bookTitle,
           ...(isPresent
             ? lessonReportFields(report)
-            : { pages: '', report: null, rating: null, homeworkItems: [] }),
+            : isUnexcused
+              // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
+              // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
+              ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
+              : { pages: '', report: null, rating: null, homeworkItems: [] }),
           imageURLs: images.map((i) => i.storageURL).filter(Boolean),
           attendanceStatus,
           status: 'pending',
@@ -692,6 +718,7 @@ export function BookingSchedulesPage() {
       // Reset form
       setBook('')
       setReport(emptyLessonReport())
+      setAbsence(emptyAbsenceReport())
       setImages([])
       setAttendanceStatus('present')
     } catch (error) {
@@ -879,6 +906,7 @@ export function BookingSchedulesPage() {
                         // Form mới tinh cho mỗi buổi — tránh nội dung buổi trước dính sang học viên khác
                         setBook('')
                         setReport(emptyLessonReport())
+                        setAbsence(emptyAbsenceReport())
                         setImages([])
                         setAttendanceStatus('present')
                         setShowAttendanceModal(true)
@@ -1220,9 +1248,21 @@ export function BookingSchedulesPage() {
               <LessonReportForm value={report} onChange={setReport} />
             )}
 
+            {/* Vắng không phép: bắt buộc dặn dò + bài tập + ảnh minh chứng */}
+            {attendanceStatus === 'without_permission' && (
+              <AbsenceReportForm
+                value={absence}
+                onChange={setAbsence}
+                imageCount={images.filter((i) => i.storageURL).length}
+              />
+            )}
+
             {/* Evidence image uploads */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">{t('sched.proof_images')}</label>
+              <label className="block text-sm font-bold text-slate-700">
+                {t('sched.proof_images')}
+                {attendanceStatus === 'without_permission' && <span className="ml-1 text-rose-500">*</span>}
+              </label>
               <div className="grid grid-cols-5 gap-2">
                 {images.map((img, idx) => (
                   <div key={idx} className="relative aspect-square border border-slate-200 rounded-lg overflow-hidden">
