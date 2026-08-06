@@ -12,6 +12,7 @@ import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
+import { TeacherAttendanceLockCard } from '@/components/admin/TeacherAttendanceLockCard'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -416,6 +417,10 @@ export function PayrollPage() {
           />
         </div>
       </div>
+
+      {/* Công tắc khóa/mở trang Điểm danh độc lập của gia sư — đặt ở đây để kế toán
+          thao tác tại chỗ khi gia sư xin điểm danh bù. Mặc định KHÓA. */}
+      <TeacherAttendanceLockCard />
 
       {/* Total */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
