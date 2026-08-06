@@ -76,7 +76,7 @@ const wordCount = (val: string) => val.trim().split(/\s+/).filter(Boolean).lengt
 
 /** Trả về key lỗi i18n đầu tiên, hoặc null nếu hợp lệ. Chỉ gọi khi học viên có mặt. */
 /** Số ký tự tối thiểu cho phần nhận xét (gộp 3 mục) — chống nhận xét hời hợt. */
-export const MIN_REPORT_CHARS = 120
+export const MIN_REPORT_CHARS = 360
 
 /** Tổng số ký tự thực (đã bỏ khoảng trắng thừa) của 3 mục nhận xét. */
 export function lessonReportCharCount(d: Pick<LessonReportDraft, 'knowledgeComment' | 'gamesComment' | 'exercisesComment'>): number {

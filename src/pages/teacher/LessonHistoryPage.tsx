@@ -428,13 +428,13 @@ export function LessonHistoryPage() {
                         {lesson.comment && (
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">{t('history.comment')}</p>
-                            <p className="text-slate-600">{lesson.comment}</p>
+                            <p className="break-words whitespace-pre-wrap text-slate-600">{lesson.comment}</p>
                           </div>
                         )}
                         {(lesson.book || lesson.pages) && (
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">{lang === 'vi' ? 'Nội dung đã dạy' : 'Lesson coverage'}</p>
-                            <p className="text-slate-600">
+                            <p className="break-words text-slate-600">
                               {lesson.book || (lang === 'vi' ? 'Chưa ghi giáo trình' : 'Book not recorded')}
                               {lesson.pages ? ` - ${lang === 'vi' ? 'trang' : 'pages'} ${lesson.pages}` : ''}
                             </p>
@@ -443,13 +443,13 @@ export function LessonHistoryPage() {
                         {lesson.homework && (
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">{t('history.homework')}</p>
-                            <p className="text-slate-600">{lesson.homework}</p>
+                            <p className="break-words whitespace-pre-wrap text-slate-600">{lesson.homework}</p>
                           </div>
                         )}
                         {lesson.imageURLs?.length > 0 && (
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             {lesson.imageURLs.map((url, i) => (
-                              <img key={i} src={url} alt="" className="w-16 h-16 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => {
+                              <img key={i} src={url} alt="" className="h-16 w-16 flex-shrink-0 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => {
                                 import('@/lib/constants').then(m => m.openBase64InNewTab(url))
                               }} />
                             ))}

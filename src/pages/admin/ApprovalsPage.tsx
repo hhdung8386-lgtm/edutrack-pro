@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   collection, query, where, onSnapshot, orderBy,
   runTransaction, doc, serverTimestamp, addDoc, collection as col,
@@ -687,8 +688,18 @@ export function ApprovalsPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
                       <div>
                       <p className="text-xs text-slate-500 mb-0.5">Học viên</p>
-                      <p className="text-slate-700 font-medium">{lesson.studentName}</p>
-                      <p className="text-xs text-indigo-400 font-mono">{lesson.studentCode}</p>
+                      <Link
+                        to={`/admin/students/${lesson.studentId}`}
+                        className="block text-slate-700 font-medium hover:text-indigo-600 hover:underline"
+                      >
+                        {lesson.studentName}
+                      </Link>
+                      <Link
+                        to={`/admin/students/${lesson.studentId}`}
+                        className="block text-xs text-indigo-400 font-mono hover:text-indigo-600 hover:underline"
+                      >
+                        {lesson.studentCode}
+                      </Link>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Gia sư</p>
@@ -711,14 +722,14 @@ export function ApprovalsPage() {
                   {lesson.comment && (
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Nhận xét</p>
-                      <p className="text-sm text-slate-600 line-clamp-2">{lesson.comment}</p>
+                      <p className="break-words whitespace-pre-wrap text-sm text-slate-600 line-clamp-2">{lesson.comment}</p>
                     </div>
                   )}
 
                   {lesson.homework && (
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
-                      <p className="text-sm text-slate-600 line-clamp-1">{lesson.homework}</p>
+                      <p className="break-words whitespace-pre-wrap text-sm text-slate-600 line-clamp-1">{lesson.homework}</p>
                     </div>
                   )}
 

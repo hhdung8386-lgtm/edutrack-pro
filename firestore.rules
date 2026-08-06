@@ -256,6 +256,19 @@ service cloud.firestore {
           && remaining > 0;
       }
 
+      // Lessons created from the arranged timetable carry a booking request id.
+      // Standalone attendance is controlled by the admin feature flag.
+      function isTimetableLesson() {
+        let bookingRequestId = request.resource.data.get('bookingRequestId', '');
+        return bookingRequestId is string && bookingRequestId.size() > 0;
+      }
+
+      function standaloneAttendanceIsEnabled() {
+        // Keep the existing default-open behavior until an admin explicitly saves false.
+        return !exists(/databases/$(database)/documents/paymentSettings/main)
+          || get(/databases/$(database)/documents/paymentSettings/main).data.get('teacherAttendancePageEnabled', true) == true;
+      }
+
       // Gia sư được TỰ HUỶ buổi điểm danh CỦA MÌNH khi buổi đó CHƯA được duyệt.
       // Huỷ mềm: chỉ đổi trạng thái + ghi dấu vết, không xoá dữ liệu, không đụng
       // buổi đã duyệt (đã trừ kim cương và đã sinh bảng lương).
@@ -272,7 +285,10 @@ service cloud.firestore {
           ]);
       }
 
-      allow create: if isTeacher() && getTeacherId() == request.resource.data.teacherId && studentCanBeMarked();
+      allow create: if isTeacher()
+                    && getTeacherId() == request.resource.data.teacherId
+                    && studentCanBeMarked()
+                    && (isTimetableLesson() || standaloneAttendanceIsEnabled());
       allow read: if isAdmin()
                    || (isTeacher() && getTeacherId() == resource.data.teacherId);
       allow update: if isAdmin() || isTeacherSelfCancelLesson();
