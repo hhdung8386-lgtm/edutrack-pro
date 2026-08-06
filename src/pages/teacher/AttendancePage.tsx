@@ -14,6 +14,11 @@ import {
   LessonReportDraft, emptyLessonReport,
   validateLessonReport, composeLessonComment, composeHomeworkText, lessonReportFields,
 } from '@/components/lessons/lessonReport'
+import { AbsenceReportForm } from '@/components/lessons/AbsenceReportForm'
+import {
+  AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
+  composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
+} from '@/components/lessons/absenceReport'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/stores/toastStore'
@@ -68,6 +73,8 @@ export function AttendancePage() {
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
+  // Vắng KHÔNG PHÉP: bắt buộc dặn dò + bài tập + ảnh minh chứng mới gửi được
+  const [absence, setAbsence] = useState<AbsenceReportDraft>(emptyAbsenceReport())
   // Cảnh báo cần gia sư xác nhận trước khi gửi (sai lịch / trùng buổi trong ngày)
   const [auditPrompt, setAuditPrompt] = useState<{ data: FormData; audit: AttendanceAudit; issues: AuditMessage[] } | null>(null)
   // Chặn cứng: vượt số lần điểm danh cho phép trong ngày — hiển thị cố định, không trôi như toast
@@ -212,8 +219,18 @@ export function AttendancePage() {
 
     // Form báo cáo chi tiết chỉ bắt buộc khi học viên có mặt
     const isPresent = attendanceStatus === 'present'
+    const isUnexcused = attendanceStatus === 'without_permission'
     if (isPresent) {
       const errKey = validateLessonReport(report)
+      if (errKey) {
+        toast.warning(t(errKey))
+        return
+      }
+    }
+    // Vắng không phép vẫn được tính 25 phút -> bắt buộc dặn dò + bài tập + ảnh minh chứng
+    if (isUnexcused) {
+      const uploadedImages = images.filter((i) => i.storageURL).length
+      const errKey = validateAbsenceReport(absence, uploadedImages)
       if (errKey) {
         toast.warning(t(errKey))
         return
@@ -341,12 +358,20 @@ export function AttendancePage() {
         pointsPer25Minutes,
         // Ghép báo cáo có cấu trúc thành `comment` để các màn hình cũ hiển thị được;
         // đồng thời lưu bản có cấu trúc (pages/report/rating) bên dưới.
-        comment: isPresent ? composeLessonComment(report) : '',
-        homework: isPresent ? composeHomeworkText(report.homeworkItems) : '',
+        comment: isPresent
+          ? composeLessonComment(report)
+          : (isUnexcused ? composeAbsenceComment(absence) : ''),
+        homework: isPresent
+          ? composeHomeworkText(report.homeworkItems)
+          : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
         book: data.book || '',
         ...(isPresent
           ? lessonReportFields(report)
-          : { pages: '', report: null, rating: null, homeworkItems: [] }),
+          : isUnexcused
+            // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
+            // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
+            ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
+            : { pages: '', report: null, rating: null, homeworkItems: [] }),
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,
         status: 'pending',
@@ -374,6 +399,7 @@ export function AttendancePage() {
         setImages([])
         reset({ date: today, book: '' })
         setReport(emptyLessonReport())
+        setAbsence(emptyAbsenceReport())
         setSelectedMinutes(50)
         setAttendanceStatus('present')
       }, 2000)
@@ -677,9 +703,21 @@ export function AttendancePage() {
                 <LessonReportForm value={report} onChange={setReport} />
               )}
 
+              {/* Vắng không phép: bắt buộc dặn dò + bài tập + ảnh minh chứng */}
+              {attendanceStatus === 'without_permission' && (
+                <AbsenceReportForm
+                  value={absence}
+                  onChange={setAbsence}
+                  imageCount={images.filter((i) => i.storageURL).length}
+                />
+              )}
+
               {/* Images */}
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">{t('attendance.images')} ({images.length}/20)</label>
+                <label className="block text-sm font-medium text-slate-600 mb-2">
+                  {t('attendance.images')} ({images.length}/20)
+                  {attendanceStatus === 'without_permission' && <span className="ml-1 text-rose-500">*</span>}
+                </label>
                 <div className="flex gap-2 flex-wrap">
                   {images.map((img, i) => (
                     <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden">

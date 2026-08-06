@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { BookMarked, BookOpen, ChevronDown, ChevronUp, Headphones, PenLine, Star, Video } from 'lucide-react'
+import { BookMarked, BookOpen, ChevronDown, ChevronUp, Headphones, NotebookPen, PenLine, Star, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useLanguageStore } from '@/stores/languageStore'
 import {
-  HOMEWORK_TYPES, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
+  HOMEWORK_TYPES, HomeworkItem, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
   MAX_HOMEWORK_TYPES, lessonReportCharCount, MIN_REPORT_CHARS,
 } from './lessonReport'
 
@@ -27,6 +27,10 @@ interface SectionProps {
 }
 
 function ReportSection({ index, label, checkLabel, checked, onCheck, comment, onComment, placeholder, commentLabel }: SectionProps) {
+  const { lang } = useLanguageStore()
+  // Đếm theo đúng cách tính của lessonReportCharCount (bỏ khoảng trắng thừa) để
+  // con số dưới từng ô khớp với bộ đếm tổng, gia sư không bị "cộng lại thấy đủ mà vẫn báo thiếu".
+  const sectionChars = (comment || '').trim().replace(/\s+/g, ' ').length
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -53,6 +57,10 @@ function ReportSection({ index, label, checkLabel, checked, onCheck, comment, on
           placeholder={placeholder}
           className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
         />
+        {/* Đếm ký tự ngay dưới từng ô — gia sư biết mình đã viết bao nhiêu khi đang gõ */}
+        <p className={`text-right text-[11px] font-bold ${sectionChars > 0 ? 'text-slate-400' : 'text-amber-600'}`}>
+          {sectionChars} {lang === 'en' ? 'characters' : 'ký tự'}
+        </p>
       </div>
     </div>
   )
@@ -67,45 +75,45 @@ const HOMEWORK_ICONS: Record<HomeworkType, LucideIcon> = {
 }
 
 interface HomeworkPickerProps {
-  value: LessonReportDraft
-  onChange: (value: LessonReportDraft) => void
+  items: HomeworkItem[]
+  onChange: (items: HomeworkItem[]) => void
+  /** Cho phép đổi nhãn khi dùng lại ở buổi vắng không phép (bài tập giao bù). */
+  label?: string
+  hint?: string
 }
 
 /**
  * Bài tập về nhà: gia sư chọn TỐI ĐA 2 loại và điền nội dung cho từng loại.
  * Dữ liệu lưu có cấu trúc (homeworkItems) và vẫn ghép thành chuỗi `homework` cũ ở lớp lưu.
+ * Dùng chung cho buổi có mặt (LessonReportForm) và buổi vắng không phép (AbsenceReportForm).
  */
-function HomeworkPicker({ value, onChange }: HomeworkPickerProps) {
+export function HomeworkPicker({ items, onChange, label, hint }: HomeworkPickerProps) {
   const { t } = useLanguageStore()
   const [collapsed, setCollapsed] = useState<HomeworkType[]>([])
 
-  const items = value.homeworkItems || []
   const selectedCount = items.length
   const contentOf = (type: HomeworkType) => items.find((item) => item.type === type)?.content ?? ''
   const isSelected = (type: HomeworkType) => items.some((item) => item.type === type)
 
   const toggleType = (type: HomeworkType) => {
     if (isSelected(type)) {
-      onChange({ ...value, homeworkItems: items.filter((item) => item.type !== type) })
+      onChange(items.filter((item) => item.type !== type))
       return
     }
     if (selectedCount >= MAX_HOMEWORK_TYPES) return
     setCollapsed((current) => current.filter((key) => key !== type))
-    onChange({ ...value, homeworkItems: [...items, { type, content: '' }] })
+    onChange([...items, { type, content: '' }])
   }
 
   const setContent = (type: HomeworkType, content: string) => {
-    onChange({
-      ...value,
-      homeworkItems: items.map((item) => (item.type === type ? { ...item, content } : item)),
-    })
+    onChange(items.map((item) => (item.type === type ? { ...item, content } : item)))
   }
 
   return (
     <div className="space-y-2.5">
       <div className="space-y-0.5">
-        <span className="block text-sm font-bold text-slate-700">{t('report.homework_label')}</span>
-        <p className="text-[11px] leading-relaxed text-slate-500">{t('report.homework_hint')}</p>
+        <span className="block text-sm font-bold text-slate-700">{label || t('report.homework_label')}</span>
+        <p className="text-[11px] leading-relaxed text-slate-500">{hint || t('report.homework_hint')}</p>
       </div>
 
       <div className="space-y-2">
@@ -197,11 +205,27 @@ interface LessonReportFormProps {
 }
 
 export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
   const set = (patch: Partial<LessonReportDraft>) => onChange({ ...value, ...patch })
+  const totalChars = lessonReportCharCount(value)
+  const enoughChars = totalChars >= MIN_REPORT_CHARS
 
   return (
     <div className="space-y-5">
+      {/* Báo TRƯỚC yêu cầu số ký tự để gia sư biết ngay từ đầu, không phải gõ xong mới bị chặn */}
+      <div className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+        <NotebookPen className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-600" strokeWidth={2} />
+        <p className="text-[11px] font-semibold leading-relaxed text-indigo-900">
+          {lang === 'en'
+            ? `Feedback across the 3 sections below must total at least ${MIN_REPORT_CHARS} characters. The counter under each box and the bar at the bottom show your progress.`
+            : `Nhận xét của 3 mục bên dưới cộng lại phải đạt tối thiểu ${MIN_REPORT_CHARS} ký tự. Có bộ đếm dưới từng ô và thanh tổng ở cuối để bạn theo dõi.`}
+          {' '}
+          <span className={`font-black ${enoughChars ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {totalChars}/{MIN_REPORT_CHARS}
+          </span>
+        </p>
+      </div>
+
       {/* Trang học */}
       <div className="space-y-1">
         <label className="block text-sm font-bold text-slate-700">{t('report.pages_label')}</label>
@@ -251,34 +275,44 @@ export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
         commentLabel={t('report.section_comment')}
       />
 
-      {/* Bộ đếm ký tự: nhận xét 3 mục phải đủ dài, tránh ghi hời hợt */}
-      {(() => {
-        const count = lessonReportCharCount(value)
-        const ok = count >= MIN_REPORT_CHARS
-        return (
-          <div className={`rounded-xl border px-3.5 py-2.5 ${ok ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
-            <p className={`text-xs font-bold ${ok ? 'text-emerald-700' : 'text-amber-800'}`}>
-              {ok
-                ? `✓ Nhận xét đã đủ chi tiết (${count} ký tự)`
-                : `Nhận xét còn quá ngắn: ${count}/${MIN_REPORT_CHARS} ký tự — cần thêm ${MIN_REPORT_CHARS - count} ký tự nữa`}
-            </p>
-            {!ok && (
-              <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
-                Hãy mô tả cụ thể con học được gì, chơi trò gì, làm bài tập nào — phụ huynh đọc nhận xét này để theo dõi con.
-              </p>
-            )}
-            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white">
-              <div
-                className={`h-full transition-all ${ok ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                style={{ width: `${Math.min(100, Math.round((count / MIN_REPORT_CHARS) * 100))}%` }}
-              />
-            </div>
-          </div>
-        )
-      })()}
+      {/* Bộ đếm ký tự tổng. KHÔNG dùng sticky: nút "Gửi điểm danh" ở trang cha đã sticky
+          bottom, hai khối dính cùng lúc sẽ chồng lên nhau trên điện thoại. Thay vào đó
+          gia sư thấy số ký tự ở 3 chỗ: banner đầu form, dưới từng ô, và khối tổng này. */}
+      <div className={`rounded-xl border-2 px-3.5 py-3 ${
+        enoughChars ? 'border-emerald-300 bg-emerald-50' : 'border-amber-400 bg-amber-50'
+      }`}>
+        <div className="flex items-baseline justify-between gap-3">
+          <p className={`text-sm font-black ${enoughChars ? 'text-emerald-800' : 'text-amber-900'}`}>
+            {enoughChars
+              ? (lang === 'en' ? 'Feedback is detailed enough' : 'Nhận xét đã đủ chi tiết')
+              : (lang === 'en'
+                ? `${MIN_REPORT_CHARS - totalChars} more characters needed`
+                : `Còn thiếu ${MIN_REPORT_CHARS - totalChars} ký tự`)}
+          </p>
+          <span className={`text-lg font-black tabular-nums ${enoughChars ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {totalChars}<span className="text-xs font-bold text-slate-400">/{MIN_REPORT_CHARS}</span>
+          </span>
+        </div>
+        {!enoughChars && (
+          <p className="mt-1 text-[11px] font-medium leading-relaxed text-amber-800">
+            {lang === 'en'
+              ? 'Describe what the student learned, which games were played and which exercises were done — parents read this to follow their child.'
+              : 'Hãy mô tả cụ thể con học được gì, chơi trò gì, làm bài tập nào — phụ huynh đọc nhận xét này để theo dõi con.'}
+          </p>
+        )}
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white">
+          <div
+            className={`h-full transition-all ${enoughChars ? 'bg-emerald-500' : 'bg-amber-500'}`}
+            style={{ width: `${Math.min(100, Math.round((totalChars / MIN_REPORT_CHARS) * 100))}%` }}
+          />
+        </div>
+      </div>
 
       {/* Bài tập về nhà — chọn tối đa 2 loại */}
-      <HomeworkPicker value={value} onChange={onChange} />
+      <HomeworkPicker
+        items={value.homeworkItems || []}
+        onChange={(homeworkItems) => onChange({ ...value, homeworkItems })}
+      />
 
       {/* Chấm điểm buổi học */}
       <div className="space-y-1.5">
