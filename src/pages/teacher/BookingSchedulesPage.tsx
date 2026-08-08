@@ -77,7 +77,18 @@ function isSameAttendanceClass(left: BookingRequest, right: BookingRequest) {
 }
 
 function areConsecutiveBookings(previous: BookingRequest, next: BookingRequest) {
-  return timeToMinutes(previous.requestedEnd || '') === timeToMinutes(next.requestedStart || '')
+  if (!previous.requestedStart || !next.requestedStart) return false
+
+  const previousStart = timeToMinutes(previous.requestedStart)
+  const nextStart = timeToMinutes(next.requestedStart)
+  const requestedMinutes = Number(previous.requestedMinutes)
+  // Lịch chạy theo lưới 30 phút: một ca 25 phút có 5 phút chuyển tiếp,
+  // nên 20:00-20:25 và 20:30-20:55 vẫn là hai slot liền nhau.
+  const slotStep = Number.isFinite(requestedMinutes) && requestedMinutes > 0
+    ? Math.max(30, Math.ceil(requestedMinutes / 30) * 30)
+    : 30
+
+  return nextStart === previousStart + slotStep
 }
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
