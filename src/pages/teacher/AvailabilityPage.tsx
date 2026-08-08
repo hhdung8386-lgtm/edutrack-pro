@@ -11,7 +11,7 @@ import { toast } from '@/stores/toastStore'
 import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
-import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
+import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 
@@ -59,28 +59,28 @@ function emptySlots(): Record<DayOfWeek, DayAvailability> {
 
 function getMonday(date: Date) {
   const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  const day = copy.getDay()
+  copy.setUTCHours(0, 0, 0, 0)
+  const day = copy.getUTCDay()
   const diff = day === 0 ? -6 : 1 - day
-  copy.setDate(copy.getDate() + diff)
+  copy.setUTCDate(copy.getUTCDate() + diff)
   return copy
 }
 
 function addDays(date: Date, days: number) {
   const copy = new Date(date)
-  copy.setDate(copy.getDate() + days)
+  copy.setUTCDate(copy.getUTCDate() + days)
   return copy
 }
 
 function formatDateISO(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 function formatShortHeaderDate(date: Date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
 }
 
 function getWeekDates(weekStart: Date) {
@@ -184,7 +184,11 @@ export function AvailabilityPage() {
   const [timeWindow, setTimeWindow] = useState<string>('24h')
   const [duration, setDuration] = useState<25 | 50>(25)
 
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+  const [weekStartOverride, setWeekStartOverride] = useState<Date | null>(null)
+  const teacherOffset = teacher?.timezoneOffset ?? 7
+  const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
+  const weekStart = weekStartOverride || defaultWeekStart
+  const setWeekStart = setWeekStartOverride
   const weekStartISO = formatDateISO(weekStart)
   const availabilityKey = teacherId ? `${teacherId}:${weekStartISO}` : null
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
@@ -316,11 +320,7 @@ export function AvailabilityPage() {
       const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
       const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
       
-      const [yr, mo, dy] = localStart.dateISO.split('-').map(Number)
-      const dObj = new Date(yr, mo - 1, dy)
-      const dayIdx = dObj.getDay()
-      const daysMap: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-      const localDay = daysMap[dayIdx]
+      const localDay = getDayOfWeekFromDateISO(localStart.dateISO)
 
       return {
         ...req,
@@ -616,7 +616,7 @@ export function AvailabilityPage() {
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
             {t('avail.prev_week')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacher?.timezoneOffset ?? 7))}>
             {t('avail.current_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>

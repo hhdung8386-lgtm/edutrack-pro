@@ -9,10 +9,10 @@ import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
-import { getToday } from '@/lib/constants'
+import { getVietnamDateISO } from '@/lib/constants'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
-import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
+import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -27,14 +27,14 @@ import {
   composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
 } from '@/components/lessons/absenceReport'
 
-const isAttendanceAllowed = (booking: BookingRequest) => {
+const isAttendanceAllowed = (booking: BookingRequest, nowMs = Date.now()) => {
   if (!booking.requestedDate || !booking.requestedEnd) return false
   const [year, month, day] = booking.requestedDate.split('-').map(Number)
   const [hours, minutes] = booking.requestedEnd.split(':').map(Number)
   const utcMs = Date.UTC(year, month - 1, day, hours, minutes)
   const vnTimeMs = utcMs - 7 * 60 * 60 * 1000 // Convert Vietnam (GMT+7) local to UTC time
   const allowedTimeMs = vnTimeMs + 5 * 60 * 1000 // 5 minutes after class ends
-  return new Date().getTime() >= allowedTimeMs
+  return nowMs >= allowedTimeMs
 }
 
 /**
@@ -148,29 +148,29 @@ function cloneSlots(slots?: Record<DayOfWeek, DayAvailability>) {
 }
 
 function formatDateISO(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 function getMonday(date: Date) {
   const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  const day = copy.getDay()
+  copy.setUTCHours(0, 0, 0, 0)
+  const day = copy.getUTCDay()
   const diff = day === 0 ? -6 : 1 - day
-  copy.setDate(copy.getDate() + diff)
+  copy.setUTCDate(copy.getUTCDate() + diff)
   return copy
 }
 
 function addDays(date: Date, days: number) {
   const copy = new Date(date)
-  copy.setDate(copy.getDate() + days)
+  copy.setUTCDate(copy.getUTCDate() + days)
   return copy
 }
 
 function formatShortHeaderDate(date: Date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
 }
 
 function getWeekDates(weekStart: Date) {
@@ -220,7 +220,7 @@ export function BookingSchedulesPage() {
   const { lang, t } = useLanguageStore()
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+  const [weekStartOverride, setWeekStartOverride] = useState<Date | null>(null)
   const [timeWindow, setTimeWindow] = useState<string>('24h')
 
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
@@ -245,10 +245,22 @@ export function BookingSchedulesPage() {
   const [absence, setAbsence] = useState<AbsenceReportDraft>(emptyAbsenceReport())
   const [images, setImages] = useState<ImageUpload[]>([])
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
+  const [attendanceNow, setAttendanceNow] = useState(() => Date.now())
 
+  const teacherOffset = teacher?.timezoneOffset ?? 7
+  const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
+  const weekStart = weekStartOverride || defaultWeekStart
+  const setWeekStart = setWeekStartOverride
   const weekStartISO = formatDateISO(weekStart)
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
+
+  // Keep the eligibility list in sync while the page stays open across the
+  // five-minute attendance boundary.
+  useEffect(() => {
+    const timer = window.setInterval(() => setAttendanceNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // Load teacher profile for timezone settings
   useEffect(() => {
@@ -300,11 +312,7 @@ export function BookingSchedulesPage() {
       const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
       const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
       
-      const [yr, mo, dy] = localStart.dateISO.split('-').map(Number)
-      const dObj = new Date(yr, mo - 1, dy)
-      const dayIdx = dObj.getDay()
-      const daysMap: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-      const localDay = daysMap[dayIdx]
+      const localDay = getDayOfWeekFromDateISO(localStart.dateISO)
 
       return {
         ...req,
@@ -344,16 +352,16 @@ export function BookingSchedulesPage() {
   )
 
   const pendingAttendanceBookings = useMemo(() => {
-    const todayStr = getToday()
+    const todayStr = getVietnamDateISO()
     return confirmedBookings
-      .filter((b) => isAwaitingAttendance(b) && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
+      .filter((b) => isAwaitingAttendance(b) && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b, attendanceNow))
       .sort((a, b) => {
         if (a.requestedDate !== b.requestedDate) {
           return (a.requestedDate || '').localeCompare(b.requestedDate || '')
         }
         return (a.requestedStart || '').localeCompare(b.requestedStart || '')
       })
-  }, [confirmedBookings, isAwaitingAttendance])
+  }, [attendanceNow, confirmedBookings, isAwaitingAttendance])
 
   const batchBookingCandidates = useMemo(() => {
     if (!selectedBooking || attendanceStatus !== 'present') return []
@@ -397,7 +405,7 @@ export function BookingSchedulesPage() {
     )
 
     const unsub = onSnapshot(q, (snap) => {
-      const todayStr = getToday()
+      const todayStr = getVietnamDateISO()
       const list = snap.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
 
@@ -406,7 +414,7 @@ export function BookingSchedulesPage() {
       // Fetch student details if needed
       const studentIdsToFetch = Array.from(new Set(
         list
-          .filter((b) => (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b))
+          .filter((b) => (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b, Date.now()))
           .map(b => b.studentId),
       ))
       if (studentIdsToFetch.length > 0) {
@@ -747,7 +755,7 @@ export function BookingSchedulesPage() {
             teacherName: teacherData.name,
             subjectId: primaryBooking.subjectId || '',
             subjectName: primaryBooking.subjectName || '',
-            date: primaryBooking.requestedDate || getToday(),
+            date: primaryBooking.requestedDate || getVietnamDateISO(),
             minutes: isPresent
               ? minutes
               : (isUnexcused && attendanceBooking.id === primaryBooking.id ? minutes : 0),
@@ -805,7 +813,7 @@ export function BookingSchedulesPage() {
             teacherName: teacherData.name,
             subjectId: followUpBooking.subjectId || '',
             subjectName: followUpBooking.subjectName || '',
-            date: followUpBooking.requestedDate || getToday(),
+            date: followUpBooking.requestedDate || getVietnamDateISO(),
             minutes: 0,
             comment: '',
             homework: '',
@@ -929,7 +937,7 @@ export function BookingSchedulesPage() {
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
             {t('sched.prev_week')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacher?.timezoneOffset ?? 7))}>
             {t('sched.this_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
@@ -1133,7 +1141,7 @@ export function BookingSchedulesPage() {
                     </div>
                   )
                 }
-                const allowed = isAttendanceAllowed(selectedBooking)
+                const allowed = isAttendanceAllowed(selectedBooking, attendanceNow)
                 return (
                   <div className="flex flex-col items-end gap-1.5">
                     <Button

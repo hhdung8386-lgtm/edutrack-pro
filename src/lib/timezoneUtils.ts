@@ -42,6 +42,50 @@ function normalizedTeacherOffset(teacherOffset: number): number {
   return Number.isFinite(teacherOffset) ? teacherOffset : 7
 }
 
+function dateISOFromUtcDate(date: Date): string {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Date-only value in a configured fixed-offset timezone.
+ * This deliberately does not use the browser's local timezone.
+ */
+export function getDateISOAtOffset(date: Date = new Date(), teacherOffset: number = 7): string {
+  const shifted = new Date(date.getTime() + normalizedTeacherOffset(teacherOffset) * 60 * 60 * 1000)
+  return dateISOFromUtcDate(shifted)
+}
+
+/** Monday 00:00 for the configured teacher-local calendar week. */
+export function getMondayAtOffset(date: Date = new Date(), teacherOffset: number = 7): Date {
+  const localDate = new Date(`${getDateISOAtOffset(date, teacherOffset)}T00:00:00Z`)
+  const day = localDate.getUTCDay()
+  const daysSinceMonday = day === 0 ? 6 : day - 1
+  localDate.setUTCDate(localDate.getUTCDate() - daysSinceMonday)
+  return localDate
+}
+
+/** Weekday for a YYYY-MM-DD date-only value, independent of browser timezone. */
+export function getDayOfWeekFromDateISO(dateISO: string): DayOfWeek | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) return null
+
+  const daysMap: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+  return daysMap[date.getUTCDay()]
+}
+
 function cloneSlots(slots: Record<DayOfWeek, DayAvailability>): Record<DayOfWeek, DayAvailability> {
   const res = {} as Record<DayOfWeek, DayAvailability>
   for (const k of DAYS_ORDER) {

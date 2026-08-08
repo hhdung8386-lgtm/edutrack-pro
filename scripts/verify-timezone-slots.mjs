@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import {
   convertVnDateTimeToTeacher,
   DAYS_ORDER,
+  getDateISOAtOffset,
+  getDayOfWeekFromDateISO,
+  getMondayAtOffset,
   translateTeacherSlotsToVn,
   translateVnSlotsToTeacher,
 } from '../src/lib/timezoneUtils.ts'
@@ -52,6 +55,16 @@ function semanticCoverage(slots) {
 function assertSemanticEqual(actual, expected, message) {
   assert.deepEqual(semanticCoverage(actual), semanticCoverage(expected), message)
 }
+
+// Date-only calendar calculations must follow the configured teacher offset,
+// never the machine/browser timezone. This instant is Sunday in UTC, Monday in
+// Vietnam, but still Sunday in South Africa.
+const nearMidnightUtc = new Date('2026-08-02T18:00:00.000Z')
+assert.equal(getDateISOAtOffset(nearMidnightUtc, 7), '2026-08-03', 'Vietnam local date')
+assert.equal(getDateISOAtOffset(nearMidnightUtc, 2), '2026-08-02', 'South Africa local date')
+assert.equal(getMondayAtOffset(nearMidnightUtc, 7).toISOString(), '2026-08-03T00:00:00.000Z', 'Vietnam local week')
+assert.equal(getMondayAtOffset(nearMidnightUtc, 2).toISOString(), '2026-07-27T00:00:00.000Z', 'South Africa local week')
+assert.equal(getDayOfWeekFromDateISO('2026-08-03'), 'mon', 'date-only weekday')
 
 // PH (UTC+8): exact 25-minute and 50-minute ranges must not be rounded to
 // 30-minute cells or discarded.
