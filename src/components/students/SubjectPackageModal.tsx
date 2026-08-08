@@ -9,7 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { Check, ChevronDown, Search } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, Globe2, Search } from 'lucide-react'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -30,15 +30,50 @@ const STUDENT_REQUESTS_OPTIONS = [
   'Cho học viên nói nhiều, chủ động khơi gợi.',
   'Giao nhiều bài tập về nhà.',
   'Không giao bài tập về nhà.',
-  'Ôn lại bài cũ nhiều hơn.'
+  'Ôn lại bài cũ nhiều hơn.',
+  'Giảng chậm và kỹ hơn khi gặp phần khó.',
+  'Cho học viên tự làm bài nhiều hơn.',
+  'Sửa lỗi ngay khi học viên làm sai.',
+  'Cho thêm ví dụ minh họa.',
+  'Kiểm tra lại xem học viên đã hiểu bài chưa.',
+  'Tăng bài tập trong buổi học.',
+  'Tăng trò chơi / hoạt động tương tác.'
 ]
 
-const FOCUS_SKILLS_OPTIONS = [
-  'Nghe',
-  'Nói',
-  'Đọc',
-  'Viết',
-  'Ngữ Pháp'
+type FocusSkillGroup = {
+  key: 'foreignLanguage' | 'other'
+  label: string
+  icon: typeof Globe2
+  options: string[]
+}
+
+const LEGACY_FOCUS_SKILLS_OPTIONS = ['Nghe', 'Nói', 'Đọc', 'Viết', 'Ngữ Pháp']
+
+const FOCUS_SKILL_GROUPS: FocusSkillGroup[] = [
+  {
+    key: 'foreignLanguage',
+    label: 'Ngoại ngữ — Kỹ năng trọng tâm',
+    icon: Globe2,
+    options: [
+      'Nghe – Từ vựng',
+      'Nói – Giao tiếp – Phát âm',
+      'Đọc – Hiểu',
+      'Viết – Ngữ pháp',
+    ],
+  },
+  {
+    key: 'other',
+    label: 'Môn khác — Kỹ năng trọng tâm',
+    icon: BookOpen,
+    options: [
+      'Lý thuyết – Ghi nhớ',
+      'Giải bài tập – Thực hành',
+      'Phân tích – Tư duy',
+      'Trình bày – Diễn giải',
+      'Vận dụng – Nâng cao',
+      'Ôn tập – Kiểm tra',
+    ],
+  },
 ]
 
 interface Props {
@@ -482,27 +517,58 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
 
         <div className="space-y-2 rounded-xl border border-slate-200 p-4 bg-slate-50/50">
           <label className="block text-sm font-bold text-slate-700">Kỹ năng trọng tâm (Tick chọn)</label>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {FOCUS_SKILLS_OPTIONS.map((skill) => {
-              const checked = selectedSkills.includes(skill)
+          <div className="space-y-4">
+            {FOCUS_SKILL_GROUPS.map((group) => {
+              const GroupIcon = group.icon
               return (
-                <label key={skill} className="flex items-center gap-2 text-sm text-slate-600 font-medium cursor-pointer hover:text-slate-900 select-none">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedSkills((prev) => [...prev, skill])
-                      } else {
-                        setSelectedSkills((prev) => prev.filter((s) => s !== skill))
-                      }
-                    }}
-                    className="rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span>{skill}</span>
-                </label>
+                <div key={group.key} className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
+                    <GroupIcon className="h-4 w-4 text-indigo-600" />
+                    {group.label}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {group.options.map((skill) => {
+                      const checked = selectedSkills.includes(skill)
+                      return (
+                        <label key={skill} className="flex items-start gap-2 text-sm text-slate-600 font-medium cursor-pointer hover:text-slate-900 select-none">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSkills((prev) => prev.includes(skill) ? prev : [...prev, skill])
+                              } else {
+                                setSelectedSkills((prev) => prev.filter((s) => s !== skill))
+                              }
+                            }}
+                            className="mt-0.5 rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{skill}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
               )
             })}
+            {selectedSkills.some((skill) => LEGACY_FOCUS_SKILLS_OPTIONS.includes(skill)) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+                <p className="mb-2 text-xs font-bold text-amber-800">Kỹ năng đã lưu theo cấu hình cũ</p>
+                <div className="flex flex-wrap gap-x-5 gap-y-2">
+                  {LEGACY_FOCUS_SKILLS_OPTIONS.filter((skill) => selectedSkills.includes(skill)).map((skill) => (
+                    <label key={skill} className="flex items-center gap-2 text-sm text-amber-900 font-medium cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked
+                        onChange={() => setSelectedSkills((prev) => prev.filter((s) => s !== skill))}
+                        className="rounded border-amber-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>{skill}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

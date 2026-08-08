@@ -65,6 +65,21 @@ export function findLaterSameDayBookings(
     .sort((a, b) => timeToMinutes(a.requestedStart || '') - timeToMinutes(b.requestedStart || ''))
 }
 
+function isSameAttendanceClass(left: BookingRequest, right: BookingRequest) {
+  return Boolean(
+    left.studentId
+    && left.studentId === right.studentId
+    && left.studentCode
+    && left.studentCode === right.studentCode
+    && (left.subjectId || '') === (right.subjectId || '')
+    && (left.requestedDate || '') === (right.requestedDate || ''),
+  )
+}
+
+function areConsecutiveBookings(previous: BookingRequest, next: BookingRequest) {
+  return timeToMinutes(previous.requestedEnd || '') === timeToMinutes(next.requestedStart || '')
+}
+
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -200,6 +215,7 @@ export function BookingSchedulesPage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null)
+  const [selectedBatchBookingIds, setSelectedBatchBookingIds] = useState<string[]>([])
 
   // Attendance Form States
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
@@ -321,6 +337,14 @@ export function BookingSchedulesPage() {
         return (a.requestedStart || '').localeCompare(b.requestedStart || '')
       })
   }, [confirmedBookings, isAwaitingAttendance])
+
+  const batchBookingCandidates = useMemo(() => {
+    if (!selectedBooking || attendanceStatus !== 'present') return []
+    const rawSelectedBooking = confirmedBookings.find((booking) => booking.id === selectedBooking.id) || selectedBooking
+    return pendingAttendanceBookings
+      .filter((booking) => isSameAttendanceClass(booking, rawSelectedBooking))
+      .sort((left, right) => (left.requestedStart || '').localeCompare(right.requestedStart || ''))
+  }, [attendanceStatus, confirmedBookings, pendingAttendanceBookings, selectedBooking])
 
   // Buổi đã huỷ của gia sư. Dùng truy vấn 1 điều kiện (giống trang Lịch sử buổi dạy)
   // rồi lọc phía client để KHÔNG phát sinh composite index mới trên Firestore.
@@ -448,6 +472,7 @@ export function BookingSchedulesPage() {
 
   const handleCellClick = (booking: BookingRequest) => {
     setSelectedBooking(booking)
+    setSelectedBatchBookingIds([booking.id])
     setShowDetailModal(true)
     
     // Instantly refetch the student details to guarantee the latest curriculumLink
@@ -466,6 +491,9 @@ export function BookingSchedulesPage() {
   // Handle Attendance status triggers (prefilling books/minutes)
   const handleAttendanceStatusSelect = (status: 'present' | 'with_permission' | 'without_permission') => {
     setAttendanceStatus(status)
+    if (status !== 'present' && selectedBooking) {
+      setSelectedBatchBookingIds([selectedBooking.id])
+    }
     if (status === 'present') {
       setBook('')
     } else if (status === 'with_permission') {
@@ -554,18 +582,47 @@ export function BookingSchedulesPage() {
       }
     }
 
+    const primaryBooking = confirmedBookings.find((booking) => booking.id === selectedBooking.id) || selectedBooking
+    const requestedBatchIds = attendanceStatus === 'present'
+      ? Array.from(new Set(selectedBatchBookingIds.length > 0 ? selectedBatchBookingIds : [selectedBooking.id]))
+      : [selectedBooking.id]
+    const attendanceBookings = requestedBatchIds
+      .map((bookingId) => confirmedBookings.find((booking) => booking.id === bookingId))
+      .filter((booking): booking is BookingRequest => Boolean(booking))
+
+    if (attendanceBookings.length !== requestedBatchIds.length) {
+      toast.warning(lang === 'vi' ? 'Một hoặc nhiều ca vừa chọn không còn khả dụng. Vui lòng mở lại lịch và thử lại.' : 'One or more selected slots are no longer available. Reopen the schedule and try again.')
+      return
+    }
+
+    if (attendanceStatus === 'present' && attendanceBookings.length > 1) {
+      if (attendanceBookings.length > 4) {
+        toast.warning(lang === 'vi' ? 'Chỉ được gộp tối đa 4 ca trong một lần điểm danh.' : 'You can submit at most 4 sessions at once.')
+        return
+      }
+      const pendingIds = new Set(pendingAttendanceBookings.map((booking) => booking.id))
+      const sortedBatch = [...attendanceBookings].sort((left, right) => (left.requestedStart || '').localeCompare(right.requestedStart || ''))
+      const sameClass = sortedBatch.every((booking) => isSameAttendanceClass(booking, primaryBooking))
+      const consecutive = sortedBatch.slice(1).every((booking, index) => areConsecutiveBookings(sortedBatch[index], booking))
+      if (!sameClass || !consecutive || !sortedBatch.every((booking) => pendingIds.has(booking.id))) {
+        toast.warning(lang === 'vi'
+          ? 'Chỉ được gộp các ca chưa điểm danh, cùng mã lớp, cùng môn, cùng ngày và liền nhau.'
+          : 'Only adjacent, unsubmitted sessions from the same class code, subject and date can be grouped.')
+        return
+      }
+    }
+
     setSubmittingAttendance(true)
     try {
-      const studentId = selectedBooking.studentId
+      const studentId = primaryBooking.studentId
       const minutes = attendanceStatus === 'present'
-        ? selectedBooking.requestedMinutes
+        ? primaryBooking.requestedMinutes
         : (attendanceStatus === 'without_permission' ? 25 : 0)
       // Học viên vắng -> mọi ca còn lại trong ngày cũng vắng, nhưng KHÔNG tính tiền lần nữa.
       const followUpBookings = isPresent ? [] : absenceFollowUpBookings
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
-        const bookingRef = doc(db, 'bookingRequests', selectedBooking.id)
         const teacherRef = doc(db, 'teachers', teacherId)
 
         const [studentSnap, teacherSnap] = await Promise.all([
@@ -580,7 +637,7 @@ export function BookingSchedulesPage() {
         // Load pricing snapshot from subject or student subject rates
         let pricePerMinute = 0
         const teacherCountry = teacherData?.country || 'VN'
-        const activeSub = studentData.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
+        const activeSub = studentData.subjects?.find(s => s.subjectId === primaryBooking.subjectId)
         if (activeSub) {
           if (activeSub.countryPrices) {
             const rateObj = activeSub.countryPrices[teacherCountry] || activeSub.countryPrices['VN']
@@ -596,7 +653,7 @@ export function BookingSchedulesPage() {
           }
         } else {
           // fallback to main subject price
-          const subSnap = await getDoc(doc(db, 'subjects', selectedBooking.subjectId || ''))
+          const subSnap = await getDoc(doc(db, 'subjects', primaryBooking.subjectId || ''))
           if (subSnap.exists()) {
             const subData = subSnap.data()
             if (subData.countryPrices) {
@@ -617,53 +674,60 @@ export function BookingSchedulesPage() {
         const mps = studentData.minutesPerSession || 50
         const currentRemainingMinutes = studentData.remainingMinutes ?? (studentData.remainingSessions * mps)
 
-        // 1. Create lesson document
-        const lessonRef = doc(collection(db, 'lessons'))
-        tx.set(lessonRef, {
-          studentId: studentData.id,
-          studentCode: studentData.code,
-          studentName: studentData.name,
-          teacherId,
-          teacherCode: teacherData.code,
-          teacherName: teacherData.name,
-          subjectId: selectedBooking.subjectId || '',
-          subjectName: selectedBooking.subjectName || '',
-          date: selectedBooking.requestedDate || getToday(),
-          minutes,
-          // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
-          // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
-          comment: isPresent
-            ? composeLessonComment(report)
-            : (isUnexcused ? composeAbsenceComment(absence) : ''),
-          homework: isPresent
-            ? composeHomeworkText(report.homeworkItems)
-            : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
-          book: bookTitle,
-          ...(isPresent
-            ? lessonReportFields(report)
-            : isUnexcused
-              // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
-              // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
-              ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
-              : { pages: '', report: null, rating: null, homeworkItems: [] }),
-          imageURLs: images.map((i) => i.storageURL).filter(Boolean),
-          attendanceStatus,
-          status: 'pending',
-          sessionsBeforeApproval: studentData.remainingSessions,
-          sessionsAfterApproval: studentData.remainingSessions,
-          minutesBeforeApproval: currentRemainingMinutes,
-          minutesAfterApproval: currentRemainingMinutes,
-          teacherLevel: teacherData.level ?? 1,
-          pricePerMinute,
-          salary: 0,
-          bookingRequestId: selectedBooking.id,
-          createdAt: serverTimestamp(),
-        })
+        // 1. Create one lesson per selected booking. The same report is copied
+        // to each session, while each lesson keeps its own duration/payroll link.
+        const lessonRefs = []
+        for (const attendanceBooking of attendanceBookings) {
+          const lessonRef = doc(collection(db, 'lessons'))
+          lessonRefs.push(lessonRef)
+          tx.set(lessonRef, {
+            studentId: studentData.id,
+            studentCode: studentData.code,
+            studentName: studentData.name,
+            teacherId,
+            teacherCode: teacherData.code,
+            teacherName: teacherData.name,
+            subjectId: attendanceBooking.subjectId || '',
+            subjectName: attendanceBooking.subjectName || '',
+            date: attendanceBooking.requestedDate || getToday(),
+            minutes: isPresent ? attendanceBooking.requestedMinutes : minutes,
+            // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
+            // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
+            comment: isPresent
+              ? composeLessonComment(report)
+              : (isUnexcused ? composeAbsenceComment(absence) : ''),
+            homework: isPresent
+              ? composeHomeworkText(report.homeworkItems)
+              : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
+            book: bookTitle,
+            ...(isPresent
+              ? lessonReportFields(report)
+              : isUnexcused
+                // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
+                // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
+                ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
+                : { pages: '', report: null, rating: null, homeworkItems: [] }),
+            imageURLs: images.map((i) => i.storageURL).filter(Boolean),
+            attendanceStatus,
+            status: 'pending',
+            sessionsBeforeApproval: studentData.remainingSessions,
+            sessionsAfterApproval: studentData.remainingSessions,
+            minutesBeforeApproval: currentRemainingMinutes,
+            minutesAfterApproval: currentRemainingMinutes,
+            teacherLevel: teacherData.level ?? 1,
+            pricePerMinute,
+            salary: 0,
+            bookingRequestId: attendanceBooking.id,
+            createdAt: serverTimestamp(),
+          })
 
-        // 2. Link lessonId directly to booking request
-        tx.update(bookingRef, {
-          lessonId: lessonRef.id,
-        })
+          // 2. Link every lessonId directly to its booking request
+          tx.update(doc(db, 'bookingRequests', attendanceBooking.id), {
+            lessonId: lessonRef.id,
+          })
+        }
+
+        const primaryLessonRef = lessonRefs[0]
 
         // 3. Các ca còn lại trong ngày: ghi vắng theo, 0 phút -> lương = 0
         //    => cả ngày chỉ tính tiền MỘT lần 25 phút, dù lớp 25/50/100 phút.
@@ -699,7 +763,7 @@ export function BookingSchedulesPage() {
             salary: 0,
             bookingRequestId: followUpBooking.id,
             // Dấu vết: buổi vắng "ăn theo" ca trước, huỷ ca trước thì huỷ luôn buổi này
-            absenceFollowUpOf: lessonRef.id,
+            absenceFollowUpOf: primaryLessonRef.id,
             createdAt: serverTimestamp(),
           })
           tx.update(doc(db, 'bookingRequests', followUpBooking.id), {
@@ -710,7 +774,9 @@ export function BookingSchedulesPage() {
 
       toast.success(followUpBookings.length > 0
         ? `Đã ghi vắng cho ca này và ${followUpBookings.length} ca còn lại trong ngày — chỉ tính tiền 1 lần 25 phút.`
-        : 'Gửi báo cáo điểm danh thành công!')
+        : attendanceBookings.length > 1
+          ? `Đã gửi báo cáo điểm danh cho ${attendanceBookings.length} ca. Mỗi ca đã được ghi nhận riêng.`
+          : 'Gửi báo cáo điểm danh thành công!')
       setShowAttendanceModal(false)
       setShowDetailModal(false)
       setSelectedBooking(null)
@@ -721,6 +787,7 @@ export function BookingSchedulesPage() {
       setAbsence(emptyAbsenceReport())
       setImages([])
       setAttendanceStatus('present')
+      setSelectedBatchBookingIds([])
     } catch (error) {
       console.error('Submit calendar attendance failed:', error)
       toast.error(t('attendance.submit_fail'))
@@ -909,6 +976,7 @@ export function BookingSchedulesPage() {
                         setAbsence(emptyAbsenceReport())
                         setImages([])
                         setAttendanceStatus('present')
+                        setSelectedBatchBookingIds([selectedBooking.id])
                         setShowAttendanceModal(true)
                       }}
                       disabled={!allowed}
@@ -1093,6 +1161,56 @@ export function BookingSchedulesPage() {
                 <span className="text-sm font-bold text-slate-800">{selectedBooking.requestedMinutes} {t('attendance.minutes')}</span>
               </div>
             </div>
+
+            {attendanceStatus === 'present' && batchBookingCandidates.length > 1 && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-indigo-900">
+                      {lang === 'vi' ? 'Điểm danh nhiều buổi cùng lúc' : 'Submit multiple sessions together'}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-indigo-700">
+                      {lang === 'vi'
+                        ? 'Chỉ chọn các ca cùng mã lớp, cùng môn, cùng ngày và liền nhau. Báo cáo này sẽ được ghi nhận riêng cho từng ca.'
+                        : 'Select only adjacent sessions with the same class code, subject and date. This report will be recorded for each session separately.'}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200">
+                    {selectedBatchBookingIds.length || 1}/4
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {batchBookingCandidates.map((candidate) => {
+                    const displayBooking = localBookings.find((booking) => booking.id === candidate.id) || candidate
+                    const checked = selectedBatchBookingIds.includes(candidate.id)
+                    const isCurrent = candidate.id === selectedBooking.id
+                    return (
+                      <label key={candidate.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm font-semibold ${checked ? 'border-indigo-400 bg-white text-indigo-900' : 'border-indigo-100 bg-white/70 text-slate-600'}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isCurrent}
+                          onChange={(event) => {
+                            setSelectedBatchBookingIds((current) => {
+                              if (event.target.checked) {
+                                if (current.length >= 4) return current
+                                return current.includes(candidate.id) ? current : [...current, candidate.id]
+                              }
+                              return current.filter((id) => id !== candidate.id)
+                            })
+                          }}
+                          className="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block">{displayBooking.requestedStart} – {displayBooking.requestedEnd}</span>
+                          <span className="text-[11px] font-medium text-slate-500">{candidate.requestedMinutes} {t('attendance.minutes')}{isCurrent ? (lang === 'vi' ? ' · đang chọn' : ' · current') : ''}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Links and materials display inside Attendance Modal */}
             {(() => {

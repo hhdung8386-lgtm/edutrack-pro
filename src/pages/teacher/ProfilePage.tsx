@@ -162,6 +162,11 @@ export function ProfilePage() {
   }
   const missing = missingTeacherFields(draftProfile)
   const certificateCompliance = getTeacherCertificateCompliance({ certificates })
+  const profileLocked = Boolean(
+    teacher
+    && missingTeacherFields(teacher).length === 0
+    && certificateCompliance.isCertificateComplete,
+  )
   const isMissing = (key: string) => missing.includes(key as keyof Teacher)
   // Viền đỏ ngay ô còn thiếu khi đã bấm lưu (hoặc khi bị bắt buộc hoàn thiện)
   const errCls = (key: string) =>
@@ -173,6 +178,13 @@ export function ProfilePage() {
     const input = e.currentTarget
     const file = e.target.files?.[0]
     if (!file || !teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      input.value = ''
+      return
+    }
     setPhotoUploading(true)
     try {
       // Luôn kiểm tra lại từ server trước khi upload để một tab cũ không thể
@@ -209,6 +221,13 @@ export function ProfilePage() {
   // phình document teachers, dễ vượt 1MB gây lỗi lưu; và trình duyệt chặn mở data: URI)
   const handleCertUpload = async (index: number, file: File, input: HTMLInputElement) => {
     if (!teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      input.value = ''
+      return
+    }
     setCertUploadingIndex(index)
     try {
       const url = await uploadLessonImage(teacherId, file)
@@ -224,6 +243,12 @@ export function ProfilePage() {
 
   const handleSaveRequiredProfile = async () => {
     if (!teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      return
+    }
     if (missing.length > 0) {
       setShowErrors(true)
       const labels = missing.slice(0, 4).join(', ')
@@ -274,6 +299,12 @@ export function ProfilePage() {
 
   const handleSaveYoutube = async () => {
     if (!teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      return
+    }
     setSavingYoutube(true)
     try {
       await updateDoc(doc(db, 'teachers', teacherId), {
@@ -291,6 +322,12 @@ export function ProfilePage() {
 
   const handleSaveCerts = async () => {
     if (!teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      return
+    }
     setSavingCerts(true)
     try {
       await updateDoc(doc(db, 'teachers', teacherId), {
@@ -392,6 +429,12 @@ export function ProfilePage() {
   const handleTimezoneChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const countryCode = e.target.value
     if (!teacherId) return
+    if (profileLocked) {
+      toast.warning(lang === 'vi'
+        ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa. Vui lòng liên hệ quản lý nếu cần thay đổi.'
+        : 'Your completed profile is locked. Contact an administrator if a change is needed.')
+      return
+    }
     
     const countryMap: Record<string, number> = {
       VN: 7,
@@ -511,6 +554,23 @@ export function ProfilePage() {
       </div>
 
       <div className="px-4 space-y-4">
+        {profileLocked && (
+          <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900 shadow-sm">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <div>
+              <p className="text-sm font-bold">
+                {lang === 'vi' ? 'Hồ sơ đã hoàn thiện và đang khóa chỉnh sửa' : 'Profile complete and editing is locked'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-emerald-700">
+                {lang === 'vi'
+                  ? 'Thông tin hồ sơ, múi giờ, video giới thiệu và chứng chỉ đã được ghi nhận. Vui lòng liên hệ quản lý nếu cần cập nhật.'
+                  : 'Your profile, timezone, introduction video and certificates are recorded. Contact an administrator if an update is needed.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <fieldset disabled={profileLocked} className="contents">
         {/* ─── HOÀN THIỆN HỒ SƠ BẮT BUỘC ─── */}
         <Card className={`p-5 border-2 shadow-md ${missing.length > 0 ? 'border-rose-300 shadow-rose-100/50 bg-rose-50/20' : 'border-emerald-200 shadow-emerald-100/40 bg-emerald-50/20'}`}>
           <div className="flex items-start gap-3 mb-4">
@@ -988,14 +1048,19 @@ export function ProfilePage() {
                 <div className="flex items-center gap-3 pt-2">
                   {cert.fileURL ? (
                     <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setCertImageView(cert.fileURL || null)}
+                      <a
+                        href={cert.fileURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setCertImageView(cert.fileURL || null)
+                        }}
                         className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         {t('profile.view_image')}
-                      </button>
+                      </a>
                       <button
                         type="button"
                         onClick={() => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, fileURL: '' } : c))}
@@ -1054,6 +1119,7 @@ export function ProfilePage() {
             <p className="text-sm text-sky-700/80 mt-1 leading-relaxed">{t('profile.contact_admin')}</p>
           </div>
         </div>
+        </fieldset>
       </div>
       {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
     </div>

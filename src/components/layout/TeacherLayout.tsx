@@ -220,63 +220,65 @@ export function TeacherLayout() {
 
   return (
     <div className="min-h-screen bg-brand-50">
-      {/* Desktop header — tông vàng thương hiệu, nhãn giữ 1 dòng, sóng ngăn cách phía dưới */}
-      <header className="hidden lg:block fixed top-0 left-0 right-0 z-30">
-        <div className="flex h-16 items-center gap-3 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 px-4 xl:px-6 shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Logo className="h-9 w-auto max-w-[130px]" />
-          <span className="text-[11px] font-black text-brand-900 uppercase tracking-wider border-l border-brand-900/20 pl-2.5 whitespace-nowrap">{t('nav.teacher')}</span>
-          <span
-            className="inline-flex items-center whitespace-nowrap text-[11px] font-mono font-bold text-brand-900/80 bg-white/60 px-2 py-1 rounded-lg border border-white/70 tabular-nums"
-            title={formatTime()}
-          >
-            {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
-          </span>
-        </div>
-
-        <nav className="flex items-center gap-0.5 xl:gap-1 flex-1 justify-center min-w-0 overflow-x-auto hide-scrollbar">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-1.5 xl:gap-2 px-2.5 xl:px-3.5 py-2 rounded-xl text-[13px] font-bold whitespace-nowrap transition-all duration-200
-                ${isActive ? 'bg-white text-brand-800 shadow-sm' : 'text-brand-900/70 hover:text-brand-900 hover:bg-white/40'}`
-              }
+      {/* Desktop sidebar — menu dọc bên trái, giữ nguyên nhận diện vàng của gia sư */}
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-64 flex-col border-r border-brand-900/15 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 shadow-[6px_0_18px_-12px_rgba(180,120,0,0.55)]">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b border-brand-900/15 px-4 py-4">
+            <div className="flex items-center gap-2.5">
+              <Logo className="h-9 w-auto max-w-[130px]" />
+              <span className="border-l border-brand-900/20 pl-2.5 text-[11px] font-black uppercase tracking-wider text-brand-900 whitespace-nowrap">{t('nav.teacher')}</span>
+            </div>
+            <span
+              className="mt-3 inline-flex items-center whitespace-nowrap rounded-lg border border-white/70 bg-white/60 px-2 py-1 text-[11px] font-mono font-bold tabular-nums text-brand-900/80"
+              title={formatTime()}
             >
-              <item.icon className="w-4 h-4 shrink-0" />
-              {t(item.labelKey)}
-              {item.locked && (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
-                  {lang === 'vi' ? 'Khóa' : 'Locked'}
-                </span>
-              )}
-              {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
-            </NavLink>
-          ))}
-        </nav>
+              {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-1.5 pl-3 border-l border-brand-900/20 shrink-0">
-          {/* Notifications bell drawer */}
-          <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-bold transition-all duration-200
+                  ${isActive ? 'bg-white text-brand-800 shadow-sm' : 'text-brand-900/70 hover:bg-white/40 hover:text-brand-900'}`
+                }
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span>
+                {item.locked && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                    {lang === 'vi' ? 'Khóa' : 'Locked'}
+                  </span>
+                )}
+                {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
+              </NavLink>
+            ))}
+          </nav>
 
-          {/* Language toggle */}
-          <button
-            onClick={toggleLang}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-black rounded-lg bg-white/70 hover:bg-white text-brand-800 transition-all whitespace-nowrap"
-            title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            {lang === 'vi' ? 'EN' : 'VI'}
-          </button>
-          <span className="text-[11px] text-brand-900/70 hidden 2xl:block max-w-[180px] truncate" title={user?.email || ''}>{user?.email}</span>
-          <button onClick={handleSignOut} className="p-2 text-brand-900/70 hover:text-rose-600 transition-colors" title={t('nav.signout')}>
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="border-t border-brand-900/15 px-3 py-3">
+            <div className="mb-2 flex items-center justify-between rounded-xl bg-white/35 px-2 py-1.5">
+              <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
+              <button
+                onClick={toggleLang}
+                className="flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs font-black text-brand-800 transition-all hover:bg-white"
+                title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                {lang === 'vi' ? 'EN' : 'VI'}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-brand-900/70" title={user?.email || ''}>{user?.email}</span>
+              <button onClick={handleSignOut} className="shrink-0 p-2 text-brand-900/70 transition-colors hover:text-rose-600" title={t('nav.signout')}>
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
-        </div>
-        <WaveDivider height={26} />
-      </header>
+      </aside>
 
       {/* Mobile header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40">
@@ -312,8 +314,8 @@ export function TeacherLayout() {
       </header>
 
       {/* Chừa chỗ cho header cố định: mobile 56+14, desktop 64+16 */}
-      <main className="min-h-screen">
-        <div className="pt-[84px] lg:pt-[90px] pb-20 lg:pb-6 px-4 sm:px-6 py-6">
+      <main className="min-h-screen lg:pl-64">
+        <div className="pt-[84px] pb-20 px-4 py-6 sm:px-6 lg:pb-6 lg:pt-6">
           <ZaloUrgentNotice lang={lang} />
           {profileMissingCount !== null && profileMissingCount > 0 && (
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-950 shadow-sm">
