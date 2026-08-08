@@ -70,8 +70,7 @@ function isSameAttendanceClass(left: BookingRequest, right: BookingRequest) {
   return Boolean(
     left.studentId
     && left.studentId === right.studentId
-    && left.studentCode
-    && left.studentCode === right.studentCode
+    && (!left.studentCode || !right.studentCode || left.studentCode === right.studentCode)
     && (left.subjectId || '') === (right.subjectId || '')
     && (left.requestedDate || '') === (right.requestedDate || ''),
   )
