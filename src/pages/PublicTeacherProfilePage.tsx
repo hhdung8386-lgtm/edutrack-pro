@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { TeacherProfileDetails } from '@/components/teachers/TeacherProfileDetails'
+import { PublicTeacherSchedule } from '@/components/teachers/PublicTeacherSchedule'
 import type { Teacher } from '@/types'
 import { publicProfileAsTeacher, type PublicTeacherProfile } from '@/lib/publicTeacherProfile'
 
@@ -64,10 +65,10 @@ export function PublicTeacherProfilePage() {
   }, [id])
 
   return (
-    <div className="min-h-[100dvh] bg-white text-slate-950">
+    <div className="min-h-[100dvh] bg-[#FFFCF3] text-slate-950">
       <PublicNav />
       <main>
-        <section className="border-b border-amber-100 bg-[#fffaf0] px-5 py-8 sm:px-8 lg:px-12">
+        <section className="border-b border-[#E8C44A] bg-gradient-to-r from-[#FFF4BF] via-[#FFFBEA] to-white px-5 py-8 sm:px-8 lg:px-12">
           <div className="mx-auto max-w-5xl">
             <Link to="/giao-vien" className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 transition hover:text-amber-700">
               <ArrowLeft className="h-4 w-4" />
@@ -108,6 +109,9 @@ export function PublicTeacherProfilePage() {
                   totalApprovedMinutes={teacher.totalApprovedMinutes}
                   publicView
                 />
+                <div className="mt-6">
+                  <PublicTeacherSchedule teacherId={teacher.id} teacherCountry={teacher.country} />
+                </div>
               </>
             )}
           </div>

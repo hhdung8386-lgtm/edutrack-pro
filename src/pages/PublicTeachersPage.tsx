@@ -44,6 +44,8 @@ import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/point
 import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
+import { getDayOfWeekFromDateISO, getMondayAtOffset } from '@/lib/timezoneUtils'
+import { useSearchParams } from 'react-router-dom'
 
 type TeacherView = Teacher & {
   availability?: TeacherAvailability
@@ -98,28 +100,19 @@ const TIME_WINDOWS = [
 ] as const
 
 function formatDateISO(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return date.toISOString().slice(0, 10)
 }
 
 function getMonday(date: Date) {
-  const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  const day = copy.getDay()
-  copy.setDate(copy.getDate() + (day === 0 ? -6 : 1 - day))
-  return copy
+  return getMondayAtOffset(date, 7)
 }
 
 function addDays(date: Date, days: number) {
-  const copy = new Date(date)
-  copy.setDate(copy.getDate() + days)
-  return copy
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000)
 }
 
 function formatShortDate(date: Date) {
-  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
 function getWeekDates() {
@@ -611,12 +604,14 @@ function TeacherCard({
   )
 }
 
-function TeacherBookingPage({
+export function TeacherBookingPage({
   teacher,
   onClose,
+  initialSlot = '',
 }: {
   teacher: TeacherView | null
   onClose: () => void
+  initialSlot?: string
 }) {
   const [studentCode, setStudentCode] = useState('')
   const [student, setStudent] = useState<Student | null>(null)
@@ -678,13 +673,9 @@ function TeacherBookingPage({
     setStudentError('')
     setDuration(25)
     setTimeWindow('24h')
-    setSelectedSlot('')
+    setSelectedSlot(initialSlot)
     setNote('')
-  }, [teacher?.id])
-
-  useEffect(() => {
-    setSelectedSlot('')
-  }, [duration, timeWindow, teacher?.id])
+  }, [initialSlot, teacher?.id])
 
   if (!teacher) return null
 
@@ -992,9 +983,15 @@ function TeacherBookingPage({
                     selectedSlot={selectedSlot}
                     onSelect={setSelectedSlot}
                     duration={duration}
-                    onDurationChange={setDuration}
+                    onDurationChange={(nextDuration) => {
+                      setDuration(nextDuration)
+                      setSelectedSlot('')
+                    }}
                     windowKey={timeWindow}
-                    onWindowChange={setTimeWindow}
+                    onWindowChange={(nextWindow) => {
+                      setTimeWindow(nextWindow)
+                      setSelectedSlot('')
+                    }}
                   />
                   {selectedSchedule && (
                     <div className="mt-3 overflow-hidden rounded-2xl border border-[#d4c6ad] bg-white">
@@ -1063,6 +1060,7 @@ function TeacherBookingPage({
 }
 
 export function PublicTeachersPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { content: homeContent } = useSiteContent('home')
   const teacherStoryBlocks = useMemo(
     () => homeContent.blocks.filter((block) => (
@@ -1080,6 +1078,14 @@ export function PublicTeachersPage() {
   const [filter, setFilter] = useState<FilterKey>('recommended')
   const [summaryCounts, setSummaryCounts] = useState({ teachers: 0, students: 0 })
   const [selectedTeacher, setSelectedTeacher] = useState<TeacherView | null>(null)
+  const requestedTeacherId = searchParams.get('teacher') || ''
+  const requestedSlot = useMemo(() => {
+    const dateISO = searchParams.get('date') || ''
+    const start = searchParams.get('start') || ''
+    const end = searchParams.get('end') || ''
+    const day = getDayOfWeekFromDateISO(dateISO)
+    return day && dateISO && start && end ? `${dateISO}|${day}|${start}|${end}` : ''
+  }, [searchParams])
 
   const loadTeachers = useCallback(async (reset = false) => {
     if (reset) {
@@ -1107,6 +1113,12 @@ export function PublicTeachersPage() {
 
       const teacherSnap = await getDocs(teachersQuery)
       const rawTeachers = teacherSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
+      if (reset && requestedTeacherId && !rawTeachers.some((teacher) => teacher.id === requestedTeacherId)) {
+        const requestedTeacherSnapshot = await getDoc(doc(db, 'teachers', requestedTeacherId))
+        if (requestedTeacherSnapshot.exists() && requestedTeacherSnapshot.data().status === 'active') {
+          rawTeachers.push({ id: requestedTeacherSnapshot.id, ...requestedTeacherSnapshot.data() } as Teacher)
+        }
+      }
 
       // Render the core profiles immediately. Availability is enrichment data and
       // should not leave the public page looking empty while it is loading.
@@ -1145,6 +1157,10 @@ export function PublicTeachersPage() {
         const byId = new Map(merged.map((teacher) => [teacher.id, teacher]))
         return Array.from(byId.values()).sort((a, b) => b.priorityScore - a.priorityScore || getTeacherDisplayName(a).localeCompare(getTeacherDisplayName(b), 'vi'))
       })
+      if (reset && requestedTeacherId) {
+        const requestedTeacher = pageTeachers.find((teacher) => teacher.id === requestedTeacherId)
+        if (requestedTeacher) setSelectedTeacher(requestedTeacher)
+      }
     } catch (error) {
       console.error('Error loading public teachers:', error)
       if (reset) setTeachers([])
@@ -1152,7 +1168,7 @@ export function PublicTeachersPage() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [lastDoc])
+  }, [lastDoc, requestedTeacherId])
 
   useEffect(() => {
     document.title = 'Đội ngũ gia sư 123English'
@@ -1225,11 +1241,16 @@ export function PublicTeachersPage() {
   const availableCount = teachers.filter((teacher) => teacher.hasAvailableSchedule).length
 
   if (selectedTeacher) {
+    const closeBooking = () => {
+      setSelectedTeacher(null)
+      if (requestedTeacherId) setSearchParams({}, { replace: true })
+    }
+
     return (
       <div className="min-h-screen bg-[#fffaf0] text-slate-950 font-sans pb-16">
         <PublicNav />
         <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-12">
-          <TeacherBookingPage teacher={selectedTeacher} onClose={() => setSelectedTeacher(null)} />
+          <TeacherBookingPage teacher={selectedTeacher} onClose={closeBooking} initialSlot={requestedSlot} />
         </main>
         <PublicFooter />
       </div>
