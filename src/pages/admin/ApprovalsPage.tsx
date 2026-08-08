@@ -341,9 +341,12 @@ export function ApprovalsPage() {
 
           const currency = chosenSubjectPkg.currency || 'VND'
           const lessonMinutes = Number(approvingLesson.minutes) || 0
-          const lessonPoints = bookingNow
-            ? getBookingPoints(bookingNow, teacherData)
-            : getLessonPoints(lessonNow, teacherData)
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const lessonPoints = isAbsenceLesson
+            ? getLessonPoints(lessonNow, teacherData)
+            : bookingNow
+              ? getBookingPoints(bookingNow, teacherData)
+              : getLessonPoints(lessonNow, teacherData)
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (approvingLesson.date || '').slice(0, 7)
 
@@ -491,6 +494,7 @@ export function ApprovalsPage() {
             pricePerMinute,
             level: teacherLevel,
             month,
+            currency,
             paid: false,
             createdAt: serverTimestamp(),
           })

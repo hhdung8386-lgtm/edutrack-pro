@@ -2,13 +2,26 @@
 // GV chưa có ảnh sẽ fallback chữ cái đầu trên nền gradient.
 
 import auFlagUrl from 'flag-icons/flags/4x3/au.svg'
+import bdFlagUrl from 'flag-icons/flags/4x3/bd.svg'
 import caFlagUrl from 'flag-icons/flags/4x3/ca.svg'
+import ghFlagUrl from 'flag-icons/flags/4x3/gh.svg'
 import gbFlagUrl from 'flag-icons/flags/4x3/gb.svg'
 import inFlagUrl from 'flag-icons/flags/4x3/in.svg'
+import idFlagUrl from 'flag-icons/flags/4x3/id.svg'
+import ieFlagUrl from 'flag-icons/flags/4x3/ie.svg'
+import keFlagUrl from 'flag-icons/flags/4x3/ke.svg'
+import lkFlagUrl from 'flag-icons/flags/4x3/lk.svg'
+import mmFlagUrl from 'flag-icons/flags/4x3/mm.svg'
+import myFlagUrl from 'flag-icons/flags/4x3/my.svg'
+import ngFlagUrl from 'flag-icons/flags/4x3/ng.svg'
+import nzFlagUrl from 'flag-icons/flags/4x3/nz.svg'
 import phFlagUrl from 'flag-icons/flags/4x3/ph.svg'
+import pkFlagUrl from 'flag-icons/flags/4x3/pk.svg'
+import ugFlagUrl from 'flag-icons/flags/4x3/ug.svg'
 import usFlagUrl from 'flag-icons/flags/4x3/us.svg'
 import vnFlagUrl from 'flag-icons/flags/4x3/vn.svg'
 import zaFlagUrl from 'flag-icons/flags/4x3/za.svg'
+import { normalizeTeacherCountryCode as normalizeCatalogCountryCode } from '@/lib/teacherCountries'
 
 const FLAG_IMAGE_MAP: Record<string, string> = {
   VN: vnFlagUrl,
@@ -20,6 +33,18 @@ const FLAG_IMAGE_MAP: Record<string, string> = {
   CA: caFlagUrl,
   ZA: zaFlagUrl,
   IN: inFlagUrl,
+  NZ: nzFlagUrl,
+  IE: ieFlagUrl,
+  KE: keFlagUrl,
+  NG: ngFlagUrl,
+  GH: ghFlagUrl,
+  UG: ugFlagUrl,
+  PK: pkFlagUrl,
+  BD: bdFlagUrl,
+  LK: lkFlagUrl,
+  MM: mmFlagUrl,
+  MY: myFlagUrl,
+  ID: idFlagUrl,
 }
 
 const AVATAR_GRADIENTS = [
@@ -46,9 +71,7 @@ interface TeacherAvatarProps {
 }
 
 export function normalizeTeacherCountryCode(country?: string): string {
-  const code = (country || 'VN').toUpperCase().trim()
-  if (code === 'UK') return 'GB'
-  return code
+  return normalizeCatalogCountryCode(country)
 }
 
 export function TeacherAvatar({ name, photoURL, country, size = 48, className = '' }: TeacherAvatarProps) {

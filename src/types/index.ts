@@ -470,6 +470,13 @@ export interface PaymentSettings {
   guideVideoUrl?: string
   transferPrefix?: string
   supportNote?: string
+  payrollTaxEnabled?: boolean
+  payrollTaxThresholdAmount?: number
+  payrollTaxRatePercent?: number
+  payrollTaxCurrency?: string
+  payrollTaxEffectiveFromMonth?: string
+  payrollTaxUpdatedAt?: Timestamp
+  payrollTaxUpdatedBy?: string
   updatedAt?: Timestamp
 }
 

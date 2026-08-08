@@ -11,11 +11,7 @@ import {
 import { Subject, Teacher } from '@/types'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
-
-const COUNTRY_LABELS: Record<string, string> = {
-  VN: 'Việt Nam', PH: 'Philippines', US: 'Hoa Kỳ', GB: 'Anh', AU: 'Úc',
-  CA: 'Canada', ZA: 'Nam Phi', IN: 'Ấn Độ', SG: 'Singapore', MY: 'Malaysia', TH: 'Thái Lan',
-}
+import { teacherCountryLabel } from '@/lib/teacherCountries'
 
 const STRENGTH_LABELS: Record<string, string> = {
   pronunciation: 'Phát âm chuẩn',
@@ -27,8 +23,7 @@ const STRENGTH_LABELS: Record<string, string> = {
 }
 
 function countryLabel(country?: string) {
-  const code = (country || '').trim().toUpperCase()
-  return code ? COUNTRY_LABELS[code] || code : 'Chưa cập nhật quốc gia'
+  return teacherCountryLabel(country)
 }
 
 function DetailItem({ label, value }: { label: string; value?: string | number | null }) {

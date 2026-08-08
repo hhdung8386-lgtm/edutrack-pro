@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Payroll, Teacher, Lesson, Student, StudentSubject } from '@/types'
+import { Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { formatVND, getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute, PERSONAL_INCOME_TAX_THRESHOLD_VND } from '@/lib/constants'
+import { getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute } from '@/lib/constants'
+import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
 import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2 } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
@@ -29,6 +30,8 @@ export function PayrollPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [selectedLessonPayrollIds, setSelectedLessonPayrollIds] = useState<Set<string>>(new Set())
   const [returningToPending, setReturningToPending] = useState(false)
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null)
+  const taxPolicy = normalizePayrollTaxPolicy(paymentSettings)
 
   const prevMonth = () => {
     const d = new Date(month + '-01')
@@ -53,6 +56,10 @@ export function PayrollPage() {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
     })
   }, [])
+
+  useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snap) => {
+    setPaymentSettings(snap.exists() ? snap.data() as PaymentSettings : null)
+  }), [])
 
   useEffect(() => {
     let active = true
@@ -355,10 +362,15 @@ export function PayrollPage() {
 
   const exportCSV = () => {
     const rows = [
-      ['Gia sư', 'Level', 'Môn', 'Phút', 'Giá/phút', 'Lương'],
-      ...payrolls.map((p) => {
-        const t = teachers.find((t) => t.id === p.teacherId)
-        return [t?.name, p.level, '', p.minutes, p.pricePerMinute, p.amount]
+      ['Teacher', 'Level', 'Minutes', 'Gross', 'Tax', 'Net', 'Currency'],
+      ...teacherPayrolls.flatMap((teacherPayroll) => {
+        const currencySet = new Set(teacherPayroll.payrolls.map((p) => (p.currency || 'VND').toUpperCase()))
+        if (teacherPayroll.isMixedCurrency || currencySet.size !== 1) {
+          return [[teacherPayroll.teacher.name, teacherPayroll.teacher.level, teacherPayroll.minutes, teacherPayroll.total, 0, teacherPayroll.total, 'MULTI']]
+        }
+        const currency = Array.from(currencySet)[0] || 'VND'
+        const taxSummary = calculatePayrollTax(teacherPayroll.total, currency, taxPolicy, month)
+        return [[teacherPayroll.teacher.name, teacherPayroll.teacher.level, teacherPayroll.minutes, taxSummary.gross, taxSummary.tax, taxSummary.net, currency]]
       }),
     ]
     const csv = rows.map((r) => r.join(',')).join('\n')
@@ -428,7 +440,9 @@ export function PayrollPage() {
         <p className="text-4xl font-bold text-emerald-400 mt-1">{formatTotals()}</p>
         <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} gia sư · {payrolls.length} buổi dạy</p>
         <p className="text-[11px] text-slate-400 italic mt-2">
-          * Lưu ý: Lương hiển thị của từng gia sư có thu nhập trên 5.000.000 đ đã tự động khấu trừ 10% thuế TNCN.
+          {taxPolicy.enabled
+            ? `* Thuế ${taxPolicy.ratePercent}% chỉ áp dụng cho ${taxPolicy.currency} vượt ${formatMoney(taxPolicy.thresholdAmount, taxPolicy.currency)} theo cấu hình.`
+            : '* Khấu trừ thuế TNCN hiện đang tắt trong Cài đặt.'}
         </p>
       </Card>
 
@@ -534,13 +548,13 @@ export function PayrollPage() {
                     return <p className="text-emerald-400 font-semibold text-sm">{totalLabel}</p>
                   }
                   const teacherCurrency = tp[0]?.currency || 'VND'
-                  const isVND = teacherCurrency === 'VND'
-                  if (isVND && total > PERSONAL_INCOME_TAX_THRESHOLD_VND) {
+                  const taxSummary = calculatePayrollTax(total, teacherCurrency, taxPolicy, month)
+                  if (taxSummary.applies) {
                     return (
                       <div className="text-right flex flex-col justify-end items-end">
-                        <p className="text-[10px] text-slate-400 line-through leading-none">{formatVND(total)}</p>
-                        <p className="text-emerald-400 font-bold text-sm leading-tight mt-0.5">{formatVND(total * 0.9)}</p>
-                        <p className="text-[9px] text-rose-500 italic font-medium leading-none mt-0.5">-10% thuế</p>
+                        <p className="text-[10px] text-slate-400 line-through leading-none">{formatMoney(taxSummary.gross, teacherCurrency)}</p>
+                        <p className="text-emerald-400 font-bold text-sm leading-tight mt-0.5">{formatMoney(taxSummary.net, teacherCurrency)}</p>
+                        <p className="text-[9px] text-rose-500 italic font-medium leading-none mt-0.5">-{taxSummary.policy.ratePercent}% thuế</p>
                       </div>
                     )
                   }
@@ -654,25 +668,25 @@ export function PayrollPage() {
                         )
                       }
                       const teacherCurrency = tp[0]?.currency || 'VND'
-                      const isVND = teacherCurrency === 'VND'
-                      if (isVND && total > PERSONAL_INCOME_TAX_THRESHOLD_VND) {
+                      const taxSummary = calculatePayrollTax(total, teacherCurrency, taxPolicy, month)
+                      if (taxSummary.applies) {
                         return (
                           <>
                             <tr className="bg-slate-50/50">
                               <td colSpan={6} className="px-5 py-2 text-right text-slate-500 font-medium">Tổng cộng trước thuế (Gross):</td>
-                              <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatVND(total)}</td>
+                              <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatMoney(taxSummary.gross, teacherCurrency)}</td>
                             </tr>
                             <tr className="bg-rose-50/20 text-rose-500">
-                              <td colSpan={6} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân (10%):</td>
-                              <td className="px-5 py-2 text-right font-bold">-{formatVND(total * 0.1)}</td>
+                              <td colSpan={6} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân ({taxSummary.policy.ratePercent}%):</td>
+                              <td className="px-5 py-2 text-right font-bold">-{formatMoney(taxSummary.tax, teacherCurrency)}</td>
                             </tr>
                             <tr className="bg-emerald-50/20 text-emerald-600 border-t border-slate-200">
                               <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
-                              <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatVND(total * 0.9)}</td>
+                              <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatMoney(taxSummary.net, teacherCurrency)}</td>
                             </tr>
                             <tr>
                               <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
-                                * Thu nhập tháng vượt quá 5.000.000 đ sẽ bị khấu trừ 10% thuế TNCN theo quy định.
+                                * Thu nhập vượt {formatMoney(taxSummary.policy.thresholdAmount, taxSummary.policy.currency)} sẽ bị khấu trừ {taxSummary.policy.ratePercent}% theo cấu hình.
                               </td>
                             </tr>
                           </>

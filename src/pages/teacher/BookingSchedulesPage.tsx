@@ -10,6 +10,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
+import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
@@ -624,15 +625,25 @@ export function BookingSchedulesPage() {
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const teacherRef = doc(db, 'teachers', teacherId)
+        const allAttendanceBookings = [...attendanceBookings, ...followUpBookings]
+        const bookingRefs = allAttendanceBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
 
-        const [studentSnap, teacherSnap] = await Promise.all([
+        const [studentSnap, teacherSnap, ...bookingSnaps] = await Promise.all([
           tx.get(studentRef),
           tx.get(teacherRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
         ])
 
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const teacherData = teacherSnap.data()!
+        bookingSnaps.forEach((bookingSnap, index) => {
+          if (!bookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
+          const bookingData = bookingSnap.data()
+          if (bookingData.status !== 'confirmed' || bookingData.lessonId) {
+            throw new Error(index < attendanceBookings.length ? 'BOOKING_ALREADY_PROCESSED' : 'FOLLOW_UP_ALREADY_PROCESSED')
+          }
+        })
 
         // Load pricing snapshot from subject or student subject rates
         let pricePerMinute = 0
@@ -690,7 +701,9 @@ export function BookingSchedulesPage() {
             subjectId: attendanceBooking.subjectId || '',
             subjectName: attendanceBooking.subjectName || '',
             date: attendanceBooking.requestedDate || getToday(),
-            minutes: isPresent ? attendanceBooking.requestedMinutes : minutes,
+            minutes: isPresent
+              ? attendanceBooking.requestedMinutes
+              : (isUnexcused && attendanceBooking.id === primaryBooking.id ? minutes : 0),
             // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
             // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
             comment: isPresent
@@ -708,8 +721,9 @@ export function BookingSchedulesPage() {
                 ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
                 : { pages: '', report: null, rating: null, homeworkItems: [] }),
             imageURLs: images.map((i) => i.storageURL).filter(Boolean),
-            attendanceStatus,
-            status: 'pending',
+             attendanceStatus,
+             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
+             status: 'pending',
             sessionsBeforeApproval: studentData.remainingSessions,
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,
@@ -752,8 +766,9 @@ export function BookingSchedulesPage() {
             report: null,
             rating: null,
             imageURLs: [],
-            attendanceStatus,
-            status: 'pending',
+             attendanceStatus,
+             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
+             status: 'pending',
             sessionsBeforeApproval: studentData.remainingSessions,
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,

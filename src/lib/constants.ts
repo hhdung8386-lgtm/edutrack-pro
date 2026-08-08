@@ -2,7 +2,7 @@ export const MINUTE_PRESETS = [25, 50, 75, 100] as const
 
 // Ngưỡng khấu trừ thuế TNCN áp dụng cho tổng thu nhập VND trong tháng.
 // Chỉ khấu trừ khi thu nhập lớn hơn ngưỡng này, không áp dụng khi bằng ngưỡng.
-export const PERSONAL_INCOME_TAX_THRESHOLD_VND = 5_000_000
+// Payroll tax policy is configured in paymentSettings/main.
 
 export const LESSON_STATUS_LABELS: Record<string, string> = {
   pending: 'Chờ duyệt',

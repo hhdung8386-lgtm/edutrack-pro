@@ -43,6 +43,7 @@ import {
   teacherMatchesSubjectFilters,
   type TeacherSubjectGroup,
 } from '@/lib/teacherSubjects'
+import { teacherCountryLabel } from '@/lib/teacherCountries'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -93,7 +94,7 @@ const SUBJECT_GROUP_LABELS: Record<VisibleTeacherSubjectGroup, string> = {
 }
 
 function countryLabel(code: string) {
-  return COUNTRY_LABELS[code] || code
+  return teacherCountryLabel(code)
 }
 
 const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }

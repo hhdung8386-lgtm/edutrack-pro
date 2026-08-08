@@ -16,6 +16,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
+import { TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 
 type BilingualOption = {
   value: string
@@ -439,8 +440,29 @@ export function ProfilePage() {
     const countryMap: Record<string, number> = {
       VN: 7,
       PH: 8,
+      GB: 0,
+      UK: 0,
+      US: -5,
+      CA: -5,
+      AU: 10,
+      NZ: 12,
+      IE: 0,
+      ZA: 2,
+      KE: 3,
+      NG: 1,
+      GH: 0,
+      UG: 3,
+      IN: 5.5,
+      PK: 5,
+      BD: 6,
+      LK: 5.5,
+      MM: 6.5,
+      MY: 8,
+      ID: 7,
       JP: 9,
       KR: 9,
+      SG: 8,
+      TH: 7,
       US_EST: -5,
       US_PST: -8,
     }
@@ -921,12 +943,21 @@ export function ProfilePage() {
               disabled={updatingTimezone}
               className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
             >
-              <option value="VN">Việt Nam (GMT+7)</option>
-              <option value="PH">Philippines (GMT+8)</option>
-              <option value="JP">Nhật Bản / Japan (GMT+9)</option>
-              <option value="KR">Hàn Quốc / Korea (GMT+9)</option>
-              <option value="US_EST">Mỹ / USA (EST - GMT-5)</option>
-              <option value="US_PST">Mỹ / USA (PST - GMT-8)</option>
+              <optgroup label="Native English Teachers">
+                {TEACHER_COUNTRY_SELECT_OPTIONS.filter((option) => option.group === 'native').map((option) => (
+                  <option key={option.code} value={option.code}>{option.nameEn} ({option.timezoneLabel})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Non-native English Teachers">
+                {TEACHER_COUNTRY_SELECT_OPTIONS.filter((option) => option.group === 'non_native').map((option) => (
+                  <option key={option.code} value={option.code}>{option.nameEn} ({option.timezoneLabel})</option>
+                ))}
+              </optgroup>
+              <optgroup label="Legacy options">
+                {TEACHER_COUNTRY_SELECT_OPTIONS.filter((option) => option.group === 'legacy').map((option) => (
+                  <option key={option.code} value={option.code}>{option.nameVi} ({option.timezoneLabel})</option>
+                ))}
+              </optgroup>
             </select>
             <p className="text-[11px] text-slate-400 leading-normal">
               * Hệ thống sẽ tự động đồng bộ hóa toàn bộ lịch trống (OPEN) và lịch học trên thời khóa biểu theo đúng múi giờ quốc gia bạn chọn.

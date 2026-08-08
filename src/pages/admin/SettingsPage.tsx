@@ -20,6 +20,7 @@ import {
   type TeacherNicknameLibrary,
 } from '@/lib/nameGenerator'
 import { setTeacherAttendanceFeature, useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
+import { getCurrentMonth } from '@/lib/constants'
 
 export interface Branch {
   id: string
@@ -31,7 +32,7 @@ export interface Branch {
 
 export function SettingsPage() {
   const { role, user } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'teacher_features'>('branch')
+  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'teacher_features' | 'payroll_tax'>('branch')
   const {
     enabled: teacherAttendanceEnabled,
     loading: loadingTeacherFeatures,
@@ -39,6 +40,13 @@ export function SettingsPage() {
     retry: retryTeacherFeatures,
   } = useTeacherAttendanceFeature()
   const [savingTeacherFeatures, setSavingTeacherFeatures] = useState(false)
+  const [payrollTaxLoading, setPayrollTaxLoading] = useState(true)
+  const [payrollTaxSaving, setPayrollTaxSaving] = useState(false)
+  const [payrollTaxEnabled, setPayrollTaxEnabled] = useState(false)
+  const [payrollTaxThreshold, setPayrollTaxThreshold] = useState('5000000')
+  const [payrollTaxRate, setPayrollTaxRate] = useState('10')
+  const [payrollTaxCurrency, setPayrollTaxCurrency] = useState('VND')
+  const [payrollTaxEffectiveFromMonth, setPayrollTaxEffectiveFromMonth] = useState(getCurrentMonth())
 
   // Branch states
   const [branches, setBranches] = useState<Branch[]>([])
@@ -114,6 +122,28 @@ export function SettingsPage() {
     loadCustomTeacherNicknames()
       .then(setCustomNicknames)
       .finally(() => setLoadingNicknames(false))
+  }, [activeTab, role])
+
+  useEffect(() => {
+    if (role !== 'admin' || activeTab !== 'payroll_tax') return
+    setPayrollTaxLoading(true)
+    return onSnapshot(
+      doc(db, 'paymentSettings', 'main'),
+      (snapshot) => {
+        const data = snapshot.data() || {}
+        setPayrollTaxEnabled(data.payrollTaxEnabled === true)
+        setPayrollTaxThreshold(String(data.payrollTaxThresholdAmount ?? 5000000))
+        setPayrollTaxRate(String(data.payrollTaxRatePercent ?? 10))
+        setPayrollTaxCurrency(String(data.payrollTaxCurrency || 'VND'))
+        setPayrollTaxEffectiveFromMonth(String(data.payrollTaxEffectiveFromMonth || getCurrentMonth()))
+        setPayrollTaxLoading(false)
+      },
+      (error) => {
+        console.error('Unable to load payroll tax settings:', error)
+        setPayrollTaxLoading(false)
+        toast.error('Không tải được cấu hình thuế TNCN')
+      },
+    )
   }, [activeTab, role])
 
   const saveNicknameChanges = async (next: TeacherNicknameLibrary, successMessage: string) => {
@@ -314,6 +344,42 @@ export function SettingsPage() {
     }
   }
 
+  const savePayrollTaxSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const threshold = Number(payrollTaxThreshold.replace(/[^\d]/g, ''))
+    const rate = Number(payrollTaxRate)
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      toast.warning('Vui lòng nhập ngưỡng thu nhập hợp lệ')
+      return
+    }
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      toast.warning('Tỷ lệ thuế phải nằm trong khoảng 0 đến 100%')
+      return
+    }
+    if (!/^\d{4}-\d{2}$/.test(payrollTaxEffectiveFromMonth)) {
+      toast.warning('Vui lòng chọn tháng áp dụng hợp lệ')
+      return
+    }
+    setPayrollTaxSaving(true)
+    try {
+      await setDoc(doc(db, 'paymentSettings', 'main'), {
+        payrollTaxEnabled,
+        payrollTaxThresholdAmount: Math.round(threshold),
+        payrollTaxRatePercent: rate,
+        payrollTaxCurrency: payrollTaxCurrency.toUpperCase(),
+        payrollTaxEffectiveFromMonth,
+        payrollTaxUpdatedAt: serverTimestamp(),
+        payrollTaxUpdatedBy: user?.email || user?.uid || '',
+      }, { merge: true })
+      toast.success('Đã lưu cấu hình thuế TNCN')
+    } catch (error) {
+      console.error('Unable to save payroll tax settings:', error)
+      toast.error('Không lưu được cấu hình thuế TNCN')
+    } finally {
+      setPayrollTaxSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-3xl">
       <div>
@@ -363,6 +429,16 @@ export function SettingsPage() {
             }`}
           >
             Chức năng gia sư
+          </button>
+          <button
+            onClick={() => setActiveTab('payroll_tax')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
+              activeTab === 'payroll_tax'
+                ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Thuế TNCN / Lương
           </button>
         </div>
       )}
@@ -626,6 +702,69 @@ export function SettingsPage() {
                 </section>
               ))}
             </div>
+          )}
+        </Card>
+      )}
+
+      {activeTab === 'payroll_tax' && role === 'admin' && (
+        <Card className="animate-slide-up overflow-hidden">
+          <div className="mb-6 border-b border-slate-100 pb-5">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Cấu hình lương</p>
+            <h2 className="mt-1 text-lg font-black text-slate-950">Khấu trừ thuế TNCN</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Có thể bật/tắt và thay đổi ngưỡng áp dụng mà không cần sửa code. Mặc định hiện tại đang tắt để không tự động trừ 10%.
+            </p>
+          </div>
+          {payrollTaxLoading ? (
+            <div className="flex justify-center py-10"><div className="h-7 w-7 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /></div>
+          ) : (
+            <form onSubmit={savePayrollTaxSettings} className="space-y-5">
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <input
+                  type="checkbox"
+                  checked={payrollTaxEnabled}
+                  onChange={(event) => setPayrollTaxEnabled(event.target.checked)}
+                  className="mt-1 h-4 w-4 accent-indigo-600"
+                />
+                <span>
+                  <span className="block text-sm font-black text-slate-800">Bật khấu trừ thuế TNCN</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">Khi tắt, Gross và Net sẽ bằng nhau trên bảng lương.</span>
+                </span>
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="Ngưỡng thu nhập"
+                  value={payrollTaxThreshold}
+                  onChange={(event) => setPayrollTaxThreshold(event.target.value)}
+                  inputMode="numeric"
+                  hint="Chỉ khấu trừ khi tổng Gross lớn hơn ngưỡng này."
+                />
+                <Input
+                  label="Tỷ lệ thuế (%)"
+                  value={payrollTaxRate}
+                  onChange={(event) => setPayrollTaxRate(event.target.value)}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                />
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-slate-600">Loại tiền</span>
+                  <select value={payrollTaxCurrency} onChange={(event) => setPayrollTaxCurrency(event.target.value)} className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="VND">VND</option>
+                    <option value="PHP">PHP</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-slate-600">Tháng bắt đầu áp dụng</span>
+                  <input type="month" value={payrollTaxEffectiveFromMonth} onChange={(event) => setPayrollTaxEffectiveFromMonth(event.target.value)} className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" loading={payrollTaxSaving}>Lưu cấu hình thuế</Button>
+              </div>
+            </form>
           )}
         </Card>
       )}

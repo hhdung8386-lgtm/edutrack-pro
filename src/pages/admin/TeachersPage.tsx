@@ -17,6 +17,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { useAuthStore } from '@/stores/authStore'
+import { teacherCountryLabel } from '@/lib/teacherCountries'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
@@ -87,11 +88,11 @@ const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
 
 function CountryCell({ country }: { country?: string }) {
   const code = (country || '').toUpperCase().trim()
-  const info = code ? COUNTRY_INFO[code] : undefined
+  const info = code ? COUNTRY_INFO[code] || { flag: '', label: teacherCountryLabel(code) } : undefined
   if (!info) return <span className="text-slate-400 text-xs italic">Chưa cập nhật</span>
   return (
     <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-      <span className="text-base leading-none">{info.flag}</span>
+      {info.flag && <span className="text-base leading-none">{info.flag}</span>}
       {info.label}
     </span>
   )
@@ -366,8 +367,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const directoryTeachers = teachers.filter(matchesDirectory)
   const countryOptions = Array.from(new Set(directoryTeachers.map((teacher) => (teacher.country || '').toUpperCase().trim() || 'missing')))
     .sort((a, b) => {
-      const aLabel = a === 'missing' ? 'Chưa cập nhật' : COUNTRY_INFO[a]?.label || a
-      const bLabel = b === 'missing' ? 'Chưa cập nhật' : COUNTRY_INFO[b]?.label || b
+      const aLabel = a === 'missing' ? 'Chưa cập nhật' : teacherCountryLabel(a)
+      const bLabel = b === 'missing' ? 'Chưa cập nhật' : teacherCountryLabel(b)
       return aLabel.localeCompare(bLabel, 'vi')
     })
 
@@ -719,7 +720,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             <option value="all">Tất cả quốc gia</option>
             {countryOptions.map((code) => (
               <option key={code} value={code}>
-                {code === 'missing' ? 'Chưa cập nhật quốc gia' : COUNTRY_INFO[code]?.label || code}
+                {code === 'missing' ? 'Chưa cập nhật quốc gia' : teacherCountryLabel(code)}
               </option>
             ))}
           </select>
