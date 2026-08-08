@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { getCountryRate } from '@/lib/countryPricing'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -140,6 +141,7 @@ export function StudentDetailPage() {
   const [recalcLesson, setRecalcLesson] = useState<{
     lesson: Lesson
     newPrice: number
+    newCurrency: string
     newLevel: number
     newSalary: number
     payrollPaid: boolean
@@ -196,6 +198,8 @@ export function StudentDetailPage() {
           pricePerMinutePH: data?.pricePerMinutePH ?? data?.pricePerMinute ?? 0,
           pricePerMinuteNative: data?.pricePerMinuteNative ?? data?.pricePerMinute ?? 0,
           otherCountriesPrices: data?.otherCountriesPrices || {},
+          countryPrices: data?.countryPrices || {},
+          currency: data?.currency,
         }] as const
       }))),
       Promise.all(teacherIds.map(tid => getDoc(doc(db, 'teachers', tid)).then(t => {
@@ -225,37 +229,25 @@ export function StudentDetailPage() {
   const expectedSalary = (lesson: Lesson) => {
     const country = liveRates.teacherCountry[lesson.teacherId] ?? 'VN'
     const rates = liveRates.subjectPrice[lesson.subjectId]
-    let price = lesson.pricePerMinute ?? 0
-    if (rates) {
-      if (rates.countryPrices) {
-        const rateObj = rates.countryPrices[country] || rates.countryPrices['VN']
-        price = rateObj?.price || rates.pricePerMinute || 0
-      } else if (rates.otherCountriesPrices && rates.otherCountriesPrices[country] !== undefined) {
-        price = rates.otherCountriesPrices[country]
-      } else if (country === 'VN') {
-        price = rates.pricePerMinuteVN || rates.pricePerMinute || 0
-      } else if (country === 'PH') {
-        price = rates.pricePerMinutePH || rates.pricePerMinute || 0
-      } else {
-        price = rates.pricePerMinuteNative || rates.pricePerMinute || 0
-      }
-    }
+    const { price, currency } = rates
+      ? getCountryRate(rates, country)
+      : { price: lesson.pricePerMinute ?? 0, currency: lesson.currency || 'VND' }
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
-    return { price, level, salary: calculateSalary(lesson.minutes, price, level) }
+    return { price, currency, level, salary: calculateSalary(lesson.minutes, price, level, currency) }
   }
 
   // Open recalc dialog after checking payroll paid status
   const openRecalc = async (lesson: Lesson) => {
     setRecalcOpening(true)
     try {
-      const { price, level, salary } = expectedSalary(lesson)
+      const { price, currency, level, salary } = expectedSalary(lesson)
       const payrollSnap = await getDocs(
         query(collection(db, 'payroll'), where('lessonId', '==', lesson.id)),
       )
       const docs = payrollSnap.docs.filter(d => !d.data().voided)
       const payrollIds = docs.map(d => d.id)
       const payrollPaid = docs.some(d => d.data().paid === true)
-      setRecalcLesson({ lesson, newPrice: price, newLevel: level, newSalary: salary, payrollPaid, payrollIds })
+      setRecalcLesson({ lesson, newPrice: price, newCurrency: currency, newLevel: level, newSalary: salary, payrollPaid, payrollIds })
     } catch (err) {
       console.error(err)
       toast.error('Không thể kiểm tra payroll')
@@ -477,6 +469,7 @@ export function StudentDetailPage() {
         tx.update(lessonRef, {
           salary: recalcLesson.newSalary,
           pricePerMinute: recalcLesson.newPrice,
+          currency: recalcLesson.newCurrency,
           teacherLevel: recalcLesson.newLevel,
           updatedAt: serverTimestamp(),
         })
@@ -484,6 +477,7 @@ export function StudentDetailPage() {
           tx.update(doc(db, 'payroll', pid), {
             amount: recalcLesson.newSalary,
             pricePerMinute: recalcLesson.newPrice,
+            currency: recalcLesson.newCurrency,
             level: recalcLesson.newLevel,
             recalculatedAt: serverTimestamp(),
             recalculatedBy: user?.uid || '',
@@ -903,21 +897,10 @@ export function StudentDetailPage() {
           const teacherCountry = tData?.country || 'VN'
           const lessonPoints = getLessonPoints(reApprovingLesson, tData)
 
-          let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (chosenSubjectPkg.countryPrices) {
-            const rateObj = chosenSubjectPkg.countryPrices[teacherCountry] || chosenSubjectPkg.countryPrices['VN']
-            pricePerMinute = rateObj?.price || chosenSubjectPkg.pricePerMinute || 0
-          } else if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
-            pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
-          } else if (teacherCountry === 'VN') {
-            pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
-          } else if (teacherCountry === 'PH') {
-            pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0
-          } else {
-            pricePerMinute = chosenSubjectPkg.pricePerMinuteNative || chosenSubjectPkg.pricePerMinute || 0
-          }
-
-          const currency = chosenSubjectPkg.currency || 'VND'
+          const { price: pricePerMinute, currency } = getCountryRate(
+            chosenSubjectPkg,
+            teacherCountry,
+          )
           const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel, currency)
           const month = reApprovingLesson.date.slice(0, 7)
 
@@ -2075,7 +2058,7 @@ export function StudentDetailPage() {
               <div className="flex justify-between">
                 <span className="text-slate-600">Giá/phút hiện tại</span>
                 <span className="text-amber-700 font-semibold tabular-nums">
-                  {formatMoney(recalcLesson.newPrice, recalcLesson.lesson.currency)}
+                  {formatMoney(recalcLesson.newPrice, recalcLesson.newCurrency)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -2089,7 +2072,7 @@ export function StudentDetailPage() {
               <div className="flex justify-between border-t border-amber-200 pt-1.5 mt-1.5">
                 <span className="text-slate-700 font-medium">Lương cũ → mới</span>
                 <span className="text-emerald-600 font-bold tabular-nums">
-                  {formatMoney(recalcLesson.lesson.salary ?? 0, recalcLesson.lesson.currency)} → {formatMoney(recalcLesson.newSalary, recalcLesson.lesson.currency)}
+                  {formatMoney(recalcLesson.lesson.salary ?? 0, recalcLesson.lesson.currency)} → {formatMoney(recalcLesson.newSalary, recalcLesson.newCurrency)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 pt-1">

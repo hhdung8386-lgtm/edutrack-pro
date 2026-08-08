@@ -8,6 +8,7 @@ import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { getCountryRate } from '@/lib/countryPricing'
 
 interface ApproveModalProps {
   lesson: Lesson
@@ -126,22 +127,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const bookingNow = bookingNows[0] || null
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
-          const teacherCountry = teacherData?.country || 'VN'
-          let pricePerMinute = chosenSubjectPkg.pricePerMinute || 0
-          if (chosenSubjectPkg.countryPrices) {
-            const rateObj = chosenSubjectPkg.countryPrices[teacherCountry] || chosenSubjectPkg.countryPrices['VN']
-            pricePerMinute = rateObj?.price || chosenSubjectPkg.pricePerMinute || 0
-          } else if (chosenSubjectPkg.otherCountriesPrices && chosenSubjectPkg.otherCountriesPrices[teacherCountry] !== undefined) {
-            pricePerMinute = chosenSubjectPkg.otherCountriesPrices[teacherCountry]
-          } else if (teacherCountry === 'VN') {
-            pricePerMinute = chosenSubjectPkg.pricePerMinuteVN || chosenSubjectPkg.pricePerMinute || 0
-          } else if (teacherCountry === 'PH') {
-            pricePerMinute = chosenSubjectPkg.pricePerMinutePH || chosenSubjectPkg.pricePerMinute || 0
-          } else {
-            pricePerMinute = chosenSubjectPkg.pricePerMinuteNative || chosenSubjectPkg.pricePerMinute || 0
-          }
-
-          const currency = chosenSubjectPkg.currency || 'VND'
+          const { price: pricePerMinute, currency } = getCountryRate(
+            chosenSubjectPkg,
+            teacherData?.country || 'VN',
+          )
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)

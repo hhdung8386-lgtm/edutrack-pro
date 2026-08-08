@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getToday } from '@/lib/constants'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
+import { getCountryRate } from '@/lib/countryPricing'
 import { convertVnDateTimeToTeacher, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
@@ -708,38 +709,20 @@ export function BookingSchedulesPage() {
 
         // Load pricing snapshot from subject or student subject rates
         let pricePerMinute = 0
+        let currency = 'VND'
         const teacherCountry = teacherData?.country || 'VN'
         const activeSub = studentData.subjects?.find(s => s.subjectId === primaryBooking.subjectId)
         if (activeSub) {
-          if (activeSub.countryPrices) {
-            const rateObj = activeSub.countryPrices[teacherCountry] || activeSub.countryPrices['VN']
-            pricePerMinute = rateObj?.price || activeSub.pricePerMinute || 0
-          } else if (activeSub.otherCountriesPrices && activeSub.otherCountriesPrices[teacherCountry] !== undefined) {
-            pricePerMinute = activeSub.otherCountriesPrices[teacherCountry]
-          } else if (teacherCountry === 'VN') {
-            pricePerMinute = activeSub.pricePerMinuteVN || activeSub.pricePerMinute || 0
-          } else if (teacherCountry === 'PH') {
-            pricePerMinute = activeSub.pricePerMinutePH || activeSub.pricePerMinute || 0
-          } else {
-            pricePerMinute = activeSub.pricePerMinuteNative || activeSub.pricePerMinute || 0
-          }
+          const rate = getCountryRate(activeSub, teacherCountry)
+          pricePerMinute = rate.price
+          currency = rate.currency
         } else {
           // fallback to main subject price
           const subSnap = await getDoc(doc(db, 'subjects', primaryBooking.subjectId || ''))
           if (subSnap.exists()) {
-            const subData = subSnap.data()
-            if (subData.countryPrices) {
-              const rateObj = subData.countryPrices[teacherCountry] || subData.countryPrices['VN']
-              pricePerMinute = rateObj?.price || subData.pricePerMinute || 0
-            } else if (subData.otherCountriesPrices && subData.otherCountriesPrices[teacherCountry] !== undefined) {
-              pricePerMinute = subData.otherCountriesPrices[teacherCountry]
-            } else if (teacherCountry === 'VN') {
-              pricePerMinute = subData.pricePerMinuteVN || subData.pricePerMinute || 0
-            } else if (teacherCountry === 'PH') {
-              pricePerMinute = subData.pricePerMinutePH || subData.pricePerMinute || 0
-            } else {
-              pricePerMinute = subData.pricePerMinuteNative || subData.pricePerMinute || 0
-            }
+            const rate = getCountryRate(subSnap.data() as Subject, teacherCountry)
+            pricePerMinute = rate.price
+            currency = rate.currency
           }
         }
 
@@ -794,6 +777,7 @@ export function BookingSchedulesPage() {
             minutesAfterApproval: currentRemainingMinutes,
             teacherLevel: teacherData.level ?? 1,
             pricePerMinute,
+            currency,
             salary: 0,
             bookingRequestId: primaryBooking.id,
             ...(attendanceBookings.length > 1 ? { bookingRequestIds: attendanceBookings.map((booking) => booking.id) } : {}),
@@ -831,15 +815,16 @@ export function BookingSchedulesPage() {
             report: null,
             rating: null,
             imageURLs: [],
-             attendanceStatus,
-             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
-             status: 'pending',
+            attendanceStatus,
+            pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
+            status: 'pending',
             sessionsBeforeApproval: studentData.remainingSessions,
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,
             minutesAfterApproval: currentRemainingMinutes,
             teacherLevel: teacherData.level ?? 1,
             pricePerMinute,
+            currency,
             salary: 0,
             bookingRequestId: followUpBooking.id,
             // Dấu vết: buổi vắng "ăn theo" ca trước, huỷ ca trước thì huỷ luôn buổi này
@@ -870,7 +855,22 @@ export function BookingSchedulesPage() {
       setSelectedBatchBookingIds([])
     } catch (error) {
       console.error('Submit calendar attendance failed:', error)
-      toast.error(t('attendance.submit_fail'))
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : ''
+      const errorMessage = error instanceof Error ? error.message : ''
+      const failureMessage = errorCode === 'permission-denied'
+        ? (lang === 'vi' ? 'Tài khoản chưa được cấp quyền điểm danh từ Lịch dạy. Vui lòng báo admin mở quyền cho gia sư này.' : 'This account is not allowed to submit attendance from the teaching schedule. Ask an admin to enable access.')
+        : errorMessage === 'BOOKING_ALREADY_PROCESSED'
+          ? (lang === 'vi' ? 'Một ca vừa được điểm danh hoặc hủy. Vui lòng tải lại lịch rồi thử lại.' : 'A selected session was just submitted or cancelled. Reload the schedule and try again.')
+          : errorMessage === 'STUDENT_NOT_FOUND'
+            ? (lang === 'vi' ? 'Không tìm thấy hồ sơ học viên của ca này.' : 'The student profile for this session could not be found.')
+            : errorMessage === 'BOOKING_NOT_FOUND'
+              ? (lang === 'vi' ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.' : 'The booking no longer exists. Reload the schedule.')
+              : errorMessage === 'STUDENT_EXPIRED'
+                ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
+                : t('attendance.submit_fail')
+      toast.error(failureMessage)
     } finally {
       setSubmittingAttendance(false)
     }
