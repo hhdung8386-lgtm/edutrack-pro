@@ -68,7 +68,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           {teacher.photoURL ? (
             <img src={teacher.photoURL} alt={nickname} className="h-20 w-20 flex-none rounded-2xl object-cover" />
           ) : (
-            <div className="flex h-20 w-20 flex-none items-center justify-center rounded-2xl bg-indigo-50 text-xl font-black text-indigo-700">
+            <div className={`flex h-20 w-20 flex-none items-center justify-center rounded-2xl text-xl font-black ${publicView ? 'bg-amber-50 text-[#B87900]' : 'bg-indigo-50 text-indigo-700'}`}>
               {nickname.slice(0, 2).toUpperCase()}
             </div>
           )}
@@ -85,7 +85,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
               {!publicView && <DetailItem label="Họ tên" value={teacher.name} />}
               <DetailItem label="Level" value={`×${teacher.level || 1}`} />
               <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
-                <Globe2 className="h-4 w-4 text-indigo-500" />
+                <Globe2 className={`h-4 w-4 ${publicView ? 'text-[#18A9D1]' : 'text-indigo-500'}`} />
                 {countryLabel(teacher.country)}
               </div>
               {!publicView && (
@@ -100,14 +100,14 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
         </div>
       </section>
 
-      <section className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
-        <h4 className={`flex items-center gap-2 font-black text-indigo-700 ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>
+      <section className={`rounded-2xl border p-4 ${publicView ? 'border-[#F1DE98] bg-[#FFF9E8]' : 'border-indigo-100 bg-indigo-50/50'}`}>
+        <h4 className={`flex items-center gap-2 font-black ${publicView ? 'text-[#B87900]' : 'text-indigo-700'} ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>
           <BookOpen className="h-4 w-4" />
           Môn gia sư dạy
         </h4>
         <div className="mt-3 flex flex-wrap gap-2">
           {subjectLabels.length > 0 ? subjectLabels.map((label) => (
-            <span key={label} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 ring-1 ring-indigo-100">
+            <span key={label} className={`rounded-lg bg-white px-3 py-1.5 text-xs font-bold ring-1 ${publicView ? 'text-[#B87900] ring-[#F1DE98]' : 'text-indigo-700 ring-indigo-100'}`}>
               {label}
             </span>
           )) : <p className="text-sm font-semibold text-slate-500">Chưa cập nhật môn giảng dạy.</p>}
@@ -115,7 +115,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
-        <h4 className={`flex items-center gap-2 font-black text-indigo-700 ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>
+        <h4 className={`flex items-center gap-2 font-black ${publicView ? 'text-[#B87900]' : 'text-indigo-700'} ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>
           <GraduationCap className="h-4 w-4" />
           1. Thông tin cá nhân & Trình độ học vấn
         </h4>
@@ -139,14 +139,14 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
-        <h4 className={`font-black text-indigo-700 ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>2. Chứng chỉ</h4>
+        <h4 className={`font-black ${publicView ? 'text-[#B87900]' : 'text-indigo-700'} ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>2. Chứng chỉ</h4>
         {certificates.length > 0 ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {certificates.map((certificate, index) => (
               <article key={`${certificate.category}-${certificate.title}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-indigo-600">
+                    <span className={`text-[10px] font-bold uppercase ${publicView ? 'text-[#C28A00]' : 'text-indigo-600'}`}>
                       {certificate.category === 'foreign_language' ? 'Năng lực chuyên môn' : certificate.category === 'pedagogical' ? 'Sư phạm' : 'Khác'}
                     </span>
                     <p className="mt-1 text-sm font-black text-slate-800">{certificate.title || 'Chưa đặt tên'}</p>
@@ -164,12 +164,12 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
                         src: certificate.fileURL || '',
                         alt: `Chứng chỉ ${certificate.title || 'của gia sư'}`,
                       })}
-                      className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline"
+                      className={`inline-flex items-center gap-1 font-bold hover:underline ${publicView ? 'text-[#0B97BF]' : 'text-indigo-600'}`}
                     >
                       Xem ảnh <Eye className="h-3.5 w-3.5" />
                     </button>
                   ) : (
-                    <a href={certificate.fileURL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline">
+                    <a href={certificate.fileURL} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-1 font-bold hover:underline ${publicView ? 'text-[#0B97BF]' : 'text-indigo-600'}`}>
                       Xem ảnh <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   ))}
@@ -184,7 +184,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {legacyCertificates.map((certificate) => (
               <div key={certificate.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600">{certificate.label}</p>
+                <p className={`text-[10px] font-bold uppercase tracking-wide ${publicView ? 'text-[#C28A00]' : 'text-indigo-600'}`}>{certificate.label}</p>
                 <p className="mt-1 text-sm font-bold text-slate-800">{certificate.value}</p>
               </div>
             ))}
@@ -193,7 +193,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
-        <h4 className={`font-black text-indigo-700 ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>3. Kinh nghiệm giảng dạy & Ưu điểm</h4>
+        <h4 className={`font-black ${publicView ? 'text-[#B87900]' : 'text-indigo-700'} ${publicView ? 'text-base' : 'text-sm uppercase tracking-wide'}`}>3. Kinh nghiệm giảng dạy & Ưu điểm</h4>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <DetailItem label="Số năm kinh nghiệm" value={teacher.teachingYears !== undefined && teacher.teachingYears !== null ? `${teacher.teachingYears} năm` : null} />
           <DetailItem label="Số học viên đã dạy" value={teacher.studentsTaughtCount !== undefined && teacher.studentsTaughtCount !== null ? `${teacher.studentsTaughtCount} học viên` : null} />
@@ -206,7 +206,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
             <p className="text-xs font-semibold text-slate-500">Ưu điểm nổi bật</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {teacher.strengths.map((strength) => (
-                <span key={strength} className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-100">
+                <span key={strength} className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${publicView ? 'bg-[#E9FAFF] text-[#087CAD] ring-[#BDEBF7]' : 'bg-sky-50 text-sky-700 ring-sky-100'}`}>
                   {STRENGTH_LABELS[strength] || strength}
                 </span>
               ))}

@@ -96,6 +96,35 @@ function getEffectiveSlots(availability: TeacherAvailability | null, weekStartIS
   return availability?.weekOverrides?.[weekStartISO]?.slots || availability?.slots
 }
 
+function getScheduleRowStarts(slots: TeacherAvailability['slots'] | undefined) {
+  const ranges = DAYS_ORDER.flatMap((day) => {
+    const daySlots = slots?.[day]
+    if (!daySlots?.available) return []
+    return daySlots.timeRanges.map((range) => {
+      const start = timeToMinutes(range.start)
+      let end = timeToMinutes(range.end)
+      if (end < start) end += 24 * 60
+      return { start, end }
+    })
+  }).filter((range) => Number.isFinite(range.start) && Number.isFinite(range.end))
+
+  if (ranges.length === 0) {
+    return Array.from({ length: 25 }, (_, index) => minutesToTime(12 * 60 + index * 30))
+  }
+
+  const firstStart = Math.max(0, Math.floor(Math.min(...ranges.map((range) => range.start)) / 30) * 30)
+  const latestLessonStart = Math.min(
+    24 * 60 + 30,
+    Math.floor((Math.max(...ranges.map((range) => range.end)) - LESSON_MINUTES) / 30) * 30,
+  )
+  const lastStart = Math.max(firstStart, latestLessonStart)
+
+  return Array.from(
+    { length: Math.floor((lastStart - firstStart) / 30) + 1 },
+    (_, index) => minutesToTime(firstStart + index * 30),
+  )
+}
+
 function isPastSlot(dateISO: string, start: string) {
   const [year, month, day] = dateISO.split('-').map(Number)
   const vnWallClock = Date.UTC(year, month - 1, day, 0, 0) + timeToMinutes(start) * 60 * 1000
@@ -161,10 +190,7 @@ export function PublicTeacherSchedule({ teacherId, teacherCountry }: { teacherId
   const weekDates = useMemo(() => getCurrentWeek(), [])
   const weekStartISO = weekDates[0]?.weekStartISO || ''
   const effectiveSlots = getEffectiveSlots(availability, weekStartISO)
-  const rowStarts = useMemo(
-    () => Array.from({ length: 48 }, (_, index) => minutesToTime(index * 30)),
-    [],
-  )
+  const rowStarts = useMemo(() => getScheduleRowStarts(effectiveSlots), [effectiveSlots])
   const selectedBookingHref = selectedSlot
     ? `/giao-vien?teacher=${encodeURIComponent(teacherId)}&date=${encodeURIComponent(selectedSlot.dateISO)}&start=${encodeURIComponent(selectedSlot.start)}&end=${encodeURIComponent(selectedSlot.end)}`
     : `/giao-vien?teacher=${encodeURIComponent(teacherId)}`
