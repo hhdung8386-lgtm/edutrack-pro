@@ -4,7 +4,8 @@ import { CalendarClock, CircleAlert, History, LockKeyhole } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useLanguageStore } from '@/stores/languageStore'
-import { useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
+import { useAuthStore } from '@/stores/authStore'
+import { useTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 
 interface TeacherAttendanceGateProps {
   children: ReactNode
@@ -13,7 +14,8 @@ interface TeacherAttendanceGateProps {
 export function TeacherAttendanceGate({ children }: TeacherAttendanceGateProps) {
   const navigate = useNavigate()
   const { lang } = useLanguageStore()
-  const { enabled, loading, error, retry } = useTeacherAttendanceFeature()
+  const { teacherId } = useAuthStore()
+  const { enabled, loading, error, retry } = useTeacherAttendanceAccess(teacherId)
 
   if (loading) {
     return (
@@ -55,14 +57,14 @@ export function TeacherAttendanceGate({ children }: TeacherAttendanceGateProps) 
             <LockKeyhole className="h-8 w-8" />
           </div>
           <p className="mt-5 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
-            {lang === 'vi' ? 'Cài đặt hệ thống' : 'System setting'}
+            {lang === 'vi' ? 'Quyền riêng của gia sư' : 'Teacher-specific access'}
           </p>
           <h1 id="attendance-locked-title" className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
             {lang === 'vi' ? 'Trang Điểm danh đang tạm khóa' : 'Attendance page is temporarily locked'}
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
             {lang === 'vi'
-              ? 'Admin chỉ tạm khóa trang Điểm danh riêng. Gia sư vẫn điểm danh bình thường từ Lịch dạy; lịch sử và toàn bộ dữ liệu đã có được giữ nguyên.'
+              ? 'Admin chưa mở quyền Điểm danh bù cho tài khoản này. Gia sư vẫn điểm danh bình thường từ Lịch dạy; lịch sử và toàn bộ dữ liệu đã có được giữ nguyên.'
               : 'Only the standalone attendance page is paused. Teachers can still submit attendance from Class schedules; all existing data remains unchanged.'}
           </p>
 

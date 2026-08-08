@@ -11,7 +11,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { Logo } from '@/components/shared/Logo'
 import {
-  adminDashboardItem,
   getVisibleAdminNavigation,
   isAdminNavGroupActive,
   nextOpenAdminNavGroup,
@@ -89,24 +88,7 @@ export function AdminSidebar({
 
       {/* Navigation */}
       <nav className={`flex-1 overflow-y-auto py-4 transition-all ${isCollapsed ? 'px-2' : 'px-3'}`}>
-        <NavLink
-          to={adminDashboardItem.to}
-          title={isCollapsed ? adminDashboardItem.label : undefined}
-          className={({ isActive }) =>
-            `group relative flex items-center rounded-xl text-sm font-semibold transition-all duration-150
-            ${isCollapsed ? 'mx-auto h-11 w-11 justify-center p-2.5' : 'mx-1 gap-3 px-3 py-2.5'}
-            ${isActive ? 'border border-brand-300 bg-brand-100 text-brand-800' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`
-          }
-        >
-          {({ isActive }) => (
-            <>
-              <adminDashboardItem.icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-brand-700' : 'text-slate-500 group-hover:text-slate-700'}`} />
-              {!isCollapsed && <span>{adminDashboardItem.label}</span>}
-            </>
-          )}
-        </NavLink>
-
-        <div className="mt-3 space-y-1.5">
+        <div className="space-y-1.5">
           {visibleGroups.map((group) => {
             const isOpen = openGroupId === group.id
             const isActive = isAdminNavGroupActive(group, location.pathname)

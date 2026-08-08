@@ -8,7 +8,8 @@ export function Logo({ className = '', clickable = true }: { className?: string;
 
   const getHomePath = () => {
     if (!user) return '/'
-    if (role === 'admin') return '/admin/dashboard'
+    if (role === 'admin' || role === 'student_manager') return '/admin/students/fixed'
+    if (role === 'teacher_manager') return '/admin/teachers/online'
     if (role === 'teacher') return '/teacher/attendance'
     if (role === 'guest') return '/waiting'
     return '/parent'

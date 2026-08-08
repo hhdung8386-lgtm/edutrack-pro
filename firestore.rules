@@ -257,16 +257,15 @@ service cloud.firestore {
       }
 
       // Lessons created from the arranged timetable carry a booking request id.
-      // Standalone attendance is controlled by the admin feature flag.
+      // Standalone attendance is controlled per teacher. Missing field = locked.
       function isTimetableLesson() {
         let bookingRequestId = request.resource.data.get('bookingRequestId', '');
         return bookingRequestId is string && bookingRequestId.size() > 0;
       }
 
       function standaloneAttendanceIsEnabled() {
-        // Keep the existing default-open behavior until an admin explicitly saves false.
-        return !exists(/databases/$(database)/documents/paymentSettings/main)
-          || get(/databases/$(database)/documents/paymentSettings/main).data.get('teacherAttendancePageEnabled', true) == true;
+        return get(/databases/$(database)/documents/teachers/$(request.resource.data.teacherId))
+          .data.get('attendancePageEnabled', false) == true;
       }
 
       // Gia sư được TỰ HUỶ buổi điểm danh CỦA MÌNH khi buổi đó CHƯA được duyệt.

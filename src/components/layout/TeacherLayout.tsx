@@ -15,7 +15,7 @@ import { NotificationDrawer } from '../shared/NotificationDrawer'
 import { WaveDivider } from '@/components/shared/WaveDivider'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
+import { useTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
 type TeacherNavItem = {
@@ -47,7 +47,7 @@ export function TeacherLayout() {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('teacher_sidebar_collapsed') === 'true'
   })
-  const { enabled: teacherAttendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceFeature()
+  const { enabled: teacherAttendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceAccess(teacherId)
   
   // Real-time clock and timezone states
   const [timezoneOffset, setTimezoneOffset] = useState<number>(7)

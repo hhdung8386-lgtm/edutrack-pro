@@ -15,7 +15,6 @@ import {
   FileText,
   Gift,
   GraduationCap,
-  LayoutDashboard,
   LayoutTemplate,
   MapPin,
   MonitorUp,
@@ -42,12 +41,6 @@ export interface AdminNavGroup {
   icon: LucideIcon
   activePrefixes: string[]
   items: AdminNavItem[]
-}
-
-export const adminDashboardItem: AdminNavItem = {
-  to: '/admin/dashboard',
-  icon: LayoutDashboard,
-  label: 'Dashboard',
 }
 
 export const adminNavigationGroups: AdminNavGroup[] = [

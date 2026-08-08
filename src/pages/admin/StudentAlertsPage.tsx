@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { db } from '@/lib/firebase'
 import type { Lesson } from '@/types'
 import { buildStudentAbsenceAlerts } from '@/lib/studentAbsenceAlerts'
+import { getCurrentMonth } from '@/lib/constants'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -21,6 +22,7 @@ export function StudentAlertsPage() {
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [absenceFilter, setAbsenceFilter] = useState<'all' | 'unexcused'>('all')
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
 
   useEffect(() => {
     const absenceQuery = query(
@@ -42,7 +44,11 @@ export function StudentAlertsPage() {
     )
   }, [])
 
-  const alerts = useMemo(() => buildStudentAbsenceAlerts(lessons), [lessons])
+  const monthLessons = useMemo(
+    () => lessons.filter((lesson) => lesson.date?.startsWith(`${selectedMonth}-`)),
+    [lessons, selectedMonth],
+  )
+  const alerts = useMemo(() => buildStudentAbsenceAlerts(monthLessons), [monthLessons])
   const filteredAlerts = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('vi')
     return alerts.filter((alert) => {
@@ -69,7 +75,7 @@ export function StudentAlertsPage() {
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Theo dõi chuyên cần</p>
               <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Cảnh báo học viên</h1>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                Tự động liệt kê học viên có từ 2 báo cáo vắng trở lên. Báo cáo bị từ chối không được tính vào cảnh báo.
+                Tháng {Number(selectedMonth.slice(5, 7))} / {selectedMonth.slice(0, 4)} · Tự động liệt kê học viên có từ 2 báo cáo vắng trở lên. Báo cáo bị từ chối không được tính vào cảnh báo.
               </p>
             </div>
           </div>
@@ -99,6 +105,17 @@ export function StudentAlertsPage() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Tìm theo tên hoặc mã học viên..."
             className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+          />
+        </label>
+        <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 focus-within:border-amber-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-amber-100">
+          <CalendarDays className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="sr-only">Chọn tháng cảnh báo</span>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(event) => setSelectedMonth(event.target.value)}
+            className="min-w-0 bg-transparent text-sm font-bold outline-none"
+            aria-label="Hiển thị cảnh báo theo tháng"
           />
         </label>
         <div className="flex rounded-xl bg-slate-100 p-1" aria-label="Lọc loại vắng">

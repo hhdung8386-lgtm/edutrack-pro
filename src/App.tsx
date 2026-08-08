@@ -70,12 +70,18 @@ const RootRedirect = () => {
   
   if (!user) return <Navigate to="/login" replace />
   
-  if (role === 'admin') return <Navigate to="/admin/dashboard" replace />
+  if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/fixed" replace />
+  if (role === 'teacher_manager') return <Navigate to="/admin/teachers/online" replace />
   if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
   if (role === 'guest') return <Navigate to="/waiting" replace />
   
   // If user is logged in but has no valid role yet
   return <Navigate to="/login" replace />
+}
+
+const AdminIndexRedirect = () => {
+  const role = useAuthStore((state) => state.role)
+  return <Navigate to={role === 'teacher_manager' ? 'teachers/online' : 'students/fixed'} replace />
 }
 
 function App() {
@@ -152,7 +158,7 @@ function App() {
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="student-experience" element={<StudentExperiencePage />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route index element={<AdminIndexRedirect />} />
           </Route>
 
           {/* Teacher Routes */}

@@ -106,6 +106,10 @@ export interface Teacher {
   isTester?: boolean
   country?: string
   timezoneOffset?: number
+  /** Quyền mở trang Điểm danh bù riêng cho gia sư; thiếu field = khóa. */
+  attendancePageEnabled?: boolean
+  attendancePageUpdatedAt?: Timestamp
+  attendancePageUpdatedBy?: string
   pointsPer25Minutes?: number
   bookingPriority?: number
   totalApprovedMinutes?: number

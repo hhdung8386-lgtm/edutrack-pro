@@ -3,17 +3,17 @@ import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
-import { Card, CardHeader } from '@/components/ui/Card'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { getCurrentMonth, formatMoney, formatMoneyTotals, formatPricePerMinute } from '@/lib/constants'
+import { getCurrentMonth, formatMoney, formatMoneyTotals } from '@/lib/constants'
 import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
-import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
-import { TeacherAttendanceLockCard } from '@/components/admin/TeacherAttendanceLockCard'
+import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -30,6 +30,7 @@ export function PayrollPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [selectedLessonPayrollIds, setSelectedLessonPayrollIds] = useState<Set<string>>(new Set())
   const [returningToPending, setReturningToPending] = useState(false)
+  const [savingAttendanceTeacherId, setSavingAttendanceTeacherId] = useState<string | null>(null)
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null)
   const taxPolicy = normalizePayrollTaxPolicy(paymentSettings)
 
@@ -41,6 +42,46 @@ export function PayrollPage() {
     const d = new Date(month + '-01')
     const next = subMonths(d, -1)
     if (next <= new Date()) setMonth(format(next, 'yyyy-MM'))
+  }
+
+  const toggleTeacherAttendanceAccess = async (teacher: Teacher) => {
+    if (savingAttendanceTeacherId) return
+    const currentEnabled = teacher.attendancePageEnabled === true
+    const nextEnabled = !currentEnabled
+    const actionLabel = nextEnabled ? 'mở' : 'khóa'
+    if (!window.confirm(
+      `Xác nhận ${actionLabel} Điểm danh bù cho ${teacher.name}?\n\n`
+      + (nextEnabled
+        ? 'Gia sư này sẽ được phép điểm danh bù bằng mã học viên.'
+        : 'Gia sư này sẽ không thể tạo buổi điểm danh bù mới; điểm danh từ Lịch dạy vẫn hoạt động bình thường.'),
+    )) return
+
+    setSavingAttendanceTeacherId(teacher.id)
+    try {
+      const updatedBy = user?.email || user?.uid || ''
+      await setTeacherAttendanceAccess(teacher.id, nextEnabled, updatedBy)
+      setTeachers((current) => current.map((item) => (
+        item.id === teacher.id ? { ...item, attendancePageEnabled: nextEnabled } : item
+      )))
+      try {
+        await addDoc(collection(db, 'adminLogs'), {
+          adminId: user?.uid || '',
+          action: 'TEACHER_ATTENDANCE_ACCESS_UPDATE',
+          targetType: 'teacher',
+          targetId: teacher.id,
+          changes: { attendancePageEnabled: { before: currentEnabled, after: nextEnabled } },
+          createdAt: serverTimestamp(),
+        })
+      } catch (logError) {
+        console.error('Unable to write teacher attendance access log:', logError)
+      }
+      toast.success(nextEnabled ? `Đã mở Điểm danh bù cho ${teacher.name}` : `Đã khóa Điểm danh bù của ${teacher.name}`)
+    } catch (error) {
+      console.error('Unable to update teacher attendance access:', error)
+      toast.error('Không thể cập nhật quyền Điểm danh bù')
+    } finally {
+      setSavingAttendanceTeacherId(null)
+    }
   }
 
   useEffect(() => {
@@ -430,10 +471,6 @@ export function PayrollPage() {
         </div>
       </div>
 
-      {/* Công tắc khóa/mở trang Điểm danh độc lập của gia sư — đặt ở đây để kế toán
-          thao tác tại chỗ khi gia sư xin điểm danh bù. Mặc định KHÓA. */}
-      <TeacherAttendanceLockCard />
-
       {/* Total */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
         <p className="text-sm text-slate-500">Tổng lương phải trả {monthLabel}</p>
@@ -539,6 +576,27 @@ export function PayrollPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={teacher.attendancePageEnabled === true}
+                  aria-label={`${teacher.attendancePageEnabled === true ? 'Khóa' : 'Mở'} Điểm danh bù cho ${teacher.name}`}
+                  title={`${teacher.attendancePageEnabled === true ? 'Đang mở' : 'Đang khóa'} Điểm danh bù`}
+                  disabled={savingAttendanceTeacherId === teacher.id}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void toggleTeacherAttendanceAccess(teacher)
+                  }}
+                  className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-black transition focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-wait disabled:opacity-60 ${
+                    teacher.attendancePageEnabled === true
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100'
+                      : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200'
+                  }`}
+                >
+                  {teacher.attendancePageEnabled === true ? <ShieldCheck className="h-3.5 w-3.5" /> : <LockKeyhole className="h-3.5 w-3.5" />}
+                  <span className="hidden xl:inline">Điểm danh bù</span>
+                  <span>{savingAttendanceTeacherId === teacher.id ? 'Đang lưu' : teacher.attendancePageEnabled === true ? 'Mở' : 'Khóa'}</span>
+                </button>
                 <Badge variant={paid ? 'success' : 'warning'}>
                   {paid ? 'Đã trả' : 'Chưa trả'}
                 </Badge>

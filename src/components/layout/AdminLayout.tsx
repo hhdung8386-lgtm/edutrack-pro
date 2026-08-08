@@ -12,7 +12,6 @@ import { useStudentAlertCount } from '@/hooks/useStudentAlertCount'
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
 import {
-  adminDashboardItem,
   getVisibleAdminNavigation,
   isAdminNavGroupActive,
   nextOpenAdminNavGroup,
@@ -148,20 +147,6 @@ export function AdminLayout() {
               </button>
             </div>
             <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-4 pb-6">
-              <NavLink
-                to={adminDashboardItem.to}
-                onClick={() => setSheetOpen(false)}
-                className={({ isActive }) =>
-                  `flex min-h-14 items-center gap-3 rounded-2xl border px-3.5 py-3 text-sm font-extrabold transition active:scale-[0.99]
-                  ${isActive ? 'border-brand-300 bg-brand-50 text-brand-900' : 'border-slate-100 bg-slate-50/70 text-slate-700'}`
-                }
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
-                  <adminDashboardItem.icon className="h-5 w-5" />
-                </span>
-                {adminDashboardItem.label}
-              </NavLink>
-
               {visibleGroups.map((group) => {
                 const isOpen = mobileOpenGroupId === group.id
                 const isActive = isAdminNavGroupActive(group, location.pathname)
@@ -240,21 +225,7 @@ export function AdminLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
-        <div className="grid h-16 grid-cols-4">
-          <NavLink
-            to={adminDashboardItem.to}
-            className={({ isActive }) =>
-              `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <adminDashboardItem.icon className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
-                <span>Dashboard</span>
-                {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
-              </>
-            )}
-          </NavLink>
+        <div className="grid h-16 grid-cols-3">
           <button
             type="button"
             onClick={() => mobilePrimaryGroup && openMobileMenu(mobilePrimaryGroup.id)}

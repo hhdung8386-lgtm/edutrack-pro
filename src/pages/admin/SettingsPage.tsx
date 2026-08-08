@@ -12,14 +12,13 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { BookUser, Building2, Check, LockKeyhole, MapPin, Pencil, Plus, Settings, ShieldCheck, Trash2, Users, X } from 'lucide-react'
+import { BookUser, Building2, Check, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
 import {
   DEFAULT_TEACHER_NICKNAMES,
   loadCustomTeacherNicknames,
   saveCustomTeacherNicknames,
   type TeacherNicknameLibrary,
 } from '@/lib/nameGenerator'
-import { setTeacherAttendanceFeature, useTeacherAttendanceFeature } from '@/hooks/useTeacherAttendanceFeature'
 import { getCurrentMonth } from '@/lib/constants'
 
 export interface Branch {
@@ -32,14 +31,7 @@ export interface Branch {
 
 export function SettingsPage() {
   const { role, user } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'teacher_features' | 'payroll_tax'>('branch')
-  const {
-    enabled: teacherAttendanceEnabled,
-    loading: loadingTeacherFeatures,
-    error: teacherFeaturesError,
-    retry: retryTeacherFeatures,
-  } = useTeacherAttendanceFeature()
-  const [savingTeacherFeatures, setSavingTeacherFeatures] = useState(false)
+  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'payroll_tax'>('branch')
   const [payrollTaxLoading, setPayrollTaxLoading] = useState(true)
   const [payrollTaxSaving, setPayrollTaxSaving] = useState(false)
   const [payrollTaxEnabled, setPayrollTaxEnabled] = useState(false)
@@ -327,23 +319,6 @@ export function SettingsPage() {
     }
   }
 
-  const toggleTeacherAttendance = async () => {
-    if (savingTeacherFeatures || loadingTeacherFeatures || teacherFeaturesError) return
-    const nextEnabled = !teacherAttendanceEnabled
-    setSavingTeacherFeatures(true)
-    try {
-      await setTeacherAttendanceFeature(nextEnabled, user?.email || user?.uid)
-      toast.success(nextEnabled
-        ? 'Đã mở lại trang Điểm danh cho gia sư'
-        : 'Đã khóa trang Điểm danh của gia sư')
-    } catch (error) {
-      console.error('Unable to update teacher attendance setting:', error)
-      toast.error('Không thể cập nhật trang Điểm danh')
-    } finally {
-      setSavingTeacherFeatures(false)
-    }
-  }
-
   const savePayrollTaxSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const threshold = Number(payrollTaxThreshold.replace(/[^\d]/g, ''))
@@ -419,16 +394,6 @@ export function SettingsPage() {
             }`}
           >
             Thư viện tên gia sư
-          </button>
-          <button
-            onClick={() => setActiveTab('teacher_features')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
-              activeTab === 'teacher_features'
-                ? 'border-indigo-600 text-indigo-600 font-extrabold'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Chức năng gia sư
           </button>
           <button
             onClick={() => setActiveTab('payroll_tax')}
@@ -765,80 +730,6 @@ export function SettingsPage() {
                 <Button type="submit" loading={payrollTaxSaving}>Lưu cấu hình thuế</Button>
               </div>
             </form>
-          )}
-        </Card>
-      )}
-
-      {activeTab === 'teacher_features' && role === 'admin' && (
-        <Card className="animate-slide-up overflow-hidden">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 gap-4">
-              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 ${
-                teacherAttendanceEnabled
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                  : 'bg-amber-50 text-amber-700 ring-amber-200'
-              }`}>
-                {teacherAttendanceEnabled
-                  ? <ShieldCheck className="h-6 w-6" />
-                  : <LockKeyhole className="h-6 w-6" />}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Quyền thao tác gia sư</p>
-                <h2 className="mt-1 text-lg font-black text-slate-950">Trang Điểm danh độc lập</h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                  Chỉ khóa hoặc mở trang Điểm danh riêng của gia sư. Điểm danh từ Lịch dạy vẫn hoạt động bình thường; lịch sử và dữ liệu buổi học luôn được giữ nguyên.
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={teacherAttendanceEnabled}
-              aria-label="Bật hoặc tắt trang Điểm danh độc lập của gia sư"
-              disabled={loadingTeacherFeatures || savingTeacherFeatures || teacherFeaturesError}
-              onClick={toggleTeacherAttendance}
-              className={`relative inline-flex h-12 w-full shrink-0 items-center rounded-2xl px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:cursor-wait disabled:opacity-60 sm:w-48 ${
-                teacherAttendanceEnabled ? 'bg-emerald-600' : 'bg-slate-800'
-              }`}
-            >
-              <span className={`absolute h-8 w-8 rounded-xl bg-white shadow-sm transition-all ${
-                teacherAttendanceEnabled ? 'right-2' : 'left-2'
-              }`} />
-              <span className={`relative z-10 w-full text-center text-sm font-black text-white ${
-                teacherAttendanceEnabled ? 'pr-9' : 'pl-9'
-              }`}>
-                {teacherFeaturesError
-                  ? 'Lỗi kết nối'
-                  : loadingTeacherFeatures
-                  ? 'Đang tải...'
-                  : savingTeacherFeatures
-                    ? 'Đang lưu...'
-                    : teacherAttendanceEnabled ? 'Đang mở' : 'Đang khóa'}
-              </span>
-            </button>
-          </div>
-
-          {teacherFeaturesError ? (
-            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
-              <p className="text-sm font-bold text-amber-950">Chưa tải được trạng thái hiện tại từ máy chủ.</p>
-              <Button className="mt-3" variant="outline" onClick={retryTeacherFeatures}>Thử tải lại</Button>
-            </div>
-          ) : (
-            <div className={`mt-6 rounded-2xl border px-4 py-4 ${
-            teacherAttendanceEnabled
-              ? 'border-emerald-200 bg-emerald-50/70'
-              : 'border-amber-200 bg-amber-50/70'
-          }`}>
-            <p className={`text-sm font-bold ${teacherAttendanceEnabled ? 'text-emerald-900' : 'text-amber-950'}`}>
-              {teacherAttendanceEnabled
-                ? 'Trang Điểm danh riêng đang mở; điểm danh từ Lịch dạy cũng hoạt động bình thường.'
-                : 'Trang Điểm danh riêng đang khóa; gia sư vẫn điểm danh bình thường từ Lịch dạy.'}
-            </p>
-            <p className={`mt-1 text-xs leading-5 ${teacherAttendanceEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
-              Thay đổi được cập nhật theo thời gian thực, không cần xóa trang hoặc tải lại dữ liệu.
-            </p>
-            </div>
           )}
         </Card>
       )}
