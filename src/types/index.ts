@@ -248,6 +248,8 @@ export interface Lesson {
   approvedAt?: Timestamp
   approvedBy?: string
   bookingRequestId?: string
+  /** Các ca được gộp thành một buổi điểm danh (ví dụ 2 ca 25 phút = 1 buổi 50 phút). */
+  bookingRequestIds?: string[]
   /**
    * Buổi vắng "ăn theo" ca 25 phút liền trước (id của buổi gốc).
    * Buổi này luôn 0 phút để chỉ tính tiền MỘT lần 25 phút cho cả cụm.

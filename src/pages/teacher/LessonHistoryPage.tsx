@@ -203,9 +203,11 @@ export function LessonHistoryPage() {
 
       // Gỡ liên kết trên ca đặt lịch. Phải XOÁ hẳn field `lessonId` (deleteField) —
       // để lại chuỗi rỗng thì luồng học viên tự huỷ ca vẫn bị chặn bởi firestore.rules.
-      const bookingIds = [cancelTarget, ...followUps]
-        .map((lesson) => lesson.bookingRequestId)
-        .filter((id): id is string => !!id)
+      const bookingIds = Array.from(new Set(
+        [cancelTarget, ...followUps]
+          .flatMap((lesson) => [...(lesson.bookingRequestIds || []), lesson.bookingRequestId || ''])
+          .filter(Boolean),
+      ))
       for (const bookingId of bookingIds) {
         try {
           await updateDoc(doc(db, 'bookingRequests', bookingId), {

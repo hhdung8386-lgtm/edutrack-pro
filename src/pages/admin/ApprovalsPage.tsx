@@ -6,7 +6,7 @@ import {
   getCountFromServer, limit, getDoc,
 } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { Lesson, Student, StudentSubject } from '@/types'
+import { BookingRequest, Lesson, Student, StudentSubject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -19,7 +19,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2 } from 'lucide-react'
-import { bookingHoldMinutes, resolveLessonBooking } from '@/lib/lessonBooking'
+import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
@@ -284,9 +284,10 @@ export function ApprovalsPage() {
         return
       }
 
-      const matchedBooking = await resolveLessonBooking({
+      const matchedBookings = await resolveLessonBookings({
         id: approvingLesson.id,
         bookingRequestId: approvingLesson.bookingRequestId,
+        bookingRequestIds: approvingLesson.bookingRequestIds,
         studentId: approvingLesson.studentId,
         teacherId: approvingLesson.teacherId,
         date: approvingLesson.date,
@@ -313,15 +314,16 @@ export function ApprovalsPage() {
 
           const studentData = studentSnap.data() as Student
 
-          const bookingRef = matchedBooking ? doc(db, 'bookingRequests', matchedBooking.id) : null
-          const [teacherSnap, bookingSnap] = await Promise.all([
+          const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+          const [teacherSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
-            bookingRef ? tx.get(bookingRef) : Promise.resolve(null),
+            ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])
           const teacherData = teacherSnap.data()
-          const bookingNow = bookingSnap?.exists()
-            ? ({ id: bookingSnap.id, ...bookingSnap.data() } as typeof matchedBooking)
-            : null
+          const bookingNows = bookingSnaps
+            .filter((snap) => snap.exists())
+            .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          const bookingNow = bookingNows[0] || null
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const teacherCountry = teacherData?.country || 'VN'
@@ -344,8 +346,10 @@ export function ApprovalsPage() {
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
-            : bookingNow
-              ? getBookingPoints(bookingNow, teacherData)
+            : bookingNows.length > 1
+              ? bookingNows.reduce((sum, booking) => sum + getBookingPoints(booking, teacherData), 0)
+              : bookingNow
+                ? getBookingPoints(bookingNow, teacherData)
               : getLessonPoints(lessonNow, teacherData)
           const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (approvingLesson.date || '').slice(0, 7)
@@ -411,7 +415,9 @@ export function ApprovalsPage() {
 
           // Deduct heldMinutes (previously reservedMinutes or heldMinutes)
           const prevHeldMinutes = Number(studentData.reservedMinutes ?? studentData.heldMinutes ?? 0) || 0
-          const heldPointsToRelease = lessonNow.bookingHoldConsumed === true ? 0 : bookingHoldMinutes(bookingNow, teacherData)
+          const heldPointsToRelease = lessonNow.bookingHoldConsumed === true
+            ? 0
+            : bookingNows.reduce((sum, booking) => sum + bookingHoldMinutes(booking, teacherData), 0)
           const newHeldMinutes = Math.max(0, prevHeldMinutes - heldPointsToRelease)
 
           tx.update(lessonRef, {
@@ -430,11 +436,14 @@ export function ApprovalsPage() {
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
             minutesAfterApproval: newSubRemainingMinutes,
-            ...(bookingNow ? { bookingRequestId: bookingNow.id } : {}),
+            ...(bookingNow ? {
+              bookingRequestId: bookingNow.id,
+              ...(bookingNows.length > 1 ? { bookingRequestIds: bookingNows.map((booking) => booking.id) } : {}),
+            } : {}),
             bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
           })
 
-          if (bookingRef && bookingNow) tx.update(bookingRef, { lessonId: approvingLesson.id })
+          bookingRefs.forEach((bookingRef) => tx.update(bookingRef, { lessonId: approvingLesson.id }))
 
           tx.update(studentRef, {
             subjects: updatedSubjects,

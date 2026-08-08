@@ -676,8 +676,9 @@ export function BookingSchedulesPage() {
     setSubmittingAttendance(true)
     try {
       const studentId = primaryBooking.studentId
+      const combinedMinutes = attendanceBookings.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0)
       const minutes = attendanceStatus === 'present'
-        ? primaryBooking.requestedMinutes
+        ? combinedMinutes
         : (attendanceStatus === 'without_permission' ? 25 : 0)
       // Học viên vắng -> mọi ca còn lại trong ngày cũng vắng, nhưng KHÔNG tính tiền lần nữa.
       const followUpBookings = isPresent ? [] : absenceFollowUpBookings
@@ -745,12 +746,15 @@ export function BookingSchedulesPage() {
         const mps = studentData.minutesPerSession || 50
         const currentRemainingMinutes = studentData.remainingMinutes ?? (studentData.remainingSessions * mps)
 
-        // 1. Create one lesson per selected booking. The same report is copied
-        // to each session, while each lesson keeps its own duration/payroll link.
-        const lessonRefs = []
-        for (const attendanceBooking of attendanceBookings) {
-          const lessonRef = doc(collection(db, 'lessons'))
-          lessonRefs.push(lessonRef)
+        // 1. Create one combined lesson for all selected attendance slots.
+        //    Example: two 25-minute slots become one 50-minute report/payroll item.
+        const lessonRef = doc(collection(db, 'lessons'))
+        const lessonRefs = [lessonRef]
+        for (const [attendanceIndex, attendanceBooking] of attendanceBookings.entries()) {
+          if (attendanceIndex > 0) {
+            tx.update(doc(db, 'bookingRequests', attendanceBooking.id), { lessonId: lessonRef.id })
+            continue
+          }
           tx.set(lessonRef, {
             studentId: studentData.id,
             studentCode: studentData.code,
@@ -758,11 +762,11 @@ export function BookingSchedulesPage() {
             teacherId,
             teacherCode: teacherData.code,
             teacherName: teacherData.name,
-            subjectId: attendanceBooking.subjectId || '',
-            subjectName: attendanceBooking.subjectName || '',
-            date: attendanceBooking.requestedDate || getToday(),
+            subjectId: primaryBooking.subjectId || '',
+            subjectName: primaryBooking.subjectName || '',
+            date: primaryBooking.requestedDate || getToday(),
             minutes: isPresent
-              ? attendanceBooking.requestedMinutes
+              ? minutes
               : (isUnexcused && attendanceBooking.id === primaryBooking.id ? minutes : 0),
             // Ghép báo cáo có cấu trúc thành `comment` cho các màn hình cũ;
             // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
@@ -781,9 +785,9 @@ export function BookingSchedulesPage() {
                 ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
                 : { pages: '', report: null, rating: null, homeworkItems: [] }),
             imageURLs: images.map((i) => i.storageURL).filter(Boolean),
-             attendanceStatus,
-             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
-             status: 'pending',
+            attendanceStatus,
+            pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
+            status: 'pending',
             sessionsBeforeApproval: studentData.remainingSessions,
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,
@@ -791,7 +795,8 @@ export function BookingSchedulesPage() {
             teacherLevel: teacherData.level ?? 1,
             pricePerMinute,
             salary: 0,
-            bookingRequestId: attendanceBooking.id,
+            bookingRequestId: primaryBooking.id,
+            ...(attendanceBookings.length > 1 ? { bookingRequestIds: attendanceBookings.map((booking) => booking.id) } : {}),
             createdAt: serverTimestamp(),
           })
 
@@ -850,7 +855,7 @@ export function BookingSchedulesPage() {
       toast.success(followUpBookings.length > 0
         ? `Đã ghi vắng cho ca này và ${followUpBookings.length} ca còn lại trong ngày — chỉ tính tiền 1 lần 25 phút.`
         : attendanceBookings.length > 1
-          ? `Đã gửi báo cáo điểm danh cho ${attendanceBookings.length} ca. Mỗi ca đã được ghi nhận riêng.`
+          ? `Đã gửi một báo cáo điểm danh gộp ${minutes} phút cho ${attendanceBookings.length} ca.`
           : 'Gửi báo cáo điểm danh thành công!')
       setShowAttendanceModal(false)
       setShowDetailModal(false)
@@ -1042,8 +1047,8 @@ export function BookingSchedulesPage() {
           <div className="space-y-3">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-sm leading-6 text-indigo-900">
               {lang === 'vi'
-                ? 'Chọn các ca chưa điểm danh của cùng lớp, cùng môn, cùng ngày và liền nhau. Mỗi ca vẫn tạo một báo cáo riêng.'
-                : 'Select unsubmitted sessions from the same class, subject, date and adjacent time range. Each session still gets its own report.'}
+                ? 'Chọn các ca chưa điểm danh của cùng lớp, cùng môn, cùng ngày và liền nhau. Các ca được gộp thành một báo cáo theo tổng số phút.'
+                : 'Select unsubmitted sessions from the same class, subject, date and adjacent time range. The selected slots are merged into one report using the total minutes.'}
             </div>
             <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
               {pendingAttendanceBookings.map((booking) => {
@@ -1335,8 +1340,8 @@ export function BookingSchedulesPage() {
                     </p>
                     <p className="mt-1 text-xs leading-5 text-indigo-700">
                       {lang === 'vi'
-                        ? 'Chỉ chọn các ca cùng mã lớp, cùng môn, cùng ngày và liền nhau. Báo cáo này sẽ được ghi nhận riêng cho từng ca.'
-                        : 'Select only adjacent sessions with the same class code, subject and date. This report will be recorded for each session separately.'}
+                        ? `Các ca đã chọn sẽ được gộp thành một buổi điểm danh tổng ${selectedBatchBookingIds.reduce((sum, id) => sum + (confirmedBookings.find((booking) => booking.id === id)?.requestedMinutes || 0), 0)} phút.`
+                        : `Selected slots will be merged into one ${selectedBatchBookingIds.reduce((sum, id) => sum + (confirmedBookings.find((booking) => booking.id === id)?.requestedMinutes || 0), 0)}-minute attendance report.`}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200">

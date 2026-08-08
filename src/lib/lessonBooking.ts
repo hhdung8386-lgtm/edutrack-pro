@@ -27,21 +27,31 @@ export function bookingHoldPoints(
  */
 export const bookingHoldMinutes = bookingHoldPoints
 
-export async function resolveLessonBooking(lesson: {
+type LessonBookingReference = {
   id: string
   bookingRequestId?: string
+  bookingRequestIds?: string[]
   studentId: string
   teacherId: string
   date: string
   minutes: number
   subjectId: string
-}): Promise<BookingRequest | null> {
-  if (lesson.bookingRequestId) {
-    const bookingRef = doc(db, 'bookingRequests', lesson.bookingRequestId)
-    const bookingSnap = await getDoc(bookingRef)
-    if (bookingSnap.exists()) {
-      return { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
-    }
+}
+
+export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
+  const bookingIds = Array.from(new Set([
+    ...(lesson.bookingRequestIds || []),
+    lesson.bookingRequestId,
+  ].filter((id): id is string => Boolean(id))))
+
+  if (bookingIds.length > 0) {
+    const bookingSnaps = await Promise.all(
+      bookingIds.map((bookingId) => getDoc(doc(db, 'bookingRequests', bookingId))),
+    )
+    const resolved = bookingSnaps
+      .filter((snap) => snap.exists())
+      .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+    if (resolved.length > 0) return resolved
   }
 
   const q = query(
@@ -52,14 +62,18 @@ export async function resolveLessonBooking(lesson: {
   )
   
   const snap = await getDocs(q)
-  if (snap.empty) return null
+  if (snap.empty) return []
 
   const matches = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
   const exactMatch = matches.find(m => m.requestedMinutes === lesson.minutes && (m.status === 'confirmed' || m.status === 'pending'))
-  if (exactMatch) return exactMatch
+  if (exactMatch) return [exactMatch]
 
   const statusMatch = matches.find(m => m.status === 'confirmed' || m.status === 'pending')
-  if (statusMatch) return statusMatch
+  if (statusMatch) return [statusMatch]
 
-  return matches[0] || null
+  return matches[0] ? [matches[0]] : []
+}
+
+export async function resolveLessonBooking(lesson: LessonBookingReference): Promise<BookingRequest | null> {
+  return (await resolveLessonBookings(lesson))[0] || null
 }
