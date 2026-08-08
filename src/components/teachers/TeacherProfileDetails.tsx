@@ -87,7 +87,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
               )}
             </div>
             <div className="mt-2 grid gap-1.5 text-sm sm:grid-cols-2">
-              <DetailItem label="Họ tên" value={teacher.name} />
+              {!publicView && <DetailItem label="Họ tên" value={teacher.name} />}
               <DetailItem label="Level" value={`×${teacher.level || 1}`} />
               <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
                 <Globe2 className="h-4 w-4 text-indigo-500" />
@@ -125,7 +125,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           1. Thông tin cá nhân & Trình độ học vấn
         </h4>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailItem label="Năm sinh" value={teacher.yob} />
+          {!publicView && <DetailItem label="Năm sinh" value={teacher.yob} />}
           <DetailItem label="Tỉnh/Thành phố sinh sống" value={teacher.livingArea} />
           <DetailItem label="Học vị / Học hàm" value={teacher.degreeType} />
           <DetailItem label="Trường ĐH/CĐ" value={teacher.university} />

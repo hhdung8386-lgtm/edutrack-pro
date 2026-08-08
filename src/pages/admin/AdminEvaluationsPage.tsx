@@ -80,6 +80,12 @@ function formatEvaluationDate(value: unknown): string {
   return date.toLocaleDateString('vi-VN')
 }
 
+function formatPayrollMonth(month: string): string {
+  const [year, monthNumber] = month.split('-')
+  const numericMonth = Number(monthNumber)
+  return year && Number.isFinite(numericMonth) ? `Tháng ${numericMonth} / ${year}` : month
+}
+
 type EvalStatus = 'pending' | 'approved' | 'rejected'
 const evalStatusOf = (e: Evaluation): EvalStatus => e.status === 'approved' ? 'approved' : e.status === 'rejected' ? 'rejected' : 'pending'
 
@@ -138,6 +144,7 @@ export default function AdminEvaluationsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | EvalStatus>('pending')
+  const [payrollMonthFilter, setPayrollMonthFilter] = useState('')
   const [processingId, setProcessingId] = useState<string | null>(null)
   // Đối soát tháng của khoản thưởng đã cộng trước đây (xem khối "Đối soát" bên dưới)
   const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, { evaluationId: string; month: string; paid: boolean }>>({})
@@ -495,6 +502,57 @@ export default function AdminEvaluationsPage() {
     return c
   }, [evaluations])
 
+  const rewardPayrollByEvaluationId = useMemo(() => {
+    const map = new Map<string, { month: string; paid: boolean }>()
+    Object.values(rewardPayrolls).forEach((payroll) => {
+      if (!payroll.evaluationId) return
+      map.set(payroll.evaluationId, { month: payroll.month, paid: payroll.paid })
+    })
+    return map
+  }, [rewardPayrolls])
+
+  const rewardMonthByEvaluationId = useMemo(() => {
+    const map = new Map<string, string>()
+    evaluations.forEach((evaluation) => {
+      const payrollMonth = rewardPayrollByEvaluationId.get(evaluation.id)?.month
+      const month = payrollMonth
+        || evaluation.rewardMonth
+        || monthOfTimestamp(evaluation.approvedAt)
+        || evaluationRewardMonth(evaluation)
+      if (month) map.set(evaluation.id, month)
+    })
+    return map
+  }, [evaluations, rewardPayrollByEvaluationId])
+
+  const trialPayrollRows = useMemo(() => evaluations
+    .filter((evaluation) => evalStatusOf(evaluation) === 'approved')
+    .map((evaluation) => {
+      const payroll = rewardPayrollByEvaluationId.get(evaluation.id)
+      const configuredAmount = Number(evaluation.rewardAmount)
+      return {
+        evaluation,
+        month: rewardMonthByEvaluationId.get(evaluation.id) || evaluationRewardMonth(evaluation),
+        amount: Number.isFinite(configuredAmount) ? configuredAmount : EVALUATION_REWARD_AMOUNT,
+        paid: payroll?.paid === true,
+      }
+    }), [evaluations, rewardPayrollByEvaluationId, rewardMonthByEvaluationId])
+
+  const payrollMonthOptions = useMemo(() => Array.from(new Set(
+    trialPayrollRows.map((row) => row.month).filter(Boolean),
+  )).sort((a, b) => b.localeCompare(a)), [trialPayrollRows])
+
+  const trialPayrollSummary = useMemo(() => {
+    const rows = payrollMonthFilter
+      ? trialPayrollRows.filter((row) => row.month === payrollMonthFilter)
+      : trialPayrollRows
+    return {
+      count: rows.length,
+      total: rows.reduce((sum, row) => sum + row.amount, 0),
+      paidTotal: rows.filter((row) => row.paid).reduce((sum, row) => sum + row.amount, 0),
+      unpaidTotal: rows.filter((row) => !row.paid).reduce((sum, row) => sum + row.amount, 0),
+    }
+  }, [payrollMonthFilter, trialPayrollRows])
+
   /**
    * Khoản thưởng đang nằm SAI THÁNG.
    *
@@ -621,7 +679,8 @@ export default function AdminEvaluationsPage() {
     const matchSearch = e.studentName.toLowerCase().includes(search.toLowerCase()) ||
       (e.teacherName || '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = statusFilter === 'all' || evalStatusOf(e) === statusFilter
-    return matchSearch && matchStatus
+    const matchMonth = !payrollMonthFilter || rewardMonthByEvaluationId.get(e.id) === payrollMonthFilter
+    return matchSearch && matchStatus && matchMonth
   })
 
   if (loading) {
@@ -734,6 +793,68 @@ export default function AdminEvaluationsPage() {
             </button>
           ))}
         </div>
+        {statusFilter === 'all' && (
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">Bảng lương trial class</p>
+                <h2 className="mt-1 text-base font-black text-slate-900">Tổng tiền tất cả trial class</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-600">
+                  Chỉ tính các phiếu đã duyệt và đã ghi nhận khoản thưởng cho gia sư.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <span>Tháng</span>
+                <select
+                  aria-label="Lọc tháng bảng lương trial class"
+                  value={payrollMonthFilter}
+                  onChange={(event) => setPayrollMonthFilter(event.target.value)}
+                  className="min-h-10 rounded-xl border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="">Tất cả các tháng</option>
+                  {payrollMonthOptions.map((month) => (
+                    <option key={month} value={month}>{formatPayrollMonth(month)}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white bg-white px-3 py-3">
+                <p className="text-[11px] font-bold text-slate-500">Tổng lương</p>
+                <p className="mt-1 text-lg font-black text-emerald-700">
+                  {formatMoney(trialPayrollSummary.total, EVALUATION_REWARD_CURRENCY)}
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">{trialPayrollSummary.count} trial class</p>
+              </div>
+              <div className="rounded-xl border border-white bg-white px-3 py-3">
+                <p className="text-[11px] font-bold text-slate-500">Đã thanh toán</p>
+                <p className="mt-1 text-lg font-black text-slate-800">
+                  {formatMoney(trialPayrollSummary.paidTotal, EVALUATION_REWARD_CURRENCY)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white bg-white px-3 py-3">
+                <p className="text-[11px] font-bold text-slate-500">Chưa thanh toán</p>
+                <p className="mt-1 text-lg font-black text-amber-700">
+                  {formatMoney(trialPayrollSummary.unpaidTotal, EVALUATION_REWARD_CURRENCY)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-emerald-200 pt-3 text-xs font-semibold text-emerald-800">
+              <span>{payrollMonthFilter ? `Đang xem ${formatPayrollMonth(payrollMonthFilter)}` : 'Đang xem toàn bộ các tháng'}</span>
+              {payrollMonthFilter && (
+                <Link
+                  to={`/admin/payroll?month=${payrollMonthFilter}`}
+                  className="inline-flex items-center gap-1 font-black underline decoration-emerald-400 underline-offset-2 hover:text-emerald-950"
+                >
+                  Mở bảng lương tháng này
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
         {statusCounts.pending > 0 && (
           <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
             Có {statusCounts.pending} phiếu chờ duyệt — tổng tiền sẽ cộng nếu duyệt hết:{' '}
