@@ -91,7 +91,7 @@ export function AdminLayout() {
     : visibleGroups.find((group) => group.id === 'students')
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-white">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <AdminSidebar 

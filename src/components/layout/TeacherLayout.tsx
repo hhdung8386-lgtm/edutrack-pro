@@ -264,7 +264,7 @@ export function TeacherLayout() {
     || location.pathname.startsWith('/teacher/contract')
 
   return (
-    <div className="min-h-screen bg-brand-50">
+    <div className="min-h-screen bg-white">
       {/* Desktop sidebar */}
       <aside className={`hidden lg:flex fixed inset-y-0 left-0 z-30 flex-col border-r border-brand-900/15 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 shadow-[6px_0_18px_-12px_rgba(180,120,0,0.55)] transition-[width] duration-200 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
         <div className="flex min-h-0 flex-1 flex-col">

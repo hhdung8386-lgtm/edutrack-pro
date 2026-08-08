@@ -9,10 +9,12 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useLanguageStore } from '@/stores/languageStore'
 import { getCurrentMonth } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
+import { teacherDisplayName } from '@/lib/teacherDisplay'
 
 type RankingRow = {
   teacherId: string
-  name: string
+  displayName: string
+  sortName: string
   code: string
   photoURL?: string
   minutes: number
@@ -72,10 +74,13 @@ export function TeacherRankingPage() {
             const teacherId = lesson.teacherId
             if (!teacherId) return
             const teacher = teachers.get(teacherId)
+            const teacherCode = teacher?.code || lesson.teacherCode || ''
+            const teacherName = teacher?.name || lesson.teacherName || teacherCode || 'Unknown teacher'
             const current = aggregates.get(teacherId) || {
               teacherId,
-              name: teacher?.name || lesson.teacherName || lesson.teacherCode || 'Unknown teacher',
-              code: teacher?.code || lesson.teacherCode || '',
+              displayName: teacherDisplayName(teacherCode, teacherName) || teacherName,
+              sortName: teacherName,
+              code: teacherCode,
               photoURL: teacher?.photoURL,
               minutes: 0,
               lessons: 0,
@@ -86,7 +91,7 @@ export function TeacherRankingPage() {
           })
 
         const ranked = Array.from(aggregates.values())
-          .sort((left, right) => right.minutes - left.minutes || right.lessons - left.lessons || left.name.localeCompare(right.name))
+          .sort((left, right) => right.minutes - left.minutes || right.lessons - left.lessons || left.sortName.localeCompare(right.sortName))
           .slice(0, 10)
         if (active) setRows(ranked)
       } catch (loadError) {
@@ -156,12 +161,14 @@ export function TeacherRankingPage() {
                   <img src={row.photoURL} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white" />
                 ) : (
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-black text-sky-700">
-                    {row.name.trim().charAt(0).toUpperCase() || '?'}
+                    {row.displayName.trim().charAt(0).toUpperCase() || '?'}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-black text-slate-900">{row.name}{row.teacherId === teacherId && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">{lang === 'vi' ? 'Bạn' : 'You'}</span>}</p>
-                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{row.code || row.teacherId} · {row.lessons} {lang === 'vi' ? 'buổi đã duyệt' : 'approved lessons'}</p>
+                  <p className="truncate text-sm font-black text-slate-900">{row.displayName}{row.teacherId === teacherId && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">{lang === 'vi' ? 'Bạn' : 'You'}</span>}</p>
+                  {row.code && row.code.trim() !== row.displayName.trim() && (
+                    <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{row.code}</p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5 text-right">
                   <Clock3 className="h-4 w-4 text-amber-500" />
