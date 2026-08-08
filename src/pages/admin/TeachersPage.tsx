@@ -17,7 +17,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { useAuthStore } from '@/stores/authStore'
-import { teacherCountryLabel } from '@/lib/teacherCountries'
+import { normalizeTeacherCountryCode, teacherCountryLabel } from '@/lib/teacherCountries'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
@@ -74,10 +74,7 @@ const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
   VN: { flag: '🇻🇳', label: 'Việt Nam' },
   PH: { flag: '🇵🇭', label: 'Philippines' },
   US: { flag: '🇺🇸', label: 'Mỹ' },
-  US_EST: { flag: '🇺🇸', label: 'Mỹ (EST)' },
-  US_PST: { flag: '🇺🇸', label: 'Mỹ (PST)' },
   GB: { flag: '🇬🇧', label: 'Anh' },
-  UK: { flag: '🇬🇧', label: 'Anh' },
   AU: { flag: '🇦🇺', label: 'Úc' },
   CA: { flag: '🇨🇦', label: 'Canada' },
   ZA: { flag: '🇿🇦', label: 'Nam Phi' },
@@ -87,7 +84,8 @@ const COUNTRY_INFO: Record<string, { flag: string; label: string }> = {
 }
 
 function CountryCell({ country }: { country?: string }) {
-  const code = (country || '').toUpperCase().trim()
+  const rawCode = (country || '').trim()
+  const code = rawCode ? normalizeTeacherCountryCode(rawCode) : ''
   const info = code ? COUNTRY_INFO[code] || { flag: '', label: teacherCountryLabel(code) } : undefined
   if (!info) return <span className="text-slate-400 text-xs italic">Chưa cập nhật</span>
   return (
@@ -365,7 +363,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   }
 
   const directoryTeachers = teachers.filter(matchesDirectory)
-  const countryOptions = Array.from(new Set(directoryTeachers.map((teacher) => (teacher.country || '').toUpperCase().trim() || 'missing')))
+  const countryOptions = Array.from(new Set(directoryTeachers.map((teacher) => teacher.country ? normalizeTeacherCountryCode(teacher.country) : 'missing')))
     .sort((a, b) => {
       const aLabel = a === 'missing' ? 'Chưa cập nhật' : teacherCountryLabel(a)
       const bLabel = b === 'missing' ? 'Chưa cập nhật' : teacherCountryLabel(b)
@@ -376,7 +374,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
       (t.code || t.releasedNickname || '').toLowerCase().includes(search.toLowerCase())
-    const teacherCountry = (t.country || '').toUpperCase().trim() || 'missing'
+    const teacherCountry = t.country ? normalizeTeacherCountryCode(t.country) : 'missing'
     const matchCountry = countryFilter === 'all' || teacherCountry === countryFilter
     const matchStatus = category === 'resigned' || statusFilter === 'all' || t.status === statusFilter
     const matchBranch = branchFilter === 'all' || t.branchId === branchFilter

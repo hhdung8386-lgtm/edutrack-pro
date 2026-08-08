@@ -13,6 +13,7 @@ import { getVietnamDateISO } from '@/lib/constants'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
+import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -247,7 +248,7 @@ export function BookingSchedulesPage() {
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
   const [attendanceNow, setAttendanceNow] = useState(() => Date.now())
 
-  const teacherOffset = teacher?.timezoneOffset ?? 7
+  const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
   const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
   const weekStart = weekStartOverride || defaultWeekStart
   const setWeekStart = setWeekStartOverride
@@ -301,13 +302,13 @@ export function BookingSchedulesPage() {
   // Update slots state when availability or teacher timezone changes
   useEffect(() => {
     if (!availability) return
-    const offset = teacher?.timezoneOffset ?? 7
+    const offset = teacherOffset
     const weekOverride = availability.weekOverrides?.[weekStartISO]
     setSlots(translateVnSlotsToTeacher(weekOverride?.slots || availability.slots, offset))
   }, [availability, teacher, weekStartISO])
 
   const localBookings = useMemo<TeacherBookingView[]>(() => {
-    const offset = teacher?.timezoneOffset ?? 7
+    const offset = teacherOffset
     return bookingRequests.map((req) => {
       const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
       const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
@@ -324,7 +325,7 @@ export function BookingSchedulesPage() {
         displayDay: localDay || req.requestedDay,
       }
     })
-  }, [bookingRequests, teacher?.timezoneOffset])
+  }, [bookingRequests, teacherOffset])
 
   // Các ca còn lại trong ngày của học viên — chỉ dùng khi học viên VẮNG.
   // Dò trên dữ liệu gốc (giờ VN) để không lệch khi gia sư ở múi giờ khác.
@@ -937,7 +938,7 @@ export function BookingSchedulesPage() {
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
             {t('sched.prev_week')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacher?.timezoneOffset ?? 7))}>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacherOffset))}>
             {t('sched.this_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>

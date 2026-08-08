@@ -8,10 +8,11 @@ import { DayOfWeek, DayAvailability, TimeRange, TeacherAvailability, BookingRequ
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
-import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, Globe } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
-import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
+import { convertVnDateTimeToTeacher, formatUtcOffset, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
+import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 
@@ -85,6 +86,17 @@ function formatShortHeaderDate(date: Date) {
 
 function getWeekDates(weekStart: Date) {
   return DAYS.map((day, index) => ({ day, date: addDays(weekStart, index), iso: formatDateISO(addDays(weekStart, index)) }))
+}
+
+function summarizeSlots(slots: Record<DayOfWeek, DayAvailability>, labels: Record<DayOfWeek, string>) {
+  return DAYS
+    .map((day) => {
+      const ranges = slots[day]?.timeRanges || []
+      return ranges.length > 0
+        ? `${labels[day]} ${ranges.map((range) => `${range.start}–${range.end}`).join(', ')}`
+        : null
+    })
+    .filter((value): value is string => Boolean(value))
 }
 
 function timeToMinutes(time: string) {
@@ -185,7 +197,7 @@ export function AvailabilityPage() {
   const [duration, setDuration] = useState<25 | 50>(25)
 
   const [weekStartOverride, setWeekStartOverride] = useState<Date | null>(null)
-  const teacherOffset = teacher?.timezoneOffset ?? 7
+  const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
   const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
   const weekStart = weekStartOverride || defaultWeekStart
   const setWeekStart = setWeekStartOverride
@@ -193,6 +205,9 @@ export function AvailabilityPage() {
   const availabilityKey = teacherId ? `${teacherId}:${weekStartISO}` : null
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
+  const vietnamPreviewSlots = useMemo(() => translateTeacherSlotsToVn(slots, teacherOffset), [slots, teacherOffset])
+  const localDayLabels = lang === 'vi' ? DAY_LABELS_VI : DAY_LABELS_EN
+  const vietnamPreviewSummary = useMemo(() => summarizeSlots(vietnamPreviewSlots, localDayLabels), [localDayLabels, vietnamPreviewSlots])
 
   // Fetch profile and availability together so timezone conversion is based on one
   // resolved snapshot. The old two-effect flow rendered once with UTC+7, then put
@@ -232,7 +247,7 @@ export function AvailabilityPage() {
           const weekOverride = data.weekOverrides?.[weekStartISO]
           const loadedSlots = weekOverride?.slots || data.slots
           if (loadedSlots) {
-            const offsetVal = resolvedTeacher?.timezoneOffset ?? 7
+            const offsetVal = resolvedTeacher?.timezoneOffset ?? getTeacherTimezoneOffset(resolvedTeacher?.country)
             const translated = translateVnSlotsToTeacher(loadedSlots, offsetVal)
             setSlots(translated)
           } else {
@@ -313,7 +328,7 @@ export function AvailabilityPage() {
   }, [teacherId, bookingsLoadAttempt])
 
   const localBookings = useMemo(() => {
-    const offset = teacher?.timezoneOffset ?? 7
+    const offset = teacherOffset
     if (offset === 7) return bookingRequests
     
     return bookingRequests.map((req) => {
@@ -330,7 +345,7 @@ export function AvailabilityPage() {
         requestedDay: localDay,
       }
     })
-  }, [bookingRequests, teacher?.timezoneOffset])
+  }, [bookingRequests, teacherOffset])
 
   const handleApplyFilters = () => {
     setTimeWindow(tempTimeWindow)
@@ -386,7 +401,7 @@ export function AvailabilityPage() {
     if (!snap.exists()) return
 
     const data = { id: snap.id, ...snap.data() } as TeacherAvailability
-    const offset = teacher?.timezoneOffset ?? 7
+    const offset = teacherOffset
     const weekOverride = data.weekOverrides?.[weekStartISO]
     const loadedSlots = weekOverride?.slots || data.slots || emptySlots()
     setAvailability(data)
@@ -400,7 +415,7 @@ export function AvailabilityPage() {
     if (!teacherId || !availability) return
     setSavingMode('week')
     try {
-      const offset = teacher?.timezoneOffset ?? 7
+      const offset = teacherOffset
       const vnSlots = translateTeacherSlotsToVn(slots, offset)
 
       await updateDoc(doc(db, 'teacherAvailability', teacherId), {
@@ -428,7 +443,7 @@ export function AvailabilityPage() {
     if (!teacherId) return
     setSavingMode('future')
     try {
-      const offset = teacher?.timezoneOffset ?? 7
+      const offset = teacherOffset
       const vnSlots = translateTeacherSlotsToVn(slots, offset)
 
       const availabilityRef = doc(db, 'teacherAvailability', teacherId as string)
@@ -616,7 +631,7 @@ export function AvailabilityPage() {
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
             {t('avail.prev_week')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacher?.timezoneOffset ?? 7))}>
+          <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), teacherOffset))}>
             {t('avail.current_week')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
@@ -637,6 +652,32 @@ export function AvailabilityPage() {
               ? 'Ca đã xếp lớp luôn được bảo vệ. Hãy dùng “Lưu riêng tuần này” khi chỉ bận tạm thời để không ảnh hưởng lịch các tuần khác.'
               : 'Booked slots are always protected. Use “Save this week only” for temporary changes so other weeks remain unchanged.'}
           </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <Globe className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-black text-indigo-950">
+              {lang === 'vi' ? `Đang chỉnh theo giờ địa phương gia sư (${formatUtcOffset(teacherOffset)})` : `Editing in the teacher's local time (${formatUtcOffset(teacherOffset)})`}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-indigo-800">
+              {lang === 'vi' ? 'Khi lưu, hệ thống tự quy đổi về giờ Việt Nam để admin, phụ huynh và điểm danh dùng cùng một mốc.' : 'Saving converts the schedule to Vietnam time so admin, parents and attendance use one canonical timeline.'}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-100">
+                {lang === 'vi' ? 'Preview giờ Việt Nam' : 'Vietnam-time preview'}
+              </span>
+              {vietnamPreviewSummary.length > 0 ? vietnamPreviewSummary.map((item) => (
+                <span key={item} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-indigo-100">{item}</span>
+              )) : (
+                <span className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-indigo-100">
+                  {lang === 'vi' ? 'Chưa mở ca' : 'No open slots'}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

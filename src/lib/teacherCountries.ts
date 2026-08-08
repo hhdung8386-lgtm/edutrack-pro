@@ -42,19 +42,32 @@ const LEGACY_COUNTRY_OPTIONS: TeacherCountryOption[] = [
 
 export const ALL_TEACHER_COUNTRIES = [...TEACHER_COUNTRY_OPTIONS, ...LEGACY_COUNTRY_OPTIONS]
 
+// These are the only values exposed to create/edit forms. The legacy aliases
+// below remain readable for old teacher documents, but must never be offered
+// as a second choice in the UI.
 export const TEACHER_COUNTRY_SELECT_OPTIONS: TeacherCountryOption[] = [
   ...TEACHER_COUNTRY_OPTIONS,
   ...LEGACY_COUNTRY_OPTIONS,
-  { code: 'US_EST', nameVi: 'Hoa Kỳ (EST)', nameEn: 'United States (EST)', group: 'legacy', flagCode: 'us', timezoneId: 'America/New_York', timezoneLabel: 'EST' },
-  { code: 'US_PST', nameVi: 'Hoa Kỳ (PST)', nameEn: 'United States (PST)', group: 'legacy', flagCode: 'us', timezoneId: 'America/Los_Angeles', timezoneLabel: 'PST' },
-  { code: 'UK', nameVi: 'Vương quốc Anh (mã cũ)', nameEn: 'United Kingdom (legacy)', group: 'legacy', flagCode: 'gb', timezoneId: 'Europe/London', timezoneLabel: 'GMT+0' },
 ]
+
+const TEACHER_TIMEZONE_OFFSETS: Record<string, number> = {
+  VN: 7, PH: 8, GB: 0, US: -5, CA: -5, ZA: 2, AU: 10, NZ: 12, IE: 0,
+  KE: 3, NG: 1, GH: 0, UG: 3, IN: 5.5, PK: 5, BD: 6, LK: 5.5,
+  MM: 6.5, MY: 8, ID: 7, JP: 9, KR: 9, SG: 8, TH: 7,
+  // Read-only compatibility values from the old country selector.
+  UK: 0, US_EST: -5, US_PST: -8,
+}
 
 export function normalizeTeacherCountryCode(country?: string): string {
   const code = String(country || 'VN').trim().toUpperCase()
   if (code === 'UK') return 'GB'
   if (code === 'US_EST' || code === 'US_PST') return 'US'
   return code
+}
+
+export function getTeacherTimezoneOffset(country?: string): number {
+  const rawCode = String(country || 'VN').trim().toUpperCase()
+  return TEACHER_TIMEZONE_OFFSETS[rawCode] ?? TEACHER_TIMEZONE_OFFSETS[normalizeTeacherCountryCode(rawCode)] ?? 7
 }
 
 export function getTeacherCountryOption(country?: string): TeacherCountryOption | undefined {

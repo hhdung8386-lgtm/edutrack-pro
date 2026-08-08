@@ -22,7 +22,7 @@ import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
 import { downloadImage } from '@/lib/downloadImage'
-import { TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
+import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 
 interface Branch {
   id: string
@@ -320,36 +320,8 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       return
     }
 
-    const countryMap: Record<string, number> = {
-      VN: 7,
-      PH: 8,
-      GB: 0,
-      UK: 0,
-      US: -5,
-      CA: -5,
-      ZA: 2,
-      AU: 10,
-      NZ: 12,
-      IE: 0,
-      KE: 3,
-      NG: 1,
-      GH: 0,
-      UG: 3,
-      IN: 5.5,
-      PK: 5,
-      BD: 6,
-      LK: 5.5,
-      MM: 6.5,
-      MY: 8,
-      ID: 7,
-      JP: 9,
-      KR: 9,
-      SG: 8,
-      TH: 7,
-      US_EST: -5,
-      US_PST: -8,
-    }
-    const timezoneOffset = countryMap[data.country || 'VN'] ?? 7
+    const normalizedCountry = normalizeTeacherCountryCode(data.country || 'VN')
+    const timezoneOffset = getTeacherTimezoneOffset(data.country || 'VN')
     const normalizedStudentPoints = normalizePointsPer25Minutes(studentPointsPer25)
 
     try {
@@ -400,7 +372,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           level: data.level,
           pointsPer25Minutes: normalizedStudentPoints,
           bio: data.bio || '',
-          country: data.country || 'VN',
+          country: normalizedCountry,
           timezoneOffset,
           gender: gender,
           subjectIds: selectedSubjects,
@@ -677,7 +649,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
             level: data.level,
             pointsPer25Minutes: normalizedStudentPoints,
             bio: data.bio || '',
-            country: data.country || 'VN',
+            country: normalizedCountry,
             timezoneOffset,
             gender: gender,
             subjectIds: selectedSubjects,
@@ -942,7 +914,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           <label className="block text-sm font-medium text-slate-600 mb-1.5">Quốc gia & Múi giờ</label>
             <select
               name="country"
-              defaultValue={teacher?.country || 'VN'}
+              defaultValue={normalizeTeacherCountryCode(teacher?.country || 'VN')}
               className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-4 py-2.5 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <optgroup label="Native English Teachers">
@@ -955,7 +927,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
                   <option key={option.code} value={option.code}>{option.nameEn} ({option.timezoneLabel})</option>
                 ))}
               </optgroup>
-              <optgroup label="Legacy options">
+              <optgroup label="Other countries">
                 {TEACHER_COUNTRY_SELECT_OPTIONS.filter((option) => option.group === 'legacy').map((option) => (
                   <option key={option.code} value={option.code}>{option.nameVi} ({option.timezoneLabel})</option>
                 ))}

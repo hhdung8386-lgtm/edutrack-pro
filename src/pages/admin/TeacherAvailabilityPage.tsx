@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc, where } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, Save, Search } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, Globe, Save, Search } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
+import { formatUtcOffset, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
+import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS_EN: Record<DayOfWeek, string> = {
@@ -55,37 +57,48 @@ function cloneSlots(slots?: Record<DayOfWeek, DayAvailability>) {
 }
 
 function formatDateISO(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 function getMonday(date: Date) {
   const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  const day = copy.getDay()
+  copy.setUTCHours(0, 0, 0, 0)
+  const day = copy.getUTCDay()
   const diff = day === 0 ? -6 : 1 - day
-  copy.setDate(copy.getDate() + diff)
+  copy.setUTCDate(copy.getUTCDate() + diff)
   return copy
 }
 
 function addDays(date: Date, days: number) {
   const copy = new Date(date)
-  copy.setDate(copy.getDate() + days)
+  copy.setUTCDate(copy.getUTCDate() + days)
   return copy
 }
 
 function formatShortDate(date: Date) {
-  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
 function formatShortHeaderDate(date: Date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
 }
 
 function getWeekDates(weekStart: Date) {
   return DAYS.map((day, index) => ({ day, date: addDays(weekStart, index), iso: formatDateISO(addDays(weekStart, index)) }))
+}
+
+function summarizeSlots(slots: Record<DayOfWeek, DayAvailability>) {
+  return DAYS
+    .map((day) => {
+      const ranges = slots[day]?.timeRanges || []
+      return ranges.length > 0
+        ? `${DAY_LABELS_EN[day]} ${ranges.map((range) => `${range.start}–${range.end}`).join(', ')}`
+        : null
+    })
+    .filter((value): value is string => Boolean(value))
 }
 
 function timeToMinutes(time: string) {
@@ -166,7 +179,7 @@ export function TeacherAvailabilityPage() {
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [note, setNote] = useState('')
   const [search, setSearch] = useState('')
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+  const [weekStart, setWeekStart] = useState(() => getMondayAtOffset(new Date(), 7))
 
   // Temporary states for filters
   const [tempTimeWindow, setTempTimeWindow] = useState<string>('24h')
@@ -188,6 +201,9 @@ export function TeacherAvailabilityPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
+  const teacherLocalOffset = selectedTeacher?.timezoneOffset ?? getTeacherTimezoneOffset(selectedTeacher?.country)
+  const teacherLocalPreviewSlots = useMemo(() => translateVnSlotsToTeacher(slots, teacherLocalOffset), [slots, teacherLocalOffset])
+  const teacherLocalPreviewSummary = useMemo(() => summarizeSlots(teacherLocalPreviewSlots), [teacherLocalPreviewSlots])
 
   useEffect(() => {
     async function loadTeachersAndAvailability() {
@@ -636,12 +652,36 @@ export function TeacherAvailabilityPage() {
               <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
                 Tuần trước
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMondayAtOffset(new Date(), 7))}>
                 Tuần này
               </Button>
               <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
                 Tuần sau
               </Button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <Globe className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+              <div className="min-w-0">
+                <p className="text-sm font-black text-indigo-950">
+                  Lịch đang cấu hình theo giờ Việt Nam (UTC+07:00)
+                </p>
+                <p className="mt-1 text-xs leading-5 text-indigo-800">
+                  Khi gia sư đăng nhập, cùng mốc này sẽ tự đổi sang giờ địa phương đã cài đặt trong hồ sơ gia sư.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-md bg-white px-2 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-100">
+                    Preview {selectedTeacher?.name || 'gia sư'} · {formatUtcOffset(teacherLocalOffset)}
+                  </span>
+                  {teacherLocalPreviewSummary.length > 0 ? teacherLocalPreviewSummary.map((item) => (
+                    <span key={item} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-indigo-100">{item}</span>
+                  )) : (
+                    <span className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-indigo-100">Chưa mở ca</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 

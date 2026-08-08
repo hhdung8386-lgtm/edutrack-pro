@@ -3,12 +3,21 @@ import assert from 'node:assert/strict'
 import {
   convertVnDateTimeToTeacher,
   DAYS_ORDER,
+  formatUtcOffset,
   getDateISOAtOffset,
   getDayOfWeekFromDateISO,
   getMondayAtOffset,
   translateTeacherSlotsToVn,
   translateVnSlotsToTeacher,
 } from '../src/lib/timezoneUtils.ts'
+import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '../src/lib/teacherCountries.ts'
+
+assert.equal(formatUtcOffset(7), 'UTC+07', 'Vietnam offset label')
+assert.equal(formatUtcOffset(5.5), 'UTC+05:30', 'fractional offset label')
+assert.equal(normalizeTeacherCountryCode('US_EST'), 'US', 'legacy US country is normalized for display')
+assert.equal(getTeacherTimezoneOffset('PH'), 8, 'Philippines country fallback')
+assert.equal(getTeacherTimezoneOffset('US_PST'), -8, 'legacy US PST offset remains readable')
+assert.equal(TEACHER_COUNTRY_SELECT_OPTIONS.some((option) => ['US_EST', 'US_PST', 'UK'].includes(option.code)), false, 'legacy aliases are hidden from country selector')
 
 function emptySlots() {
   return Object.fromEntries(

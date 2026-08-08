@@ -2,6 +2,15 @@ import type { DayAvailability, DayOfWeek, TimeRange } from '@/types'
 
 export const DAYS_ORDER: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
+export function formatUtcOffset(offset: number): string {
+  const safeOffset = normalizedTeacherOffset(offset)
+  const sign = safeOffset >= 0 ? '+' : '-'
+  const absolute = Math.abs(safeOffset)
+  const hours = Math.floor(absolute)
+  const minutes = Math.round((absolute - hours) * 60)
+  return `UTC${sign}${String(hours).padStart(2, '0')}${minutes ? `:${String(minutes).padStart(2, '0')}` : ''}`
+}
+
 const MINUTES_PER_DAY = 24 * 60
 const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY
 const MAX_UI_CLOCK_HOUR = 25

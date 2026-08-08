@@ -16,7 +16,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
-import { TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
+import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 
 type BilingualOption = {
   value: string
@@ -437,45 +437,17 @@ export function ProfilePage() {
       return
     }
     
-    const countryMap: Record<string, number> = {
-      VN: 7,
-      PH: 8,
-      GB: 0,
-      UK: 0,
-      US: -5,
-      CA: -5,
-      AU: 10,
-      NZ: 12,
-      IE: 0,
-      ZA: 2,
-      KE: 3,
-      NG: 1,
-      GH: 0,
-      UG: 3,
-      IN: 5.5,
-      PK: 5,
-      BD: 6,
-      LK: 5.5,
-      MM: 6.5,
-      MY: 8,
-      ID: 7,
-      JP: 9,
-      KR: 9,
-      SG: 8,
-      TH: 7,
-      US_EST: -5,
-      US_PST: -8,
-    }
-    const offset = countryMap[countryCode] ?? 7
+    const normalizedCountry = normalizeTeacherCountryCode(countryCode)
+    const offset = getTeacherTimezoneOffset(countryCode)
 
     setUpdatingTimezone(true)
     try {
       await updateDoc(doc(db, 'teachers', teacherId), {
-        country: countryCode,
+        country: normalizedCountry,
         timezoneOffset: offset,
       })
       
-      setTeacher(prev => prev ? { ...prev, country: countryCode, timezoneOffset: offset } : null)
+      setTeacher(prev => prev ? { ...prev, country: normalizedCountry, timezoneOffset: offset } : null)
       toast.success('Đã cập nhật quốc gia & múi giờ thành công!')
     } catch (err) {
       console.error(err)
@@ -938,7 +910,7 @@ export function ProfilePage() {
           <div className="space-y-3">
             <label className="block text-xs font-semibold text-slate-500 uppercase">Chọn quốc gia của bạn / Select your country</label>
             <select
-              value={teacher.country || 'VN'}
+              value={normalizeTeacherCountryCode(teacher.country || 'VN')}
               onChange={handleTimezoneChange}
               disabled={updatingTimezone}
               className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
@@ -953,7 +925,7 @@ export function ProfilePage() {
                   <option key={option.code} value={option.code}>{option.nameEn} ({option.timezoneLabel})</option>
                 ))}
               </optgroup>
-              <optgroup label="Legacy options">
+              <optgroup label="Other countries">
                 {TEACHER_COUNTRY_SELECT_OPTIONS.filter((option) => option.group === 'legacy').map((option) => (
                   <option key={option.code} value={option.code}>{option.nameVi} ({option.timezoneLabel})</option>
                 ))}
