@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, ListChecks } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -57,7 +57,7 @@ export function findLaterSameDayBookings(
   return bookings
     .filter((booking) => {
       if (booking.id === current.id) return false
-      if (booking.studentId !== current.studentId) return false
+      if (!isSameAttendanceClass(booking, current)) return false
       if (booking.status !== 'confirmed' || booking.lessonId) return false
       if ((booking.requestedDate || '') !== current.requestedDate) return false
       if (!booking.requestedStart) return false
@@ -196,6 +196,13 @@ interface ImageUpload {
   uploading: boolean
 }
 
+type TeacherBookingView = BookingRequest & {
+  displayDate: string
+  displayStart: string
+  displayEnd: string
+  displayDay: DayOfWeek
+}
+
 export function BookingSchedulesPage() {
   const navigate = useNavigate()
   const { teacherId } = useAuthStore()
@@ -215,7 +222,8 @@ export function BookingSchedulesPage() {
   // Modals
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
-  const [selectedBooking, setSelectedBooking] = useState<BookingRequest | null>(null)
+  const [showBatchPickerModal, setShowBatchPickerModal] = useState(false)
+  const [selectedBooking, setSelectedBooking] = useState<TeacherBookingView | null>(null)
   const [selectedBatchBookingIds, setSelectedBatchBookingIds] = useState<string[]>([])
 
   // Attendance Form States
@@ -275,10 +283,8 @@ export function BookingSchedulesPage() {
     setSlots(translateVnSlotsToTeacher(weekOverride?.slots || availability.slots, offset))
   }, [availability, teacher, weekStartISO])
 
-  const localBookings = useMemo(() => {
+  const localBookings = useMemo<TeacherBookingView[]>(() => {
     const offset = teacher?.timezoneOffset ?? 7
-    if (offset === 7) return bookingRequests
-    
     return bookingRequests.map((req) => {
       const localStart = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedStart || '', offset)
       const localEnd = convertVnDateTimeToTeacher(req.requestedDate || '', req.requestedEnd || '', offset)
@@ -291,13 +297,12 @@ export function BookingSchedulesPage() {
 
       return {
         ...req,
-        originalVnDate: req.requestedDate,
-        originalVnStart: req.requestedStart,
-        originalVnEnd: req.requestedEnd,
-        requestedDate: localStart.dateISO,
-        requestedStart: localStart.timeStr,
-        requestedEnd: localEnd.timeStr,
-        requestedDay: localDay,
+        // Keep requestedDate/requestedStart/requestedEnd canonical (Vietnam time)
+        // for writes and business rules. Only the display fields are localized.
+        displayDate: localStart.dateISO || req.requestedDate || '',
+        displayStart: localStart.timeStr || req.requestedStart || '',
+        displayEnd: localEnd.timeStr || req.requestedEnd || '',
+        displayDay: localDay || req.requestedDay,
       }
     })
   }, [bookingRequests, teacher?.timezoneOffset])
@@ -467,12 +472,18 @@ export function BookingSchedulesPage() {
     }
     return localBookings.find((req) => {
       if (req.status !== 'confirmed' && req.status !== 'pending') return false
-      return bookingIntervalsOverlap(req, cellInterval)
+      return bookingIntervalsOverlap({
+        requestedDate: req.displayDate,
+        requestedStart: req.displayStart,
+        requestedEnd: req.displayEnd,
+        requestedMinutes: req.requestedMinutes,
+      }, cellInterval)
     })
   }
 
   const handleCellClick = (booking: BookingRequest) => {
-    setSelectedBooking(booking)
+    const displayBooking = localBookings.find((item) => item.id === booking.id) || booking
+    setSelectedBooking(displayBooking as TeacherBookingView)
     setSelectedBatchBookingIds([booking.id])
     setShowDetailModal(true)
     
@@ -487,6 +498,45 @@ export function BookingSchedulesPage() {
     }).catch((err) => {
       console.error('Error updating student on click:', err)
     })
+  }
+
+  const openBatchAttendancePicker = () => {
+    setSelectedBooking(null)
+    setSelectedBatchBookingIds([])
+    setShowDetailModal(false)
+    setShowBatchPickerModal(true)
+  }
+
+  const continueBatchAttendance = () => {
+    if (selectedBatchBookingIds.length < 2) {
+      toast.warning(lang === 'vi' ? 'Vui lòng chọn ít nhất 2 ca để điểm danh nhiều ca.' : 'Select at least 2 sessions for batch attendance.')
+      return
+    }
+
+    const selected = selectedBatchBookingIds
+      .map((id) => confirmedBookings.find((booking) => booking.id === id))
+      .filter((booking): booking is BookingRequest => Boolean(booking))
+      .sort((left, right) => (left.requestedStart || '').localeCompare(right.requestedStart || ''))
+    const primary = selected[0]
+    const valid = primary
+      && selected.length === selectedBatchBookingIds.length
+      && selected.length <= 4
+      && selected.every((booking) => isSameAttendanceClass(booking, primary))
+      && selected.slice(1).every((booking, index) => areConsecutiveBookings(selected[index], booking))
+
+    if (!valid) {
+      toast.warning(lang === 'vi'
+        ? 'Chỉ chọn các ca chưa điểm danh, cùng lớp, cùng môn, cùng ngày và liền nhau.'
+        : 'Choose only adjacent, unsubmitted sessions from the same class, subject and date.')
+      return
+    }
+
+    const displayPrimary = localBookings.find((booking) => booking.id === primary.id) || primary
+    setSelectedBooking(displayPrimary as TeacherBookingView)
+    setAttendanceStatus('present')
+    setBook('')
+    setShowBatchPickerModal(false)
+    setShowAttendanceModal(true)
   }
 
   // Handle Attendance status triggers (prefilling books/minutes)
@@ -830,19 +880,33 @@ export function BookingSchedulesPage() {
 
       {/* Filter and navigation controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="relative">
-          <select
-            value={timeWindow}
-            onChange={(e) => setTimeWindow(e.target.value)}
-            className="h-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold outline-none focus:border-sky-400 min-w-[140px] appearance-none pr-8 cursor-pointer"
+        <div className="flex flex-col items-start gap-2">
+          <div className="relative">
+            <select
+              value={timeWindow}
+              onChange={(e) => setTimeWindow(e.target.value)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold outline-none focus:border-sky-400 min-w-[140px] appearance-none pr-8 cursor-pointer"
+            >
+              {TIME_WINDOWS.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {t('sched.shift')}: {item.label}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">▼</div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={openBatchAttendancePicker}
+            disabled={pendingAttendanceBookings.length < 2}
+            className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+            title={lang === 'vi' ? 'Chọn nhiều ca liền nhau để điểm danh cùng lúc' : 'Select adjacent sessions for batch attendance'}
           >
-            {TIME_WINDOWS.map((item) => (
-              <option key={item.key} value={item.key}>
-                {t('sched.shift')}: {item.label}
-              </option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">▼</div>
+            <ListChecks className="h-4 w-4" />
+            {lang === 'vi' ? 'Điểm danh nhiều ca' : 'Batch attendance'}
+          </Button>
         </div>
 
         {/* Quick week controls */}
@@ -944,6 +1008,81 @@ export function BookingSchedulesPage() {
         )}
       </div>
 
+      {/* Batch attendance picker */}
+      {showBatchPickerModal && (
+        <Modal
+          open
+          onClose={() => setShowBatchPickerModal(false)}
+          title={lang === 'vi' ? 'Điểm danh nhiều ca' : 'Batch attendance'}
+          size="lg"
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-500">
+                {lang === 'vi' ? `Đã chọn ${selectedBatchBookingIds.length}/4 ca` : `${selectedBatchBookingIds.length}/4 sessions selected`}
+              </span>
+              <div className="flex gap-3">
+                <Button variant="ghost" onClick={() => setShowBatchPickerModal(false)}>{t('sched.cancel')}</Button>
+                <Button variant="primary" onClick={continueBatchAttendance} disabled={selectedBatchBookingIds.length < 2}>
+                  {lang === 'vi' ? 'Tiếp tục điểm danh' : 'Continue'}
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-sm leading-6 text-indigo-900">
+              {lang === 'vi'
+                ? 'Chọn các ca chưa điểm danh của cùng lớp, cùng môn, cùng ngày và liền nhau. Mỗi ca vẫn tạo một báo cáo riêng.'
+                : 'Select unsubmitted sessions from the same class, subject, date and adjacent time range. Each session still gets its own report.'}
+            </div>
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+              {pendingAttendanceBookings.map((booking) => {
+                const displayBooking = localBookings.find((item) => item.id === booking.id)
+                const checked = selectedBatchBookingIds.includes(booking.id)
+                const anchor = selectedBatchBookingIds[0]
+                  ? confirmedBookings.find((item) => item.id === selectedBatchBookingIds[0])
+                  : null
+                const sameClass = !anchor || isSameAttendanceClass(anchor, booking)
+                return (
+                  <label
+                    key={booking.id}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition ${
+                      checked ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200'
+                    } ${!sameClass ? 'cursor-not-allowed opacity-45' : 'cursor-pointer'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!sameClass || (!checked && selectedBatchBookingIds.length >= 4)}
+                      onChange={(event) => {
+                        setSelectedBatchBookingIds((current) => {
+                          if (event.target.checked) return current.includes(booking.id) ? current : [...current, booking.id]
+                          return current.filter((id) => id !== booking.id)
+                        })
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold">
+                        {displayBooking?.displayDate || booking.requestedDate} · {displayBooking?.displayStart || booking.requestedStart} - {displayBooking?.displayEnd || booking.requestedEnd}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                        {booking.studentCode} · {booking.subjectName || (lang === 'vi' ? 'Chưa có môn' : 'No subject')} · {booking.requestedMinutes} {t('attendance.minutes')}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+              {pendingAttendanceBookings.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                  {lang === 'vi' ? 'Hiện không có ca đủ điều kiện để điểm danh.' : 'No eligible sessions are available for batch attendance.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* MODAL 1: Lesson Detail Modal */}
       {showDetailModal && selectedBooking && (
         <Modal
@@ -1025,10 +1164,10 @@ export function BookingSchedulesPage() {
               <p className="text-sm font-bold text-slate-800">
                 {lang === 'vi' ? 'Thứ ' : ''}
                 {lang === 'vi'
-                  ? (selectedBooking.requestedDay === 'sun' ? 'Nhật' : selectedBooking.requestedDay === 'mon' ? '2' : selectedBooking.requestedDay === 'tue' ? '3' : selectedBooking.requestedDay === 'wed' ? '4' : selectedBooking.requestedDay === 'thu' ? '5' : selectedBooking.requestedDay === 'fri' ? '6' : '7')
-                  : (selectedBooking.requestedDay === 'sun' ? 'Sunday' : selectedBooking.requestedDay === 'mon' ? 'Monday' : selectedBooking.requestedDay === 'tue' ? 'Tuesday' : selectedBooking.requestedDay === 'wed' ? 'Wednesday' : selectedBooking.requestedDay === 'thu' ? 'Thursday' : selectedBooking.requestedDay === 'fri' ? 'Friday' : 'Saturday')
+                  ? (selectedBooking.displayDay === 'sun' ? 'Nhật' : selectedBooking.displayDay === 'mon' ? '2' : selectedBooking.displayDay === 'tue' ? '3' : selectedBooking.displayDay === 'wed' ? '4' : selectedBooking.displayDay === 'thu' ? '5' : selectedBooking.displayDay === 'fri' ? '6' : '7')
+                  : (selectedBooking.displayDay === 'sun' ? 'Sunday' : selectedBooking.displayDay === 'mon' ? 'Monday' : selectedBooking.displayDay === 'tue' ? 'Tuesday' : selectedBooking.displayDay === 'wed' ? 'Wednesday' : selectedBooking.displayDay === 'thu' ? 'Thursday' : selectedBooking.displayDay === 'fri' ? 'Friday' : 'Saturday')
                 }
-                {` (${selectedBooking.requestedDate})`} · {lang === 'vi' ? 'Từ' : 'From'} {selectedBooking.requestedStart} {lang === 'vi' ? 'đến' : 'to'} {selectedBooking.requestedEnd} ({selectedBooking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})
+                {` (${selectedBooking.displayDate})`} · {lang === 'vi' ? 'Từ' : 'From'} {selectedBooking.displayStart} {lang === 'vi' ? 'đến' : 'to'} {selectedBooking.displayEnd} ({selectedBooking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})
               </p>
             </div>
 
@@ -1196,7 +1335,7 @@ export function BookingSchedulesPage() {
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {batchBookingCandidates.map((candidate) => {
-                    const displayBooking = localBookings.find((booking) => booking.id === candidate.id) || candidate
+                    const displayBooking = localBookings.find((booking) => booking.id === candidate.id)
                     const checked = selectedBatchBookingIds.includes(candidate.id)
                     const isCurrent = candidate.id === selectedBooking.id
                     return (
@@ -1217,7 +1356,7 @@ export function BookingSchedulesPage() {
                           className="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60"
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block">{displayBooking.requestedStart} – {displayBooking.requestedEnd}</span>
+                          <span className="block">{displayBooking?.displayStart || candidate.requestedStart} – {displayBooking?.displayEnd || candidate.requestedEnd}</span>
                           <span className="text-[11px] font-medium text-slate-500">{candidate.requestedMinutes} {t('attendance.minutes')}{isCurrent ? (lang === 'vi' ? ' · đang chọn' : ' · current') : ''}</span>
                         </span>
                       </label>
@@ -1350,14 +1489,18 @@ export function BookingSchedulesPage() {
                   <ul className="mt-1 space-y-0.5 font-semibold">
                     {absenceFollowUpBookings.map((booking) => (
                       <li key={booking.id}>
-                        · {booking.requestedStart}–{booking.requestedEnd} ({booking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})
+                        · {(localBookings.find((item) => item.id === booking.id)?.displayStart || booking.requestedStart)}–{(localBookings.find((item) => item.id === booking.id)?.displayEnd || booking.requestedEnd)} ({booking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})
                       </li>
                     ))}
                   </ul>
                   <p className="mt-1 font-semibold text-amber-700">
-                    {lang === 'vi'
-                      ? 'Cả ngày chỉ tính tiền 1 lần 25 phút — các ca sau ghi 0 phút nên không cộng thêm lương.'
-                      : 'Paid once for 25 minutes for the whole day — the later slots are logged as 0 minutes.'}
+                    {attendanceStatus === 'without_permission'
+                      ? (lang === 'vi'
+                        ? 'Vắng không phép: chỉ tính lương 1 lần 25 phút — các ca sau ghi 0 phút nên không cộng thêm lương.'
+                        : 'Unexcused absence: pay only the first 25 minutes — later slots are logged as 0 minutes.')
+                      : (lang === 'vi'
+                        ? 'Vắng có phép: các ca sau được ghi vắng theo và không tính lương.'
+                        : 'Excused absence: later slots are marked absent too and no minutes are paid.')}
                   </p>
                 </div>
               </div>

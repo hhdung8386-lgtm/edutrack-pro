@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { Suspense, useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole, Trophy, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { doc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -27,6 +27,11 @@ type TeacherNavItem = {
   locked?: boolean
 }
 
+type TeacherNavGroup = {
+  title: { vi: string; en: string }
+  items: TeacherNavItem[]
+}
+
 export function TeacherLayout() {
   const { user, teacherId } = useAuthStore()
   const { lang, setLang, t } = useLanguageStore()
@@ -38,30 +43,66 @@ export function TeacherLayout() {
   const [profileMissingFields, setProfileMissingFields] = useState<(keyof Teacher)[]>([])
   const [showProfileCompletionModal, setShowProfileCompletionModal] = useState(false)
   const [pendingBookingCount, setPendingBookingCount] = useState(0)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('teacher_sidebar_collapsed') === 'true'
+  })
   const { enabled: teacherAttendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceFeature()
   
   // Real-time clock and timezone states
   const [timezoneOffset, setTimezoneOffset] = useState<number>(7)
   const [currentTime, setCurrentTime] = useState<Date>(new Date())
 
-  // shortLabel: nhãn rút gọn cho bottom nav mobile — nhãn dài ("Lịch dạy của tôi")
-  // bị xuống 2 dòng làm lệch cả thanh điều hướng
-  const navItems: TeacherNavItem[] = [
+  const navGroups: TeacherNavGroup[] = [
     {
-      to: '/teacher/attendance',
-      icon: !loadingAttendanceFeature && !teacherAttendanceEnabled ? LockKeyhole : PenLine,
-      labelKey: 'nav.attendance',
-      shortLabel: { vi: 'Điểm danh', en: 'Attendance' },
-      locked: !loadingAttendanceFeature && !teacherAttendanceEnabled,
+      title: { vi: 'Xếp hạng gia sư', en: 'Teacher ranking' },
+      items: [
+        { to: '/teacher/ranking', icon: Trophy, labelKey: 'nav.ranking', shortLabel: { vi: 'Xếp hạng', en: 'Ranking' } },
+      ],
     },
-    { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability', shortLabel: { vi: 'Lịch rảnh', en: 'Availability' } },
-    { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Lịch dạy', en: 'Classes' } },
-    { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Yêu cầu', en: 'Requests' }, badge: pendingBookingCount },
-    { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá', en: 'Reviews' } },
-    { to: '/teacher/history', icon: History, labelKey: 'nav.history', shortLabel: { vi: 'Lịch sử', en: 'History' } },
-    { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract', shortLabel: { vi: 'Hợp đồng', en: 'Contract' } },
-    { to: '/teacher/profile', icon: User, labelKey: 'nav.profile', shortLabel: { vi: 'Hồ sơ', en: 'Profile' } },
+    {
+      title: { vi: 'Lịch dạy', en: 'Teaching schedule' },
+      items: [
+        { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Thời khóa biểu', en: 'Schedule' } },
+        { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability', shortLabel: { vi: 'Lịch rảnh', en: 'Availability' } },
+      ],
+    },
+    {
+      title: { vi: 'Lớp học', en: 'Classes' },
+      items: [
+        { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Nhận lớp', en: 'Find classes' }, badge: pendingBookingCount },
+        { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá thử', en: 'Trial reviews' } },
+        { to: '/teacher/history', icon: History, labelKey: 'nav.history', shortLabel: { vi: 'Lịch sử buổi dạy', en: 'Lesson history' } },
+      ],
+    },
+    {
+      title: { vi: 'Điểm danh', en: 'Attendance' },
+      items: [
+        {
+          to: '/teacher/attendance',
+          icon: !loadingAttendanceFeature && !teacherAttendanceEnabled ? LockKeyhole : PenLine,
+          labelKey: 'nav.makeup_attendance',
+          shortLabel: { vi: 'Điểm danh bù', en: 'Make-up attendance' },
+          locked: !loadingAttendanceFeature && !teacherAttendanceEnabled,
+        },
+      ],
+    },
+    {
+      title: { vi: 'Tài khoản', en: 'Account' },
+      items: [
+        { to: '/teacher/profile', icon: User, labelKey: 'nav.profile', shortLabel: { vi: 'Hồ sơ cá nhân', en: 'Personal profile' } },
+        { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract', shortLabel: { vi: 'Hợp đồng', en: 'Contract' } },
+      ],
+    },
   ]
+  const navItems = navGroups.flatMap((group) => group.items)
+  const mobileNavItems = [
+    navItems.find((item) => item.to === '/teacher/ranking'),
+    navItems.find((item) => item.to === '/teacher/schedules'),
+    navItems.find((item) => item.to === '/teacher/booking-requests'),
+    navItems.find((item) => item.to === '/teacher/attendance'),
+    navItems.find((item) => item.to === '/teacher/profile'),
+  ].filter((item): item is TeacherNavItem => Boolean(item))
 
   const handleSignOut = async () => {
     if (teacherId) {
@@ -73,6 +114,10 @@ export function TeacherLayout() {
   }
 
   const toggleLang = () => setLang(lang === 'vi' ? 'en' : 'vi')
+
+  useEffect(() => {
+    window.localStorage.setItem('teacher_sidebar_collapsed', String(isSidebarCollapsed))
+  }, [isSidebarCollapsed])
 
   // Clock tick interval
   useEffect(() => {
@@ -220,58 +265,79 @@ export function TeacherLayout() {
 
   return (
     <div className="min-h-screen bg-brand-50">
-      {/* Desktop sidebar — menu dọc bên trái, giữ nguyên nhận diện vàng của gia sư */}
-      <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-64 flex-col border-r border-brand-900/15 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 shadow-[6px_0_18px_-12px_rgba(180,120,0,0.55)]">
+      {/* Desktop sidebar */}
+      <aside className={`hidden lg:flex fixed inset-y-0 left-0 z-30 flex-col border-r border-brand-900/15 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 shadow-[6px_0_18px_-12px_rgba(180,120,0,0.55)] transition-[width] duration-200 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b border-brand-900/15 px-4 py-4">
-            <div className="flex items-center gap-2.5">
-              <Logo className="h-9 w-auto max-w-[130px]" />
-              <span className="border-l border-brand-900/20 pl-2.5 text-[11px] font-black uppercase tracking-wider text-brand-900 whitespace-nowrap">{t('nav.teacher')}</span>
+          <div className={`border-b border-brand-900/15 px-3 py-4 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+            <div className={`flex items-center gap-2.5 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+              <Logo className={`h-9 w-auto ${isSidebarCollapsed ? 'max-w-[38px]' : 'max-w-[130px]'}`} />
+              {!isSidebarCollapsed && <span className="border-l border-brand-900/20 pl-2.5 text-[11px] font-black uppercase tracking-wider text-brand-900 whitespace-nowrap">{t('nav.teacher')}</span>}
             </div>
-            <span
-              className="mt-3 inline-flex items-center whitespace-nowrap rounded-lg border border-white/70 bg-white/60 px-2 py-1 text-[11px] font-mono font-bold tabular-nums text-brand-900/80"
-              title={formatTime()}
+            {!isSidebarCollapsed && (
+              <span
+                className="mt-3 inline-flex items-center whitespace-nowrap rounded-lg border border-white/70 bg-white/60 px-2 py-1 text-[11px] font-mono font-bold tabular-nums text-brand-900/80"
+                title={formatTime()}
+              >
+                {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((current) => !current)}
+              className={`mt-3 inline-flex items-center justify-center rounded-lg bg-white/60 p-2 text-brand-900/75 transition hover:bg-white hover:text-brand-900 ${isSidebarCollapsed ? '' : 'w-full gap-2'}`}
+              title={isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+              aria-label={isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
             >
-              {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
-            </span>
+              {isSidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {!isSidebarCollapsed && <span className="text-[11px] font-bold">Thu gọn menu</span>}
+            </button>
           </div>
 
-          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-bold transition-all duration-200
-                  ${isActive ? 'bg-white text-brand-800 shadow-sm' : 'text-brand-900/70 hover:bg-white/40 hover:text-brand-900'}`
-                }
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span>
-                {item.locked && (
-                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
-                    {lang === 'vi' ? 'Khóa' : 'Locked'}
-                  </span>
-                )}
-                {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
-              </NavLink>
+          <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4">
+            {navGroups.map((group) => (
+              <section key={group.title.vi}>
+                {!isSidebarCollapsed && <p className="mb-1 px-2 text-[10px] font-black uppercase tracking-[0.16em] text-brand-900/50">{group.title[lang]}</p>}
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      title={isSidebarCollapsed ? t(item.labelKey) : undefined}
+                      className={({ isActive }) =>
+                        `flex w-full items-center rounded-xl py-2.5 text-[13px] font-bold transition-all duration-200 ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}
+                        ${isActive ? 'bg-white text-brand-800 shadow-sm' : 'text-brand-900/70 hover:bg-white/40 hover:text-brand-900'}`
+                      }
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {!isSidebarCollapsed && <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span>}
+                      {!isSidebarCollapsed && item.locked && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                          {lang === 'vi' ? 'Khóa' : 'Locked'}
+                        </span>
+                      )}
+                      {!isSidebarCollapsed && !!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
+                      {isSidebarCollapsed && !!item.badge && <span className="absolute ml-5 mt-[-18px] inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{item.badge}</span>}
+                    </NavLink>
+                  ))}
+                </div>
+              </section>
             ))}
           </nav>
 
-          <div className="border-t border-brand-900/15 px-3 py-3">
-            <div className="mb-2 flex items-center justify-between rounded-xl bg-white/35 px-2 py-1.5">
+          <div className={`border-t border-brand-900/15 px-3 py-3 ${isSidebarCollapsed ? 'space-y-2' : ''}`}>
+            <div className={`mb-2 flex items-center rounded-xl bg-white/35 px-2 py-1.5 ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
               <NotificationDrawer targetType="teachers" targetId={teacherId || ''} />
-              <button
+              {!isSidebarCollapsed && <button
                 onClick={toggleLang}
                 className="flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs font-black text-brand-800 transition-all hover:bg-white"
                 title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
               >
                 <Globe className="h-3.5 w-3.5" />
                 {lang === 'vi' ? 'EN' : 'VI'}
-              </button>
+              </button>}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-[11px] text-brand-900/70" title={user?.email || ''}>{user?.email}</span>
+            <div className={`flex items-center gap-2 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+              {!isSidebarCollapsed && <span className="min-w-0 flex-1 truncate text-[11px] text-brand-900/70" title={user?.email || ''}>{user?.email}</span>}
               <button onClick={handleSignOut} className="shrink-0 p-2 text-brand-900/70 transition-colors hover:text-rose-600" title={t('nav.signout')}>
                 <LogOut className="h-4 w-4" />
               </button>
@@ -314,7 +380,7 @@ export function TeacherLayout() {
       </header>
 
       {/* Chừa chỗ cho header cố định: mobile 56+14, desktop 64+16 */}
-      <main className="min-h-screen lg:pl-64">
+      <main className={`min-h-screen transition-[padding] duration-200 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         <div className="pt-[84px] pb-20 px-4 py-6 sm:px-6 lg:pb-6 lg:pt-6">
           <ZaloUrgentNotice lang={lang} />
           {profileMissingCount !== null && profileMissingCount > 0 && (
@@ -369,7 +435,7 @@ export function TeacherLayout() {
       {/* Mobile bottom nav — nhãn rút gọn 1 dòng, không để chữ dài xuống hàng làm lệch thanh */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-flow-col auto-cols-fr h-14">
-          {navItems.map((item) => (
+          {mobileNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

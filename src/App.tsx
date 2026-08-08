@@ -49,6 +49,7 @@ const TeacherBookingRequestsPage = lazy(() => import('@/pages/teacher/BookingReq
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const TeacherEvaluationsPage = lazy(() => import('@/pages/teacher/TeacherEvaluationsPage'))
 const TeacherAvailabilityEditPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
+const TeacherRankingPage = lazy(() => import('@/pages/teacher/TeacherRankingPage').then(m => ({ default: m.TeacherRankingPage })))
 
 // Lazy loaded Parent Pages
 const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPage').then(m => ({ default: m.ParentDashboardPage })))
@@ -175,6 +176,7 @@ function App() {
             }
           >
             <Route path="attendance" element={<TeacherAttendanceGate><AttendancePage /></TeacherAttendanceGate>} />
+            <Route path="ranking" element={<TeacherRankingPage />} />
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="schedules" element={<TeacherSchedulesPage />} />
             <Route path="booking-requests" element={<TeacherBookingRequestsPage />} />

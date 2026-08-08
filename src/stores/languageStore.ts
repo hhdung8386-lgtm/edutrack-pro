@@ -12,6 +12,8 @@ interface LangState {
 const translations: Record<string, Record<Lang, string>> = {
   // TeacherLayout
   'nav.attendance': { vi: 'Điểm danh', en: 'Attendance' },
+  'nav.makeup_attendance': { vi: 'Điểm danh bù', en: 'Make-up attendance' },
+  'nav.ranking': { vi: 'Xếp hạng gia sư', en: 'Teacher ranking' },
   'nav.history': { vi: 'Lịch sử', en: 'History' },
   'nav.booking_requests': { vi: 'Yêu cầu lớp', en: 'Requests' },
   'nav.contract': { vi: 'Hợp đồng', en: 'Contract' },
