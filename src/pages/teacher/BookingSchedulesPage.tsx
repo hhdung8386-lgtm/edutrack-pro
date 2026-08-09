@@ -14,7 +14,7 @@ import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
-import { bookingIntervalsOverlap } from '@/lib/bookingTime'
+import { buildTeacherScheduleBookingIndex, teacherScheduleCellKey } from '@/lib/teacherScheduleGrid'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { useLanguageStore } from '@/stores/languageStore'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
@@ -327,6 +327,31 @@ export function BookingSchedulesPage() {
     })
   }, [bookingRequests, teacherOffset])
 
+  // Index only the visible week. This must not be rebuilt while a teacher is
+  // typing an attendance report; report state changes otherwise made the
+  // timetable scan the teacher's complete booking history for every cell.
+  const bookingByCell = useMemo(
+    () => buildTeacherScheduleBookingIndex(
+      localBookings,
+      weekDates.map(({ iso }) => iso),
+      visibleStarts,
+    ),
+    [localBookings, visibleStarts, weekDates],
+  )
+
+  const scheduleRows = useMemo(() => visibleStarts.map((start) => {
+    const startMinute = timeToMinutes(start)
+    const endMinute = startMinute + 25
+    return {
+      start,
+      cells: weekDates.map(({ day, iso }) => ({
+        day,
+        booking: bookingByCell.get(teacherScheduleCellKey(iso, start)),
+        open: slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute)),
+      })),
+    }
+  }), [bookingByCell, slots, visibleStarts, weekDates])
+
   // Các ca còn lại trong ngày của học viên — chỉ dùng khi học viên VẮNG.
   // Dò trên dữ liệu gốc (giờ VN) để không lệch khi gia sư ở múi giờ khác.
   const absenceFollowUpBookings = useMemo(() => {
@@ -444,7 +469,7 @@ export function BookingSchedulesPage() {
 
     // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) — một số booking cũ có
     // requestedWeekStart lệch với requestedDate nên nếu lọc theo weekStart sẽ bị mất khỏi
-    // bảng lịch dù đã đặt. findBookingForCell/localBookings đối chiếu theo requestedDate.
+    // bảng lịch dù đã đặt. Chỉ mục bookingByCell/localBookings đối chiếu theo requestedDate.
     const q = query(
       collection(db, 'bookingRequests'),
       where('teacherId', '==', teacherId)
@@ -475,31 +500,6 @@ export function BookingSchedulesPage() {
 
     return unsub
   }, [teacherId])
-
-  const isCellOpen = (day: DayOfWeek, start: string) => {
-    const startMinute = timeToMinutes(start)
-    const endMinute = startMinute + 25
-    return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
-  }
-
-  const findBookingForCell = (dateISO: string, time: string) => {
-    const cellStart = timeToMinutes(time)
-    const cellEnd = cellStart + 30
-    const cellInterval = {
-      requestedDate: dateISO,
-      requestedStart: time,
-      requestedEnd: minutesToTime(cellEnd),
-    }
-    return localBookings.find((req) => {
-      if (req.status !== 'confirmed' && req.status !== 'pending') return false
-      return bookingIntervalsOverlap({
-        requestedDate: req.displayDate,
-        requestedStart: req.displayStart,
-        requestedEnd: req.displayEnd,
-        requestedMinutes: req.requestedMinutes,
-      }, cellInterval)
-    })
-  }
 
   const handleCellClick = (booking: BookingRequest) => {
     const displayBooking = localBookings.find((item) => item.id === booking.id) || booking
@@ -983,16 +983,12 @@ export function BookingSchedulesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {visibleStarts.map((start) => (
+              {scheduleRows.map(({ start, cells }) => (
                 <tr key={start} className="hover:bg-slate-50/20 transition">
                   <td className="p-2 border-r border-slate-200 font-bold text-xs text-slate-500 text-center select-none bg-slate-50/50">
                     {start}
                   </td>
-                  {weekDates.map(({ day, iso }) => {
-                    const open = isCellOpen(day, start)
-                    const booking = findBookingForCell(iso, start)
-
-                    return (
+                  {cells.map(({ day, open, booking }) => (
                       <td key={day} className="p-1.5 border-r border-slate-200 align-middle text-center min-h-[52px]">
                         {booking ? (
                           <button
@@ -1022,8 +1018,7 @@ export function BookingSchedulesPage() {
                           <span className="text-slate-300 text-sm font-semibold select-none">-</span>
                         )}
                       </td>
-                    )
-                  })}
+                  ))}
                   <td className="p-2"></td>
                 </tr>
               ))}
