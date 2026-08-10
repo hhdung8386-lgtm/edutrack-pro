@@ -417,55 +417,12 @@ export function BookingSchedulesPage() {
     })
   }, [teacherId])
 
-  // Load pending attendance bookings in real-time
+  // Một listener duy nhất cấp dữ liệu cho cả lịch đã đặt và danh sách chờ điểm danh.
   useEffect(() => {
     if (!teacherId) {
       setConfirmedBookings([])
       return
     }
-
-    const q = query(
-      collection(db, 'bookingRequests'),
-      where('teacherId', '==', teacherId),
-      where('status', '==', 'confirmed')
-    )
-
-    const unsub = onSnapshot(q, (snap) => {
-      const todayStr = getVietnamDateISO()
-      const list = snap.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
-
-      setConfirmedBookings(list)
-
-      // Fetch student details if needed
-      const studentIdsToFetch = Array.from(new Set(
-        list
-          .filter((b) => (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b, Date.now()))
-          .map(b => b.studentId),
-      ))
-      if (studentIdsToFetch.length > 0) {
-        Promise.all(studentIdsToFetch.map(id => getDoc(doc(db, 'students', id)))).then(snaps => {
-          setStudents(prev => {
-            const next = { ...prev }
-            snaps.forEach(s => {
-              if (s.exists()) {
-                next[s.id] = { id: s.id, ...s.data() } as Student
-              }
-            })
-            return next
-          })
-        })
-      }
-    }, (error) => {
-      console.error('Error loading pending attendance bookings:', error)
-    })
-
-    return unsub
-  }, [teacherId])
-
-  // Load booked booking requests in real-time
-  useEffect(() => {
-    if (!teacherId) return
 
     // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) — một số booking cũ có
     // requestedWeekStart lệch với requestedDate nên nếu lọc theo weekStart sẽ bị mất khỏi
@@ -478,6 +435,7 @@ export function BookingSchedulesPage() {
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
       setBookingRequests(list)
+      setConfirmedBookings(list.filter((booking) => booking.status === 'confirmed'))
 
       // Fetch student details if needed
       const studentIdsToFetch = Array.from(new Set(list.map(b => b.studentId))).filter(id => !students[id])

@@ -311,13 +311,9 @@ export function BookingSchedulesPage() {
     async function loadTeachersAndAvailability() {
       setLoading(true)
       try {
-        const [teachersSnap, availSnap, approvedLessonsSnap] = await Promise.all([
+        const [teachersSnap, availSnap] = await Promise.all([
           getDocs(query(collection(db, 'teachers'), where('status', '==', 'active'))),
           getDocs(collection(db, 'teacherAvailability')),
-          getDocs(query(collection(db, 'lessons'), where('status', '==', 'approved'))).catch((error) => {
-            console.error('Error loading approved lesson minutes:', error)
-            return null
-          }),
         ])
 
         const items = teachersSnap.docs
@@ -336,19 +332,27 @@ export function BookingSchedulesPage() {
         })
         setAllAvailabilities(avMap)
 
-        if (approvedLessonsSnap) {
-          const approvedMinutes = Object.fromEntries(items.map((teacher) => [teacher.id, 0])) as Record<string, number>
-          approvedLessonsSnap.docs.forEach((lessonDocument) => {
+        // `totalApprovedMinutes` được cập nhật transactionally khi duyệt buổi học.
+        // Chỉ hồ sơ legacy thiếu field mới đọc lịch sử riêng của chính gia sư đó.
+        const approvedMinutes = Object.fromEntries(
+          items.map((teacher) => [teacher.id, Math.max(0, Number(teacher.totalApprovedMinutes) || 0)]),
+        ) as Record<string, number>
+        const legacyTeachers = items.filter((teacher) => teacher.totalApprovedMinutes === undefined)
+        const legacyLessonSnapshots = await Promise.all(legacyTeachers.map((teacher) => (
+          getDocs(query(collection(db, 'lessons'), where('teacherId', '==', teacher.id)))
+            .catch((error) => {
+              console.error(`Error loading legacy approved minutes for teacher ${teacher.id}:`, error)
+              return null
+            })
+        )))
+        legacyLessonSnapshots.forEach((snapshot, index) => {
+          if (!snapshot) return
+          approvedMinutes[legacyTeachers[index].id] = snapshot.docs.reduce((total, lessonDocument) => {
             const lesson = lessonDocument.data()
-            const teacherId = typeof lesson.teacherId === 'string' ? lesson.teacherId : ''
-            if (!teacherId) return
-            approvedMinutes[teacherId] = (approvedMinutes[teacherId] || 0) + (Number(lesson.minutes) || 0)
-          })
-          setApprovedMinutesByTeacher(approvedMinutes)
-        } else {
-          // Chỉ dùng field tổng lưu sẵn khi truy vấn buổi học thật sự thất bại.
-          setApprovedMinutesByTeacher({})
-        }
+            return lesson.status === 'approved' ? total + (Number(lesson.minutes) || 0) : total
+          }, 0)
+        })
+        setApprovedMinutesByTeacher(approvedMinutes)
       } catch (error) {
         console.error('Error loading teachers/availability:', error)
         toast.error('Không tải được danh sách gia sư')

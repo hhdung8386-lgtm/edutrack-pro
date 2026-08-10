@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, setDoc, writeBatch } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, writeBatch } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Teacher, Lesson, Student, StudentSubject, TeacherAvailability, DayOfWeek, Payroll, Subject, PaymentSettings } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2 } from 'lucide-react'
 import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
 import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
@@ -24,8 +24,6 @@ import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { resetTeacherPassword } from '@/lib/auth'
-import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
-import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -64,10 +62,6 @@ export function TeacherDetailPage() {
   const [toggleLoading, setToggleLoading] = useState(false)
   const [showRetireConfirm, setShowRetireConfirm] = useState(false)
   const [retiring, setRetiring] = useState(false)
-  const [publishingProfile, setPublishingProfile] = useState(false)
-  const [lessonsLoaded, setLessonsLoaded] = useState(false)
-  const [lessonLoadFailed, setLessonLoadFailed] = useState(false)
-  const [subjectsLoaded, setSubjectsLoaded] = useState(false)
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null)
   const payrollTaxPolicy = normalizePayrollTaxPolicy(paymentSettings)
 
@@ -239,12 +233,8 @@ export function TeacherDetailPage() {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
       docs.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
       setLessons(docs)
-      setLessonLoadFailed(false)
-      setLessonsLoaded(true)
     }, (error) => {
       console.error('Subscribe teacher lessons failed:', error)
-      setLessonLoadFailed(true)
-      setLessonsLoaded(true)
     })
 
     const payrollQ = query(collection(db, 'payroll'), where('teacherId', '==', id))
@@ -256,8 +246,6 @@ export function TeacherDetailPage() {
       setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
     }).catch((error) => {
       console.error('Load subjects for teacher profile failed:', error)
-    }).finally(() => {
-      setSubjectsLoaded(true)
     })
 
     return () => {
@@ -1008,53 +996,6 @@ export function TeacherDetailPage() {
   const totalLessons = approvedLessons.length
   const totalMinutes = approvedLessons.reduce((acc, l) => acc + l.minutes, 0)
 
-  const handleOpenPublicProfile = async () => {
-    if (!teacher || teacher.status !== 'active' || teacher.isTester) {
-      toast.error('Chỉ có thể công khai hồ sơ gia sư đang giảng dạy chính thức')
-      return
-    }
-    if (!lessonsLoaded || !subjectsLoaded) {
-      toast.info('Đang tải đủ dữ liệu kinh nghiệm và môn dạy, vui lòng thử lại sau ít giây')
-      return
-    }
-
-    const profileUrl = `${window.location.origin}/giao-vien/${teacher.id}`
-    const profileWindow = window.open('about:blank', '_blank')
-    if (profileWindow) profileWindow.opener = null
-    setPublishingProfile(true)
-
-    try {
-      await setDoc(doc(db, 'publicTeacherProfiles', teacher.id), {
-        ...buildPublicTeacherProfile(teacher),
-        subjectNames: teacherSubjectLabels(teacher, subjects),
-        totalApprovedMinutes: lessonLoadFailed
-          ? Math.max(0, Number(teacher.totalApprovedMinutes) || 0)
-          : totalMinutes,
-        isPublished: true,
-        publishedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-
-      try {
-        await navigator.clipboard?.writeText(profileUrl)
-      } catch (clipboardError) {
-        console.warn('Could not copy public teacher profile link:', clipboardError)
-      }
-
-      if (profileWindow) {
-        profileWindow.location.replace(profileUrl)
-      } else {
-        window.location.assign(profileUrl)
-      }
-      toast.success('Đã cập nhật và sao chép link hồ sơ để gửi phụ huynh')
-    } catch (error) {
-      profileWindow?.close()
-      console.error('Publish teacher profile failed:', error)
-      toast.error('Không thể tạo link hồ sơ. Dữ liệu gia sư không bị thay đổi.')
-    } finally {
-      setPublishingProfile(false)
-    }
-  }
   const totalSalary = approvedLessons.reduce((acc, l) => acc + (l.salary || 0), 0)
   const fallbackCurrency = COUNTRY_CURRENCY_MAP[teacher.country || 'VN'] || 'VND'
   const totalSalaryLabel = formatMoneyTotals(
@@ -1273,19 +1214,6 @@ export function TeacherDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            {teacher.status === 'active' && !teacher.isTester && (
-              <Button
-                size="sm"
-                variant="outline"
-                loading={publishingProfile}
-                disabled={!lessonsLoaded || !subjectsLoaded}
-                onClick={handleOpenPublicProfile}
-                className="whitespace-nowrap border-amber-300 bg-amber-50 font-bold text-amber-800 hover:bg-amber-100 hover:text-amber-900 focus:ring-amber-400"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Link hồ sơ
-              </Button>
-            )}
             <Button
               size="sm"
               variant={teacher.status === 'active' ? 'danger' : 'primary'}

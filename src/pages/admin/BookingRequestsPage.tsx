@@ -2,17 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   collection,
   doc,
+  documentId,
+  getCountFromServer,
+  getDocs,
+  limit as firestoreLimit,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  startAfter,
+  where,
+  type DocumentData,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
-  Clock3,
   RotateCcw,
   Search,
   XCircle,
@@ -59,6 +67,9 @@ const STATUS_STYLES: Record<BookingRequest['status'], string> = {
   released: 'bg-slate-100 text-slate-600 ring-slate-200',
 }
 
+const REQUEST_PAGE_SIZE = 200
+const REQUEST_STATUSES: BookingRequest['status'][] = ['pending', 'confirmed', 'rejected', 'released']
+
 function getStudentMinuteFund(student: Student) {
   const summary = getStudentPackageMinuteSummary(student)
   const total = summary.totalMinutes
@@ -81,6 +92,10 @@ function formatDate(value: BookingRequest['createdAt'] | undefined) {
   })
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : ''
+}
+
 function StatusPill({ status }: { status: BookingRequest['status'] }) {
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${STATUS_STYLES[status]}`}>
@@ -101,25 +116,67 @@ export function BookingRequestsPage() {
   const [rejecting, setRejecting] = useState<BookingRequest | null>(null)
   const [releasing, setReleasing] = useState<BookingRequest | null>(null)
   const [adminNote, setAdminNote] = useState('')
+  const [counts, setCounts] = useState<Record<BookingRequest['status'], number>>({
+    pending: 0,
+    confirmed: 0,
+    rejected: 0,
+    released: 0,
+  })
+  const [lastRequestDoc, setLastRequestDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [reloadVersion, setReloadVersion] = useState(0)
   const [todayISO] = useState(() => new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().split('T')[0])
 
   useEffect(() => {
-    const q = query(collection(db, 'bookingRequests'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setRequests(snap.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest)))
+    let active = true
+
+    const constraints: QueryConstraint[] = statusFilter === 'all'
+      ? [orderBy('createdAt', 'desc'), firestoreLimit(REQUEST_PAGE_SIZE)]
+      : [where('status', '==', statusFilter), firestoreLimit(REQUEST_PAGE_SIZE)]
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'bookingRequests'), ...constraints),
+      (snapshot) => {
+        if (!active) return
+        const items = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+          .sort((left, right) => (right.createdAt?.seconds || 0) - (left.createdAt?.seconds || 0))
+        setRequests(items)
+        setLastRequestDoc(snapshot.docs[snapshot.docs.length - 1] || null)
+        setHasMore(snapshot.docs.length === REQUEST_PAGE_SIZE)
         setLoading(false)
       },
       (error) => {
         console.error('Error loading booking requests:', error)
         toast.error('Không thể tải yêu cầu chọn gia sư')
-        setLoading(false)
-      }
+        if (active) setLoading(false)
+      },
     )
 
-    return unsub
-  }, [])
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [statusFilter, reloadVersion])
+
+  useEffect(() => {
+    let active = true
+    Promise.all(REQUEST_STATUSES.map(async (status) => {
+      const snapshot = await getCountFromServer(query(
+        collection(db, 'bookingRequests'),
+        where('status', '==', status),
+      ))
+      return [status, snapshot.data().count] as const
+    })).then((entries) => {
+      if (active) setCounts(Object.fromEntries(entries) as Record<BookingRequest['status'], number>)
+    }).catch((error) => {
+      console.error('Error loading booking request counts:', error)
+    })
+    return () => {
+      active = false
+    }
+  }, [reloadVersion])
 
   useEffect(() => {
     const ids = Array.from(new Set(requests.map((item) => item.studentId).filter(Boolean)))
@@ -127,27 +184,58 @@ export function BookingRequestsPage() {
 
     if (ids.length === 0) return
 
-    const unsubs = ids.map((id) =>
-      onSnapshot(doc(db, 'students', id), (snap) => {
-        if (!snap.exists()) return
-        setStudents((prev) => ({
-          ...prev,
-          [id]: { id: snap.id, ...snap.data() } as Student,
-        }))
+    let active = true
+    const chunks: string[][] = []
+    for (let index = 0; index < ids.length; index += 30) chunks.push(ids.slice(index, index + 30))
+
+    Promise.all(chunks.map((chunk) => getDocs(query(
+      collection(db, 'students'),
+      where(documentId(), 'in', chunk),
+    )))).then((snapshots) => {
+      if (!active) return
+      const loadedStudents: Record<string, Student> = {}
+      snapshots.forEach((snapshot) => {
+        snapshot.docs.forEach((studentDocument) => {
+          loadedStudents[studentDocument.id] = {
+            id: studentDocument.id,
+            ...studentDocument.data(),
+          } as Student
+        })
       })
-    )
+      setStudents((previous) => ({ ...previous, ...loadedStudents }))
+    }).catch((error) => {
+      console.error('Error loading students for booking requests:', error)
+    })
 
     return () => {
-      unsubs.forEach((unsub) => unsub())
+      active = false
     }
   }, [requests, students])
 
-  const counts = useMemo(() => ({
-    pending: requests.filter((item) => item.status === 'pending').length,
-    confirmed: requests.filter((item) => item.status === 'confirmed').length,
-    rejected: requests.filter((item) => item.status === 'rejected').length,
-    released: requests.filter((item) => item.status === 'released').length,
-  }), [requests])
+  const loadMoreRequests = async () => {
+    if (!lastRequestDoc || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const constraints: QueryConstraint[] = statusFilter === 'all'
+        ? [orderBy('createdAt', 'desc'), startAfter(lastRequestDoc), firestoreLimit(REQUEST_PAGE_SIZE)]
+        : [where('status', '==', statusFilter), startAfter(lastRequestDoc), firestoreLimit(REQUEST_PAGE_SIZE)]
+      const snapshot = await getDocs(query(collection(db, 'bookingRequests'), ...constraints))
+      const nextItems = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+      setRequests((previous) => {
+        const byId = new Map([...previous, ...nextItems].map((item) => [item.id, item]))
+        return Array.from(byId.values()).sort(
+          (left, right) => (right.createdAt?.seconds || 0) - (left.createdAt?.seconds || 0),
+        )
+      })
+      setLastRequestDoc(snapshot.docs[snapshot.docs.length - 1] || null)
+      setHasMore(snapshot.docs.length === REQUEST_PAGE_SIZE)
+    } catch (error) {
+      console.error('Error loading more booking requests:', error)
+      toast.error('Không thể tải thêm yêu cầu')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const upcomingConflicts = useMemo(() => {
     return findExistingBookingConflictPairs(
@@ -264,10 +352,11 @@ export function BookingRequestsPage() {
 
       toast.success('Đã xác nhận và giữ đúng số kim cương theo giá gia sư')
       setConfirming(null)
+      setReloadVersion((version) => version + 1)
       setAdminNote('')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Confirm booking request failed:', error)
-      const message = error?.message
+      const message = getErrorMessage(error)
       if (message === 'NOT_ENOUGH_MINUTES') toast.error('Quỹ kim cương khả dụng không đủ để giữ chỗ')
       else if (message === 'REQUEST_ALREADY_PROCESSED') toast.warning('Yêu cầu này đã được xử lý trước đó')
       else if (message === 'PAST_DATE_NOT_ALLOWED') toast.error('Không thể xác nhận yêu cầu xếp lớp cho ngày đã qua!')
@@ -313,10 +402,11 @@ export function BookingRequestsPage() {
 
       toast.success('Đã từ chối yêu cầu')
       setRejecting(null)
+      setReloadVersion((version) => version + 1)
       setAdminNote('')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Reject booking request failed:', error)
-      if (error?.message === 'REQUEST_ALREADY_PROCESSED') toast.warning('Yêu cầu này đã được xử lý trước đó')
+      if (getErrorMessage(error) === 'REQUEST_ALREADY_PROCESSED') toast.warning('Yêu cầu này đã được xử lý trước đó')
       else toast.error('Từ chối yêu cầu thất bại')
     } finally {
       setActioning(false)
@@ -381,10 +471,11 @@ export function BookingRequestsPage() {
 
       toast.success('Đã nhả giữ chỗ')
       setReleasing(null)
+      setReloadVersion((version) => version + 1)
       setAdminNote('')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Release booking request failed:', error)
-      if (error?.message === 'REQUEST_NOT_CONFIRMED') toast.warning('Chỉ yêu cầu đã giữ chỗ mới cần nhả')
+      if (getErrorMessage(error) === 'REQUEST_NOT_CONFIRMED') toast.warning('Chỉ yêu cầu đã giữ chỗ mới cần nhả')
       else toast.error('Nhả giữ chỗ thất bại')
     } finally {
       setActioning(false)
@@ -404,6 +495,15 @@ export function BookingRequestsPage() {
   const openRelease = (request: BookingRequest) => {
     setAdminNote('')
     setReleasing(request)
+  }
+
+  const changeStatusFilter = (status: BookingRequest['status'] | 'all') => {
+    if (status === statusFilter) return
+    setLoading(true)
+    setRequests([])
+    setLastRequestDoc(null)
+    setHasMore(false)
+    setStatusFilter(status)
   }
 
   return (
@@ -468,7 +568,7 @@ export function BookingRequestsPage() {
             {(['pending', 'confirmed', 'rejected', 'released', 'all'] as const).map((status) => (
               <button
                 key={status}
-                onClick={() => setStatusFilter(status)}
+                onClick={() => changeStatusFilter(status)}
                 className={`h-11 shrink-0 rounded-xl px-4 text-sm font-bold transition ${
                   statusFilter === status
                     ? 'bg-slate-950 text-white shadow-sm'
@@ -488,7 +588,7 @@ export function BookingRequestsPage() {
         <EmptyState
           icon={<CalendarClock className="h-8 w-8" />}
           title="Chưa có yêu cầu phù hợp"
-          description="Các yêu cầu phụ huynh gửi từ trang gia sư sẽ hiển thị tại đây."
+          description="Các yêu cầu chọn gia sư phù hợp với bộ lọc sẽ hiển thị tại đây."
         />
       ) : (
         <div className="grid gap-4">
@@ -598,6 +698,13 @@ export function BookingRequestsPage() {
               </article>
             )
           })}
+          {hasMore && (
+            <div className="flex justify-center pt-2">
+              <Button variant="outline" loading={loadingMore} onClick={loadMoreRequests}>
+                Tải thêm {REQUEST_PAGE_SIZE} yêu cầu
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

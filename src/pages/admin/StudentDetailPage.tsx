@@ -602,6 +602,11 @@ export function StudentDetailPage() {
     pkg.remainingSessions = 0
   }
 
+  const activeSubjectIds = new Set(activeSubjects.map((subject) => subject.subjectId))
+  const unmatchedHeldBookings = heldBookings.filter(
+    (booking) => !booking.subjectId || !activeSubjectIds.has(booking.subjectId),
+  )
+
   const mps = student.minutesPerSession || 50
 
   // ─── ACTUAL values (derived from lessons collection — source of truth) ──
@@ -1701,6 +1706,9 @@ export function StudentDetailPage() {
           <p className="text-xs text-slate-500 mt-1">
             Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
+            {unmatchedHeldBookings.length > 0 && (
+              <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; cần kiểm tra trước khi điểm danh.</>
+            )}
           </p>
         </div>
         <Button

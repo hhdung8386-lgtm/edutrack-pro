@@ -6,7 +6,6 @@ import { Logo } from '@/components/shared/Logo'
 const NAV_ITEMS = [
   { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
   { to: '/chuong-trinh-hoc', label: 'Chương trình học', match: ['/chuong-trinh-hoc'] },
-  { to: '/giao-vien', label: 'Gia sư', match: ['/giao-vien'] },
   { to: '/bai-viet', label: 'Bài viết', match: ['/bai-viet'] },
   { to: '/lien-he', label: 'Liên hệ', match: ['/lien-he'] },
 ]

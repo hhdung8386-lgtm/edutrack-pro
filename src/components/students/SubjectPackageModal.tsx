@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { doc, updateDoc, getDocs, collection, query, where, serverTimestamp } from 'firebase/firestore'
+import { doc, getDocs, collection, query, where, serverTimestamp, writeBatch, type DocumentReference } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, Subject, StudentSubject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
@@ -165,6 +165,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     try {
       const minutesPerSession = 25
       let updatedSubjects: StudentSubject[] = [...currentSubjects]
+      let bookingSubjectTransfer: {
+        refs: DocumentReference[]
+        subjectId: string
+        subjectName: string
+      } | null = null
       const today = new Date()
       const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
 
@@ -300,28 +305,30 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
               }
             }
 
-            // Sync future confirmed/pending booking requests to the new subject!
+            // Read by studentId only so the transfer never depends on a composite index.
+            // The student package and every active booking are committed atomically below.
             if (editingSubjectId && data.subjectId !== editingSubjectId && selectedSubjectObj) {
-              try {
-                const bookingsQuery = query(
-                  collection(db, 'bookingRequests'),
-                  where('studentId', '==', student.id),
-                  where('subjectId', '==', editingSubjectId),
-                  where('status', 'in', ['confirmed', 'pending'])
-                )
-                const bookingsSnap = await getDocs(bookingsQuery)
-                const batchPromises = bookingsSnap.docs
-                  .filter(doc => !doc.data().lessonId)
-                  .map(doc => {
-                    return updateDoc(doc.ref, {
-                      subjectId: selectedSubjectObj.id,
-                      subjectName: selectedSubjectObj.name,
-                      updatedAt: serverTimestamp(),
-                    })
-                  })
-                await Promise.all(batchPromises)
-              } catch (syncErr) {
-                console.error('Failed to sync future bookings to new subject:', syncErr)
+              const bookingsSnap = await getDocs(query(
+                collection(db, 'bookingRequests'),
+                where('studentId', '==', student.id),
+              ))
+              const refs = bookingsSnap.docs
+                .filter((bookingDocument) => {
+                  const booking = bookingDocument.data()
+                  return booking.subjectId === editingSubjectId
+                    && (booking.status === 'confirmed' || booking.status === 'pending')
+                    && !booking.lessonId
+                })
+                .map((bookingDocument) => bookingDocument.ref)
+
+              if (refs.length > 499) {
+                throw new Error('Học viên có quá nhiều lịch đang giữ chỗ; vui lòng liên hệ kỹ thuật để chuyển môn an toàn')
+              }
+
+              bookingSubjectTransfer = {
+                refs,
+                subjectId: selectedSubjectObj.id,
+                subjectName: selectedSubjectObj.name,
               }
             }
           } else {
@@ -401,7 +408,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
       // Legacy fields point to a package that can still fund upcoming lessons.
       const primarySubject = updatedSubjects.find((pkg) => pkg.remainingMinutes > 0) || updatedSubjects[0] || null
 
-      await updateDoc(doc(db, 'students', student.id), {
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'students', student.id), {
         subjects: updatedSubjects,
         totalSessions: aggTotalSessions,
         usedSessions: aggUsedSessions,
@@ -416,6 +424,16 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
         updatedAt: serverTimestamp(),
       })
+
+      bookingSubjectTransfer?.refs.forEach((bookingRef) => {
+        batch.update(bookingRef, {
+          subjectId: bookingSubjectTransfer.subjectId,
+          subjectName: bookingSubjectTransfer.subjectName,
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      await batch.commit()
 
       toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
       onClose()
