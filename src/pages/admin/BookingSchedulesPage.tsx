@@ -306,6 +306,7 @@ export function BookingSchedulesPage() {
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
+  const selectedSlotMode = selectedSlots.length === 0 ? null : selectedSlotsArePast ? 'makeup' : 'regular'
   // Load teachers and availabilities
   useEffect(() => {
     async function loadTeachersAndAvailability() {
@@ -1470,6 +1471,16 @@ export function BookingSchedulesPage() {
     setShowScheduleModal(true)
   }
 
+  const clearMultiSelection = () => {
+    setSelectedSlots([])
+    setSelectedBookingIds([])
+  }
+
+  const handleWeekChange = (nextWeekStart: Date) => {
+    setWeekStart(nextWeekStart)
+    clearMultiSelection()
+  }
+
   return (
     <div className="space-y-4 pt-1 lg:pt-3">
       <header className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
@@ -1937,7 +1948,7 @@ export function BookingSchedulesPage() {
                     aria-pressed={selectedTeacherId === teacher.id}
                     onClick={() => {
                       setSelectedTeacherId(teacher.id)
-                      setSelectedSlots([])
+                      clearMultiSelection()
                     }}
                     className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-400"
                   >
@@ -1985,8 +1996,7 @@ export function BookingSchedulesPage() {
                 onClick={() => {
                   const nextMode = !multiSelectMode
                   setMultiSelectMode(nextMode)
-                  setSelectedSlots([])
-                  setSelectedBookingIds([])
+                  clearMultiSelection()
                 }}
                 className={`h-10 px-4 rounded-lg text-sm font-bold transition flex items-center gap-1.5 border ${
                   multiSelectMode
@@ -2010,7 +2020,7 @@ export function BookingSchedulesPage() {
                     onClick={() => handleOpenBatchSchedule('regular')}
                     disabled={selectedSlotsArePast}
                     title={selectedSlotsArePast ? 'Ca quá khứ phải dùng Xếp lịch bù' : undefined}
-                    className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                    className="hidden h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none lg:flex"
                   >
                     Xếp lớp nhanh ({selectedSlots.length})
                   </button>
@@ -2019,7 +2029,7 @@ export function BookingSchedulesPage() {
                     onClick={() => handleOpenBatchSchedule('makeup')}
                     disabled={!selectedSlotsArePast}
                     title={!selectedSlotsArePast ? 'Chọn ca trong quá khứ để xếp lịch bù' : undefined}
-                    className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none"
+                    className="hidden h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none lg:flex"
                   >
                     <History className="h-4 w-4" />
                     Xếp lịch bù ({selectedSlots.length})
@@ -2042,13 +2052,13 @@ export function BookingSchedulesPage() {
 
             {/* Quick week controls */}
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}>
+              <Button variant="outline" size="sm" onClick={() => handleWeekChange(getMonday(addDays(weekStart, -7)))}>
                 Tuần trước
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(new Date()))}>
+              <Button variant="outline" size="sm" onClick={() => handleWeekChange(getMonday(new Date()))}>
                 Tuần này
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}>
+              <Button variant="outline" size="sm" onClick={() => handleWeekChange(getMonday(addDays(weekStart, 7)))}>
                 Tuần sau
               </Button>
             </div>
@@ -2063,7 +2073,7 @@ export function BookingSchedulesPage() {
                   <th className="p-2 text-center border-r border-slate-200 w-24">
                     <button
                       type="button"
-                      onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
+                      onClick={() => handleWeekChange(getMonday(addDays(weekStart, -7)))}
                       className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
                       title="Tuần trước"
                     >
@@ -2081,7 +2091,7 @@ export function BookingSchedulesPage() {
                   <th className="p-2 text-center w-12">
                     <button
                       type="button"
-                      onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}
+                      onClick={() => handleWeekChange(getMonday(addDays(weekStart, 7)))}
                       className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition"
                       title="Tuần sau"
                     >
@@ -2102,6 +2112,11 @@ export function BookingSchedulesPage() {
                       const open = isCellOpen(day, start)
                       const booking = findBookingForCell(iso, start)
                       const isSelected = isSlotSelected(iso, start)
+                      const isPastSlot = isPastScheduleSlot(iso, start)
+                      const isIncompatibleSlot = multiSelectMode
+                        && selectedSlotMode !== null
+                        && !isSelected
+                        && (selectedSlotMode === 'makeup') !== isPastSlot
 
                       return (
                         <td
@@ -2137,9 +2152,22 @@ export function BookingSchedulesPage() {
                             <button
                               type="button"
                               onClick={() => handleCellClick(day, iso, start)}
-                              className={`w-full py-2.5 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition shadow-sm ${
+                              disabled={isIncompatibleSlot}
+                              aria-label={isIncompatibleSlot
+                                ? selectedSlotMode === 'makeup'
+                                  ? 'Chỉ chọn thêm ca quá khứ để xếp lịch bù'
+                                  : 'Chỉ chọn thêm ca tương lai để xếp lớp thường'
+                                : undefined}
+                              title={isIncompatibleSlot
+                                ? selectedSlotMode === 'makeup'
+                                  ? 'Đang chọn lịch bù: chỉ chọn được ca quá khứ'
+                                  : 'Đang chọn lịch thường: chỉ chọn được ca tương lai'
+                                : undefined}
+                              className={`w-full py-2.5 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition shadow-sm disabled:cursor-not-allowed ${
                                 isSelected
                                   ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                  : isIncompatibleSlot
+                                    ? 'border border-slate-200 bg-slate-100 text-slate-400 opacity-60'
                                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/30'
                               }`}
                             >
@@ -2160,6 +2188,48 @@ export function BookingSchedulesPage() {
           </div>
         </section>
       </div>
+
+      {multiSelectMode && selectedSlots.length > 0 && selectedSlotMode && (
+        <section
+          className="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-[0_16px_38px_-14px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden"
+          aria-label="Thao tác xếp lịch đã chọn"
+          aria-live="polite"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-slate-900">Đã chọn {selectedSlots.length} ca</p>
+              <p className="truncate text-[11px] font-semibold text-slate-500">
+                {selectedSlotMode === 'makeup'
+                  ? 'Đang xếp lịch bù: chỉ chọn thêm ca trong quá khứ.'
+                  : 'Đang xếp lịch thường: chỉ chọn thêm ca trong tương lai.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearMultiSelection}
+              className="flex h-9 shrink-0 items-center gap-1 rounded-lg px-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              <X className="h-4 w-4" />
+              Bỏ chọn
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleOpenBatchSchedule(selectedSlotMode)}
+            className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold text-white shadow-sm transition active:scale-[0.99] ${
+              selectedSlotMode === 'makeup'
+                ? 'bg-amber-600 hover:bg-amber-700'
+                : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
+          >
+            {selectedSlotMode === 'makeup' ? <History className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
+            {selectedSlotMode === 'makeup'
+              ? `Xếp lịch bù (${selectedSlots.length})`
+              : `Xếp lớp nhanh (${selectedSlots.length})`}
+          </button>
+        </section>
+      )}
 
       {profileTeacher && (
         <Modal open size="xl" onClose={() => setProfileTeacher(null)} title="Profile gia sư">

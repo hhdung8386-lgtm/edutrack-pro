@@ -1,0 +1,20 @@
+{
+  "name": "123english-reminders",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.1.0",
+    "firebase-functions": "^6.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "bookingRequests",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestedDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "lessons",
       "queryScope": "Collection",
       "fields": [
