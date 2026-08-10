@@ -64,7 +64,7 @@ export function LoginPage() {
         result = await signIn(emailToUse, data.password)
       }
       
-      const { user, role, teacherId } = result
+      const { user, role, teacherId, accessScope } = result
 
       // Chỉ mở route sau khi listener quyền đã nhận xác nhận từ server. Việc tự
       // đẩy state ở đây có thể bị onAuthStateChanged ghi đè và gây nháy trang.
@@ -75,7 +75,8 @@ export function LoginPage() {
         throw profileError
       }
       
-      if (role === 'admin' || role === 'student_manager') navigate('/admin/students/fixed', { replace: true })
+      if (accessScope === 'booking_only') navigate('/admin/booking-schedules', { replace: true })
+      else if (role === 'admin' || role === 'student_manager') navigate('/admin/students/fixed', { replace: true })
       else if (role === 'teacher_manager') navigate('/admin/teachers/online', { replace: true })
       else if (role === 'teacher') navigate('/teacher/attendance', { replace: true })
       else if (role === 'guest') navigate('/waiting', { replace: true })

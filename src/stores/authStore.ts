@@ -5,11 +5,13 @@ import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, query
 import { auth, db } from '@/lib/firebase'
 
 export type AuthRole = 'admin' | 'teacher' | 'inactive_teacher' | 'guest' | 'student_manager' | 'teacher_manager'
+export type AuthAccessScope = 'booking_only'
 export type AuthProfileStatus = 'idle' | 'loading' | 'ready' | 'missing' | 'error'
 
 interface AuthState {
   user: User | null
   role: AuthRole | null
+  accessScope: AuthAccessScope | null
   teacherId: string | null
   loading: boolean
   initialized: boolean
@@ -24,9 +26,14 @@ function isAuthRole(value: unknown): value is AuthRole {
   return typeof value === 'string' && AUTH_ROLES.includes(value as AuthRole)
 }
 
+function getAuthAccessScope(value: unknown): AuthAccessScope | null {
+  return value === 'booking_only' ? value : null
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   role: null,
+  accessScope: null,
   teacherId: null,
   loading: true,
   initialized: false,
@@ -78,7 +85,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (user) {
         // Giữ route ở trạng thái tải ổn định trong lúc hồ sơ quyền được đồng bộ.
         // Không tái sử dụng role/teacherId của phiên trước khi Firebase đổi user.
-        set({ user, role: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
+        set({ user, role: null, accessScope: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
 
         // Firestore có thể chỉ trả cache và không gọi error khi thiết bị đang offline.
         // Mỗi vòng xác minh server đều có timeout riêng, không để spinner vô hạn.
@@ -96,20 +103,21 @@ export const useAuthStore = create<AuthState>((set) => ({
               // nếu đang xác minh ban đầu thì timeout hiện hành vẫn tiếp tục chạy.
               if (current.user?.uid === user.uid
                 && (current.profileStatus === 'ready' || current.profileStatus === 'error')) return
-              set({ user, role: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
+              set({ user, role: null, accessScope: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
               return
             }
 
             if (snap.exists()) {
               const data = snap.data()
               const nextRole = isAuthRole(data.role) ? data.role : null
+              const nextAccessScope = nextRole === 'student_manager' ? getAuthAccessScope(data.accessScope) : null
               const nextTeacherId = typeof data.teacherId === 'string' && data.teacherId ? data.teacherId : null
 
               if (nextRole === 'teacher' && nextTeacherId) {
                 // Quyền gia sư cần khớp cả users/{uid} và UID đăng nhập chuẩn trên
                 // teachers/{teacherId}. Không mở route trong khoảng giữa hai lần đọc.
                 const readVersion = ++profileReadVersion
-                set({ user, role: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
+                set({ user, role: null, accessScope: null, teacherId: null, loading: true, initialized: true, profileStatus: 'loading' })
                 armProfileTimeout(user.uid, readVersion)
                 void getDocFromServer(doc(db, 'teachers', nextTeacherId)).then(async (teacherSnap) => {
                   if (readVersion !== profileReadVersion || useAuthStore.getState().user?.uid !== user.uid) return
@@ -138,6 +146,7 @@ export const useAuthStore = create<AuthState>((set) => ({
                   set({
                     user,
                     role: isInactiveTeacher ? 'inactive_teacher' : 'teacher',
+                    accessScope: null,
                     teacherId: nextTeacherId,
                     loading: false,
                     initialized: true,
@@ -147,7 +156,7 @@ export const useAuthStore = create<AuthState>((set) => ({
                   if (readVersion !== profileReadVersion || useAuthStore.getState().user?.uid !== user.uid) return
                   clearProfileTimeout()
                   console.error('Unable to validate canonical teacher account:', error)
-                  set({ user, role: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
+                  set({ user, role: null, accessScope: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
                 })
                 return
               }
@@ -157,6 +166,7 @@ export const useAuthStore = create<AuthState>((set) => ({
               set({
                 user,
                 role: nextRole,
+                accessScope: nextAccessScope,
                 teacherId: nextTeacherId,
                 loading: false,
                 initialized: true,
@@ -168,23 +178,23 @@ export const useAuthStore = create<AuthState>((set) => ({
             // Server xác nhận hồ sơ quyền thực sự chưa tồn tại.
             profileReadVersion += 1
             clearProfileTimeout()
-            set({ user, role: null, teacherId: null, loading: false, initialized: true, profileStatus: 'missing' })
+            set({ user, role: null, accessScope: null, teacherId: null, loading: false, initialized: true, profileStatus: 'missing' })
           },
           (error) => {
             profileReadVersion += 1
             clearProfileTimeout()
             console.error('Unable to load authenticated user profile:', error)
-            set({ user, role: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
+            set({ user, role: null, accessScope: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
           },
         )
       } else {
-        set({ user: null, role: null, teacherId: null, loading: false, initialized: true, profileStatus: 'idle' })
+        set({ user: null, role: null, accessScope: null, teacherId: null, loading: false, initialized: true, profileStatus: 'idle' })
       }
     }, (error) => {
       profileReadVersion += 1
       clearProfileTimeout()
       console.error('Unable to initialize Firebase authentication:', error)
-      set({ user: null, role: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
+      set({ user: null, role: null, accessScope: null, teacherId: null, loading: false, initialized: true, profileStatus: 'error' })
     })
 
     return () => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, setDoc,
-  onSnapshot, serverTimestamp, query, orderBy,
+  getDocFromServer, onSnapshot, serverTimestamp, query, orderBy,
 } from 'firebase/firestore'
 import { db, secondaryAuth } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
@@ -11,7 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, type UserCredential } from 'firebase/auth'
 import { BookUser, Building2, Check, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
 import {
   DEFAULT_TEACHER_NICKNAMES,
@@ -27,6 +27,17 @@ export interface Branch {
   address: string
   status: 'active' | 'inactive'
   createdAt: any
+}
+
+type StaffAccountKind = 'student_manager' | 'teacher_manager' | 'booking_assistant' | 'admin'
+
+function normalizeStaffEmail(value: string) {
+  const normalized = value.trim().toLowerCase()
+  return normalized.includes('@') ? normalized : `${normalized}@edutrackpro.app`
+}
+
+function isValidStaffEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
 export function SettingsPage() {
@@ -63,7 +74,7 @@ export function SettingsPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
-  const [selectedRole, setSelectedRole] = useState<'student_manager' | 'teacher_manager' | 'admin'>('student_manager')
+  const [selectedRole, setSelectedRole] = useState<StaffAccountKind>('student_manager')
 
   // Teacher nickname library states
   const [customNicknames, setCustomNicknames] = useState<TeacherNicknameLibrary>({ male: [], female: [] })
@@ -264,26 +275,57 @@ export function SettingsPage() {
       toast.error('Vui lòng điền đầy đủ các trường thông tin bắt buộc (*)')
       return
     }
+    const normalizedEmail = normalizeStaffEmail(email)
+    if (!isValidStaffEmail(normalizedEmail)) {
+      toast.error('Tên đăng nhập hoặc email không hợp lệ. Chỉ nhập tên ngắn không dấu, hoặc nhập đầy đủ email.')
+      return
+    }
     if (password.length < 6) {
       toast.error('Mật khẩu phải dài ít nhất 6 ký tự')
       return
     }
+
+    const storedRole = selectedRole === 'booking_assistant' ? 'student_manager' : selectedRole
+    const accessScope = selectedRole === 'booking_assistant' ? 'booking_only' : null
+    const profileData = (uid: string) => ({
+      uid,
+      email: normalizedEmail,
+      username: username.trim(),
+      role: storedRole,
+      ...(accessScope ? { accessScope } : {}),
+      createdAt: serverTimestamp(),
+    })
+
     setSavingAccount(true)
+    let createdAuthUser = false
     try {
-      // 1. Register with Firebase Auth using secondary Auth instance
-      const credential = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
-      await secondaryAuth.signOut()
+      let credential: UserCredential
+      try {
+        credential = await createUserWithEmailAndPassword(secondaryAuth, normalizedEmail, password)
+        createdAuthUser = true
+      } catch (authError: unknown) {
+        const authErrorCode = typeof authError === 'object' && authError !== null && 'code' in authError
+          ? String(authError.code)
+          : ''
+        if (authErrorCode !== 'auth/email-already-in-use') throw authError
 
-      // 2. Write details into users Firestore collection
-      await setDoc(doc(db, 'users', credential.user.uid), {
-        uid: credential.user.uid,
-        email: email.trim().toLowerCase(),
-        username: username.trim(),
-        role: selectedRole,
-        createdAt: serverTimestamp(),
-      })
+        // Tài khoản Auth có thể đã được tạo ở lần trước nhưng users/{uid} chưa ghi
+        // thành công. Chỉ khôi phục khi Admin nhập lại đúng mật khẩu, không dò UID
+        // và không ghi đè một hồ sơ quyền đã tồn tại.
+        credential = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, password)
+        const existingProfile = await getDocFromServer(doc(db, 'users', credential.user.uid))
+        if (existingProfile.exists()) {
+          const profileExistsError = new Error('ACCOUNT_PROFILE_EXISTS') as Error & { cause?: unknown }
+          profileExistsError.cause = authError
+          throw profileExistsError
+        }
+      }
 
-      toast.success('Đã tạo tài khoản nhân viên thành công!')
+      await setDoc(doc(db, 'users', credential.user.uid), profileData(credential.user.uid))
+
+      toast.success(createdAuthUser
+        ? 'Đã tạo tài khoản nhân viên thành công!'
+        : 'Đã khôi phục hồ sơ quyền và tài khoản có thể đăng nhập!')
       setShowAccountModal(false)
 
       // Reset fields
@@ -291,14 +333,23 @@ export function SettingsPage() {
       setPassword('')
       setUsername('')
       setSelectedRole('student_manager')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating staff account:', err)
-      if (err.code === 'auth/email-already-in-use') {
-        toast.error('Địa chỉ email này đã được sử dụng cho tài khoản khác')
+      const errorMessage = err instanceof Error ? err.message : ''
+      const errorCode = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : ''
+      if (errorMessage === 'ACCOUNT_PROFILE_EXISTS') {
+        toast.error('Email này đã có tài khoản và hồ sơ quyền. Hệ thống không ghi đè để tránh đổi nhầm phân quyền.')
+      } else if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
+        toast.error('Email đã tồn tại nhưng mật khẩu không khớp, nên không thể tự khôi phục hồ sơ quyền.')
+      } else if (errorCode === 'auth/invalid-email') {
+        toast.error('Tên đăng nhập hoặc email không hợp lệ.')
+      } else if (createdAuthUser) {
+        toast.error('Đã tạo thông tin đăng nhập nhưng chưa lưu được hồ sơ quyền. Giữ nguyên email/mật khẩu và bấm Tạo tài khoản lại để hệ thống tự khôi phục, không tạo trùng dữ liệu.')
       } else {
-        toast.error(err.message || 'Lỗi khi tạo tài khoản')
+        toast.error('Không thể tạo tài khoản lúc này. Vui lòng kiểm tra kết nối và thử lại.')
       }
     } finally {
+      await secondaryAuth.signOut().catch(() => undefined)
       setSavingAccount(false)
     }
   }
@@ -309,11 +360,11 @@ export function SettingsPage() {
     try {
       // Deleting user document from users collection
       await deleteDoc(doc(db, 'users', deleteAcc.uid))
-      toast.success('Đã xóa tài khoản nhân viên thành công!')
+      toast.success('Đã thu hồi quyền truy cập của tài khoản nhân viên!')
       setDeleteAcc(null)
     } catch (err) {
       console.error(err)
-      toast.error('Không thể xóa tài khoản nhân viên')
+      toast.error('Không thể thu hồi quyền truy cập của tài khoản nhân viên')
     } finally {
       setDeletingAccount(false)
     }
@@ -531,7 +582,9 @@ export function SettingsPage() {
                   className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm transition-all duration-200"
                 >
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                    acc.role === 'admin' 
+                    acc.accessScope === 'booking_only'
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : acc.role === 'admin'
                       ? 'bg-rose-50 text-rose-500' 
                       : acc.role === 'student_manager' 
                       ? 'bg-sky-50 text-sky-500' 
@@ -545,7 +598,9 @@ export function SettingsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-slate-900 truncate">{acc.username || acc.email}</p>
                       <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md ${
-                        acc.role === 'admin'
+                        acc.accessScope === 'booking_only'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : acc.role === 'admin'
                           ? 'bg-rose-100 text-rose-700'
                           : acc.role === 'student_manager'
                           ? 'bg-sky-100 text-sky-700'
@@ -553,7 +608,9 @@ export function SettingsPage() {
                           ? 'bg-amber-100 text-amber-700'
                           : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {acc.role === 'admin'
+                        {acc.accessScope === 'booking_only'
+                          ? 'Trợ lý xếp lớp'
+                          : acc.role === 'admin'
                           ? 'Admin'
                           : acc.role === 'student_manager'
                           ? 'Quản lý Học viên'
@@ -789,9 +846,13 @@ export function SettingsPage() {
               onChange={(e) => setUsername(e.target.value)}
             />
             <Input
-              label="Email đăng nhập *"
-              placeholder="VD: manager1@edutrackpro.app"
-              type="email"
+              label="Email hoặc tên đăng nhập *"
+              placeholder="VD: quynhnhu hoặc quynhnhu@edutrackpro.app"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
+              autoComplete="off"
+              hint="Nếu chỉ nhập tên ngắn, hệ thống tự thêm @edutrackpro.app."
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -801,14 +862,21 @@ export function SettingsPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleCreateAccount()
+                }
+              }}
             />
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-500">PHÂN QUYỀN VAI TRÒ *</label>
               <select
                 value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value as any)}
+                onChange={(e) => setSelectedRole(e.target.value as StaffAccountKind)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
               >
+                <option value="booking_assistant">Trợ lý xếp lớp (Chỉ thấy trang Lịch xếp lớp)</option>
                 <option value="student_manager">Quản lý Học viên (Chỉ xem học sinh/buổi dạy, không xem gia sư/hợp đồng/lương)</option>
                 <option value="teacher_manager">Quản lý Gia sư (Chỉ xem gia sư/hợp đồng/lương, không xem học sinh)</option>
                 <option value="admin">Admin cấp cao (Toàn quyền hệ thống)</option>
@@ -840,12 +908,12 @@ export function SettingsPage() {
           open
           onClose={() => setDeleteAcc(null)}
           onConfirm={handleDeleteAccount}
-          title={`Xóa tài khoản nhân viên "${deleteAcc.username || deleteAcc.email}"?`}
-          confirmLabel="Xóa"
+          title={`Thu hồi quyền của tài khoản "${deleteAcc.username || deleteAcc.email}"?`}
+          confirmLabel="Thu hồi quyền"
           loading={deletingAccount}
         >
           <p className="text-sm text-slate-500">
-            Hành động này sẽ xóa vĩnh viễn quyền truy cập của tài khoản này khỏi hệ thống.
+            Hệ thống chỉ xóa hồ sơ phân quyền, không xóa dữ liệu lớp học. Có thể tạo lại bằng đúng email và mật khẩu để khôi phục quyền sau này.
           </p>
         </ConfirmDialog>
       )}

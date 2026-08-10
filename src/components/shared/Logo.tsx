@@ -4,10 +4,11 @@ import { useAuthStore } from '@/stores/authStore'
 export function Logo({ className = '', clickable = true }: { className?: string; clickable?: boolean }) {
   const hasSizeClass = /\b(?:h-|w-|max-h-|max-w-)/.test(className)
   const defaultClasses = hasSizeClass ? '' : 'h-10 w-auto max-w-[170px]'
-  const { user, role } = useAuthStore()
+  const { user, role, accessScope } = useAuthStore()
 
   const getHomePath = () => {
     if (!user) return '/'
+    if (accessScope === 'booking_only') return '/admin/booking-schedules'
     if (role === 'admin' || role === 'student_manager') return '/admin/students/fixed'
     if (role === 'teacher_manager') return '/admin/teachers/online'
     if (role === 'teacher') return '/teacher/attendance'

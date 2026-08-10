@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Globe2,
   GraduationCap,
+  History,
   Link,
   Save,
   Search,
@@ -135,6 +136,19 @@ function formatDateISO(date: Date) {
 function parseDateISO(dateISO: string): Date {
   const [year, month, day] = dateISO.split('-').map(Number)
   return new Date(year, month - 1, day)
+}
+
+function getVietnamNowParts() {
+  const now = new Date(Date.now() + 7 * 60 * 60 * 1000)
+  return {
+    dateISO: now.toISOString().slice(0, 10),
+    time: `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`,
+  }
+}
+
+function isPastScheduleSlot(dateISO: string, time: string) {
+  const now = getVietnamNowParts()
+  return dateISO < now.dateISO || (dateISO === now.dateISO && time < now.time)
 }
 
 function getMonday(date: Date) {
@@ -263,6 +277,7 @@ export function BookingSchedulesPage() {
 
   // Modal states
   const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [scheduleMode, setScheduleMode] = useState<'regular' | 'makeup'>('regular')
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [showCancelBatchModal, setShowCancelBatchModal] = useState(false)
   const [profileTeacher, setProfileTeacher] = useState<Teacher | null>(null)
@@ -290,6 +305,7 @@ export function BookingSchedulesPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
+  const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   // Load teachers and availabilities
   useEffect(() => {
     async function loadTeachersAndAvailability() {
@@ -734,27 +750,24 @@ export function BookingSchedulesPage() {
 
     if (!isCellOpen(day, time)) return
 
-    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
-    let isPast = false
-    if (dateISO < todayISO) {
-      isPast = true
-    } else if (dateISO === todayISO) {
-      const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
-      const currentHour = now.getUTCHours()
-      const currentMinute = now.getUTCMinutes()
-      const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
-      if (time < currentMinutesStr) {
-        isPast = true
-      }
-    }
+    const isPast = isPastScheduleSlot(dateISO, time)
 
     if (isPast) {
-      toast.info('Bạn đã chọn khung giờ đã qua. Khung giờ này chỉ được xếp nếu chọn Lịch định kỳ (bắt đầu từ tuần sau).')
+      toast.info('Đã chọn khung giờ trong quá khứ. Dùng nút Xếp lớp học bù để tạo ca cho gia sư điểm danh.')
     }
 
     const slot: SelectedSlot = { day, dateISO, time }
 
     if (multiSelectMode) {
+      const firstSelectedSlot = selectedSlots[0]
+      if (
+        firstSelectedSlot
+        && !isSlotSelected(dateISO, time)
+        && isPastScheduleSlot(firstSelectedSlot.dateISO, firstSelectedSlot.time) !== isPast
+      ) {
+        toast.warning('Không thể chọn chung ca quá khứ và ca tương lai trong một lần xếp lớp.')
+        return
+      }
       setSelectedSlots((current) => {
         const exists = current.some((s) => s.dateISO === dateISO && s.time === time)
         if (exists) {
@@ -765,7 +778,14 @@ export function BookingSchedulesPage() {
       })
     } else {
       setSelectedSlots([slot])
+      if (isPast) {
+        setMultiSelectMode(true)
+        setSelectedBookingIds([])
+        return
+      }
       // Reset scheduling form
+      setScheduleMode('regular')
+      setIsRecurring(false)
       setSelectedStudent(null)
       setStudentSearch('')
       setSelectedSubjectId('')
@@ -821,17 +841,19 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const now = new Date(new Date().getTime() + 7 * 60 * 60 * 1000)
-    const currentHour = now.getUTCHours()
-    const currentMinute = now.getUTCMinutes()
-    const currentMinutesStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`
+    const vietnamNow = getVietnamNowParts()
+    const todayISO = vietnamNow.dateISO
+    const currentMinutesStr = vietnamNow.time
 
-    // 1. If not recurring, block past slots completely
-    if (!isRecurring) {
+    if (scheduleMode === 'makeup') {
+      if (isRecurring || !selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))) {
+        toast.error('Lớp học bù chỉ áp dụng cho ca đơn lẻ trong quá khứ.')
+        return
+      }
+    } else if (!isRecurring) {
+      // Luồng thường không được phép lùi ngày. Ngoại lệ duy nhất là nút học bù.
       for (const slot of selectedSlots) {
-        const isPast = slot.dateISO < todayISO || (slot.dateISO === todayISO && slot.time < currentMinutesStr)
-        if (isPast) {
+        if (isPastScheduleSlot(slot.dateISO, slot.time)) {
           toast.error(`Không thể xếp lịch ca học đơn lẻ trong quá khứ (${slot.dateISO} ${slot.time})!`)
           return
         }
@@ -1035,7 +1057,14 @@ export function BookingSchedulesPage() {
               requestedMinutes: duration,
               requestedPoints: pointsPerLesson,
               pointsPer25Minutes,
-              adminNote: 'Xếp lịch trực tiếp từ bảng admin',
+              adminNote: scheduleMode === 'makeup'
+                ? 'Xếp lớp học bù trong quá khứ từ bảng admin'
+                : 'Xếp lịch trực tiếp từ bảng admin',
+              ...(scheduleMode === 'makeup' ? {
+                bookingType: 'makeup',
+                isMakeup: true,
+                makeupCreatedAt: serverTimestamp(),
+              } : {}),
               classroomURL: currentStudent.classroomURL || '',
               createdAt: serverTimestamp(),
               confirmedAt: serverTimestamp(),
@@ -1133,7 +1162,11 @@ export function BookingSchedulesPage() {
         // Add admin log
         tx.set(doc(collection(db, 'adminLogs')), {
           adminId: user?.uid ?? 'admin',
-          action: isRecurring ? 'RECURRING_BATCH_SCHEDULE_CLASSES' : 'BATCH_SCHEDULE_CLASSES',
+          action: scheduleMode === 'makeup'
+            ? 'BATCH_SCHEDULE_MAKEUP_CLASSES'
+            : isRecurring
+            ? 'RECURRING_BATCH_SCHEDULE_CLASSES'
+            : 'BATCH_SCHEDULE_CLASSES',
           targetType: 'student',
           targetId: studentId,
           changes: {
@@ -1144,12 +1177,15 @@ export function BookingSchedulesPage() {
             totalRequired,
             heldMinutesAfter: nextHeld,
             isRecurring,
+            scheduleMode,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success(`Đã xếp thành công ${totalScheduled} ca học ${isRecurring ? '(Lịch định kỳ lặp lại)' : ''}`)
+      toast.success(scheduleMode === 'makeup'
+        ? `Đã xếp thành công ${totalScheduled} ca học bù. Gia sư có thể vào Lịch dạy để điểm danh.`
+        : `Đã xếp thành công ${totalScheduled} ca học ${isRecurring ? '(Lịch định kỳ lặp lại)' : ''}`)
       setShowScheduleModal(false)
       setSelectedSlots([])
       setSelectedStudent(null)
@@ -1405,11 +1441,23 @@ export function BookingSchedulesPage() {
     }
   }
 
-  const handleOpenBatchSchedule = () => {
+  const handleOpenBatchSchedule = (mode: 'regular' | 'makeup') => {
     if (selectedSlots.length === 0) {
       toast.warning('Vui lòng chọn các ô OPEN trên lịch dạy')
       return
     }
+    const allPast = selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
+    const hasPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
+    if (mode === 'makeup' && !allPast) {
+      toast.warning('Xếp lớp học bù chỉ nhận các khung giờ đã qua.')
+      return
+    }
+    if (mode === 'regular' && hasPast) {
+      toast.warning('Khung giờ đã qua phải dùng nút Xếp lớp học bù.')
+      return
+    }
+    setScheduleMode(mode)
+    setIsRecurring(false)
     setSelectedStudent(null)
     setStudentSearch('')
     setSelectedSubjectId('')
@@ -1952,13 +2000,27 @@ export function BookingSchedulesPage() {
 
               {/* Batch Action button */}
               {multiSelectMode && selectedSlots.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleOpenBatchSchedule}
-                  className="h-10 px-5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition shadow-md flex items-center gap-1.5 animate-pulse"
-                >
-                  Xếp lớp nhanh ({selectedSlots.length})
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBatchSchedule('regular')}
+                    disabled={selectedSlotsArePast}
+                    title={selectedSlotsArePast ? 'Ca quá khứ phải dùng Xếp lớp học bù' : undefined}
+                    className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                  >
+                    Xếp lớp nhanh ({selectedSlots.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBatchSchedule('makeup')}
+                    disabled={!selectedSlotsArePast}
+                    title={!selectedSlotsArePast ? 'Chọn ca trong quá khứ để xếp lớp học bù' : undefined}
+                    className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none"
+                  >
+                    <History className="h-4 w-4" />
+                    Xếp lớp học bù ({selectedSlots.length})
+                  </button>
+                </>
               )}
 
               {/* Batch Cancel button */}
@@ -2110,17 +2172,30 @@ export function BookingSchedulesPage() {
         <Modal
           open
           onClose={() => setShowScheduleModal(false)}
-          title={selectedSlots.length > 1 ? `Xếp lớp nhanh cho ${selectedSlots.length} ca học` : 'Xếp lớp cho học viên'}
+          title={scheduleMode === 'makeup'
+            ? `Xếp lớp học bù${selectedSlots.length > 1 ? ` cho ${selectedSlots.length} ca` : ''}`
+            : selectedSlots.length > 1
+            ? `Xếp lớp nhanh cho ${selectedSlots.length} ca học`
+            : 'Xếp lớp cho học viên'}
           footer={
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" onClick={() => setShowScheduleModal(false)}>Hủy</Button>
               <Button variant="primary" loading={scheduling} onClick={executeScheduling} disabled={!selectedStudent || !selectedSubjectId}>
-                Xác nhận xếp lớp
+                {scheduleMode === 'makeup' ? 'Xác nhận lớp học bù' : 'Xác nhận xếp lớp'}
               </Button>
             </div>
           }
         >
           <div className="space-y-4">
+            {scheduleMode === 'makeup' && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950" role="status">
+                <History className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                <div>
+                  <p className="text-sm font-black">Đang xếp lớp học bù trong quá khứ</p>
+                  <p className="mt-0.5 text-xs leading-5 text-amber-800">Ca học vẫn kiểm tra trùng lịch, giữ kim cương và xuất hiện trong Lịch dạy để gia sư điểm danh.</p>
+                </div>
+              </div>
+            )}
             {scheduleConflictMessage && (
               <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800" role="alert" aria-live="assertive">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
@@ -2309,7 +2384,7 @@ export function BookingSchedulesPage() {
 
 
             {/* Recurring schedule switch */}
-            {selectedStudent && (
+            {selectedStudent && scheduleMode === 'regular' && (
               <div className="rounded-xl border border-indigo-100 bg-slate-50 p-4 space-y-2">
                 <label className="flex items-start gap-2.5 cursor-pointer">
                   <input

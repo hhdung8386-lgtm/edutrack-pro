@@ -32,8 +32,8 @@ export function AdminSidebar({
 }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, role } = useAuthStore()
-  const visibleGroups = useMemo(() => getVisibleAdminNavigation(role), [role])
+  const { user, role, accessScope } = useAuthStore()
+  const visibleGroups = useMemo(() => getVisibleAdminNavigation(role, accessScope), [accessScope, role])
   const activeGroup = visibleGroups.find((group) => isAdminNavGroupActive(group, location.pathname))
   const [menuState, setMenuState] = useState<{ pathname: string; openGroupId: string | null }>(() => ({
     pathname: location.pathname,
@@ -193,7 +193,7 @@ export function AdminSidebar({
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-slate-600 truncate">{user?.email}</p>
               <p className="text-[10px] text-slate-500">
-                {role === 'student_manager' ? 'Quản lý Học viên' : role === 'teacher_manager' ? 'Quản lý Gia sư' : 'Quản trị viên'}
+                {accessScope === 'booking_only' ? 'Trợ lý xếp lớp' : role === 'student_manager' ? 'Quản lý Học viên' : role === 'teacher_manager' ? 'Quản lý Gia sư' : 'Quản trị viên'}
               </p>
             </div>
             <button

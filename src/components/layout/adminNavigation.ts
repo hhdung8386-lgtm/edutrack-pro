@@ -129,18 +129,23 @@ export const adminNavigationGroups: AdminNavGroup[] = [
   },
 ]
 
-export function canAccessAdminNavItem(item: AdminNavItem, role: string | null | undefined) {
+export function canAccessAdminNavItem(
+  item: AdminNavItem,
+  role: string | null | undefined,
+  accessScope?: string | null,
+) {
+  if (accessScope === 'booking_only') return item.to === '/admin/booking-schedules'
   if (item.to === '/admin/notifications' && role !== 'admin') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
   if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/student-alerts'))) return false
   return true
 }
 
-export function getVisibleAdminNavigation(role: string | null | undefined) {
+export function getVisibleAdminNavigation(role: string | null | undefined, accessScope?: string | null) {
   return adminNavigationGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canAccessAdminNavItem(item, role)),
+      items: group.items.filter((item) => canAccessAdminNavItem(item, role, accessScope)),
     }))
     .filter((group) => group.items.length > 0)
 }

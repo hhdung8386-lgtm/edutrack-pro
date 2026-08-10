@@ -64,12 +64,13 @@ const PublicTeacherProfilePage = lazy(() => import('@/pages/PublicTeacherProfile
 const PublicEvaluationPage = lazy(() => import('@/pages/PublicEvaluationPage'))
 
 const RootRedirect = () => {
-  const { user, role, loading, initialized } = useAuthStore()
+  const { user, role, accessScope, loading, initialized } = useAuthStore()
   
   if (!initialized || loading) return <LoadingSpinner />
   
   if (!user) return <Navigate to="/login" replace />
   
+  if (accessScope === 'booking_only') return <Navigate to="/admin/booking-schedules" replace />
   if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/fixed" replace />
   if (role === 'teacher_manager') return <Navigate to="/admin/teachers/online" replace />
   if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
@@ -81,7 +82,8 @@ const RootRedirect = () => {
 
 const AdminIndexRedirect = () => {
   const role = useAuthStore((state) => state.role)
-  return <Navigate to={role === 'teacher_manager' ? 'teachers/online' : 'students/fixed'} replace />
+  const accessScope = useAuthStore((state) => state.accessScope)
+  return <Navigate to={accessScope === 'booking_only' ? 'booking-schedules' : role === 'teacher_manager' ? 'teachers/online' : 'students/fixed'} replace />
 }
 
 function App() {

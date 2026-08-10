@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { ChevronDown, ClipboardCheck, GraduationCap, LogOut, Menu, Users, X } from 'lucide-react'
+import { CalendarClock, ChevronDown, ClipboardCheck, GraduationCap, LogOut, Menu, Users, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { AdminSidebar } from './AdminSidebar'
 import { signOut } from '@/lib/auth'
@@ -56,8 +56,9 @@ export function AdminLayout() {
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
   const studentAlertCount = useStudentAlertCount()
-  const { user, role } = useAuthStore()
-  const visibleGroups = useMemo(() => getVisibleAdminNavigation(role), [role])
+  const { user, role, accessScope } = useAuthStore()
+  const isBookingAssistant = accessScope === 'booking_only'
+  const visibleGroups = useMemo(() => getVisibleAdminNavigation(role, accessScope), [accessScope, role])
   const pageTitle = Object.entries(PAGE_TITLES).find(([key]) => location.pathname.startsWith(key))?.[1] || 'EduTrack Pro'
 
   const toggleSidebarCollapse = () => {
@@ -86,7 +87,9 @@ export function AdminLayout() {
     setSheetOpen(true)
   }
 
-  const mobilePrimaryGroup = role === 'teacher_manager'
+  const mobilePrimaryGroup = isBookingAssistant
+    ? visibleGroups.find((group) => group.id === 'schedules')
+    : role === 'teacher_manager'
     ? visibleGroups.find((group) => group.id === 'teachers')
     : visibleGroups.find((group) => group.id === 'students')
 
@@ -116,7 +119,7 @@ export function AdminLayout() {
         </div>
         <div className="flex items-center gap-3">
           {/* Notifications bell drawer */}
-          <NotificationDrawer targetType="managers" targetId={user?.uid || ''} />
+          {!isBookingAssistant && <NotificationDrawer targetType="managers" targetId={user?.uid || ''} />}
           
           <button
             onClick={() => openMobileMenu()}
@@ -225,37 +228,54 @@ export function AdminLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
-        <div className="grid h-16 grid-cols-3">
-          <button
-            type="button"
-            onClick={() => mobilePrimaryGroup && openMobileMenu(mobilePrimaryGroup.id)}
-            className={`relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) ? 'text-brand-700' : 'text-slate-500'}`}
-          >
-            {role === 'teacher_manager' ? <GraduationCap className="h-5 w-5" /> : <Users className="h-5 w-5" />}
-            <span>{role === 'teacher_manager' ? 'Gia sư' : 'Học viên'}</span>
-            {mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
-          </button>
-          <NavLink
-            to="/admin/approvals"
-            className={({ isActive }) =>
-              `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className="relative">
-                  <ClipboardCheck className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
-                  {pendingCount > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
-                      {pendingCount > 9 ? '9+' : pendingCount}
-                    </span>
-                  )}
-                </div>
-                <span>Duyệt</span>
-                {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
-              </>
-            )}
-          </NavLink>
+        <div className={`grid h-16 ${isBookingAssistant ? 'grid-cols-2' : 'grid-cols-3'}`}>
+          {isBookingAssistant ? (
+            <NavLink
+              to="/admin/booking-schedules"
+              className={({ isActive }) => `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`}
+            >
+              {({ isActive }) => (
+                <>
+                  <CalendarClock className="h-5 w-5" />
+                  <span>Xếp lớp</span>
+                  {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+                </>
+              )}
+            </NavLink>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => mobilePrimaryGroup && openMobileMenu(mobilePrimaryGroup.id)}
+                className={`relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) ? 'text-brand-700' : 'text-slate-500'}`}
+              >
+                {role === 'teacher_manager' ? <GraduationCap className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+                <span>{role === 'teacher_manager' ? 'Gia sư' : 'Học viên'}</span>
+                {mobilePrimaryGroup && isAdminNavGroupActive(mobilePrimaryGroup, location.pathname) && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+              </button>
+              <NavLink
+                to="/admin/approvals"
+                className={({ isActive }) =>
+                  `relative flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-[0.97] ${isActive ? 'text-brand-700' : 'text-slate-500'}`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <div className="relative">
+                      <ClipboardCheck className={`h-5 w-5 ${isActive ? 'text-brand-600' : ''}`} />
+                      {pendingCount > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                          {pendingCount > 9 ? '9+' : pendingCount}
+                        </span>
+                      )}
+                    </div>
+                    <span>Duyệt</span>
+                    {isActive && <span className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand-500" />}
+                  </>
+                )}
+              </NavLink>
+            </>
+          )}
           <button
             type="button"
             onClick={() => openMobileMenu()}

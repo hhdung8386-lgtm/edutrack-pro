@@ -81,10 +81,10 @@ async function ensureTeacherUserDocument(
 
 export async function signIn(email: string, password: string) {
   const credential = await signInWithEmailAndPassword(auth, email, password)
-  const userDoc = await getDoc(doc(db, 'users', credential.user.uid))
+  const userDoc = await getDocFromServer(doc(db, 'users', credential.user.uid))
   if (!userDoc.exists()) {
     await firebaseSignOut(auth)
-    throw new Error('Tài khoản không có quyền truy cập')
+    throw new Error('Tài khoản chưa được khởi tạo đầy đủ. Vui lòng nhờ Admin tạo lại bằng đúng email và mật khẩu để khôi phục quyền truy cập.')
   }
   const data = userDoc.data()
   // Luồng email quản trị không được nhận role teacher. Mọi gia sư bắt buộc đi
@@ -95,7 +95,12 @@ export async function signIn(email: string, password: string) {
     await firebaseSignOut(auth)
     throw new Error('Tài khoản không có quyền truy cập')
   }
-  return { user: credential.user, role, teacherId: data.teacherId }
+  return {
+    user: credential.user,
+    role,
+    teacherId: data.teacherId,
+    accessScope: role === 'student_manager' && data.accessScope === 'booking_only' ? 'booking_only' as const : null,
+  }
 }
 
 export async function signInTeacher(teacherCode: string, password: string) {
@@ -242,6 +247,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
       user: credential.user,
       role: 'teacher' as const,
       teacherId,
+      accessScope: null,
     }
   }
 

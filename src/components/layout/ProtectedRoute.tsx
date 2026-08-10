@@ -13,7 +13,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole, requireContractAccepted = false }: ProtectedRouteProps) {
-  const { user, role, loading, initialized, teacherId, profileStatus } = useAuthStore()
+  const { user, role, accessScope, loading, initialized, teacherId, profileStatus } = useAuthStore()
   const location = useLocation()
   const [hasAcceptedContract, setHasAcceptedContract] = useState(false)
   const [hasRegisteredAvailability, setHasRegisteredAvailability] = useState(false)
@@ -165,6 +165,14 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         </div>
       </div>
     )
+  }
+
+  if (
+    accessScope === 'booking_only'
+    && location.pathname !== '/admin'
+    && location.pathname !== '/admin/booking-schedules'
+  ) {
+    return <Navigate to="/admin/booking-schedules" replace />
   }
 
   if (requiredRole === 'teacher' && role === 'teacher' && !teacherId) {
