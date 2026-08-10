@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase-admin/app'
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
+import { defineSecret } from 'firebase-functions/params'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 
 initializeApp()
@@ -8,6 +9,7 @@ initializeApp()
 const db = new Firestore()
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const PROCESSING_LEASE_MS = 10 * 60 * 1000
+const resendApiKey = defineSecret('RESEND_API_KEY')
 
 const REMINDER_SPECS = [
   {
@@ -180,41 +182,49 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
     .where('requestedDate', 'in', [vietnamDateISO(now), tomorrowISO(now)])
     .get()
 
-  const dueBookings = bookingsSnapshot.docs
+  const dueReminders = bookingsSnapshot.docs
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Booking))
     .filter((booking) => !booking.lessonId && booking.studentId)
     .map((booking) => ({ booking, scheduledAt: parseVietnamSchedule(booking.requestedDate, booking.requestedStart) }))
     .filter((item): item is { booking: Booking; scheduledAt: Date } => Boolean(item.scheduledAt))
-
-  const studentRefs = [...new Set(dueBookings.map(({ booking }) => booking.studentId!))]
-    .map((studentId) => db.collection('students').doc(studentId))
-  const studentSnapshots = studentRefs.length > 0 ? await db.getAll(...studentRefs) : []
-  const studentsById = new Map(studentSnapshots.map((snapshot) => [snapshot.id, snapshot.data() as Student]))
-
-  return dueBookings.flatMap(({ booking, scheduledAt }) => {
-    const student = studentsById.get(booking.studentId!)
-    const recipient = student?.email?.trim().toLowerCase()
-    if (!student || !isEmail(recipient)) {
-      logger.warn('Skipping reminder because the student email is missing or invalid', { bookingId: booking.id, studentId: booking.studentId })
-      return []
-    }
-
-    return REMINDER_SPECS
+    .flatMap(({ booking, scheduledAt }) => REMINDER_SPECS
       .filter((reminder) => {
         const diff = scheduledAt.getTime() - now.getTime()
         return diff >= reminder.offsetMs - reminder.earlyWindowMs && diff <= reminder.offsetMs + reminder.lateWindowMs
       })
-      .map((reminder) => ({
-        student,
-        candidate: {
-          booking,
-          recipient,
-          scheduledAt,
-          reminder,
-          deliveryId: reminderDeliveryId(booking, reminder),
-        },
-      }))
+      .map((reminder) => ({ booking, scheduledAt, reminder })))
+
+  const studentRefs = [...new Set(dueReminders.map(({ booking }) => booking.studentId!))]
+    .map((studentId) => db.collection('students').doc(studentId))
+  const studentSnapshots = studentRefs.length > 0 ? await db.getAll(...studentRefs) : []
+  const studentsById = new Map(studentSnapshots.map((snapshot) => [snapshot.id, snapshot.data() as Student]))
+  let invalidRecipientCount = 0
+
+  const candidates = dueReminders.flatMap(({ booking, scheduledAt, reminder }) => {
+    const student = studentsById.get(booking.studentId!)
+    const recipient = student?.email?.trim().toLowerCase()
+    if (!student || !isEmail(recipient)) {
+      invalidRecipientCount += 1
+      return []
+    }
+
+    return [{
+      student,
+      candidate: {
+        booking,
+        recipient,
+        scheduledAt,
+        reminder,
+        deliveryId: reminderDeliveryId(booking, reminder),
+      },
+    }]
   })
+
+  if (invalidRecipientCount > 0) {
+    logger.warn('Skipped due reminders because student emails are missing or invalid', { count: invalidRecipientCount })
+  }
+
+  return candidates
 }
 
 export const sendClassReminders = onSchedule({
@@ -223,10 +233,13 @@ export const sendClassReminders = onSchedule({
   timeZone: 'Asia/Ho_Chi_Minh',
   timeoutSeconds: 180,
   memory: '256MiB',
+  secrets: [resendApiKey],
 }, async () => {
-  const apiKey = process.env.RESEND_API_KEY?.trim()
   const enabled = process.env.REMINDER_EMAILS_ENABLED === 'true'
-  if (!enabled || !apiKey) return
+  if (!enabled) return
+
+  const apiKey = resendApiKey.value().trim()
+  if (!apiKey || apiKey === 'disabled') return
 
   const now = new Date()
   const candidates = await collectCandidates(now)
