@@ -54,10 +54,12 @@ export function TeacherRankingPage() {
         const [lessonSnap, teacherSnap] = await Promise.all([
           // Approved lessons are mirrored to publicLessons, which is readable
           // by teachers without widening access to other teachers' private reports.
+          // Keep the status predicate in the query: Firestore Rules require it
+          // for list access. Adding the month date range here also requires a
+          // publicLessons(status, date) composite index that production does not have.
           getDocs(query(
             collection(db, 'publicLessons'),
-            where('date', '>=', `${month}-01`),
-            where('date', '<=', `${month}-31`),
+            where('status', '==', 'approved'),
           )),
           getDocs(collection(db, 'teachers')),
         ])

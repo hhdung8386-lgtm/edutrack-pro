@@ -757,7 +757,7 @@ export function BookingSchedulesPage() {
     const isPast = isPastScheduleSlot(dateISO, time)
 
     if (isPast) {
-      toast.info('Đã chọn khung giờ trong quá khứ. Dùng nút Xếp lớp học bù để tạo ca cho gia sư điểm danh.')
+      toast.info('Đã chọn khung giờ trong quá khứ. Dùng nút Xếp lịch bù để tạo ca cho gia sư điểm danh.')
     }
 
     const slot: SelectedSlot = { day, dateISO, time }
@@ -1453,11 +1453,11 @@ export function BookingSchedulesPage() {
     const allPast = selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
     const hasPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
     if (mode === 'makeup' && !allPast) {
-      toast.warning('Xếp lớp học bù chỉ nhận các khung giờ đã qua.')
+      toast.warning('Xếp lịch bù chỉ nhận các khung giờ đã qua.')
       return
     }
     if (mode === 'regular' && hasPast) {
-      toast.warning('Khung giờ đã qua phải dùng nút Xếp lớp học bù.')
+      toast.warning('Khung giờ đã qua phải dùng nút Xếp lịch bù.')
       return
     }
     setScheduleMode(mode)
@@ -1994,9 +1994,9 @@ export function BookingSchedulesPage() {
                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {multiSelectMode ? 'Đang chọn nhiều' : 'Chọn nhiều ca'}
+                Xếp lịch nhiều ca
                 {multiSelectMode && (selectedSlots.length > 0 || selectedBookingIds.length > 0) && (
-                  <span className="bg-white text-indigo-700 text-xs px-2 py-0.5 rounded-full font-black">
+                  <span aria-live="polite" className="bg-white text-indigo-700 text-xs px-2 py-0.5 rounded-full font-black">
                     {selectedSlots.length + selectedBookingIds.length}
                   </span>
                 )}
@@ -2009,7 +2009,7 @@ export function BookingSchedulesPage() {
                     type="button"
                     onClick={() => handleOpenBatchSchedule('regular')}
                     disabled={selectedSlotsArePast}
-                    title={selectedSlotsArePast ? 'Ca quá khứ phải dùng Xếp lớp học bù' : undefined}
+                    title={selectedSlotsArePast ? 'Ca quá khứ phải dùng Xếp lịch bù' : undefined}
                     className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                   >
                     Xếp lớp nhanh ({selectedSlots.length})
@@ -2018,11 +2018,11 @@ export function BookingSchedulesPage() {
                     type="button"
                     onClick={() => handleOpenBatchSchedule('makeup')}
                     disabled={!selectedSlotsArePast}
-                    title={!selectedSlotsArePast ? 'Chọn ca trong quá khứ để xếp lớp học bù' : undefined}
+                    title={!selectedSlotsArePast ? 'Chọn ca trong quá khứ để xếp lịch bù' : undefined}
                     className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none"
                   >
                     <History className="h-4 w-4" />
-                    Xếp lớp học bù ({selectedSlots.length})
+                    Xếp lịch bù ({selectedSlots.length})
                   </button>
                 </>
               )}
@@ -2177,7 +2177,7 @@ export function BookingSchedulesPage() {
           open
           onClose={() => setShowScheduleModal(false)}
           title={scheduleMode === 'makeup'
-            ? `Xếp lớp học bù${selectedSlots.length > 1 ? ` cho ${selectedSlots.length} ca` : ''}`
+            ? `Xếp lịch bù${selectedSlots.length > 1 ? ` cho ${selectedSlots.length} ca` : ''}`
             : selectedSlots.length > 1
             ? `Xếp lớp nhanh cho ${selectedSlots.length} ca học`
             : 'Xếp lớp cho học viên'}
@@ -2185,7 +2185,7 @@ export function BookingSchedulesPage() {
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" onClick={() => setShowScheduleModal(false)}>Hủy</Button>
               <Button variant="primary" loading={scheduling} onClick={executeScheduling} disabled={!selectedStudent || !selectedSubjectId}>
-                {scheduleMode === 'makeup' ? 'Xác nhận lớp học bù' : 'Xác nhận xếp lớp'}
+                {scheduleMode === 'makeup' ? 'Xác nhận xếp lịch bù' : 'Xác nhận xếp lớp'}
               </Button>
             </div>
           }
@@ -2195,7 +2195,7 @@ export function BookingSchedulesPage() {
               <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950" role="status">
                 <History className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
                 <div>
-                  <p className="text-sm font-black">Đang xếp lớp học bù trong quá khứ</p>
+                  <p className="text-sm font-black">Đang xếp lịch bù trong quá khứ</p>
                   <p className="mt-0.5 text-xs leading-5 text-amber-800">Ca học vẫn kiểm tra trùng lịch, giữ kim cương và xuất hiện trong Lịch dạy để gia sư điểm danh.</p>
                 </div>
               </div>
