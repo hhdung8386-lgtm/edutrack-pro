@@ -226,10 +226,7 @@ export const sendClassReminders = onSchedule({
 }, async () => {
   const apiKey = process.env.RESEND_API_KEY?.trim()
   const enabled = process.env.REMINDER_EMAILS_ENABLED === 'true'
-  if (!enabled || !apiKey) {
-    logger.warn('Class reminder worker is safely disabled until email configuration is complete')
-    return
-  }
+  if (!enabled || !apiKey) return
 
   const now = new Date()
   const candidates = await collectCandidates(now)
