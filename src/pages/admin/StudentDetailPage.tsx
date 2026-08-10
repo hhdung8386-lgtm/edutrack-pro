@@ -751,12 +751,22 @@ export function StudentDetailPage() {
       }
 
       const payrollIds = payrollSnap.docs.map((d) => d.id)
+      const payrollRefs = payrollIds.map((payrollId) => doc(db, 'payroll', payrollId))
       const reversingPoints = lessonFundPoints(reversingLesson)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', student.id)
         const lessonRef = doc(db, 'lessons', reversingLesson.id)
-        const studentSnap = await tx.get(studentRef)
+        const [studentSnap, lessonSnap, ...payrollSnaps] = await Promise.all([
+          tx.get(studentRef),
+          tx.get(lessonRef),
+          ...payrollRefs.map((payrollRef) => tx.get(payrollRef)),
+        ])
+        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+        if (!lessonSnap.exists() || lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
+        if (payrollSnaps.some((payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided)) {
+          throw new Error('PAYROLL_ALREADY_PAID')
+        }
         const s = studentSnap.data()!
 
         // Initialize subjects array for backward compatibility if needed
@@ -841,8 +851,9 @@ export function StudentDetailPage() {
         tx.delete(publicLessonRef)
 
         // Void all payroll entries for this lesson (set amount=0, voided=true)
-        for (const pid of payrollIds) {
-          tx.update(doc(db, 'payroll', pid), {
+        for (const payroll of payrollSnaps) {
+          if (!payroll.exists()) continue
+          tx.update(payroll.ref, {
             voided: true,
             amount: 0,
             voidedAt: serverTimestamp(),
@@ -893,7 +904,14 @@ export function StudentDetailPage() {
         async (tx) => {
           const studentRef = doc(db, 'students', student.id)
           const lessonRef = doc(db, 'lessons', reApprovingLesson.id)
-          const studentSnap = await tx.get(studentRef)
+          const [studentSnap, lessonSnap] = await Promise.all([
+            tx.get(studentRef),
+            tx.get(lessonRef),
+          ])
+          if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+          if (!lessonSnap.exists() || !['pending', 'rejected'].includes(lessonSnap.data().status)) {
+            throw new Error('LESSON_ALREADY_PROCESSED')
+          }
           const s = studentSnap.data()!
 
           const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
@@ -1029,7 +1047,7 @@ export function StudentDetailPage() {
             approvedAt: serverTimestamp(),
           })
 
-          const payrollRef = doc(collection(db, 'payroll'))
+          const payrollRef = doc(db, 'payroll', reApprovingLesson.id)
           tx.set(payrollRef, {
             teacherId: reApprovingLesson.teacherId,
             teacherName: reApprovingLesson.teacherName,

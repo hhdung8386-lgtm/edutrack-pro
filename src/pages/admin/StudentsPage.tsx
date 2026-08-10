@@ -83,7 +83,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   // Mặc định tải TẤT CẢ hồ sơ để không ai tưởng "mất" học viên; admin có thể giảm để nhẹ máy.
   const [limitVal, setLimitVal] = useState<number>(() => {
     const stored = sessionStorage.getItem(`${storagePrefix}_limitVal`)
-    return stored ? Number(stored) : 0
+    return stored ? Number(stored) : 200
   })
 
   // Sync filters to sessionStorage

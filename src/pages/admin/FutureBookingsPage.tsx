@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import {
-  collection, query, where, onSnapshot, runTransaction, doc,
+  collection, query, where, onSnapshot, getDocs, runTransaction, doc,
   serverTimestamp
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -48,7 +48,9 @@ export function FutureBookingsPage() {
 
   // Load teachers -> build nickname map
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'teachers'), (snap) => {
+    let active = true
+    getDocs(collection(db, 'teachers')).then((snap) => {
+      if (!active) return
       const map: Record<string, string> = {}
       snap.docs.forEach((d) => {
         const t = { id: d.id, ...d.data() } as Teacher
@@ -57,17 +59,19 @@ export function FutureBookingsPage() {
       })
       setTeacherNicks(map)
     })
-    return unsub
+    return () => { active = false }
   }, [])
 
   // Load students list
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'students'), (snap) => {
+    let active = true
+    getDocs(collection(db, 'students')).then((snap) => {
+      if (!active) return
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Student))
       list.sort((a, b) => a.name.localeCompare(b.name))
       setStudents(list)
     })
-    return unsub
+    return () => { active = false }
   }, [])
 
   // Load every booking that is still holding the student's fund. Pending requests

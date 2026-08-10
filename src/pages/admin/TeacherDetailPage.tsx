@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, writeBatch } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, deleteField, writeBatch } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Teacher, Lesson, Student, StudentSubject, TeacherAvailability, DayOfWeek, Payroll, Subject, PaymentSettings } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -476,7 +476,7 @@ export function TeacherDetailPage() {
           if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
           const lessonNow = lessonSnap.data() as any
-          if (lessonNow.status === 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
 
           const student = studentSnap.data() as Student
           const subjectId = lessonNow.subjectId || lesson.subjectId || student.subjectId || student.subjects?.[0]?.subjectId
@@ -590,7 +590,17 @@ export function TeacherDetailPage() {
             rejectedReason: null, // Xoá lý do từ chối cũ nếu có
           })
 
-          bookingRefs.forEach((bookingRef) => tx.update(bookingRef, { lessonId: lesson.id }))
+          bookingSnaps.forEach((bookingSnap) => {
+            if (!bookingSnap.exists()) return
+            const status = bookingSnap.data().status
+            if (status !== 'pending' && status !== 'confirmed') return
+            tx.update(bookingSnap.ref, {
+              lessonId: lesson.id,
+              status: 'completed',
+              completedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          })
 
           tx.update(studentRef, {
             subjects: updatedSubjects,
@@ -657,7 +667,7 @@ export function TeacherDetailPage() {
             approvedAt: serverTimestamp(),
           })
 
-          const payrollRef = doc(collection(db, 'payroll'))
+          const payrollRef = doc(db, 'payroll', lesson.id)
           tx.set(payrollRef, {
             teacherId: lesson.teacherId,
             teacherName: lesson.teacherName ?? '',
@@ -699,21 +709,44 @@ export function TeacherDetailPage() {
       } else if (currentStatus === 'approved') {
         // Luồng hoàn tác duyệt (approved -> pending hoặc approved -> rejected)
         const lessonPointsToRestore = getLessonPoints(lesson, teacher)
+        const bookingsToReopen = targetStatus === 'pending'
+          ? await resolveLessonBookings({
+              id: lesson.id,
+              bookingRequestId: lesson.bookingRequestId,
+              bookingRequestIds: lesson.bookingRequestIds,
+              studentId: lesson.studentId,
+              teacherId: lesson.teacherId,
+              date: lesson.date,
+              minutes: lesson.minutes,
+              subjectId: lesson.subjectId,
+            })
+          : []
         const payrollSnap = await getDocs(
           query(collection(db, 'payroll'), where('lessonId', '==', lesson.id))
         )
         const payrollIds = payrollSnap.docs.map((d) => d.id)
+        const payrollRefs = payrollIds.map((payrollId) => doc(db, 'payroll', payrollId))
 
         await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', lesson.studentId)
           const lessonRef = doc(db, 'lessons', lesson.id)
+          const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
 
-          const [lessonSnap, studentSnap] = await Promise.all([
+          const reads = await Promise.all([
             tx.get(lessonRef),
             tx.get(studentRef),
+            ...bookingRefsToReopen.map((bookingRef) => tx.get(bookingRef)),
+            ...payrollRefs.map((payrollRef) => tx.get(payrollRef)),
           ])
+          const [lessonSnap, studentSnap] = reads
+          const bookingSnapsToReopen = reads.slice(2, 2 + bookingRefsToReopen.length)
+          const payrollSnaps = reads.slice(2 + bookingRefsToReopen.length)
 
           if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
+          if (lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (payrollSnaps.some((payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided)) {
+            throw new Error('PAYROLL_ALREADY_PAID')
+          }
 
           const hasStudent = studentSnap.exists()
 
@@ -726,6 +759,16 @@ export function TeacherDetailPage() {
             minutesAfterApproval: 0,
             salary: 0,
             updatedAt: serverTimestamp(),
+          })
+
+          bookingSnapsToReopen.forEach((bookingSnap) => {
+            if (!bookingSnap.exists()) return
+            tx.update(bookingSnap.ref, {
+              status: 'confirmed',
+              lessonId: deleteField(),
+              completedAt: deleteField(),
+              updatedAt: serverTimestamp(),
+            })
           })
 
           if (hasStudent) {
@@ -800,8 +843,9 @@ export function TeacherDetailPage() {
           const publicLessonRef = doc(db, 'publicLessons', lesson.id)
           tx.delete(publicLessonRef)
 
-          for (const pid of payrollIds) {
-            tx.update(doc(db, 'payroll', pid), {
+          for (const payroll of payrollSnaps) {
+            if (!payroll.exists()) continue
+            tx.update(payroll.ref, {
               voided: true,
               amount: 0,
               voidedAt: serverTimestamp(),

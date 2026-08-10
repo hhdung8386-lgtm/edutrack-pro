@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, Timestamp } from 'firebase/firestore'
+import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, Timestamp, documentId } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
 import {
@@ -1631,20 +1631,42 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             .slice(0, 16)
         ))
 
-        const enriched = await Promise.all(candidates.map(async (teacher) => {
-          const [availabilitySnapshot, bookingSnapshot] = await Promise.all([
-            getDoc(doc(db, 'teacherAvailability', teacher.id)).catch(() => null),
-            getDocs(query(collection(db, 'bookingRequests'), where('teacherId', '==', teacher.id))).catch(() => null),
-          ])
-          const availability = availabilitySnapshot?.exists()
-            ? ({ id: availabilitySnapshot.id, ...availabilitySnapshot.data() } as TeacherAvailability)
-            : null
-          const activeBookings = bookingSnapshot?.docs
-            .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
-            .filter((booking) => ['pending', 'confirmed'].includes(booking.status)) || []
+        // Gom tối đa 30 gia sư mỗi truy vấn thay vì tạo 2 yêu cầu cho từng người.
+        // Số document cần đọc không tăng, nhưng số round-trip giảm từ tối đa 96 xuống 4.
+        const candidateIds = candidates.map((teacher) => teacher.id)
+        const candidateChunks: string[][] = []
+        for (let index = 0; index < candidateIds.length; index += 30) {
+          candidateChunks.push(candidateIds.slice(index, index + 30))
+        }
+        const [availabilitySnapshots, bookingSnapshots] = await Promise.all([
+          Promise.all(candidateChunks.map((ids) => getDocs(query(
+            collection(db, 'teacherAvailability'),
+            where(documentId(), 'in', ids),
+          )))),
+          Promise.all(candidateChunks.map((ids) => getDocs(query(
+            collection(db, 'bookingRequests'),
+            where('teacherId', 'in', ids),
+          )))),
+        ])
+        const availabilityByTeacher = new Map<string, TeacherAvailability>()
+        availabilitySnapshots.forEach((snapshot) => snapshot.docs.forEach((item) => {
+          availabilityByTeacher.set(item.id, { id: item.id, ...item.data() } as TeacherAvailability)
+        }))
+        const bookingsByTeacher = new Map<string, BookingRequest[]>()
+        bookingSnapshots.forEach((snapshot) => snapshot.docs.forEach((item) => {
+          const booking = { id: item.id, ...item.data() } as BookingRequest
+          if (!['pending', 'confirmed'].includes(booking.status)) return
+          const current = bookingsByTeacher.get(booking.teacherId) || []
+          current.push(booking)
+          bookingsByTeacher.set(booking.teacherId, current)
+        }))
+
+        const enriched = candidates.map((teacher) => {
+          const availability = availabilityByTeacher.get(teacher.id) || null
+          const activeBookings = bookingsByTeacher.get(teacher.id) || []
           const availabilitySummary = recommendationAvailabilitySummary(availability, activeBookings, lang)
           return { teacher, availability, activeBookings, ...availabilitySummary }
-        }))
+        })
 
         if (!active) return
 

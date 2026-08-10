@@ -17,7 +17,6 @@ const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then(m => ({ defa
 const WaitingApprovalPage = lazy(() => import('@/pages/WaitingApprovalPage').then(m => ({ default: m.WaitingApprovalPage })))
 
 // Lazy loaded Admin Pages
-const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage').then(m => ({ default: m.StudentsPage })))
 const StudentDetailPage = lazy(() => import('@/pages/admin/StudentDetailPage').then(m => ({ default: m.StudentDetailPage })))
 const StudentAlertsPage = lazy(() => import('@/pages/admin/StudentAlertsPage').then(m => ({ default: m.StudentAlertsPage })))
@@ -129,7 +128,9 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="dashboard" element={<DashboardPage />} />
+            {/* Dashboard cũ đã bị loại bỏ vì tự quét/ghi dữ liệu khi mở trang.
+                Giữ redirect để bookmark cũ không rơi vào trang 404. */}
+            <Route path="dashboard" element={<Navigate to="/admin/students/fixed" replace />} />
             <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
             <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
             <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />

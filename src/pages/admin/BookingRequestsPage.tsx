@@ -56,6 +56,7 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
 const STATUS_LABELS: Record<BookingRequest['status'], string> = {
   pending: 'Chờ xử lý',
   confirmed: 'Đã giữ chỗ',
+  completed: 'Đã học',
   rejected: 'Từ chối',
   released: 'Đã nhả chỗ',
 }
@@ -63,12 +64,13 @@ const STATUS_LABELS: Record<BookingRequest['status'], string> = {
 const STATUS_STYLES: Record<BookingRequest['status'], string> = {
   pending: 'bg-amber-50 text-amber-700 ring-amber-200',
   confirmed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  completed: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
   rejected: 'bg-rose-50 text-rose-700 ring-rose-200',
   released: 'bg-slate-100 text-slate-600 ring-slate-200',
 }
 
 const REQUEST_PAGE_SIZE = 200
-const REQUEST_STATUSES: BookingRequest['status'][] = ['pending', 'confirmed', 'rejected', 'released']
+const REQUEST_STATUSES: BookingRequest['status'][] = ['pending', 'confirmed', 'completed', 'rejected', 'released']
 
 function getStudentMinuteFund(student: Student) {
   const summary = getStudentPackageMinuteSummary(student)
@@ -119,6 +121,7 @@ export function BookingRequestsPage() {
   const [counts, setCounts] = useState<Record<BookingRequest['status'], number>>({
     pending: 0,
     confirmed: 0,
+    completed: 0,
     rejected: 0,
     released: 0,
   })
@@ -565,7 +568,7 @@ export function BookingRequestsPage() {
             />
           </label>
           <div className="flex gap-2 overflow-x-auto">
-            {(['pending', 'confirmed', 'rejected', 'released', 'all'] as const).map((status) => (
+            {(['pending', 'confirmed', 'completed', 'rejected', 'released', 'all'] as const).map((status) => (
               <button
                 key={status}
                 onClick={() => changeStatusFilter(status)}

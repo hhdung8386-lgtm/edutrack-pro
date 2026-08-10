@@ -306,7 +306,7 @@ export interface Payroll {
 
 export interface BookingRequest {
   id: string
-  status: 'pending' | 'confirmed' | 'rejected' | 'released'
+  status: 'pending' | 'confirmed' | 'completed' | 'rejected' | 'released'
   teacherId: string
   teacherCode: string
   teacherName: string
@@ -335,6 +335,7 @@ export interface BookingRequest {
   releasedAt?: Timestamp
   releasedBy?: string
   lessonId?: string
+  completedAt?: Timestamp
   currency?: string
   heldImmediately?: boolean
   requestedPoints?: number

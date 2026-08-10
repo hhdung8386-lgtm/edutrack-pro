@@ -56,7 +56,8 @@ export function TeacherRankingPage() {
           // by teachers without widening access to other teachers' private reports.
           getDocs(query(
             collection(db, 'publicLessons'),
-            where('status', '==', 'approved'),
+            where('date', '>=', `${month}-01`),
+            where('date', '<=', `${month}-31`),
           )),
           getDocs(collection(db, 'teachers')),
         ])

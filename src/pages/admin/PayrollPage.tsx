@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc, deleteField } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
 import { Card } from '@/components/ui/Card'
@@ -14,6 +14,7 @@ import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
 import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
+import { resolveLessonBookings } from '@/lib/lessonBooking'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -248,14 +249,29 @@ export function PayrollPage() {
       const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
       const activePayrollRefs = payrollSnap.docs.filter((item) => !item.data().voided).map((item) => item.ref)
       if (activePayrollRefs.length === 0) return false
+      const bookingsToReopen = await resolveLessonBookings({
+        id: lesson.id,
+        bookingRequestId: lesson.bookingRequestId,
+        bookingRequestIds: lesson.bookingRequestIds,
+        studentId: lesson.studentId,
+        teacherId: lesson.teacherId,
+        date: lesson.date,
+        minutes: lesson.minutes,
+        subjectId: lesson.subjectId,
+      })
+      const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', lesson.studentId)
-        const [currentLessonSnap, studentSnap, ...currentPayrollSnaps] = await Promise.all([
+        const reads = await Promise.all([
           tx.get(lessonRef),
           tx.get(studentRef),
           ...activePayrollRefs.map((ref) => tx.get(ref)),
+          ...bookingRefsToReopen.map((ref) => tx.get(ref)),
         ])
+        const [currentLessonSnap, studentSnap] = reads
+        const currentPayrollSnaps = reads.slice(2, 2 + activePayrollRefs.length)
+        const bookingSnapsToReopen = reads.slice(2 + activePayrollRefs.length)
         if (!currentLessonSnap.exists() || !studentSnap.exists()) throw new Error('Dữ liệu buổi học hoặc học viên không còn tồn tại')
         const currentLesson = currentLessonSnap.data() as Lesson
         if (currentLesson.status !== 'approved') throw new Error('Buổi học đã được xử lý trước đó')
@@ -328,6 +344,15 @@ export function PayrollPage() {
           minutesPerSession: primarySubject?.minutesPerSession || 50,
           status: remainingMinutes <= 0 ? 'expired' : 'active',
           updatedAt: serverTimestamp(),
+        })
+        bookingSnapsToReopen.forEach((bookingSnap) => {
+          if (!bookingSnap.exists()) return
+          tx.update(bookingSnap.ref, {
+            status: 'confirmed',
+            lessonId: deleteField(),
+            completedAt: deleteField(),
+            updatedAt: serverTimestamp(),
+          })
         })
         tx.delete(doc(db, 'publicLessons', lessonId))
         currentPayrollSnaps.forEach((payroll) => {

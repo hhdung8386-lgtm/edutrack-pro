@@ -63,3 +63,13 @@ description: Quy ước bắt buộc bảo vệ 123English khi thay đổi giao 
 - Trước khi thực hiện: nêu phạm vi, giả định và phần nào sẽ không đụng tới.
 - Sau khi thực hiện: nêu file/chức năng đã thay đổi, liên kết dữ liệu đã kiểm tra, desktop/mobile đã kiểm tra, và việc Firebase/deploy nếu có.
 - Nếu phát hiện yêu cầu có thể làm mất dữ liệu hoặc phá luồng cũ, dừng để xin xác nhận có hiểu biết trước khi thực hiện.
+
+## 8. Theo dõi chi phí data sau tối ưu
+
+- Khi người dùng nhập câu `kiểm tra chi phí data sau khi chỉnh sửa` hoặc một câu có cùng ý nghĩa, tự động thực hiện quy trình kiểm tra chi phí data của 123English theo chế độ chỉ đọc; không yêu cầu người dùng chỉ lại từng màn hình hoặc query.
+- Mốc so sánh mặc định là từ ngày đầu tháng hiện tại đến thời điểm kiểm tra. Nếu người dùng nói không tính phần đầu tháng trước khi chỉnh sửa, tách rõ giai đoạn trước và sau deploy, đồng thời ưu tiên tốc độ reads/ngày của giai đoạn sau deploy để dự phóng.
+- Thu thập tối thiểu: tổng Firestore document reads theo ngày, tỷ trọng QUERY/LOOKUP/NOT_FOUND nếu có, số ngày quan sát, tốc độ trung bình sau deploy, dự phóng cả tháng và ước tính phần chi phí document reads. Nêu rõ mọi thành phần chưa tính như storage, network, hosting, thuế, credits hoặc tỷ giá.
+- So sánh kết quả với mục tiêu vận hành 600.000–800.000 VND/tháng và với baseline gần nhất đã được xác nhận. Không cam kết mức tiết kiệm khi chưa có ít nhất 72 giờ dữ liệu sau deploy; báo riêng kết quả 24/48/72 giờ nếu thời gian quan sát chưa đủ.
+- Dùng Query Insights hoặc nguồn tương đương khi có phiên đăng nhập để xác định normalized query gây tải cao. Nếu không truy cập được, kết hợp Cloud Monitoring, số lượng document production và static audit mã nguồn để xếp hạng listener toàn cục, truy vấn lấy toàn bộ rồi lọc, N+1, reconnect reads và query thiếu giới hạn.
+- Khi phát hiện bất thường, trước tiên chỉ báo cáo nguyên nhân, phạm vi và phương án xử lý. Không chạy migration, cập nhật hàng loạt, xóa dữ liệu, thay Rules/index/config hoặc deploy thêm nếu người dùng chưa cấp quyền rõ ràng.
+- Báo cáo phải có: kỳ đo chính xác, số liệu nguồn, giả định tính tiền, thay đổi so với baseline, các query/luồng nghi vấn, mức độ tin cậy, giới hạn quan sát và đề xuất tiếp theo.

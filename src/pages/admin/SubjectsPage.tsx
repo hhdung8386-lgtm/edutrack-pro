@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs } from 'firebase/firestore'
-import { db, calculateSalary } from '@/lib/firebase'
+import { db } from '@/lib/firebase'
 import { Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -176,166 +176,11 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         }
         await updateDoc(doc(db, 'subjects', subject.id), updatePayload)
         
-        // 2. Sync to related students, lessons, and payrolls in parallel
-        // Query ALL students to sync denormalized subjects array properly
-        const [studentsSnap, lessonsSnap, teachersSnap] = await Promise.all([
-          getDocs(collection(db, 'students')),
-          getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subject.id))),
-          getDocs(collection(db, 'teachers'))
-        ]);
+        // Giá môn là dữ liệu danh mục cho các giao dịch mới. Không quét toàn bộ
+        // học viên/lịch sử và không hồi tố bảng lương khi chỉ sửa danh mục:
+        // các gói đã mua, buổi đã duyệt và bảng lương phải giữ nguyên snapshot.
         
-        const teachers = teachersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }))
-        const teachersMap = new Map(teachers.map(t => [t.id, t]))
-
-        // Update students in parallel
-        const studentUpdates = studentsSnap.docs.map(studentDoc => {
-          const studentData = studentDoc.data();
-          const hasSubject = (studentData.subjects || []).some((sub: any) => sub.subjectId === subject.id) || studentData.subjectId === subject.id;
-          if (!hasSubject) return null;
-
-          const updatedSubjectsArray = (studentData.subjects || []).map((sub: any) => {
-            if (sub.subjectId === subject.id) {
-              return { 
-                ...sub, 
-                subjectName: data.name, // Sync the name change!
-                pricePerMinute: newRateVN,
-                pricePerMinuteVN: newRateVN,
-                pricePerMinutePH: newRatePH,
-                pricePerMinuteNative: newRateNative,
-                otherCountriesPrices: other,
-                countryPrices: effectivePrices,
-                currency: newCurrency
-              }
-            }
-            return sub;
-          });
-
-          const updateObj: any = {
-            subjects: updatedSubjectsArray,
-            updatedAt: serverTimestamp(),
-          };
-
-          if (studentData.subjectId === subject.id) {
-            updateObj.subjectName = data.name; // Sync legacy name!
-            updateObj.pricePerMinute = newRateVN;
-            updateObj.pricePerMinuteVN = newRateVN;
-            updateObj.pricePerMinutePH = newRatePH;
-            updateObj.pricePerMinuteNative = newRateNative;
-            updateObj.otherCountriesPrices = other;
-            updateObj.countryPrices = effectivePrices;
-            updateObj.currency = newCurrency;
-          }
-
-          return updateDoc(doc(db, 'students', studentDoc.id), updateObj);
-        }).filter(Boolean) as Promise<any>[];
-
-        // Sync denormalized subject name on teachers and booking requests when renamed
-        const nameChanged = data.name !== subject.name;
-        const teacherUpdates: Promise<any>[] = [];
-        const bookingUpdates: Promise<any>[] = [];
-        if (nameChanged) {
-          teachersSnap.docs.forEach((tDoc) => {
-            const t = tDoc.data() as any;
-            const subjectIds: string[] = t.subjectIds || [];
-            const idx = subjectIds.indexOf(subject.id);
-            if (idx === -1) return;
-            // subjectNames is index-aligned with subjectIds; rebuild to avoid sparse entries
-            const subjectNames = subjectIds.map((sid, i) =>
-              sid === subject.id ? data.name : (t.subjectNames?.[i] ?? '')
-            );
-            teacherUpdates.push(updateDoc(doc(db, 'teachers', tDoc.id), { subjectNames }));
-          });
-
-          const bookingsSnap = await getDocs(
-            query(collection(db, 'bookingRequests'), where('subjectId', '==', subject.id))
-          );
-          bookingsSnap.docs.forEach((bDoc) => {
-            if (bDoc.data().subjectName !== data.name) {
-              bookingUpdates.push(updateDoc(doc(db, 'bookingRequests', bDoc.id), { subjectName: data.name }));
-            }
-          });
-        }
-
-        // Fetch all payrolls first in parallel to check paid status
-        const payrollQueries = lessonsSnap.docs.map(lessonDoc =>
-          getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonDoc.id)))
-        );
-        
-        const [payrollSnaps] = await Promise.all([
-          Promise.all(payrollQueries)
-        ]);
-        
-        const lessonUpdates: Promise<any>[] = [];
-        const payrollUpdates: Promise<any>[] = [];
-        
-        lessonsSnap.docs.forEach((lessonDoc, index) => {
-          const lessonId = lessonDoc.id;
-          const lesson = lessonDoc.data() as any;
-          const payrollSnap = payrollSnaps[index];
-          
-          const isPaid = payrollSnap.docs.some((pDoc: any) => pDoc.data().paid === true);
-          if (isPaid) {
-            // Protect paid lessons: do not update their rate or salary
-            return;
-          }
-
-          const teacher = teachersMap.get(lesson.teacherId);
-          const teacherCountry = teacher?.country || 'VN';
-
-          let rate = newRateVN;
-          let cur = newCurrency;
-          const rateObj = effectivePrices[teacherCountry] || effectivePrices['VN'];
-          if (rateObj) {
-            rate = rateObj.price;
-            cur = rateObj.currency;
-          }
-
-          const minutes = Number(lesson.minutes) || 0;
-          const teacherLevel = Number(lesson.teacherLevel) || 1;
-          const newSalary = lesson.status === 'approved' ? calculateSalary(minutes, rate, teacherLevel, cur) : 0;
-          
-          lessonUpdates.push(
-            updateDoc(doc(db, 'lessons', lessonId), {
-              subjectName: data.name, // Sync the name change!
-              pricePerMinute: rate,
-              salary: newSalary,
-              currency: cur,
-              updatedAt: serverTimestamp(),
-            })
-          );
-
-          // Sync publicLessons if they exist
-          lessonUpdates.push(
-            updateDoc(doc(db, 'publicLessons', lessonId), {
-              subjectName: data.name,
-            }).catch(() => {/* Ignore error if doc does not exist */})
-          );
-          
-          payrollSnap.docs.forEach((pDoc: any) => {
-            const payroll = pDoc.data();
-            if (!payroll.paid && !payroll.voided) {
-              payrollUpdates.push(
-                updateDoc(doc(db, 'payroll', pDoc.id), {
-                  amount: newSalary,
-                  pricePerMinute: rate,
-                  currency: cur,
-                  recalculatedAt: serverTimestamp(),
-                })
-              );
-            }
-          });
-        });
-        
-        // Execute all student updates, lesson updates, and unpaid payroll updates in parallel
-        await Promise.all([
-          Promise.all(studentUpdates),
-          Promise.all(lessonUpdates),
-          Promise.all(payrollUpdates),
-          Promise.all(teacherUpdates),
-          Promise.all(bookingUpdates)
-        ]);
-        
-        toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
+        toast.success('Đã cập nhật môn học; gói đã mua và lịch sử tài chính được giữ nguyên')
       } else {
         const addPayload = {
           ...data,

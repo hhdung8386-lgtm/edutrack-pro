@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { collection, onSnapshot, query, where, runTransaction, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, query, where, runTransaction, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Student } from '@/types'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
@@ -64,23 +64,26 @@ export function QuotaReconcilePage() {
   )
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'students'), (snap) => {
+    let active = true
+    getDocs(collection(db, 'students')).then((snap) => {
+      if (!active) return
       setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Student)))
       setLoadingS(false)
-    }, (e) => { console.error(e); toast.error('Không tải được danh sách học viên'); setLoadingS(false) })
-    return unsub
+    }).catch((e) => { console.error(e); toast.error('Không tải được danh sách học viên'); setLoadingS(false) })
+    return () => { active = false }
   }, [])
 
   // Chỉ cần các ca ĐANG giữ chỗ: pending + confirmed, chưa gắn buổi dạy
   useEffect(() => {
-    const unsubs = (['pending', 'confirmed'] as const).map((st) =>
-      onSnapshot(query(collection(db, 'bookingRequests'), where('status', '==', st)), (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
-        setBookings((prev) => [...prev.filter((b) => b.status !== st), ...list])
-        setLoadingB(false)
-      }, (e) => { console.error(e); setLoadingB(false) })
-    )
-    return () => unsubs.forEach((u) => u())
+    let active = true
+    Promise.all((['pending', 'confirmed'] as const).map((st) =>
+      getDocs(query(collection(db, 'bookingRequests'), where('status', '==', st)))
+    )).then((snapshots) => {
+      if (!active) return
+      setBookings(snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))))
+      setLoadingB(false)
+    }).catch((e) => { console.error(e); setLoadingB(false) })
+    return () => { active = false }
   }, [])
 
   const rows = useMemo<Row[]>(() => {

@@ -432,7 +432,17 @@ export function ApprovalsPage() {
             bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
           })
 
-          bookingRefs.forEach((bookingRef) => tx.update(bookingRef, { lessonId: approvingLesson.id }))
+          bookingSnaps.forEach((bookingSnap) => {
+            if (!bookingSnap.exists()) return
+            const status = bookingSnap.data().status
+            if (status !== 'pending' && status !== 'confirmed') return
+            tx.update(bookingSnap.ref, {
+              lessonId: approvingLesson.id,
+              status: 'completed',
+              completedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          })
 
           tx.update(studentRef, {
             subjects: updatedSubjects,
@@ -482,7 +492,7 @@ export function ApprovalsPage() {
             approvedAt: serverTimestamp(),
           })
 
-          const payrollRef = doc(col(db, 'payroll'))
+          const payrollRef = doc(db, 'payroll', approvingLesson.id)
           tx.set(payrollRef, {
             teacherId: approvingLesson.teacherId,
             teacherName: approvingLesson.teacherName ?? '',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Lesson, Student, StudentSubject, Teacher } from '@/types'
@@ -135,24 +135,23 @@ export function ReportsPage() {
       return format(date, 'yyyy-MM')
     })
 
-    Promise.all(
-      months.map(async (targetMonth) => {
-        const monthQuery = query(
-          collection(db, 'lessons'),
-          where('date', '>=', `${targetMonth}-01`),
-          where('date', '<=', `${targetMonth}-31`),
-        )
-        const snap = await getDocs(monthQuery)
-        const approved = snap.docs
-          .map((docSnap) => docSnap.data() as Lesson)
-          .filter((lesson) => lesson.status === 'approved')
+    const chartQuery = query(
+      collection(db, 'lessons'),
+      where('date', '>=', `${months[0]}-01`),
+      where('date', '<=', `${months[months.length - 1]}-31`),
+    )
+    getDocs(chartQuery).then((snap) => {
+      const approved = snap.docs
+        .map((docSnap) => docSnap.data() as Lesson)
+        .filter((lesson) => lesson.status === 'approved')
+      const data = months.map((targetMonth) => {
+        const monthLessons = approved.filter((lesson) => lesson.date?.startsWith(targetMonth))
         return {
           month: `${targetMonth.slice(5)}/${targetMonth.slice(2, 4)}`,
-          count: approved.length,
-          salary: approved.reduce((sum, lesson) => sum + (lesson.salary || 0), 0),
+          count: monthLessons.length,
+          salary: monthLessons.reduce((sum, lesson) => sum + (lesson.salary || 0), 0),
         }
-      }),
-    ).then((data) => {
+      })
       if (active) setChartData(data)
     }).catch((error) => console.error('[reports-chart]', error))
 
@@ -163,35 +162,27 @@ export function ReportsPage() {
     setFundsLoading(true)
     setFundsError('')
 
-    const unsubStudents = onSnapshot(
-      collection(db, 'students'),
-      (snap) => {
-        setStudents(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Student)))
-        setFundsLoading(false)
-      },
-      (error) => {
-        console.error('[reports-students]', error)
-        setFundsError('Không thể tải quỹ học viên. Vui lòng thử lại.')
-        setFundsLoading(false)
-      },
-    )
-
     const activeBookingsQuery = query(
       collection(db, 'bookingRequests'),
       where('status', 'in', ['pending', 'confirmed']),
     )
-    const unsubBookings = onSnapshot(
-      activeBookingsQuery,
-      (snap) => setBookingRequests(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))),
-      (error) => {
-        console.error('[reports-bookings]', error)
-        setFundsError('Không thể tải lịch đã đặt. Vui lòng thử lại.')
-      },
-    )
+    let active = true
+    Promise.all([
+      getDocs(collection(db, 'students')),
+      getDocs(activeBookingsQuery),
+    ]).then(([studentSnap, bookingSnap]) => {
+      if (!active) return
+      setStudents(studentSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Student)))
+      setBookingRequests(bookingSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest)))
+      setFundsLoading(false)
+    }).catch((error) => {
+      console.error('[reports-funds]', error)
+      setFundsError('Không thể tải dữ liệu quỹ học viên. Vui lòng thử lại.')
+      setFundsLoading(false)
+    })
 
     return () => {
-      unsubStudents()
-      unsubBookings()
+      active = false
     }
   }, [])
 

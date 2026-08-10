@@ -121,16 +121,20 @@ export function OverdueBookingsPage() {
   }, [])
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'students'), (snap) => {
+    let active = true
+    getDocs(collection(db, 'students')).then((snap) => {
+      if (!active) return
       const map: Record<string, Student> = {}
       snap.docs.forEach((d) => { map[d.id] = { id: d.id, ...d.data() } as Student })
       setStudentMap(map)
     })
-    return unsub
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'teachers'), (snap) => {
+    let active = true
+    getDocs(collection(db, 'teachers')).then((snap) => {
+      if (!active) return
       const map: Record<string, string> = {}
       snap.docs.forEach((d) => {
         const t = { id: d.id, ...d.data() } as Teacher
@@ -139,7 +143,7 @@ export function OverdueBookingsPage() {
       })
       setTeacherNicks(map)
     })
-    return unsub
+    return () => { active = false }
   }, [])
 
   // Ca quá hạn = đã qua ngày, chưa gắn buổi dạy, vẫn đang giữ chỗ

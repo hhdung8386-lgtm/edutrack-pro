@@ -115,6 +115,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           const studentData = studentSnap.data() as Student
           const lessonNow = lessonSnap.data() as Lesson
+          if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
           const [teacherSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
@@ -232,7 +233,17 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             updatedAt: serverTimestamp(),
           })
 
-          bookingRefs.forEach((bookingRef) => tx.update(bookingRef, { lessonId: lesson.id }))
+          bookingSnaps.forEach((bookingSnap) => {
+            if (!bookingSnap.exists()) return
+            const status = bookingSnap.data().status
+            if (status !== 'pending' && status !== 'confirmed') return
+            tx.update(bookingSnap.ref, {
+              lessonId: lesson.id,
+              status: 'completed',
+              completedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          })
 
           tx.update(studentRef, {
             subjects: updatedSubjects,
@@ -285,7 +296,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             approvedAt: serverTimestamp(),
           })
 
-          const payrollRef = doc(collection(db, 'payroll'))
+          // Một buổi học chỉ có một dòng lương chuẩn. ID cố định chặn việc
+          // nhấn duyệt lặp/concurrent tạo nhiều dòng lương cho cùng buổi.
+          const payrollRef = doc(db, 'payroll', lesson.id)
           tx.set(payrollRef, {
             teacherId: lesson.teacherId,
             teacherName: lesson.teacherName,
@@ -326,7 +339,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
     } catch (err: any) {
       console.error(err)
       const code = err?.code || ''
-      if (err?.message === 'NOT_ENOUGH_POINTS') {
+      if (err?.message === 'LESSON_ALREADY_PROCESSED') {
+        toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (err?.message === 'NOT_ENOUGH_POINTS') {
         toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'resource-exhausted' || code === 'unavailable') {
         toast.error('Hệ thống đang bận, vui lòng thử lại sau ít giây')

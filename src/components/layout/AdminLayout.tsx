@@ -7,7 +7,6 @@ import { signOut } from '@/lib/auth'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
-import { useStudentAlertCount } from '@/hooks/useStudentAlertCount'
 
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
@@ -19,7 +18,6 @@ import {
 } from './adminNavigation'
 
 const PAGE_TITLES: Record<string, string> = {
-  '/admin/dashboard': 'Dashboard',
   '/admin/students/fixed': 'Học viên cố định',
   '/admin/students/flexible': 'Học viên linh hoạt',
   '/admin/students': 'Học viên',
@@ -55,7 +53,9 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
-  const studentAlertCount = useStudentAlertCount()
+  // Không quét toàn bộ lịch sử vắng học trên mọi trang admin chỉ để hiển thị badge.
+  // Trang Cảnh báo học viên vẫn tự tải dữ liệu đầy đủ khi người dùng mở trực tiếp.
+  const studentAlertCount = 0
   const { user, role, accessScope } = useAuthStore()
   const isBookingAssistant = accessScope === 'booking_only'
   const visibleGroups = useMemo(() => getVisibleAdminNavigation(role, accessScope), [accessScope, role])
