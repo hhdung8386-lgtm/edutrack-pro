@@ -305,7 +305,6 @@ export function BookingSchedulesPage() {
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const selectedSlotsContainPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
-  const selectedSlotMode = selectedSlots.length === 0 ? null : selectedSlotsArePast ? 'makeup' : 'regular'
   // Load teachers and availabilities
   useEffect(() => {
     async function loadTeachersAndAvailability() {
@@ -763,15 +762,6 @@ export function BookingSchedulesPage() {
     const slot: SelectedSlot = { day, dateISO, time }
 
     if (multiSelectMode) {
-      const firstSelectedSlot = selectedSlots[0]
-      if (
-        firstSelectedSlot
-        && !isSlotSelected(dateISO, time)
-        && isPastScheduleSlot(firstSelectedSlot.dateISO, firstSelectedSlot.time) !== isPast
-      ) {
-        toast.warning('Không thể chọn chung ca quá khứ và ca tương lai trong một lần xếp lớp.')
-        return
-      }
       setSelectedSlots((current) => {
         const exists = current.some((s) => s.dateISO === dateISO && s.time === time)
         if (exists) {
@@ -2055,11 +2045,6 @@ export function BookingSchedulesPage() {
                       const open = isCellOpen(day, start)
                       const booking = findBookingForCell(iso, start)
                       const isSelected = isSlotSelected(iso, start)
-                      const isPastSlot = isPastScheduleSlot(iso, start)
-                      const isIncompatibleSlot = multiSelectMode
-                        && selectedSlotMode !== null
-                        && !isSelected
-                        && (selectedSlotMode === 'makeup') !== isPastSlot
 
                       return (
                         <td
@@ -2095,22 +2080,9 @@ export function BookingSchedulesPage() {
                             <button
                               type="button"
                               onClick={() => handleCellClick(day, iso, start)}
-                              disabled={isIncompatibleSlot}
-                              aria-label={isIncompatibleSlot
-                                ? selectedSlotMode === 'makeup'
-                                  ? 'Chỉ chọn thêm ca quá khứ để xếp lịch bù'
-                                  : 'Chỉ chọn thêm ca tương lai để xếp lớp thường'
-                                : undefined}
-                              title={isIncompatibleSlot
-                                ? selectedSlotMode === 'makeup'
-                                  ? 'Đang chọn lịch bù: chỉ chọn được ca quá khứ'
-                                  : 'Đang chọn lịch thường: chỉ chọn được ca tương lai'
-                                : undefined}
-                              className={`w-full py-2.5 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition shadow-sm disabled:cursor-not-allowed ${
+                              className={`w-full py-2.5 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition shadow-sm ${
                                 isSelected
                                   ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                                  : isIncompatibleSlot
-                                    ? 'border border-slate-200 bg-slate-100 text-slate-400 opacity-60'
                                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/30'
                               }`}
                             >
@@ -2132,7 +2104,7 @@ export function BookingSchedulesPage() {
         </section>
       </div>
 
-      {multiSelectMode && selectedSlots.length > 0 && selectedSlotMode && (
+      {multiSelectMode && selectedSlots.length > 0 && (
         <section
           className="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-[0_16px_38px_-14px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden"
           aria-label="Thao tác xếp lịch đã chọn"
