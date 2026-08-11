@@ -3,6 +3,7 @@ import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { defineSecret } from 'firebase-functions/params'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
+import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
 
 initializeApp()
 
@@ -30,21 +31,14 @@ const REMINDER_SPECS = [
 
 type ReminderSpec = typeof REMINDER_SPECS[number]
 
-type Booking = {
+type Booking = ReminderEmailBooking & {
   id: string
   status?: string
   lessonId?: string
-  studentId?: string
   studentName?: string
-  teacherName?: string
-  subjectName?: string
-  requestedDate?: string
-  requestedStart?: string
-  requestedEnd?: string
-  classroomURL?: string
 }
 
-type Student = {
+type Student = ReminderEmailStudent & {
   name?: string
   email?: string
 }
@@ -87,40 +81,8 @@ function isEmail(value: string | undefined): value is string {
   return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()))
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  }[character] ?? character))
-}
-
-function formatVietnamSchedule(dateISO: string, time: string): string {
-  const [year, month, day] = dateISO.split('-')
-  return `${day}/${month}/${year} lúc ${time}`
-}
-
 function reminderDeliveryId(booking: Booking, reminder: ReminderSpec): string {
   return `${booking.id}_${reminder.type}_${booking.requestedDate}_${booking.requestedStart?.replace(':', '')}`
-}
-
-function emailContent(booking: Booking, student: Student, reminder: ReminderSpec) {
-  const learnerName = escapeHtml(student.name || booking.studentName || 'Quý học viên')
-  const plainSubject = booking.subjectName || 'buổi học tiếng Anh'
-  const subjectName = escapeHtml(plainSubject)
-  const teacherName = escapeHtml(booking.teacherName || 'gia sư')
-  const time = formatVietnamSchedule(booking.requestedDate || '', booking.requestedStart || '')
-  const classroom = booking.classroomURL?.trim()
-  const classroomBlock = classroom
-    ? `<p style="margin:20px 0"><a href="${escapeHtml(classroom)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 16px;border-radius:8px;text-decoration:none;font-weight:700">Vào phòng học</a></p>`
-    : ''
-
-  return {
-    subject: `Nhắc lịch học ${reminder.label}: ${plainSubject}`,
-    html: `<!doctype html><html lang="vi"><body style="margin:0;background:#f8fafc;padding:24px;font-family:Arial,sans-serif;color:#0f172a"><main style="max-width:560px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px"><h1 style="font-size:22px;margin:0 0 16px">Nhắc lịch học 123English</h1><p>Chào ${learnerName},</p><p>123English nhắc bạn có buổi <strong>${subjectName}</strong> cùng <strong>${teacherName}</strong> vào <strong>${time}</strong> (${reminder.label}).</p>${classroomBlock}<p style="color:#475569">Nếu lịch học đã được thay đổi, vui lòng liên hệ trung tâm để được hỗ trợ.</p><hr style="border:0;border-top:1px solid #e2e8f0;margin:24px 0"><p style="font-size:12px;color:#64748b">Email nhắc lịch tự động từ 123English.</p></main></body></html>`,
-  }
 }
 
 async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise<boolean> {
@@ -155,7 +117,7 @@ async function sendWithResend(candidate: ReminderCandidate, student: Student, ap
   const sender = process.env.REMINDER_EMAIL_FROM?.trim()
   if (!sender) throw new Error('REMINDER_EMAIL_FROM is not configured')
 
-  const body = emailContent(candidate.booking, student, candidate.reminder)
+  const body = buildReminderEmail(candidate.booking, student, candidate.reminder.label)
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -167,6 +129,7 @@ async function sendWithResend(candidate: ReminderCandidate, student: Student, ap
       from: sender,
       to: [candidate.recipient],
       subject: body.subject,
+      text: body.text,
       html: body.html,
     }),
   })
