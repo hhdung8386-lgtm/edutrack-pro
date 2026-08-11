@@ -2,16 +2,26 @@ export type ReminderEmailBooking = {
   studentId?: string
   studentCode?: string
   teacherName?: string
+  subjectId?: string
   subjectName?: string
   requestedDate?: string
   requestedStart?: string
   requestedEnd?: string
   classroomURL?: string
+  note?: string
+}
+
+type ReminderEmailSubject = {
+  subjectId?: string
+  subjectName?: string
+  curriculumLink?: string
 }
 
 export type ReminderEmailStudent = {
   code?: string
   classroomURL?: string
+  subjects?: ReminderEmailSubject[]
+  textbookURL?: string
 }
 
 const BRAND_LOGO_URL = 'https://www.123english.edu.vn/brand-logo.png'
@@ -36,12 +46,34 @@ function formatVietnamDate(dateISO?: string): string {
 
 function safeHttpUrl(value?: string): string | undefined {
   if (!value) return undefined
+
+  const trimmed = value.trim()
+  const embeddedUrl = trimmed.match(/https?:\/\/[^\s<>"']+/i)?.[0]
+  const rawCandidate = embeddedUrl || trimmed
+  const candidate = /^https?:\/\//i.test(rawCandidate)
+    ? rawCandidate
+    : /^[\w.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(rawCandidate)
+      ? `https://${rawCandidate}`
+      : undefined
+  if (!candidate) return undefined
+
   try {
-    const url = new URL(value.trim())
+    const url = new URL(candidate)
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined
   } catch {
     return undefined
   }
+}
+
+function normalizeSubjectName(value?: string): string {
+  return value?.trim().toLocaleLowerCase('vi-VN') || ''
+}
+
+function findCurriculumURL(booking: ReminderEmailBooking, student: ReminderEmailStudent): string | undefined {
+  const subjectName = normalizeSubjectName(booking.subjectName)
+  const subject = student.subjects?.find((item) => Boolean(booking.subjectId) && item.subjectId === booking.subjectId)
+    || student.subjects?.find((item) => Boolean(subjectName) && normalizeSubjectName(item.subjectName) === subjectName)
+  return safeHttpUrl(subject?.curriculumLink) || safeHttpUrl(student.textbookURL)
 }
 
 export function buildReminderEmail(
@@ -58,13 +90,22 @@ export function buildReminderEmail(
   const studyDate = escapeHtml(rawDate)
   const startTime = escapeHtml(rawStartTime)
   const timingLabel = escapeHtml(reminderLabel)
-  const classroomURL = safeHttpUrl(booking.classroomURL) || safeHttpUrl(student.classroomURL)
+  const classroomURL = safeHttpUrl(booking.classroomURL) || safeHttpUrl(student.classroomURL) || safeHttpUrl(booking.note)
+  const curriculumURL = findCurriculumURL(booking, student)
   const manageURL = rawStudentCode === FALLBACK_VALUE
     ? PARENT_PORTAL_URL
     : `${PARENT_PORTAL_URL}?code=${encodeURIComponent(rawStudentCode)}`
   const classroomButton = classroomURL
     ? `<a href="${escapeHtml(classroomURL)}" style="display:inline-block;margin:0 8px 10px 0;padding:13px 20px;border-radius:10px;background:#1caee4;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none">Vào phòng học</a>`
     : ''
+  const curriculumButton = curriculumURL
+    ? `<a href="${escapeHtml(curriculumURL)}" style="display:inline-block;margin:0 8px 10px 0;padding:13px 20px;border-radius:10px;background:#fff315;color:#14213d;font-size:14px;font-weight:700;text-decoration:none">Xem giáo trình</a>`
+    : ''
+  const actionText = [
+    classroomURL ? `Phòng học: ${classroomURL}` : undefined,
+    curriculumURL ? `Giáo trình: ${curriculumURL}` : undefined,
+    `Quản lý lịch học: ${manageURL}`,
+  ].filter((value): value is string => Boolean(value)).join('\n')
 
   const text = `[AUTO REMINDER]
 
@@ -80,6 +121,8 @@ Thời gian: ${rawStartTime}
 Quý Học viên vui lòng xem trước nội dung bài học và hoàn thành các bài tập được giao (nếu có) trước khi tham gia lớp để đảm bảo hiệu quả học tập.
 
 Kính chúc Quý Học viên có một buổi học hiệu quả và nhiều tiến bộ.
+
+${actionText}
 
 Trân trọng,
 123English
@@ -137,7 +180,7 @@ Lưu ý: Trường hợp không thể tham gia buổi học, Quý Học viên vu
                 <p style="margin:24px 0 16px;color:#26384a;font-size:15px;line-height:1.75">Quý Học viên vui lòng xem trước nội dung bài học và hoàn thành các bài tập được giao (nếu có) trước khi tham gia lớp để đảm bảo hiệu quả học tập.</p>
                 <p style="margin:0 0 22px;color:#26384a;font-size:15px;line-height:1.75">Kính chúc Quý Học viên có một buổi học hiệu quả và nhiều tiến bộ.</p>
 
-                <div style="margin:0 0 24px">${classroomButton}<a href="${escapeHtml(manageURL)}" style="display:inline-block;margin:0 0 10px;padding:13px 20px;border-radius:10px;background:#14213d;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none">Xem và quản lý lịch học</a></div>
+                <div style="margin:0 0 24px">${classroomButton}${curriculumButton}<a href="${escapeHtml(manageURL)}" style="display:inline-block;margin:0 0 10px;padding:13px 20px;border-radius:10px;background:#14213d;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none">Xem và quản lý lịch học</a></div>
 
                 <p style="margin:0;color:#26384a;font-size:15px;line-height:1.65">Trân trọng,<br><strong>123English</strong><br><em>Bộ phận Học vụ</em></p>
               </td>
