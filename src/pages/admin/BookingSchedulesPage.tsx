@@ -10,13 +10,10 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
   ExternalLink,
   Globe2,
   GraduationCap,
   History,
-  Link,
-  Save,
   Search,
   Trash2,
   User,
@@ -25,7 +22,6 @@ import {
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange, Student, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
-import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
@@ -56,36 +52,12 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sat: 'Thứ 7',
   sun: 'Chủ nhật',
 }
-const DAY_LABELS_EN: Record<DayOfWeek, string> = {
-  mon: 'Mon',
-  tue: 'Tue',
-  wed: 'Wed',
-  thu: 'Thu',
-  fri: 'Fri',
-  sat: 'Sat',
-  sun: 'Sun',
-}
-
 const TIME_WINDOWS = [
   { key: '24h', label: '24h', start: 0, end: 1440 },
   { key: '6-14', label: '6:00-14:00', start: 360, end: 840 },
   { key: '12-20', label: '12:00-20:00', start: 720, end: 1200 },
   { key: '18-25', label: '18:00-25:00', start: 1080, end: 1500 },
 ] as const
-
-const COUNTRY_LABELS: Record<string, string> = {
-  VN: 'Việt Nam',
-  PH: 'Philippines',
-  US: 'Hoa Kỳ',
-  GB: 'Anh',
-  AU: 'Úc',
-  CA: 'Canada',
-  ZA: 'Nam Phi',
-  IN: 'Ấn Độ',
-  SG: 'Singapore',
-  MY: 'Malaysia',
-  TH: 'Thái Lan',
-}
 
 type VisibleTeacherSubjectGroup = Exclude<TeacherSubjectGroup, 'legacy'>
 
@@ -236,6 +208,33 @@ interface SelectedSlot {
   time: string
 }
 
+function buildFutureRecurringSlots(
+  baseSlots: SelectedSlot[],
+  maxSessions: number,
+  todayISO: string,
+  currentTime: string
+): SelectedSlot[] {
+  if (baseSlots.length === 0 || maxSessions <= 0) return []
+
+  const slots: SelectedSlot[] = []
+  let weekIndex = 0
+
+  while (slots.length < maxSessions) {
+    for (const baseSlot of baseSlots) {
+      if (slots.length >= maxSessions) break
+
+      const dateISO = formatDateISO(addDays(parseDateISO(baseSlot.dateISO), weekIndex * 7))
+      const isPast = dateISO < todayISO || (dateISO === todayISO && baseSlot.time < currentTime)
+      if (isPast) continue
+
+      slots.push({ ...baseSlot, dateISO })
+    }
+    weekIndex += 1
+  }
+
+  return slots
+}
+
 export function BookingSchedulesPage() {
   const { user } = useAuthStore()
   const [searchParams] = useSearchParams()
@@ -289,7 +288,6 @@ export function BookingSchedulesPage() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const duration = 25
-  const [classroomURL, setClassroomURL] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [scheduling, setScheduling] = useState(false)
   const [scheduleConflictMessage, setScheduleConflictMessage] = useState('')
@@ -306,6 +304,7 @@ export function BookingSchedulesPage() {
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
+  const selectedSlotsContainPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const selectedSlotMode = selectedSlots.length === 0 ? null : selectedSlotsArePast ? 'makeup' : 'regular'
   // Load teachers and availabilities
   useEffect(() => {
@@ -446,6 +445,8 @@ export function BookingSchedulesPage() {
   // Load booked booking requests in real-time
   useEffect(() => {
     if (!selectedTeacherId) {
+      // This listener owns bookingRequests, so clearing it here is intentional.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBookingRequests([])
       return
     }
@@ -472,6 +473,8 @@ export function BookingSchedulesPage() {
   // Fetch selected student's active booking requests for subject-specific available minutes calculation
   useEffect(() => {
     if (!selectedStudent) {
+      // Clear data owned by this selection-specific request when the modal resets.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedStudentBookings([])
       return
     }
@@ -511,6 +514,8 @@ export function BookingSchedulesPage() {
   // Fetch all future booking requests for selected student when detail modal opens
   useEffect(() => {
     if (!selectedBooking?.studentId) {
+      // Clear detail-only data after closing or switching the booking.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStudentFutureBookings([])
       return
     }
@@ -684,12 +689,6 @@ export function BookingSchedulesPage() {
     return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
   }
 
-  const doesSlotCover50 = (day: DayOfWeek, start: string) => {
-    const startMinute = timeToMinutes(start)
-    const endMinute = startMinute + 50
-    return slots[day].timeRanges.some((range) => rangeCovers(range, startMinute, endMinute))
-  }
-
   const getBookingCreatedAt = (booking: BookingRequest) => {
     const createdAt = booking.createdAt as unknown as {
       toMillis?: () => number
@@ -758,7 +757,7 @@ export function BookingSchedulesPage() {
     const isPast = isPastScheduleSlot(dateISO, time)
 
     if (isPast) {
-      toast.info('Đã chọn khung giờ trong quá khứ. Dùng nút Xếp lịch bù để tạo ca cho gia sư điểm danh.')
+      toast.info('Ca đã qua có thể dùng làm mẫu rải lịch từ tuần kế tiếp, hoặc tạo lớp học bù để gia sư điểm danh.')
     }
 
     const slot: SelectedSlot = { day, dateISO, time }
@@ -794,7 +793,6 @@ export function BookingSchedulesPage() {
       setSelectedStudent(null)
       setStudentSearch('')
       setSelectedSubjectId('')
-      setClassroomURL('')
       setShowScheduleModal(true)
     }
   }
@@ -806,7 +804,6 @@ export function BookingSchedulesPage() {
   const handleStudentSelect = (student: Student) => {
     setScheduleConflictMessage('')
     setSelectedStudent(student)
-    setClassroomURL(student.classroomURL || '')
     // Pre-select the first subject package that still has remaining minutes,
     // so an exhausted/negative package (e.g. old tutor package) is not selected by default
     const subs = student.subjects || []
@@ -865,53 +862,30 @@ export function BookingSchedulesPage() {
       }
     }
 
+    // Build the same concrete future slot list for the pre-check and transaction.
+    // A past weekday can be used as a recurring template, but no recurring booking
+    // may ever be written into the past.
+    const slotsToCheck = isRecurring
+      ? buildFutureRecurringSlots(
+        selectedSlots,
+        pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0,
+        todayISO,
+        currentMinutesStr
+      )
+      : selectedSlots
+
     // Check overlap client-side before starting transaction to avoid double booking
-    for (const slot of selectedSlots) {
+    for (const slot of slotsToCheck) {
       const startMin = timeToMinutes(slot.time)
       const endMin = startMin + duration
       const endStr = minutesToTime(endMin)
 
-      if (isRecurring) {
-        // For recurring, check future offset weeks
-        // Cap by the selected subject package's available minutes (remaining - already booked).
-        // Do NOT use the student's global fund here: one exhausted/negative package must not
-        // block scheduling on another package that still has minutes.
-        const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
-        let sessionsScheduled = 0
-        let weekIndex = 0
-        while (sessionsScheduled < maxSessions) {
-          for (const sSlot of selectedSlots) {
-            if (sessionsScheduled >= maxSessions) break
-            const slotDate = addDays(parseDateISO(sSlot.dateISO), weekIndex * 7)
-            const slotDateISO = formatDateISO(slotDate)
-            
-            // Skip past slots in the first week
-            if (weekIndex === 0) {
-              const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && sSlot.time < currentMinutesStr)
-              if (isPast) {
-                continue
-              }
-            }
-
-            const overlap = checkStudentOverlap(selectedStudentBookings, slotDateISO, sSlot.time, endStr)
-            if (overlap) {
-              const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${sSlot.time} - ${endStr}, ngày ${slotDateISO}.`
-              setScheduleConflictMessage(message)
-              toast.error(message)
-              return
-            }
-            sessionsScheduled++
-          }
-          weekIndex++
-        }
-      } else {
-        const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
-        if (overlap) {
-          const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${slot.time} - ${endStr}, ngày ${slot.dateISO}.`
-          setScheduleConflictMessage(message)
-          toast.error(message)
-          return
-        }
+      const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
+      if (overlap) {
+        const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${slot.time} - ${endStr}, ngày ${slot.dateISO}.`
+        setScheduleConflictMessage(message)
+        toast.error(message)
+        return
       }
     }
 
@@ -962,31 +936,19 @@ export function BookingSchedulesPage() {
         })
       } else {
         const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
-        let sessionsScheduled = 0
-        let weekIndex = 0
-        while (sessionsScheduled < maxSessions) {
-          for (const slot of selectedSlots) {
-            if (sessionsScheduled >= maxSessions) break
-            const slotDate = addDays(parseDateISO(slot.dateISO), weekIndex * 7)
-            const slotDateISO = formatDateISO(slotDate)
-            if (weekIndex === 0) {
-              const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && slot.time < currentMinutesStr)
-              if (isPast) continue
-            }
-            candidates.push({
-              teacherId: selectedTeacher.id,
-              teacherName: selectedTeacher.name,
-              studentId,
-              studentName: selectedStudent.name,
-              studentCode: selectedStudent.code,
-              requestedDate: slotDateISO,
-              requestedStart: slot.time,
-              requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
-              requestedMinutes: duration,
-            })
-            sessionsScheduled += 1
-          }
-          weekIndex += 1
+        const recurringSlots = buildFutureRecurringSlots(selectedSlots, maxSessions, todayISO, currentMinutesStr)
+        for (const slot of recurringSlots) {
+          candidates.push({
+            teacherId: selectedTeacher.id,
+            teacherName: selectedTeacher.name,
+            studentId,
+            studentName: selectedStudent.name,
+            studentCode: selectedStudent.code,
+            requestedDate: slot.dateISO,
+            requestedStart: slot.time,
+            requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
+            requestedMinutes: duration,
+          })
         }
       }
 
@@ -1027,8 +989,8 @@ export function BookingSchedulesPage() {
           .reduce((sum, b) => sum + getBookingPoints(b), 0)
         const availableSubjectPoints = Math.max(0, subInDb.remainingMinutes - bookedPointsForSubject)
 
-        let totalRequired = 0
-        let bookingsToCreate: any[] = []
+        let totalRequired: number
+        const bookingsToCreate: Record<string, unknown>[] = []
 
         if (!isRecurring) {
           totalRequired = selectedSlots.length * pointsPerLesson
@@ -1082,61 +1044,41 @@ export function BookingSchedulesPage() {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
 
-          let sessionsScheduled = 0
-          let weekIndex = 0
-          while (sessionsScheduled < maxSessions) {
-            for (const slot of selectedSlots) {
-              if (sessionsScheduled >= maxSessions) break
+          const recurringSlots = buildFutureRecurringSlots(selectedSlots, maxSessions, todayISO, currentMinutesStr)
+          for (const slot of recurringSlots) {
+            const slotDate = parseDateISO(slot.dateISO)
+            const startMin = timeToMinutes(slot.time)
+            const endMin = startMin + duration
 
-              // Calculate date for the slot in the current week offset
-              const slotDate = addDays(parseDateISO(slot.dateISO), weekIndex * 7)
-              const slotDateISO = formatDateISO(slotDate)
-              const slotWeekStart = formatDateISO(getMonday(slotDate))
-
-              // Skip past slots in the first week (weekIndex === 0)
-              if (weekIndex === 0) {
-                const isPast = slotDateISO < todayISO || (slotDateISO === todayISO && slot.time < currentMinutesStr)
-                if (isPast) {
-                  continue
-                }
-              }
-
-              const startMin = timeToMinutes(slot.time)
-              const endMin = startMin + duration
-
-              bookingsToCreate.push({
-                status: 'confirmed',
-                teacherId: selectedTeacher.id,
-                teacherCode: selectedTeacher.code,
-                teacherName: selectedTeacher.name,
-                teacherPhotoURL: selectedTeacher.photoURL || '',
-                studentId: currentStudent.id,
-                studentCode: currentStudent.code,
-                studentName: currentStudent.name,
-                subjectId: selectedSubjectId,
-                subjectName: sub.subjectName,
-                requestedDay: slot.day,
-                requestedDate: slotDateISO,
-                requestedWeekStart: slotWeekStart,
-                requestedStart: slot.time,
-                requestedEnd: minutesToTime(endMin),
-                requestedMinutes: duration,
-                requestedPoints: pointsPerLesson,
-                pointsPer25Minutes,
-                adminNote: 'Xếp lịch định kỳ từ bảng admin',
-                classroomURL: currentStudent.classroomURL || '',
-                createdAt: serverTimestamp(),
-                confirmedAt: serverTimestamp(),
-                confirmedBy: user?.uid ?? 'admin',
-              })
-
-              sessionsScheduled++
-            }
-            weekIndex++
+            bookingsToCreate.push({
+              status: 'confirmed',
+              teacherId: selectedTeacher.id,
+              teacherCode: selectedTeacher.code,
+              teacherName: selectedTeacher.name,
+              teacherPhotoURL: selectedTeacher.photoURL || '',
+              studentId: currentStudent.id,
+              studentCode: currentStudent.code,
+              studentName: currentStudent.name,
+              subjectId: selectedSubjectId,
+              subjectName: sub.subjectName,
+              requestedDay: slot.day,
+              requestedDate: slot.dateISO,
+              requestedWeekStart: formatDateISO(getMonday(slotDate)),
+              requestedStart: slot.time,
+              requestedEnd: minutesToTime(endMin),
+              requestedMinutes: duration,
+              requestedPoints: pointsPerLesson,
+              pointsPer25Minutes,
+              adminNote: 'Xếp lịch định kỳ từ bảng admin',
+              classroomURL: currentStudent.classroomURL || '',
+              createdAt: serverTimestamp(),
+              confirmedAt: serverTimestamp(),
+              confirmedBy: user?.uid ?? 'admin',
+            })
           }
 
-          totalRequired = sessionsScheduled * pointsPerLesson
-          totalScheduled = sessionsScheduled
+          totalRequired = recurringSlots.length * pointsPerLesson
+          totalScheduled = recurringSlots.length
         }
 
         const nextHeld = fund.held + totalRequired
@@ -1196,19 +1138,23 @@ export function BookingSchedulesPage() {
       setSelectedStudent(null)
       setStudentSearch('')
       setIsRecurring(false)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Direct scheduling failed:', error)
-      if (error?.message === 'BOOKING_CONFLICT') {
-        const message = error.detail || 'Không thể xếp lớp vì lịch bị trùng.'
+      const errorMessage = error instanceof Error ? error.message : ''
+      const errorDetail = typeof error === 'object' && error !== null && 'detail' in error
+        ? String(error.detail || '')
+        : ''
+      if (errorMessage === 'BOOKING_CONFLICT') {
+        const message = errorDetail || 'Không thể xếp lớp vì lịch bị trùng.'
         setScheduleConflictMessage(message)
         toast.error(message)
         return
       }
-      if (error?.message === 'BOOKING_CALENDAR_CHANGED') {
+      if (errorMessage === 'BOOKING_CALENDAR_CHANGED') {
         toast.error('Lịch vừa được thay đổi ở thao tác khác. Hệ thống chưa tạo ca nào; vui lòng chọn lại lịch mới nhất.')
         return
       }
-      if (error?.message === 'NOT_ENOUGH_MINUTES') {
+      if (errorMessage === 'NOT_ENOUGH_MINUTES') {
         toast.error('Quỹ phút khả dụng của học viên không đủ để xếp lịch!')
       } else {
         toast.error('Xếp lớp thất bại, vui lòng thử lại!')
@@ -1356,7 +1302,7 @@ export function BookingSchedulesPage() {
       toast.success('Đã nhả giữ chỗ và khôi phục quỹ kim cương thành công')
       setShowDetailModal(false)
       setSelectedBooking(null)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Release booking failed:', error)
       toast.error('Nhả lịch thất bại')
     } finally {
@@ -1454,19 +1400,17 @@ export function BookingSchedulesPage() {
     const allPast = selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
     const hasPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
     if (mode === 'makeup' && !allPast) {
-      toast.warning('Xếp lịch bù chỉ nhận các khung giờ đã qua.')
-      return
-    }
-    if (mode === 'regular' && hasPast) {
-      toast.warning('Khung giờ đã qua phải dùng nút Xếp lịch bù.')
+      toast.warning('Xếp lớp học bù chỉ nhận các khung giờ đã qua.')
       return
     }
     setScheduleMode(mode)
-    setIsRecurring(false)
+    // Restore the original workflow: a past weekday is a template for the next
+    // available future week. It must stay recurring so no regular booking can be
+    // written into the past; makeup remains a separate explicit action.
+    setIsRecurring(mode === 'regular' && hasPast)
     setSelectedStudent(null)
     setStudentSearch('')
     setSelectedSubjectId('')
-    setClassroomURL('')
     setScheduleConflictMessage('')
     setShowScheduleModal(true)
   }
@@ -2018,9 +1962,8 @@ export function BookingSchedulesPage() {
                   <button
                     type="button"
                     onClick={() => handleOpenBatchSchedule('regular')}
-                    disabled={selectedSlotsArePast}
-                    title={selectedSlotsArePast ? 'Ca quá khứ phải dùng Xếp lịch bù' : undefined}
-                    className="hidden h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none lg:flex"
+                    title={selectedSlotsArePast ? 'Dùng các ca đã chọn làm mẫu và rải lịch từ tuần kế tiếp' : undefined}
+                    className="hidden h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-700 lg:flex"
                   >
                     Xếp lớp nhanh ({selectedSlots.length})
                   </button>
@@ -2032,7 +1975,7 @@ export function BookingSchedulesPage() {
                     className="hidden h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-5 text-sm font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none lg:flex"
                   >
                     <History className="h-4 w-4" />
-                    Xếp lịch bù ({selectedSlots.length})
+                    Xếp lớp học bù ({selectedSlots.length})
                   </button>
                 </>
               )}
@@ -2199,9 +2142,9 @@ export function BookingSchedulesPage() {
             <div className="min-w-0">
               <p className="text-sm font-extrabold text-slate-900">Đã chọn {selectedSlots.length} ca</p>
               <p className="truncate text-[11px] font-semibold text-slate-500">
-                {selectedSlotMode === 'makeup'
-                  ? 'Đang xếp lịch bù: chỉ chọn thêm ca trong quá khứ.'
-                  : 'Đang xếp lịch thường: chỉ chọn thêm ca trong tương lai.'}
+                {selectedSlotsArePast
+                  ? 'Chọn rải lịch từ tuần sau hoặc tạo lớp học bù.'
+                  : 'Các ca tương lai đã sẵn sàng để xếp lớp.'}
               </p>
             </div>
             <button
@@ -2214,20 +2157,26 @@ export function BookingSchedulesPage() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => handleOpenBatchSchedule(selectedSlotMode)}
-            className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-extrabold text-white shadow-sm transition active:scale-[0.99] ${
-              selectedSlotMode === 'makeup'
-                ? 'bg-amber-600 hover:bg-amber-700'
-                : 'bg-emerald-600 hover:bg-emerald-700'
-            }`}
-          >
-            {selectedSlotMode === 'makeup' ? <History className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
-            {selectedSlotMode === 'makeup'
-              ? `Xếp lịch bù (${selectedSlots.length})`
-              : `Xếp lớp nhanh (${selectedSlots.length})`}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenBatchSchedule('regular')}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99]"
+            >
+              <CalendarClock className="h-4 w-4" />
+              Xếp lớp nhanh ({selectedSlots.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenBatchSchedule('makeup')}
+              disabled={!selectedSlotsArePast}
+              title={!selectedSlotsArePast ? 'Chỉ dùng cho các ca đã qua' : undefined}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-extrabold text-amber-900 shadow-sm transition hover:bg-amber-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+            >
+              <History className="h-4 w-4" />
+              Xếp lớp học bù ({selectedSlots.length})
+            </button>
+          </div>
         </section>
       )}
 
@@ -2465,12 +2414,19 @@ export function BookingSchedulesPage() {
                     type="checkbox"
                     checked={isRecurring}
                     onChange={(e) => setIsRecurring(e.target.checked)}
-                    className="h-4.5 w-4.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer mt-0.5"
+                    disabled={selectedSlotsContainPast}
+                    className="h-4.5 w-4.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 mt-0.5"
                   />
                   <div>
-                    <span className="text-sm font-bold text-slate-800 block">Lặp lại lịch hàng tuần (Xếp lịch định kỳ)</span>
+                    <span className="text-sm font-bold text-slate-800 block">
+                      {selectedSlotsContainPast
+                        ? 'Rải lịch từ tuần kế tiếp (bắt buộc với ca mẫu đã qua)'
+                        : 'Lặp lại lịch hàng tuần (Xếp lịch định kỳ)'}
+                    </span>
                     <span className="text-xs text-slate-500 block mt-0.5">
-                      Hệ thống sẽ tự động xếp ca này định kỳ các tuần tiếp theo cho đến khi học viên hết số phút học.
+                      {selectedSlotsContainPast
+                        ? 'Hệ thống giữ đúng thứ và giờ đã chọn, tự bỏ qua mọi ngày đã qua rồi bắt đầu ở tuần gần nhất còn hợp lệ.'
+                        : 'Hệ thống sẽ tự động xếp ca này định kỳ các tuần tiếp theo cho đến khi học viên hết số phút học.'}
                     </span>
                   </div>
                 </label>
