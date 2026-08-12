@@ -10,6 +10,7 @@ import {
   type DocumentData, type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { auth, db, secondaryAuth } from './firebase'
+import { selectTeacherLoginIdentity } from './teacherLoginIdentity'
 
 const TEACHER_FIXED_PASSWORD = '1234560'
 
@@ -149,38 +150,34 @@ export async function signInTeacher(teacherCode: string, password: string) {
     where('role', '==', 'teacher')
   )
   const userSnapshot = await getDocsFromServer(userQuery)
-  if (userSnapshot.size > 1) {
-    throw new Error('Hồ sơ gia sư có nhiều tài khoản đang hoạt động. Vui lòng liên hệ Admin để khôi phục đăng nhập và chỉ giữ một tài khoản.')
-  }
-  if (canonicalLoginUid && userSnapshot.docs[0]?.id !== canonicalLoginUid) {
+  const identitySelection = selectTeacherLoginIdentity(
+    userSnapshot.docs.map(userDoc => ({
+      id: userDoc.id,
+      email: userDoc.data().email,
+      username: userDoc.data().username,
+    })),
+    canonicalLoginUid,
+    String(matchedCode),
+    fallbackEmail,
+  )
+  if (identitySelection.error === 'canonical_missing') {
     throw new Error('Liên kết tài khoản gia sư chưa đồng bộ. Vui lòng liên hệ Admin để khôi phục đăng nhập.')
   }
-
-  const normalizedMatchedCode = String(matchedCode).trim().toLowerCase()
-  const normalizedFallbackEmail = fallbackEmail.trim().toLowerCase()
-  const matchingUserDocs = userSnapshot.docs.filter(userDoc => {
-    const userData = userDoc.data()
-    const email = typeof userData.email === 'string' ? userData.email.trim().toLowerCase() : ''
-    const username = typeof userData.username === 'string' ? userData.username.trim().toLowerCase() : ''
-    return email === normalizedFallbackEmail || username === normalizedMatchedCode
-  })
-  const exactEmailDocs = matchingUserDocs.filter(userDoc => {
-    const email = userDoc.data().email
-    return typeof email === 'string' && email.trim().toLowerCase() === normalizedFallbackEmail
-  })
-
-  let existingUserDoc: QueryDocumentSnapshot<DocumentData> | undefined
-  if (exactEmailDocs.length === 1) existingUserDoc = exactEmailDocs[0]
-  else if (exactEmailDocs.length > 1 || matchingUserDocs.length > 1) {
+  if (identitySelection.error === 'duplicate_current_identity') {
     throw new Error('Hồ sơ gia sư có nhiều tài khoản đăng nhập trùng nhau. Vui lòng liên hệ Admin để khôi phục đăng nhập.')
-  } else if (matchingUserDocs.length === 1) existingUserDoc = matchingUserDocs[0]
-  else if (userSnapshot.docs.length === 1) existingUserDoc = userSnapshot.docs[0]
-  else if (userSnapshot.docs.length > 1) {
+  }
+  if (identitySelection.error === 'ambiguous_identity') {
     throw new Error('Hồ sơ gia sư có nhiều tài khoản đăng nhập chưa xác định được tài khoản chính. Vui lòng liên hệ Admin để khôi phục đăng nhập.')
   }
 
+  const existingUserDoc = identitySelection.identity
+    ? userSnapshot.docs.find(userDoc => userDoc.id === identitySelection.identity?.id)
+    : undefined
+
   const storedEmail = existingUserDoc?.data()?.email
-  const candidateEmails = Array.from(new Set([fallbackEmail, storedEmail].filter(Boolean))) as string[]
+  // Khi đã chọn được UID an toàn, thử đúng email đang gắn với UID đó trước.
+  // Việc thử fallback trước có thể đăng nhập nhầm một Auth UID cũ cùng hồ sơ.
+  const candidateEmails = Array.from(new Set([storedEmail, fallbackEmail].filter(Boolean))) as string[]
 
   // Chỉ đăng nhập những tài khoản đã được Admin khởi tạo trước.
   for (const email of candidateEmails) {

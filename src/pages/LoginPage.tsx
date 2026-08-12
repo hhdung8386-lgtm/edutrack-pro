@@ -104,6 +104,7 @@ export function LoginPage() {
         msg.includes('Không thể đồng bộ quyền') ||
         msg.includes('Không thể xác nhận quyền') ||
         msg.includes('Quá thời gian xác nhận quyền') ||
+        msg.includes('nhiều tài khoản đang hoạt động') ||
         msg.includes('nhiều tài khoản đăng nhập') ||
         msg.includes('bị khóa quyền') ||
         msg.includes('đã nghỉ dạy') ||
