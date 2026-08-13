@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto'
 import { initializeApp } from 'firebase-admin/app'
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { defineSecret } from 'firebase-functions/params'
+import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
+import { groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
 
 initializeApp()
 
@@ -31,11 +34,13 @@ const REMINDER_SPECS = [
 
 type ReminderSpec = typeof REMINDER_SPECS[number]
 
-type Booking = ReminderEmailBooking & {
+type Booking = ReminderEmailBooking & ReminderSessionBooking & {
   id: string
   status?: string
   lessonId?: string
   studentName?: string
+  teacherId?: string
+  requestedMinutes?: number
 }
 
 type Student = ReminderEmailStudent & {
@@ -45,10 +50,13 @@ type Student = ReminderEmailStudent & {
 
 type ReminderCandidate = {
   booking: Booking
+  bookingIds: string[]
   recipient: string
   scheduledAt: Date
   deliveryId: string
+  legacyDeliveryIds: string[]
   reminder: ReminderSpec
+  sessionEnd: string
 }
 
 function vietnamDateISO(now: Date): string {
@@ -81,8 +89,21 @@ function isEmail(value: string | undefined): value is string {
   return Boolean(value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()))
 }
 
-function reminderDeliveryId(booking: Booking, reminder: ReminderSpec): string {
+function legacyReminderDeliveryId(booking: Booking, reminder: ReminderSpec): string {
   return `${booking.id}_${reminder.type}_${booking.requestedDate}_${booking.requestedStart?.replace(':', '')}`
+}
+
+function reminderDeliveryId(booking: Booking, sessionStart: string, reminder: ReminderSpec): string {
+  const businessKey = [
+    booking.studentId || '',
+    booking.teacherId || '',
+    booking.subjectId || '',
+    booking.requestedDate || '',
+    sessionStart,
+    reminder.type,
+  ].join('|')
+  const digest = createHash('sha256').update(businessKey).digest('hex').slice(0, 32)
+  return `session_${digest}_${reminder.type}`
 }
 
 async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise<boolean> {
@@ -94,13 +115,31 @@ async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise
 
     if (existing?.status === 'sent' || (existing?.status === 'processing' && leaseUntil > now.getTime())) return false
 
+    // Tương thích với các email đã gửi trước bản sửa: nếu bất kỳ ô con nào của
+    // cụm đã gửi rồi thì không gửi lại một email cụm mới trong cùng cửa sổ nhắc.
+    const legacyRefs = [...new Set(candidate.legacyDeliveryIds)]
+      .filter((deliveryId) => deliveryId !== candidate.deliveryId)
+      .map((deliveryId) => db.collection('emailReminderDeliveries').doc(deliveryId))
+    const legacySnapshots = await Promise.all(legacyRefs.map((legacyRef) => transaction.get(legacyRef)))
+    if (legacySnapshots.some((snapshot) => snapshot.data()?.status === 'sent')) return false
+
     const update = {
       reminderType: candidate.reminder.type,
       bookingId: candidate.booking.id,
+      bookingIds: candidate.bookingIds,
+      bookingCount: candidate.bookingIds.length,
       scheduleDate: candidate.booking.requestedDate,
       scheduleStart: candidate.booking.requestedStart,
+      scheduleEnd: candidate.sessionEnd,
       status: 'processing',
       recipient: candidate.recipient,
+      studentId: candidate.booking.studentId || '',
+      studentCode: candidate.booking.studentCode || '',
+      studentName: candidate.booking.studentName || '',
+      teacherId: candidate.booking.teacherId || '',
+      teacherName: candidate.booking.teacherName || '',
+      subjectId: candidate.booking.subjectId || '',
+      subjectName: candidate.booking.subjectName || '',
       processingLeaseUntil: Timestamp.fromMillis(now.getTime() + PROCESSING_LEASE_MS),
       attemptCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
@@ -145,17 +184,33 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
     .where('requestedDate', 'in', [vietnamDateISO(now), tomorrowISO(now)])
     .get()
 
-  const dueReminders = bookingsSnapshot.docs
+  const activeBookings = bookingsSnapshot.docs
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Booking))
     .filter((booking) => !booking.lessonId && booking.studentId)
-    .map((booking) => ({ booking, scheduledAt: parseVietnamSchedule(booking.requestedDate, booking.requestedStart) }))
-    .filter((item): item is { booking: Booking; scheduledAt: Date } => Boolean(item.scheduledAt))
-    .flatMap(({ booking, scheduledAt }) => REMINDER_SPECS
+
+  const dueReminders = groupReminderSessions(activeBookings)
+    .map((session) => {
+      const firstBooking = session.bookings[0]
+      const booking: Booking = {
+        ...firstBooking,
+        requestedStart: session.sessionStart,
+        requestedEnd: session.sessionEnd,
+      }
+      return {
+        booking,
+        bookingIds: session.bookings.map((item) => item.id).sort(),
+        legacyBookings: session.bookings,
+        sessionEnd: session.sessionEnd,
+        scheduledAt: parseVietnamSchedule(booking.requestedDate, session.sessionStart),
+      }
+    })
+    .filter((item): item is typeof item & { scheduledAt: Date } => Boolean(item.scheduledAt))
+    .flatMap(({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt }) => REMINDER_SPECS
       .filter((reminder) => {
         const diff = scheduledAt.getTime() - now.getTime()
         return diff >= reminder.offsetMs - reminder.earlyWindowMs && diff <= reminder.offsetMs + reminder.lateWindowMs
       })
-      .map((reminder) => ({ booking, scheduledAt, reminder })))
+      .map((reminder) => ({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt, reminder })))
 
   const studentRefs = [...new Set(dueReminders.map(({ booking }) => booking.studentId!))]
     .map((studentId) => db.collection('students').doc(studentId))
@@ -163,7 +218,7 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
   const studentsById = new Map(studentSnapshots.map((snapshot) => [snapshot.id, snapshot.data() as Student]))
   let invalidRecipientCount = 0
 
-  const candidates = dueReminders.flatMap(({ booking, scheduledAt, reminder }) => {
+  const candidates = dueReminders.flatMap(({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt, reminder }) => {
     const student = studentsById.get(booking.studentId!)
     const recipient = student?.email?.trim().toLowerCase()
     if (!student || !isEmail(recipient)) {
@@ -178,7 +233,10 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
         recipient,
         scheduledAt,
         reminder,
-        deliveryId: reminderDeliveryId(booking, reminder),
+        bookingIds,
+        sessionEnd,
+        deliveryId: reminderDeliveryId(booking, booking.requestedStart!, reminder),
+        legacyDeliveryIds: legacyBookings.map((legacyBooking) => legacyReminderDeliveryId(legacyBooking, reminder)),
       },
     }]
   })
@@ -241,4 +299,72 @@ export const sendClassReminders = onSchedule({
   }
 
   logger.info('Class reminder worker finished', { candidates: candidates.length, sent, skipped, failed })
+})
+
+function timestampISO(value: unknown): string | null {
+  return value instanceof Timestamp ? value.toDate().toISOString() : null
+}
+
+export const getEmailReminderHistory = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+}, async (request) => {
+  const uid = request.auth?.uid
+  if (!uid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại để xem lịch sử email.')
+
+  const userSnapshot = await db.collection('users').doc(uid).get()
+  if (userSnapshot.data()?.role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Chỉ quản trị viên được xem lịch sử email.')
+  }
+
+  const requestedLimit = Number(request.data?.limit)
+  const historyLimit = Number.isInteger(requestedLimit)
+    ? Math.min(200, Math.max(20, requestedLimit))
+    : 100
+  const deliveriesSnapshot = await db.collection('emailReminderDeliveries')
+    .orderBy('updatedAt', 'desc')
+    .limit(historyLimit)
+    .get()
+
+  const bookingIds = [...new Set(deliveriesSnapshot.docs.flatMap((snapshot) => {
+    const data = snapshot.data()
+    const ids = Array.isArray(data.bookingIds) ? data.bookingIds : [data.bookingId]
+    return ids.filter((value): value is string => typeof value === 'string' && value.length > 0)
+  }))]
+  const bookingSnapshots = bookingIds.length > 0
+    ? await db.getAll(...bookingIds.map((bookingId) => db.collection('bookingRequests').doc(bookingId)))
+    : []
+  const bookingsById = new Map(bookingSnapshots.map((snapshot) => [snapshot.id, snapshot.data() || {}]))
+
+  return {
+    items: deliveriesSnapshot.docs.map((snapshot) => {
+      const data = snapshot.data()
+      const itemBookingIds = (Array.isArray(data.bookingIds) ? data.bookingIds : [data.bookingId])
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      const fallbackBooking = bookingsById.get(itemBookingIds[0]) || {}
+      return {
+        id: snapshot.id,
+        status: typeof data.status === 'string' ? data.status : 'unknown',
+        reminderType: typeof data.reminderType === 'string' ? data.reminderType : '',
+        recipient: typeof data.recipient === 'string' ? data.recipient : '',
+        studentId: typeof data.studentId === 'string' ? data.studentId : (fallbackBooking.studentId || ''),
+        studentCode: typeof data.studentCode === 'string' ? data.studentCode : (fallbackBooking.studentCode || ''),
+        studentName: typeof data.studentName === 'string' ? data.studentName : (fallbackBooking.studentName || ''),
+        teacherName: typeof data.teacherName === 'string' ? data.teacherName : (fallbackBooking.teacherName || ''),
+        subjectName: typeof data.subjectName === 'string' ? data.subjectName : (fallbackBooking.subjectName || ''),
+        bookingIds: itemBookingIds,
+        bookingCount: itemBookingIds.length,
+        scheduleDate: typeof data.scheduleDate === 'string' ? data.scheduleDate : (fallbackBooking.requestedDate || ''),
+        scheduleStart: typeof data.scheduleStart === 'string' ? data.scheduleStart : (fallbackBooking.requestedStart || ''),
+        scheduleEnd: typeof data.scheduleEnd === 'string' ? data.scheduleEnd : (fallbackBooking.requestedEnd || ''),
+        messageId: typeof data.messageId === 'string' ? data.messageId : '',
+        attemptCount: Number(data.attemptCount || 0),
+        failureReason: typeof data.failureReason === 'string' ? data.failureReason.slice(0, 300) : '',
+        sentAt: timestampISO(data.sentAt),
+        failedAt: timestampISO(data.failedAt),
+        updatedAt: timestampISO(data.updatedAt),
+      }
+    }),
+  }
 })

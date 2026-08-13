@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { EmailReminderHistoryPanel } from '@/components/admin/EmailReminderHistoryPanel'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { SystemNotification, Teacher, Student } from '@/types'
 import {
-  Bell, Calendar, ClipboardList, ShieldAlert, Clock, MessageSquare,
+  Bell, Calendar, ClipboardList, ShieldAlert, Clock, Mail, MessageSquare,
   Plus, Trash2, Users, Search, Check, Send, AlertTriangle, UserCheck, FileWarning
 } from 'lucide-react'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
@@ -39,6 +40,7 @@ const ICONS = [
 
 export function NotificationsPage() {
   const { user } = useAuthStore()
+  const [historyView, setHistoryView] = useState<'notifications' | 'emails'>('notifications')
   
   // Sent notifications list
   const [notifications, setNotifications] = useState<SystemNotification[]>([])
@@ -268,8 +270,31 @@ export function NotificationsPage() {
         </div>
       </div>
 
+      <div className="inline-flex w-full rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:w-auto" role="tablist" aria-label="Loại lịch sử đã gửi">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={historyView === 'notifications'}
+          onClick={() => setHistoryView('notifications')}
+          className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition sm:flex-none ${historyView === 'notifications' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <Bell className="h-4 w-4" />
+          Thông báo hệ thống
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={historyView === 'emails'}
+          onClick={() => setHistoryView('emails')}
+          className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition sm:flex-none ${historyView === 'emails' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <Mail className="h-4 w-4" />
+          Email nhắc lịch
+        </button>
+      </div>
+
       {/* List of sent notifications */}
-      <Card>
+      {historyView === 'notifications' ? <Card>
         <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
           <Users className="w-5 h-5 text-indigo-500" />
           Lịch sử đã gửi
@@ -349,7 +374,7 @@ export function NotificationsPage() {
             })}
           </div>
         )}
-      </Card>
+      </Card> : <EmailReminderHistoryPanel />}
 
       {/* Compose Notification Modal */}
       {showComposeModal && (
