@@ -10,16 +10,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { getCurrentMonth } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
-
-type RankingRow = {
-  teacherId: string
-  displayName: string
-  sortName: string
-  code: string
-  photoURL?: string
-  minutes: number
-  lessons: number
-}
+import { loadTeacherRanking, type TeacherRankingRow as RankingRow } from '@/lib/teacherRanking'
 
 type PublishedLesson = {
   teacherId?: string
@@ -35,6 +26,56 @@ function monthLabel(month: string, lang: 'vi' | 'en') {
   return new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'long', year: 'numeric' }).format(date)
 }
 
+async function loadRankingFallback(month: string): Promise<RankingRow[]> {
+  const [lessonSnap, teacherSnap] = await Promise.all([
+    // Keep the existing rules-compatible query as a safety fallback. Production
+    // normally uses the bounded callable and reaches this path only if it is unavailable.
+    getDocs(query(
+      collection(db, 'publicLessons'),
+      where('status', '==', 'approved'),
+    )),
+    getDocs(collection(db, 'teachers')),
+  ])
+
+  const teachers = new Map<string, Teacher>()
+  teacherSnap.docs.forEach((docSnap) => {
+    teachers.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Teacher)
+  })
+
+  const aggregates = new Map<string, RankingRow>()
+  lessonSnap.docs
+    .map((docSnap) => docSnap.data() as PublishedLesson)
+    .filter((lesson) => (lesson.date || '') >= `${month}-01`
+      && (lesson.date || '') <= `${month}-31`
+      && Number(lesson.minutes) > 0
+      && !!lesson.teacherId)
+    .forEach((lesson) => {
+      const teacherId = lesson.teacherId
+      if (!teacherId) return
+      const teacher = teachers.get(teacherId)
+      const teacherCode = teacher?.code || lesson.teacherCode || ''
+      const teacherName = teacher?.name || lesson.teacherName || teacherCode || 'Unknown teacher'
+      const current = aggregates.get(teacherId) || {
+        teacherId,
+        displayName: teacherDisplayName(teacherCode, teacherName) || teacherName,
+        sortName: teacherName,
+        code: teacherCode,
+        photoURL: teacher?.photoURL,
+        minutes: 0,
+        lessons: 0,
+      }
+      current.minutes += Number(lesson.minutes) || 0
+      current.lessons += 1
+      aggregates.set(teacherId, current)
+    })
+
+  return Array.from(aggregates.values())
+    .sort((left, right) => right.minutes - left.minutes
+      || right.lessons - left.lessons
+      || left.sortName.localeCompare(right.sortName))
+    .slice(0, 10)
+}
+
 export function TeacherRankingPage() {
   const { lang } = useLanguageStore()
   const { teacherId } = useAuthStore()
@@ -46,56 +87,21 @@ export function TeacherRankingPage() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(false)
+    queueMicrotask(() => {
+      if (!active) return
+      setLoading(true)
+      setError(false)
+    })
 
     const loadRanking = async () => {
       try {
-        const [lessonSnap, teacherSnap] = await Promise.all([
-          // Approved lessons are mirrored to publicLessons, which is readable
-          // by teachers without widening access to other teachers' private reports.
-          // Keep the status predicate in the query: Firestore Rules require it
-          // for list access. Adding the month date range here also requires a
-          // publicLessons(status, date) composite index that production does not have.
-          getDocs(query(
-            collection(db, 'publicLessons'),
-            where('status', '==', 'approved'),
-          )),
-          getDocs(collection(db, 'teachers')),
-        ])
-
-        const teachers = new Map<string, Teacher>()
-        teacherSnap.docs.forEach((docSnap) => {
-          teachers.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Teacher)
-        })
-
-        const aggregates = new Map<string, RankingRow>()
-        lessonSnap.docs
-          .map((docSnap) => docSnap.data() as PublishedLesson)
-          .filter((lesson) => (lesson.date || '') >= `${month}-01` && (lesson.date || '') <= `${month}-31` && Number(lesson.minutes) > 0 && !!lesson.teacherId)
-          .forEach((lesson) => {
-            const teacherId = lesson.teacherId
-            if (!teacherId) return
-            const teacher = teachers.get(teacherId)
-            const teacherCode = teacher?.code || lesson.teacherCode || ''
-            const teacherName = teacher?.name || lesson.teacherName || teacherCode || 'Unknown teacher'
-            const current = aggregates.get(teacherId) || {
-              teacherId,
-              displayName: teacherDisplayName(teacherCode, teacherName) || teacherName,
-              sortName: teacherName,
-              code: teacherCode,
-              photoURL: teacher?.photoURL,
-              minutes: 0,
-              lessons: 0,
-            }
-            current.minutes += Number(lesson.minutes) || 0
-            current.lessons += 1
-            aggregates.set(teacherId, current)
-          })
-
-        const ranked = Array.from(aggregates.values())
-          .sort((left, right) => right.minutes - left.minutes || right.lessons - left.lessons || left.sortName.localeCompare(right.sortName))
-          .slice(0, 10)
+        let ranked: RankingRow[]
+        try {
+          ranked = await loadTeacherRanking(month, reloadVersion > 0)
+        } catch (callableError) {
+          console.warn('[teacher-ranking] bounded loader unavailable, using compatibility fallback', callableError)
+          ranked = await loadRankingFallback(month)
+        }
         if (active) setRows(ranked)
       } catch (loadError) {
         console.error('[teacher-ranking]', loadError)

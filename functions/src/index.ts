@@ -7,6 +7,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
 import { groupReminderDays, groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
+import { aggregateTeacherRanking, type TeacherRankingProfile, type TeacherRankingRow } from './teacherRanking'
 
 initializeApp()
 
@@ -14,6 +15,8 @@ const db = new Firestore()
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const PROCESSING_LEASE_MS = 10 * 60 * 1000
 const resendApiKey = defineSecret('RESEND_API_KEY')
+const TEACHER_RANKING_CACHE_MS = 5 * 60 * 1000
+const teacherRankingCache = new Map<string, { expiresAt: number; rows: TeacherRankingRow[] }>()
 
 const REMINDER_SPECS = [
   {
@@ -319,6 +322,57 @@ export const sendClassReminders = onSchedule({
   }
 
   logger.info('Class reminder worker finished', { candidates: candidates.length, sent, skipped, failed })
+})
+
+export const getTeacherRanking = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+}, async (request) => {
+  const uid = request.auth?.uid
+  if (!uid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại để xem bảng xếp hạng.')
+
+  const userSnapshot = await db.collection('users').doc(uid).get()
+  const role = userSnapshot.data()?.role
+  if (!['teacher', 'admin', 'teacher_manager'].includes(role)) {
+    throw new HttpsError('permission-denied', 'Tài khoản không có quyền xem bảng xếp hạng gia sư.')
+  }
+
+  const month = typeof request.data?.month === 'string' ? request.data.month.trim() : ''
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new HttpsError('invalid-argument', 'Tháng cần có định dạng YYYY-MM.')
+  }
+
+  const forceRefresh = request.data?.refresh === true
+  const cached = teacherRankingCache.get(month)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+    return { rows: cached.rows, cached: true }
+  }
+
+  const lessonsSnapshot = await db.collection('publicLessons')
+    .where('date', '>=', `${month}-01`)
+    .where('date', '<=', `${month}-31`)
+    .get()
+  const lessons = lessonsSnapshot.docs.map((snapshot) => snapshot.data())
+  const provisionalRows = aggregateTeacherRanking(lessons, month)
+  const teacherSnapshots = provisionalRows.length > 0
+    ? await db.getAll(...provisionalRows.map((row) => db.collection('teachers').doc(row.teacherId)))
+    : []
+  const profiles = new Map<string, TeacherRankingProfile>(teacherSnapshots.map((snapshot) => [
+    snapshot.id,
+    snapshot.data() || {},
+  ]))
+  const rows = aggregateTeacherRanking(lessons, month, profiles)
+
+  teacherRankingCache.set(month, { expiresAt: Date.now() + TEACHER_RANKING_CACHE_MS, rows })
+  logger.info('Teacher ranking loaded', {
+    month,
+    lessonReads: lessonsSnapshot.size,
+    teacherReads: teacherSnapshots.length,
+    rows: rows.length,
+    forceRefresh,
+  })
+  return { rows, cached: false }
 })
 
 function timestampISO(value: unknown): string | null {

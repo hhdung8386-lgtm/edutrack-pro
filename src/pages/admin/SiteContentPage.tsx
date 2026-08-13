@@ -501,7 +501,7 @@ export function SiteContentPage() {
   const { user } = useAuthStore()
   const [tab, setTab] = useState<'pages' | 'posts'>('pages')
   const [pageId, setPageId] = useState<SitePageId>('home')
-  const { content, loading, usingDefault } = useSiteContent(pageId)
+  const { content, loading, usingDefault } = useSiteContent(pageId, { realtime: true })
 
   const [draft, setDraft] = useState<SiteBlock[]>([])
   const [dirty, setDirty] = useState(false)

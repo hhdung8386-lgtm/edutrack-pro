@@ -5,10 +5,10 @@
  * - Trang public LUÔN có nội dung mặc định trong mã nguồn. Firestore chỉ để GHI ĐÈ.
  *   Nếu chưa có dữ liệu / mất mạng / thiếu quyền -> vẫn hiển thị bản mặc định, không vỡ trang.
  * - Không xoá field lạ: khi lưu, chỉ ghi đúng các khối admin đang chỉnh.
- * - Mọi thay đổi đọc theo thời gian thực (onSnapshot) nên admin sửa là trang public đổi ngay.
+ * - Trình biên tập admin theo thời gian thực; trang public dùng cache ngắn và tự làm mới an toàn.
  */
 import { useEffect, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
 import { compressImage } from '@/lib/imageUploader'
@@ -220,37 +220,82 @@ export const DEFAULT_CONTENT: Record<SitePageId, SitePageContent> = {
   },
 }
 
-/** Đọc nội dung một trang theo thời gian thực; luôn có bản mặc định để dự phòng. */
-export function useSiteContent(pageId: SitePageId) {
-  const [content, setContent] = useState<SitePageContent>(DEFAULT_CONTENT[pageId])
-  const [loading, setLoading] = useState(true)
+const SITE_CONTENT_CACHE_MS = 5 * 60 * 1000
+const siteContentCache = new Map<SitePageId, {
+  content: SitePageContent
+  usingDefault: boolean
+  expiresAt: number
+}>()
+
+type SiteContentOptions = {
+  realtime?: boolean
+}
+
+/**
+ * Public pages reuse a short in-memory cache and perform a one-shot read.
+ * The admin editor opts into realtime updates so its save/preview flow is unchanged.
+ */
+export function useSiteContent(pageId: SitePageId, options: SiteContentOptions = {}) {
+  const realtime = options.realtime === true
+  const initialCache = !realtime ? siteContentCache.get(pageId) : undefined
+  const [content, setContent] = useState<SitePageContent>(() => initialCache?.content || DEFAULT_CONTENT[pageId])
+  const [loading, setLoading] = useState(() => !initialCache)
   /** true = đang dùng bản mặc định trong mã nguồn (chưa có dữ liệu trên Firestore). */
-  const [usingDefault, setUsingDefault] = useState(true)
+  const [usingDefault, setUsingDefault] = useState(() => initialCache?.usingDefault ?? true)
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, 'siteContent', pageId),
-      (snap) => {
+    const cachedAtEffectStart = !realtime ? siteContentCache.get(pageId) : undefined
+    const contentRef = doc(db, 'siteContent', pageId)
+    const applySnapshot = (snap: Awaited<ReturnType<typeof getDoc>>) => {
         const data = snap.data() as SitePageContent | undefined
         if (snap.exists() && Array.isArray(data?.blocks)) {
-          setContent({ ...data, blocks: data.blocks })
+          const nextContent = { ...data, blocks: data.blocks }
+          setContent(nextContent)
           setUsingDefault(false)
+          siteContentCache.set(pageId, {
+            content: nextContent,
+            usingDefault: false,
+            expiresAt: Date.now() + SITE_CONTENT_CACHE_MS,
+          })
         } else {
+          setContent(DEFAULT_CONTENT[pageId])
+          setUsingDefault(true)
+          siteContentCache.set(pageId, {
+            content: DEFAULT_CONTENT[pageId],
+            usingDefault: true,
+            expiresAt: Date.now() + SITE_CONTENT_CACHE_MS,
+          })
+        }
+        setLoading(false)
+    }
+    const applyError = (err: Error) => {
+        // Không có quyền / mất mạng -> giữ bản mặc định, trang vẫn hiển thị bình thường.
+        console.warn('[siteContent] fallback to default:', err?.message)
+        // Nếu đã có bản cache (kể cả vừa hết hạn), giữ nguyên nội dung đó để
+        // một lỗi mạng tạm thời không làm trang khách hàng đổi về bản mặc định.
+        if (!cachedAtEffectStart) {
           setContent(DEFAULT_CONTENT[pageId])
           setUsingDefault(true)
         }
         setLoading(false)
-      },
-      (err) => {
-        // Không có quyền / mất mạng -> giữ bản mặc định, trang vẫn hiển thị bình thường.
-        console.warn('[siteContent] fallback to default:', err?.message)
-        setContent(DEFAULT_CONTENT[pageId])
-        setUsingDefault(true)
-        setLoading(false)
-      }
-    )
-    return unsub
-  }, [pageId])
+    }
+
+    if (realtime) {
+      return onSnapshot(contentRef, applySnapshot, applyError)
+    }
+
+    if (cachedAtEffectStart && cachedAtEffectStart.expiresAt > Date.now()) return
+
+    let active = true
+    getDoc(contentRef)
+      .then((snapshot) => {
+        if (active) applySnapshot(snapshot)
+      })
+      .catch((error: Error) => {
+        if (active) applyError(error)
+      })
+    return () => { active = false }
+  }, [pageId, realtime])
 
   return { content, loading, usingDefault }
 }
@@ -262,6 +307,7 @@ export async function saveSiteContent(pageId: SitePageId, blocks: SiteBlock[], u
     { blocks, updatedAt: serverTimestamp(), updatedBy },
     { merge: true }
   )
+  siteContentCache.delete(pageId)
 }
 
 /** Tải ảnh từ máy lên Storage cho CMS. Ảnh được nén trước để trang public nhẹ. */

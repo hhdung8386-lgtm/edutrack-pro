@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { ArrowRight } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import type { SitePost } from '@/lib/siteContent'
@@ -11,6 +11,9 @@ interface NewsItem {
   title: string
   createdAt: number
 }
+
+const NEWS_CACHE_KEY = '123english_latest_news_v1'
+const NEWS_CACHE_MS = 10 * 60 * 1000
 
 const FALLBACK_NEWS: NewsItem[] = [
   {
@@ -51,13 +54,42 @@ function formatNewsDate(timestamp: number) {
   return `${year}/${month}/${day}`
 }
 
+function readNewsCache(): NewsItem[] | null {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(NEWS_CACHE_KEY) || 'null') as {
+      expiresAt?: number
+      items?: NewsItem[]
+    } | null
+    return cached && Number(cached.expiresAt) > Date.now() && Array.isArray(cached.items)
+      ? cached.items
+      : null
+  } catch {
+    return null
+  }
+}
+
+function writeNewsCache(items: NewsItem[]) {
+  try {
+    sessionStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({
+      expiresAt: Date.now() + NEWS_CACHE_MS,
+      items,
+    }))
+  } catch {
+    // Storage may be unavailable in privacy mode; the in-memory UI still works.
+  }
+}
+
 export function LatestNewsSection() {
-  const [items, setItems] = useState<NewsItem[]>(FALLBACK_NEWS)
+  const [items, setItems] = useState<NewsItem[]>(() => readNewsCache() || FALLBACK_NEWS)
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      query(collection(db, 'posts'), where('published', '==', true)),
-      (snapshot) => {
+    const cached = readNewsCache()
+    if (cached) return
+
+    let active = true
+    getDocs(query(collection(db, 'posts'), where('published', '==', true)))
+      .then((snapshot) => {
+        if (!active) return
         const remoteItems = snapshot.docs.map((document) => {
           const post = { id: document.id, ...document.data() } as SitePost
           return {
@@ -72,11 +104,13 @@ export function LatestNewsSection() {
           .sort((a, b) => b.createdAt - a.createdAt)
           .slice(0, 4)
         setItems(merged)
-      },
-      () => setItems(FALLBACK_NEWS),
-    )
+        writeNewsCache(merged)
+      })
+      .catch(() => {
+        if (active) setItems(FALLBACK_NEWS)
+      })
 
-    return unsubscribe
+    return () => { active = false }
   }, [])
 
   return (

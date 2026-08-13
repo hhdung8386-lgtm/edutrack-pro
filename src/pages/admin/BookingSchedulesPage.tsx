@@ -256,6 +256,9 @@ export function BookingSchedulesPage() {
   const [filterDays, setFilterDays] = useState<DayOfWeek[]>([])
   const [filterTime, setFilterTime] = useState('17:00')
   const [allAvailabilities, setAllAvailabilities] = useState<Record<string, TeacherAvailability>>({})
+  const [availabilityCatalogLoaded, setAvailabilityCatalogLoaded] = useState(false)
+  const [availabilityCatalogLoading, setAvailabilityCatalogLoading] = useState(false)
+  const [availabilityCatalogError, setAvailabilityCatalogError] = useState(false)
 
   // Smart filter states
   const [filterGender, setFilterGender] = useState<'all' | 'male' | 'female'>('all')
@@ -305,15 +308,14 @@ export function BookingSchedulesPage() {
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const selectedSlotsContainPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
-  // Load teachers and availabilities
+  const availabilityFilterActive = filterDays.length > 0
+  // Load the teacher directory first. The full availability catalog is fetched
+  // lazily only when the admin actually uses the availability filter.
   useEffect(() => {
-    async function loadTeachersAndAvailability() {
+    async function loadTeachers() {
       setLoading(true)
       try {
-        const [teachersSnap, availSnap] = await Promise.all([
-          getDocs(query(collection(db, 'teachers'), where('status', '==', 'active'))),
-          getDocs(collection(db, 'teacherAvailability')),
-        ])
+        const teachersSnap = await getDocs(query(collection(db, 'teachers'), where('status', '==', 'active')))
 
         const items = teachersSnap.docs
           .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher))
@@ -324,12 +326,6 @@ export function BookingSchedulesPage() {
         setSelectedTeacherId((current) =>
           current && items.some((t) => t.id === current) ? current : (items[0]?.id || '')
         )
-
-        const avMap: Record<string, TeacherAvailability> = {}
-        availSnap.docs.forEach(docSnap => {
-          avMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() } as TeacherAvailability
-        })
-        setAllAvailabilities(avMap)
 
         // `totalApprovedMinutes` được cập nhật transactionally khi duyệt buổi học.
         // Chỉ hồ sơ legacy thiếu field mới đọc lịch sử riêng của chính gia sư đó.
@@ -359,8 +355,43 @@ export function BookingSchedulesPage() {
         setLoading(false)
       }
     }
-    loadTeachersAndAvailability()
+    loadTeachers()
   }, [])
+
+  useEffect(() => {
+    if (!availabilityFilterActive || availabilityCatalogLoaded) return
+
+    let active = true
+    queueMicrotask(() => {
+      if (!active) return
+      setAvailabilityCatalogLoading(true)
+      setAvailabilityCatalogError(false)
+    })
+    getDocs(collection(db, 'teacherAvailability'))
+      .then((snapshot) => {
+        if (!active) return
+        const availabilityMap: Record<string, TeacherAvailability> = {}
+        snapshot.docs.forEach((documentSnapshot) => {
+          availabilityMap[documentSnapshot.id] = {
+            id: documentSnapshot.id,
+            ...documentSnapshot.data(),
+          } as TeacherAvailability
+        })
+        setAllAvailabilities(availabilityMap)
+        setAvailabilityCatalogLoaded(true)
+      })
+      .catch((error) => {
+        if (!active) return
+        console.error('Error loading availability filter catalog:', error)
+        setAvailabilityCatalogError(true)
+        toast.error('Không tải được bộ lọc lịch trống; danh sách gia sư vẫn được giữ nguyên')
+      })
+      .finally(() => {
+        if (active) setAvailabilityCatalogLoading(false)
+      })
+
+    return () => { active = false }
+  }, [availabilityCatalogLoaded, availabilityFilterActive])
 
   // Danh mục cũ chỉ là nguồn bổ sung. Hồ sơ năng lực của gia sư vẫn được ưu tiên
   // để các tài khoản chưa có subjectIds không bị mất khỏi bộ lọc môn.
@@ -647,6 +678,9 @@ export function BookingSchedulesPage() {
 
     // 8. Schedule availability filter
     if (filterDays.length > 0 && filterTime) {
+      // Keep the directory complete while this optional catalog is loading or
+      // unavailable. Once loaded, filtering is identical to the previous flow.
+      if (!availabilityCatalogLoaded) return true
       const avail = allAvailabilities[teacher.id]
       if (!avail) return false
 
@@ -1803,6 +1837,12 @@ export function BookingSchedulesPage() {
                   </select>
                   <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]">▼</div>
                 </div>
+                {availabilityCatalogLoading && (
+                  <p className="text-[10px] font-semibold text-indigo-600">Đang tải dữ liệu lịch trống…</p>
+                )}
+                {availabilityCatalogError && (
+                  <p className="text-[10px] font-semibold text-amber-600">Chưa áp dụng bộ lọc; danh sách vẫn hiển thị đầy đủ.</p>
+                )}
               </div>
             )}
           </div>

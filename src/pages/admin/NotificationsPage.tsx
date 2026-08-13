@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   collection, addDoc, deleteDoc, doc, onSnapshot,
-  serverTimestamp, query, orderBy, getDocs, where
+  serverTimestamp, query, orderBy, getDocs, where, limit
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
@@ -20,6 +20,15 @@ import {
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 
 type TeacherProfileFilter = 'all' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile' | 'certificate_complete'
+type NotificationTarget = {
+  id: string
+  uid?: string
+  username?: string
+  email?: string
+  name?: string
+  code?: string
+}
+type ManagerTarget = NotificationTarget & { role: string }
 
 const COLORS = [
   { key: 'indigo', bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', fill: 'bg-indigo-600', text: 'text-indigo-600' },
@@ -45,6 +54,7 @@ export function NotificationsPage() {
   // Sent notifications list
   const [notifications, setNotifications] = useState<SystemNotification[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
+  const [historyLimit, setHistoryLimit] = useState(100)
   const [deleteNotify, setDeleteNotify] = useState<SystemNotification | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -62,14 +72,14 @@ export function NotificationsPage() {
   // Specific targets search data
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [students, setStudents] = useState<Student[]>([])
-  const [managers, setManagers] = useState<any[]>([])
+  const [managers, setManagers] = useState<ManagerTarget[]>([])
   const [loadingTargets, setLoadingTargets] = useState(false)
   const [targetSearch, setTargetSearch] = useState('')
   const [teacherProfileFilter, setTeacherProfileFilter] = useState<TeacherProfileFilter>('all')
 
   // Load notification history
   useEffect(() => {
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'))
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(historyLimit))
     return onSnapshot(q, (snap) => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as SystemNotification)))
       setLoadingHistory(false)
@@ -78,7 +88,7 @@ export function NotificationsPage() {
       toast.error('Lỗi khi tải lịch sử thông báo')
       setLoadingHistory(false)
     })
-  }, [])
+  }, [historyLimit])
 
   // Load target lists for custom selector
   useEffect(() => {
@@ -96,7 +106,7 @@ export function NotificationsPage() {
         } else if (targetType === 'managers') {
           const snap = await getDocs(collection(db, 'users'))
           const list = snap.docs
-            .map(d => d.data())
+            .map(d => ({ id: d.id, ...d.data() } as ManagerTarget))
             .filter(u => u.role === 'student_manager' || u.role === 'teacher_manager' || u.role === 'admin')
           setManagers(list)
         }
@@ -111,16 +121,24 @@ export function NotificationsPage() {
     loadTargets()
   }, [showComposeModal, scope, targetType])
 
-  // Reset selected IDs when targetType or scope changes
-  useEffect(() => {
+  const handleTargetTypeChange = (nextTargetType: SystemNotification['targetType']) => {
+    setTargetType(nextTargetType)
     setSelectedIds([])
     setTargetSearch('')
-    if (targetType !== 'teachers' || scope === 'all') setTeacherProfileFilter('all')
-  }, [targetType, scope])
+    if (nextTargetType !== 'teachers' || scope === 'all') setTeacherProfileFilter('all')
+  }
 
-  useEffect(() => {
+  const handleScopeChange = (nextScope: 'all' | 'specific') => {
+    setScope(nextScope)
     setSelectedIds([])
-  }, [teacherProfileFilter])
+    setTargetSearch('')
+    if (nextScope === 'all') setTeacherProfileFilter('all')
+  }
+
+  const handleTeacherProfileFilterChange = (nextFilter: TeacherProfileFilter) => {
+    setTeacherProfileFilter(nextFilter)
+    setSelectedIds([])
+  }
 
   const handleToggleSelectId = (id: string) => {
     setSelectedIds(prev =>
@@ -215,7 +233,7 @@ export function NotificationsPage() {
   }
 
   // Filter list of targets based on search query
-  const getFilteredTargets = () => {
+  const getFilteredTargets = (): NotificationTarget[] => {
     const queryStr = targetSearch.trim().toLowerCase()
     if (targetType === 'teachers') {
       return teachers.filter((teacher) => {
@@ -235,7 +253,7 @@ export function NotificationsPage() {
       return students.filter(s => s.name.toLowerCase().includes(queryStr) || s.code.toLowerCase().includes(queryStr))
     }
     if (targetType === 'managers') {
-      return managers.filter(m => (m.username || '').toLowerCase().includes(queryStr) || m.email.toLowerCase().includes(queryStr))
+      return managers.filter(m => (m.username || '').toLowerCase().includes(queryStr) || (m.email || '').toLowerCase().includes(queryStr))
     }
     return []
   }
@@ -372,6 +390,13 @@ export function NotificationsPage() {
                 </div>
               )
             })}
+            {notifications.length >= historyLimit && (
+              <div className="flex justify-center pt-2">
+                <Button type="button" variant="outline" onClick={() => setHistoryLimit((current) => current + 100)}>
+                  Xem thêm lịch sử
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Card> : <EmailReminderHistoryPanel />}
@@ -471,7 +496,7 @@ export function NotificationsPage() {
                 <label className="block text-xs font-bold text-slate-500 uppercase">Nhóm đối tượng nhận *</label>
                 <select
                   value={targetType}
-                  onChange={(e) => setTargetType(e.target.value as any)}
+                  onChange={(e) => handleTargetTypeChange(e.target.value as SystemNotification['targetType'])}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
                 >
                   <option value="teachers">Khối Gia sư (Teachers)</option>
@@ -484,7 +509,7 @@ export function NotificationsPage() {
                 <label className="block text-xs font-bold text-slate-500 uppercase">Phạm vi gửi *</label>
                 <select
                   value={scope}
-                  onChange={(e) => setScope(e.target.value as any)}
+                  onChange={(e) => handleScopeChange(e.target.value as 'all' | 'specific')}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 bg-white font-medium text-slate-700 shadow-sm"
                 >
                   <option value="all">Gửi cho toàn bộ nhóm</option>
@@ -503,7 +528,7 @@ export function NotificationsPage() {
                     <select
                       id="teacher-profile-filter"
                       value={teacherProfileFilter}
-                      onChange={(event) => setTeacherProfileFilter(event.target.value as TeacherProfileFilter)}
+                      onChange={(event) => handleTeacherProfileFilterChange(event.target.value as TeacherProfileFilter)}
                       className="mt-2 min-h-10 w-full rounded-lg border border-brand-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
                     >
                       <option value="all">Tất cả gia sư</option>
@@ -524,10 +549,10 @@ export function NotificationsPage() {
                   {filteredTargets.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => handleSelectAllFiltered(filteredTargets.map(t => t.id || t.uid))}
+                      onClick={() => handleSelectAllFiltered(filteredTargets.map(t => t.uid || t.id))}
                       className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold"
                     >
-                      {filteredTargets.every(t => selectedIds.includes(t.id || t.uid)) ? 'Bỏ chọn trang này' : 'Chọn cả trang này'}
+                      {filteredTargets.every(t => selectedIds.includes(t.uid || t.id)) ? 'Bỏ chọn trang này' : 'Chọn cả trang này'}
                     </button>
                   )}
                 </div>
@@ -552,8 +577,8 @@ export function NotificationsPage() {
                 ) : (
                   <div className="border border-slate-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto bg-slate-50/50 p-2 space-y-1.5">
                     {filteredTargets.map((item) => {
-                      const id = item.id || item.uid
-                      const name = item.name || item.username || item.email
+                      const id = item.uid || item.id
+                      const name = item.name || item.username || item.email || 'Chưa có tên'
                       const subText = item.code || item.email || ''
                       const isSelected = selectedIds.includes(id)
                       const teacherCompliance = targetType === 'teachers' ? getTeacherCertificateCompliance(item as Teacher) : null
