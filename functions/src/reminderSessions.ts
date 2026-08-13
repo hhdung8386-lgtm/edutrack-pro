@@ -15,6 +15,12 @@ export type ReminderSession<T extends ReminderSessionBooking> = {
   sessionEnd: string
 }
 
+export type ReminderDay<T extends ReminderSessionBooking> = {
+  bookings: T[]
+  dayStart: string
+  dayEnd: string
+}
+
 function timeToMinutes(value?: string): number | null {
   if (!value || !/^\d{1,2}:\d{2}$/.test(value)) return null
   const [hour, minute] = value.split(':').map(Number)
@@ -59,6 +65,50 @@ function sessionIdentity(booking: ReminderSessionBooking): string {
   ].join('|')
 }
 
+function dayIdentity(booking: ReminderSessionBooking): string {
+  return [booking.studentId || '', booking.requestedDate || ''].join('|')
+}
+
+function sortedValidBookings<T extends ReminderSessionBooking>(bookings: T[]): T[] {
+  return bookings
+    .filter((booking) => timeToMinutes(booking.requestedStart) !== null)
+    .sort((left, right) => {
+      const byStart = (timeToMinutes(left.requestedStart) || 0) - (timeToMinutes(right.requestedStart) || 0)
+      return byStart || left.id.localeCompare(right.id)
+    })
+}
+
+/**
+ * Toàn bộ lịch còn hiệu lực của một học viên trong cùng ngày được gửi chung
+ * trong một email. Không đưa teacher/subject vào khóa vì một ngày có thể học
+ * nhiều gia sư hoặc nhiều môn và nghiệp vụ vẫn yêu cầu chỉ một email.
+ */
+export function groupReminderDays<T extends ReminderSessionBooking>(bookings: T[]): ReminderDay<T>[] {
+  const groups = new Map<string, T[]>()
+  for (const booking of sortedValidBookings(bookings)) {
+    if (!booking.studentId || !booking.requestedDate) continue
+    const key = dayIdentity(booking)
+    groups.set(key, [...(groups.get(key) || []), booking])
+  }
+
+  return [...groups.values()].map((group) => {
+    const sorted = sortedValidBookings(group)
+    const starts = sorted.map((booking) => timeToMinutes(booking.requestedStart)).filter((value): value is number => value !== null)
+    const ends = sorted.map(bookingEndMinutes).filter((value): value is number => value !== null)
+    return {
+      bookings: sorted,
+      dayStart: minutesToTime(Math.min(...starts)),
+      dayEnd: minutesToTime(Math.max(...ends)),
+    }
+  }).sort((left, right) => {
+    const leftBooking = left.bookings[0]
+    const rightBooking = right.bookings[0]
+    return (leftBooking.requestedDate || '').localeCompare(rightBooking.requestedDate || '')
+      || left.dayStart.localeCompare(right.dayStart)
+      || (leftBooking.studentId || '').localeCompare(rightBooking.studentId || '')
+  })
+}
+
 /**
  * Các ô lịch liền nhau của cùng học viên/gia sư/môn/ngày là một cụm buổi học.
  * Một lượt xếp nhiều ô vì vậy chỉ tạo một cặp email nhắc 12 giờ và 30 phút.
@@ -74,10 +124,7 @@ export function groupReminderSessions<T extends ReminderSessionBooking>(bookings
 
   const sessions: ReminderSession<T>[] = []
   for (const group of groups.values()) {
-    const sorted = [...group].sort((left, right) => {
-      const byStart = (timeToMinutes(left.requestedStart) || 0) - (timeToMinutes(right.requestedStart) || 0)
-      return byStart || left.id.localeCompare(right.id)
-    })
+    const sorted = sortedValidBookings(group)
 
     let current: T[] = []
     let previousDistinct: T | undefined

@@ -34,6 +34,11 @@ function formatVietnamDateTime(value: string | null) {
   }).format(new Date(value))
 }
 
+function formatScheduleTimes(item: EmailReminderHistoryItem) {
+  if (Array.isArray(item.scheduleTimes) && item.scheduleTimes.length > 0) return item.scheduleTimes.join('; ')
+  return `${item.scheduleStart}${item.scheduleEnd ? `–${item.scheduleEnd}` : ''}`
+}
+
 function normalizeSearch(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 }
@@ -100,6 +105,7 @@ export function EmailReminderHistoryPanel() {
         item.subjectName,
         item.scheduleDate,
         item.scheduleStart,
+        ...(Array.isArray(item.scheduleTimes) ? item.scheduleTimes : []),
         item.messageId,
       ].join(' '))
       return matchesStatus && (!keyword || haystack.includes(keyword))
@@ -118,7 +124,7 @@ export function EmailReminderHistoryPanel() {
               <Mail className="h-5 w-5 text-sky-600" />
               Lịch sử email nhắc lịch
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Mỗi cụm buổi học chỉ gửi tối đa hai lần: trước 12 giờ và trước 30 phút.</p>
+            <p className="mt-1 text-sm text-slate-500">Mỗi học viên trong một ngày chỉ nhận tối đa hai email: trước ca đầu tiên 12 giờ và 30 phút.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
             <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-700">Đang hiển thị {filteredItems.length}/{items.length}</span>
@@ -190,9 +196,9 @@ export function EmailReminderHistoryPanel() {
                       <p className="mt-0.5 text-xs font-semibold text-slate-500">{item.studentCode || 'Chưa có mã'} · {item.recipient || 'Chưa có email'}</p>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-bold text-slate-800">{formatScheduleDate(item.scheduleDate)} · {item.scheduleStart}{item.scheduleEnd ? `–${item.scheduleEnd}` : ''}</p>
+                      <p className="font-bold text-slate-800">{formatScheduleDate(item.scheduleDate)} · {formatScheduleTimes(item)}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{item.teacherName || 'Chưa có gia sư'} · {item.subjectName || 'Chưa có môn'}</p>
-                      {item.bookingCount > 1 && <p className="mt-1 text-[11px] font-semibold text-sky-700">Cụm {item.bookingCount} ca liên tiếp</p>}
+                      {item.bookingCount > 1 && <p className="mt-1 text-[11px] font-semibold text-sky-700">Email chung cho {item.bookingCount} ca trong ngày</p>}
                     </td>
                     <td className="px-5 py-4 font-semibold text-slate-700">{reminderLabel(item.reminderType)}</td>
                     <td className="px-5 py-4">
@@ -217,12 +223,12 @@ export function EmailReminderHistoryPanel() {
                   <StatusBadge status={item.status} />
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 text-xs">
-                  <div><dt className="font-semibold text-slate-400">Lịch học</dt><dd className="mt-0.5 font-bold text-slate-800">{formatScheduleDate(item.scheduleDate)} · {item.scheduleStart}{item.scheduleEnd ? `–${item.scheduleEnd}` : ''}</dd></div>
+                  <div><dt className="font-semibold text-slate-400">Lịch học</dt><dd className="mt-0.5 font-bold text-slate-800">{formatScheduleDate(item.scheduleDate)} · {formatScheduleTimes(item)}</dd></div>
                   <div><dt className="font-semibold text-slate-400">Lần nhắc</dt><dd className="mt-0.5 font-bold text-slate-800">{reminderLabel(item.reminderType)}</dd></div>
                   <div className="col-span-2"><dt className="font-semibold text-slate-400">Gia sư / môn học</dt><dd className="mt-0.5 font-bold text-slate-800">{item.teacherName || 'Chưa có gia sư'} · {item.subjectName || 'Chưa có môn'}</dd></div>
                   <div className="col-span-2"><dt className="font-semibold text-slate-400">Thời điểm gửi</dt><dd className="mt-0.5 font-bold text-slate-800">{formatVietnamDateTime(item.sentAt || item.failedAt || item.updatedAt)}</dd></div>
                 </dl>
-                {item.bookingCount > 1 && <p className="mt-3 rounded-lg bg-sky-50 px-2.5 py-2 text-[11px] font-bold text-sky-700">Đã gộp {item.bookingCount} ca liên tiếp thành một buổi nhắc lịch.</p>}
+                {item.bookingCount > 1 && <p className="mt-3 rounded-lg bg-sky-50 px-2.5 py-2 text-[11px] font-bold text-sky-700">Đã gộp {item.bookingCount} ca trong ngày vào một email nhắc lịch.</p>}
                 {item.failureReason && <p className="mt-3 rounded-lg bg-rose-50 px-2.5 py-2 text-xs font-semibold text-rose-700">{item.failureReason}</p>}
               </article>
             ))}

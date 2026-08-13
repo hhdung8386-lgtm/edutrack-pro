@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { groupReminderSessions } = require('../lib/reminderSessions.js')
+const { groupReminderDays, groupReminderSessions } = require('../lib/reminderSessions.js')
 
 const base = {
   studentId: 'student-1',
@@ -63,4 +63,26 @@ test('hỗ trợ bước lưới của ca 50 phút', () => {
 
   assert.equal(sessions.length, 1)
   assert.equal(sessions[0].sessionEnd, '16:50')
+})
+
+test('gộp mọi ca cùng học viên và cùng ngày dù khác giờ, gia sư hoặc môn', () => {
+  const days = groupReminderDays([
+    { ...base, id: 'a', requestedStart: '14:00', requestedEnd: '14:25' },
+    { ...base, id: 'b', teacherId: 'teacher-2', subjectId: 'subject-2', requestedStart: '19:30', requestedEnd: '19:55' },
+  ])
+
+  assert.equal(days.length, 1)
+  assert.equal(days[0].dayStart, '14:00')
+  assert.equal(days[0].dayEnd, '19:55')
+  assert.deepEqual(days[0].bookings.map((booking) => booking.id), ['a', 'b'])
+})
+
+test('không gộp lịch khác học viên hoặc khác ngày vào email chung', () => {
+  const days = groupReminderDays([
+    { ...base, id: 'a', requestedStart: '14:00', requestedEnd: '14:25' },
+    { ...base, id: 'b', studentId: 'student-2', requestedStart: '14:30', requestedEnd: '14:55' },
+    { ...base, id: 'c', requestedDate: '2026-08-13', requestedStart: '14:30', requestedEnd: '14:55' },
+  ])
+
+  assert.equal(days.length, 3)
 })

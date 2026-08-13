@@ -16,6 +16,7 @@ export type EmailReminderHistoryItem = {
   scheduleDate: string
   scheduleStart: string
   scheduleEnd: string
+  scheduleTimes: string[]
   messageId: string
   attemptCount: number
   failureReason: string

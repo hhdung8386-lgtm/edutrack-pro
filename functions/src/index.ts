@@ -6,7 +6,7 @@ import { defineSecret } from 'firebase-functions/params'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
-import { groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
+import { groupReminderDays, groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
 
 initializeApp()
 
@@ -50,6 +50,7 @@ type Student = ReminderEmailStudent & {
 
 type ReminderCandidate = {
   booking: Booking
+  bookings: Booking[]
   bookingIds: string[]
   recipient: string
   scheduledAt: Date
@@ -93,7 +94,7 @@ function legacyReminderDeliveryId(booking: Booking, reminder: ReminderSpec): str
   return `${booking.id}_${reminder.type}_${booking.requestedDate}_${booking.requestedStart?.replace(':', '')}`
 }
 
-function reminderDeliveryId(booking: Booking, sessionStart: string, reminder: ReminderSpec): string {
+function sessionReminderDeliveryId(booking: Booking, sessionStart: string, reminder: ReminderSpec): string {
   const businessKey = [
     booking.studentId || '',
     booking.teacherId || '',
@@ -104,6 +105,12 @@ function reminderDeliveryId(booking: Booking, sessionStart: string, reminder: Re
   ].join('|')
   const digest = createHash('sha256').update(businessKey).digest('hex').slice(0, 32)
   return `session_${digest}_${reminder.type}`
+}
+
+function reminderDeliveryId(booking: Booking, reminder: ReminderSpec): string {
+  const businessKey = [booking.studentId || '', booking.requestedDate || '', reminder.type].join('|')
+  const digest = createHash('sha256').update(businessKey).digest('hex').slice(0, 32)
+  return `day_${digest}_${reminder.type}`
 }
 
 async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise<boolean> {
@@ -131,15 +138,20 @@ async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise
       scheduleDate: candidate.booking.requestedDate,
       scheduleStart: candidate.booking.requestedStart,
       scheduleEnd: candidate.sessionEnd,
+      scheduleTimes: [...new Set(candidate.bookings.map((booking) => {
+        const start = booking.requestedStart || ''
+        const end = booking.requestedEnd || ''
+        return end ? `${start}–${end}` : start
+      }).filter(Boolean))],
       status: 'processing',
       recipient: candidate.recipient,
       studentId: candidate.booking.studentId || '',
       studentCode: candidate.booking.studentCode || '',
       studentName: candidate.booking.studentName || '',
-      teacherId: candidate.booking.teacherId || '',
-      teacherName: candidate.booking.teacherName || '',
-      subjectId: candidate.booking.subjectId || '',
-      subjectName: candidate.booking.subjectName || '',
+      teacherId: [...new Set(candidate.bookings.map((booking) => booking.teacherId).filter(Boolean))].join(', '),
+      teacherName: [...new Set(candidate.bookings.map((booking) => booking.teacherName).filter(Boolean))].join(', '),
+      subjectId: [...new Set(candidate.bookings.map((booking) => booking.subjectId).filter(Boolean))].join(', '),
+      subjectName: [...new Set(candidate.bookings.map((booking) => booking.subjectName).filter(Boolean))].join(', '),
       processingLeaseUntil: Timestamp.fromMillis(now.getTime() + PROCESSING_LEASE_MS),
       attemptCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
@@ -156,7 +168,7 @@ async function sendWithResend(candidate: ReminderCandidate, student: Student, ap
   const sender = process.env.REMINDER_EMAIL_FROM?.trim()
   if (!sender) throw new Error('REMINDER_EMAIL_FROM is not configured')
 
-  const body = buildReminderEmail(candidate.booking, student, candidate.reminder.label)
+  const body = buildReminderEmail(candidate.bookings, student, candidate.reminder.label)
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -188,29 +200,33 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Booking))
     .filter((booking) => !booking.lessonId && booking.studentId)
 
-  const dueReminders = groupReminderSessions(activeBookings)
-    .map((session) => {
-      const firstBooking = session.bookings[0]
+  const dueReminders = groupReminderDays(activeBookings)
+    .map((day) => {
+      const firstBooking = day.bookings[0]
       const booking: Booking = {
         ...firstBooking,
-        requestedStart: session.sessionStart,
-        requestedEnd: session.sessionEnd,
+        requestedStart: day.dayStart,
+        requestedEnd: day.dayEnd,
       }
+      const previousSessionDeliveryIds = groupReminderSessions(day.bookings).flatMap((session) => REMINDER_SPECS.map((reminder) =>
+        sessionReminderDeliveryId(session.bookings[0], session.sessionStart, reminder)))
       return {
         booking,
-        bookingIds: session.bookings.map((item) => item.id).sort(),
-        legacyBookings: session.bookings,
-        sessionEnd: session.sessionEnd,
-        scheduledAt: parseVietnamSchedule(booking.requestedDate, session.sessionStart),
+        bookings: day.bookings,
+        bookingIds: day.bookings.map((item) => item.id).sort(),
+        legacyBookings: day.bookings,
+        previousSessionDeliveryIds,
+        sessionEnd: day.dayEnd,
+        scheduledAt: parseVietnamSchedule(booking.requestedDate, day.dayStart),
       }
     })
     .filter((item): item is typeof item & { scheduledAt: Date } => Boolean(item.scheduledAt))
-    .flatMap(({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt }) => REMINDER_SPECS
+    .flatMap(({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt }) => REMINDER_SPECS
       .filter((reminder) => {
         const diff = scheduledAt.getTime() - now.getTime()
         return diff >= reminder.offsetMs - reminder.earlyWindowMs && diff <= reminder.offsetMs + reminder.lateWindowMs
       })
-      .map((reminder) => ({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt, reminder })))
+      .map((reminder) => ({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder })))
 
   const studentRefs = [...new Set(dueReminders.map(({ booking }) => booking.studentId!))]
     .map((studentId) => db.collection('students').doc(studentId))
@@ -218,7 +234,7 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
   const studentsById = new Map(studentSnapshots.map((snapshot) => [snapshot.id, snapshot.data() as Student]))
   let invalidRecipientCount = 0
 
-  const candidates = dueReminders.flatMap(({ booking, bookingIds, legacyBookings, sessionEnd, scheduledAt, reminder }) => {
+  const candidates = dueReminders.flatMap(({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder }) => {
     const student = studentsById.get(booking.studentId!)
     const recipient = student?.email?.trim().toLowerCase()
     if (!student || !isEmail(recipient)) {
@@ -230,13 +246,17 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
       student,
       candidate: {
         booking,
+        bookings,
         recipient,
         scheduledAt,
         reminder,
         bookingIds,
         sessionEnd,
-        deliveryId: reminderDeliveryId(booking, booking.requestedStart!, reminder),
-        legacyDeliveryIds: legacyBookings.map((legacyBooking) => legacyReminderDeliveryId(legacyBooking, reminder)),
+        deliveryId: reminderDeliveryId(booking, reminder),
+        legacyDeliveryIds: [
+          ...legacyBookings.map((legacyBooking) => legacyReminderDeliveryId(legacyBooking, reminder)),
+          ...previousSessionDeliveryIds.filter((deliveryId) => deliveryId.endsWith(`_${reminder.type}`)),
+        ],
       },
     }]
   })
@@ -342,7 +362,16 @@ export const getEmailReminderHistory = onCall({
       const data = snapshot.data()
       const itemBookingIds = (Array.isArray(data.bookingIds) ? data.bookingIds : [data.bookingId])
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
-      const fallbackBooking = bookingsById.get(itemBookingIds[0]) || {}
+      const fallbackBookings = itemBookingIds.map((bookingId) => bookingsById.get(bookingId) || {})
+      const fallbackBooking = fallbackBookings[0] || {}
+      const scheduleTimes = Array.isArray(data.scheduleTimes)
+        ? data.scheduleTimes.filter((value): value is string => typeof value === 'string' && value.length > 0)
+        : fallbackBookings
+          .sort((left, right) => String(left.requestedStart || '').localeCompare(String(right.requestedStart || '')))
+          .map((booking) => booking.requestedEnd
+            ? `${booking.requestedStart || ''}–${booking.requestedEnd}`
+            : String(booking.requestedStart || ''))
+          .filter(Boolean)
       return {
         id: snapshot.id,
         status: typeof data.status === 'string' ? data.status : 'unknown',
@@ -358,6 +387,7 @@ export const getEmailReminderHistory = onCall({
         scheduleDate: typeof data.scheduleDate === 'string' ? data.scheduleDate : (fallbackBooking.requestedDate || ''),
         scheduleStart: typeof data.scheduleStart === 'string' ? data.scheduleStart : (fallbackBooking.requestedStart || ''),
         scheduleEnd: typeof data.scheduleEnd === 'string' ? data.scheduleEnd : (fallbackBooking.requestedEnd || ''),
+        scheduleTimes,
         messageId: typeof data.messageId === 'string' ? data.messageId : '',
         attemptCount: Number(data.attemptCount || 0),
         failureReason: typeof data.failureReason === 'string' ? data.failureReason.slice(0, 300) : '',
