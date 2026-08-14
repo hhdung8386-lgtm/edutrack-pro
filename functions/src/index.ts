@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { initializeApp } from 'firebase-admin/app'
+import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { defineSecret } from 'firebase-functions/params'
@@ -8,6 +9,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
 import { groupReminderDays, groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
 import { aggregateTeacherRanking, type TeacherRankingProfile, type TeacherRankingRow } from './teacherRanking'
+import { decideTeacherLoginRecovery, teacherLoginEmail } from './teacherLoginRecovery'
 
 initializeApp()
 
@@ -17,6 +19,7 @@ const PROCESSING_LEASE_MS = 10 * 60 * 1000
 const resendApiKey = defineSecret('RESEND_API_KEY')
 const TEACHER_RANKING_CACHE_MS = 5 * 60 * 1000
 const teacherRankingCache = new Map<string, { expiresAt: number; rows: TeacherRankingRow[] }>()
+const TEACHER_FIXED_PASSWORD = '1234560'
 
 const REMINDER_SPECS = [
   {
@@ -373,6 +376,196 @@ export const getTeacherRanking = onCall({
     forceRefresh,
   })
   return { rows, cached: false }
+})
+
+export const recoverTeacherLogin = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+}, async (request) => {
+  const actorUid = request.auth?.uid
+  if (!actorUid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại trước khi khôi phục tài khoản.')
+
+  const actorSnapshot = await db.collection('users').doc(actorUid).get()
+  const actorRole = actorSnapshot.data()?.role
+  if (!['admin', 'student_manager', 'teacher_manager'].includes(actorRole)) {
+    throw new HttpsError('permission-denied', 'Tài khoản không có quyền khôi phục đăng nhập gia sư.')
+  }
+
+  const teacherId = typeof request.data?.teacherId === 'string' ? request.data.teacherId.trim() : ''
+  if (!teacherId || teacherId.includes('/') || teacherId.length > 160) {
+    throw new HttpsError('invalid-argument', 'Hồ sơ gia sư không hợp lệ.')
+  }
+
+  const teacherRef = db.collection('teachers').doc(teacherId)
+  const teacherSnapshot = await teacherRef.get()
+  if (!teacherSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ gia sư.')
+
+  const teacher = teacherSnapshot.data() || {}
+  if (teacher.status === 'resigned') {
+    throw new HttpsError('failed-precondition', 'Gia sư đã nghỉ dạy; cần kích hoạt lại trước khi khôi phục đăng nhập.')
+  }
+  const teacherCode = typeof teacher.code === 'string' ? teacher.code.trim() : ''
+  if (!teacherCode) throw new HttpsError('failed-precondition', 'Hồ sơ gia sư chưa có mã đăng nhập.')
+
+  const linkedUsersSnapshot = await db.collection('users').where('teacherId', '==', teacherId).get()
+  const canonicalUid = typeof teacher.loginAccountUid === 'string' ? teacher.loginAccountUid.trim() : ''
+  const canonicalUser = canonicalUid
+    ? linkedUsersSnapshot.docs.find((snapshot) => snapshot.id === canonicalUid)?.data()
+    : undefined
+  const fallbackEmail = teacherLoginEmail(teacherCode)
+  const candidateEmails = Array.from(new Set([
+    fallbackEmail,
+    typeof canonicalUser?.email === 'string' ? canonicalUser.email.trim() : '',
+  ].filter(Boolean)))
+
+  const authService = getAuth()
+  let authUser: Awaited<ReturnType<typeof authService.getUserByEmail>> | null = null
+  let createdAuthUser = false
+  for (const email of candidateEmails) {
+    try {
+      authUser = await authService.getUserByEmail(email)
+      break
+    } catch (error: unknown) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      if (code !== 'auth/user-not-found') throw error
+    }
+  }
+  if (!authUser) {
+    authUser = await authService.createUser({
+      email: fallbackEmail,
+      password: TEACHER_FIXED_PASSWORD,
+      disabled: false,
+    })
+    createdAuthUser = true
+  }
+
+  const recoveredUid = authUser.uid
+  const recoveredUserRef = db.collection('users').doc(recoveredUid)
+  const recoveredUserSnapshot = await recoveredUserRef.get()
+  const recoveredUser = recoveredUserSnapshot.exists ? recoveredUserSnapshot.data() || {} : null
+  const previousRecoveredTeacherId = recoveredUser && typeof recoveredUser.teacherId === 'string'
+    ? recoveredUser.teacherId.trim()
+    : ''
+  const previousOwnerSnapshot = previousRecoveredTeacherId && previousRecoveredTeacherId !== teacherId
+    ? await db.collection('teachers').doc(previousRecoveredTeacherId).get()
+    : null
+  const initialDecision = decideTeacherLoginRecovery(
+    recoveredUser,
+    teacherId,
+    previousOwnerSnapshot?.exists === true,
+  )
+  if (!initialDecision.allowed) {
+    if (createdAuthUser) await authService.updateUser(recoveredUid, { disabled: true })
+    const message = initialDecision.reason === 'unrelated_role'
+      ? 'Email đăng nhập đang thuộc một tài khoản quản trị hoặc vai trò khác.'
+      : 'Email đăng nhập đang thuộc một hồ sơ gia sư còn tồn tại.'
+    throw new HttpsError('failed-precondition', `${message} Đã dừng khôi phục để bảo vệ dữ liệu.`)
+  }
+
+  // Reset and enable the real Auth account first. If the Firestore transaction
+  // is interrupted, the strict UID checks still keep this account locked out
+  // until a later retry completes the canonical link.
+  await authService.updateUser(recoveredUid, {
+    password: TEACHER_FIXED_PASSWORD,
+    disabled: false,
+  })
+
+  const auditRef = db.collection('adminLogs').doc()
+  try {
+    await db.runTransaction(async (transaction) => {
+      const currentTeacherSnapshot = await transaction.get(teacherRef)
+      const currentRecoveredUserSnapshot = await transaction.get(recoveredUserRef)
+      const currentLinkedUsersSnapshot = await transaction.get(
+        db.collection('users').where('teacherId', '==', teacherId),
+      )
+      const currentRecoveredUser = currentRecoveredUserSnapshot.exists
+        ? currentRecoveredUserSnapshot.data() || {}
+        : null
+      const currentPreviousTeacherId = currentRecoveredUser && typeof currentRecoveredUser.teacherId === 'string'
+        ? currentRecoveredUser.teacherId.trim()
+        : ''
+      const previousOwnerRef = currentPreviousTeacherId && currentPreviousTeacherId !== teacherId
+        ? db.collection('teachers').doc(currentPreviousTeacherId)
+        : null
+      const currentPreviousOwnerSnapshot = previousOwnerRef
+        ? await transaction.get(previousOwnerRef)
+        : null
+
+      const currentTeacher = currentTeacherSnapshot.data() || {}
+      if (!currentTeacherSnapshot.exists
+        || currentTeacher.status === 'resigned'
+        || currentTeacher.code !== teacherCode) {
+        throw new HttpsError('aborted', 'Hồ sơ gia sư vừa thay đổi; dữ liệu chưa được cập nhật.')
+      }
+      const currentDecision = decideTeacherLoginRecovery(
+        currentRecoveredUser,
+        teacherId,
+        currentPreviousOwnerSnapshot?.exists === true,
+      )
+      if (!currentDecision.allowed) {
+        throw new HttpsError('aborted', 'Liên kết UID vừa thay đổi; dữ liệu chưa được cập nhật.')
+      }
+
+      currentLinkedUsersSnapshot.docs.forEach((snapshot) => {
+        if (snapshot.id === recoveredUid) return
+        transaction.set(snapshot.ref, {
+          role: 'inactive_teacher',
+          loginDisabledAt: FieldValue.serverTimestamp(),
+          loginDisabledReason: 'replaced_by_account_recovery',
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true })
+      })
+
+      transaction.set(recoveredUserRef, {
+        uid: recoveredUid,
+        email: authUser?.email || fallbackEmail,
+        username: teacherCode,
+        role: 'teacher',
+        teacherId,
+        createdAt: currentRecoveredUser?.createdAt || FieldValue.serverTimestamp(),
+        loginDisabledAt: null,
+        loginDisabledReason: '',
+        resetPasswordAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+      transaction.set(teacherRef, {
+        loginAccountUid: recoveredUid,
+        loginAccountUpdatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+      transaction.set(auditRef, {
+        adminId: actorUid,
+        action: 'RESTORE_TEACHER_LOGIN',
+        targetType: 'teacher',
+        targetId: teacherId,
+        changes: {
+          teacherCode,
+          recoveredUid,
+          previousCanonicalUid: canonicalUid,
+          previousRecoveredTeacherId: currentPreviousTeacherId,
+          reclaimedOrphan: currentDecision.reclaimsOrphan,
+        },
+        createdAt: FieldValue.serverTimestamp(),
+      })
+    })
+  } catch (error) {
+    if (createdAuthUser) await authService.updateUser(recoveredUid, { disabled: true })
+    throw error
+  }
+
+  logger.info('Teacher login recovered', {
+    actorUid,
+    teacherId,
+    recoveredUid,
+    previousCanonicalUid: canonicalUid,
+    reclaimedOrphan: initialDecision.reclaimsOrphan,
+  })
+  return {
+    success: true,
+    uid: recoveredUid,
+    reclaimedOrphan: initialDecision.reclaimsOrphan,
+  }
 })
 
 function timestampISO(value: unknown): string | null {

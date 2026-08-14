@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { resetTeacherPassword } from '@/lib/auth'
+import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { GraduationCap, Search, RefreshCw, AlertCircle } from 'lucide-react'
 
 export function ResetPasswordPage() {
@@ -39,11 +39,12 @@ export function ResetPasswordPage() {
     if (!resetTeacher) return
     setResetting(true)
     try {
-      await resetTeacherPassword(resetTeacher.id)
-      toast.success(`✅ Đã reset password cho gia sư ${resetTeacher.name}`)
+      await recoverTeacherLoginAccount(resetTeacher.id)
+      toast.success(`Đã khôi phục đăng nhập cho gia sư ${resetTeacher.name}`)
       setResetTeacher(null)
-    } catch (err: any) {
-      toast.error('Lỗi: ' + err.message)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message.replace(/^FirebaseError:\s*/i, '') : ''
+      toast.error(message || 'Không thể khôi phục đăng nhập cho gia sư này')
     } finally {
       setResetting(false)
     }
@@ -57,7 +58,7 @@ export function ResetPasswordPage() {
 
     for (const teacher of teachers) {
       try {
-        await resetTeacherPassword(teacher.id)
+        await recoverTeacherLoginAccount(teacher.id)
         successCount++
         setResetCount(successCount + errorCount)
       } catch (err) {
@@ -68,9 +69,9 @@ export function ResetPasswordPage() {
     }
 
     setResettingAll(false)
-    toast.success(`✅ Đã reset password cho ${successCount}/${teachers.length} gia sư`)
+    toast.success(`Đã khôi phục đăng nhập cho ${successCount}/${teachers.length} gia sư`)
     if (errorCount > 0) {
-      toast.error(`⚠️ ${errorCount} gia sư thất bại`)
+      toast.error(`${errorCount} gia sư khôi phục thất bại`)
     }
     setResetAll(false)
   }

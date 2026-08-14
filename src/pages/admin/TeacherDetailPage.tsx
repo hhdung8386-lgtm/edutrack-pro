@@ -23,7 +23,7 @@ import { lessonRewardPoints } from '@/lib/rewards'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
-import { resetTeacherPassword } from '@/lib/auth'
+import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 
@@ -87,23 +87,14 @@ export function TeacherDetailPage() {
     }
     setRestoringLogin(true)
     try {
-      const result = await resetTeacherPassword(teacher.id)
-      try {
-        await addDoc(collection(db, 'adminLogs'), {
-          adminId: user?.uid || '',
-          action: 'RESTORE_TEACHER_LOGIN',
-          targetType: 'teacher',
-          targetId: teacher.id,
-          changes: { teacherCode: teacher.code, recoveredUid: result.uid },
-          createdAt: serverTimestamp(),
-        })
-      } catch (logError) {
-        console.error('Teacher login was restored but audit log failed:', logError)
-      }
-      toast.success('Đã khôi phục tài khoản đăng nhập. Gia sư có thể đăng nhập lại ngay bằng mã hiện tại.')
+      const result = await recoverTeacherLoginAccount(teacher.id)
+      toast.success(result.reclaimedOrphan
+        ? 'Đã sửa liên kết tài khoản cũ và khôi phục đăng nhập thành công.'
+        : 'Đã khôi phục tài khoản đăng nhập. Gia sư có thể đăng nhập lại ngay bằng mã hiện tại.')
     } catch (err) {
       console.error('Restore login role failed:', err)
-      toast.error('Không thể khôi phục quyền đăng nhập, vui lòng thử lại')
+      const message = err instanceof Error ? err.message.replace(/^FirebaseError:\s*/i, '') : ''
+      toast.error(message || 'Không thể khôi phục quyền đăng nhập, vui lòng thử lại')
     } finally {
       setRestoringLogin(false)
     }
