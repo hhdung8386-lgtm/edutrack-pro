@@ -35,7 +35,7 @@ import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
-import { isCompletedLearningLesson } from '@/lib/lessonAttendance'
+import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -901,9 +901,9 @@ function ProgressRing({ percent, size = 104, children }: { percent: number; size
   )
 }
 
-function StudentProfileOverview({ student, completedLessons, avatarId, profilePhotoURL, leaderboard, savingAvatar, onChooseAvatar, onUploadPhoto, stats, usedPct, lessons, onGoTab, lang }: {
+function StudentProfileOverview({ student, completedMinutes, avatarId, profilePhotoURL, leaderboard, savingAvatar, onChooseAvatar, onUploadPhoto, stats, usedPct, lessons, onGoTab, lang }: {
   student: Student
-  completedLessons: number
+  completedMinutes: number
   avatarId?: Student['profileAvatarId']
   profilePhotoURL?: Student['profilePhotoURL']
   leaderboard: StudentLeaderboardEntry[]
@@ -997,8 +997,8 @@ function StudentProfileOverview({ student, completedLessons, avatarId, profilePh
               <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Sao' : 'Stars'}</p>
             </div>
             <div className="rounded-2xl bg-sky-50 px-3 py-3 ring-1 ring-sky-100">
-              <div className="flex items-center gap-1.5"><BookOpen className="h-4 w-4 text-sky-600" /><span className="text-xl font-black tabular-nums text-slate-950">{completedLessons}</span></div>
-              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Buổi đã học' : 'Lessons done'}</p>
+              <div className="flex items-center gap-1.5"><BookOpen className="h-4 w-4 text-sky-600" /><span className="text-xl font-black tabular-nums text-slate-950">{completedMinutes}</span></div>
+              <p className="mt-0.5 text-[10px] font-bold text-slate-500">{lang === 'vi' ? 'Phút đã học' : 'Minutes learned'}</p>
             </div>
             <div className="rounded-2xl bg-cyan-50 px-3 py-3 ring-1 ring-cyan-100">
               <div className="flex items-center gap-1.5"><DiamondPointsIcon className="h-4 w-4" /><span className="text-xl font-black tabular-nums text-slate-950">{stats.available}</span></div>
@@ -1505,10 +1505,19 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   // ─── Minute fund stats ───────────────────────────────────────────
   const packageMinuteSummary = getStudentPackageMinuteSummary(student)
   // Lọc trên publicLessons đã tải sẵn nên không phát sinh thêm Firestore reads.
-  const completedLearningLessons = useMemo(
-    () => lessons.filter(isCompletedLearningLesson),
-    [lessons],
-  )
+  const completedLearningSummary = useMemo(() => {
+    const completed: Lesson[] = []
+    let minutes = 0
+    for (const lesson of lessons) {
+      const learnedMinutes = getCompletedLearningMinutes(lesson)
+      if (learnedMinutes <= 0) continue
+      completed.push(lesson)
+      minutes += learnedMinutes
+    }
+    return { lessons: completed, minutes }
+  }, [lessons])
+  const completedLearningLessons = completedLearningSummary.lessons
+  const completedLearningMinutes = completedLearningSummary.minutes
   const approvedLessonPointsBySubject = useMemo(() => {
     return lessons.reduce<Record<string, number>>((totals, lesson) => {
       const subjectId = lesson.subjectId || student.subjectId || '__legacy__'
@@ -1984,7 +1993,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       .map(([m, c]) => ({ name: `${m} ${lang === 'vi' ? 'phút' : 'min'}`, value: c, mins: parseInt(m) }))
       .sort((a, b) => a.mins - b.mins)
 
-    const totalMinDone = completedLearningLessons.reduce((s, l) => s + (l.minutes || 0), 0)
+    const totalMinDone = completedLearningMinutes
     const avgMin = completedLearningLessons.length > 0 ? Math.round(totalMinDone / completedLearningLessons.length) : 0
     const last30Days = completedLearningLessons.filter(l => {
       const d = new Date(l.date)
@@ -2002,7 +2011,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       durationData: duration,
       insights: { avgMin, totalMin: totalMinDone, last30Count: last30Days.length, consistency: consistencyHint },
     }
-  }, [completedLearningLessons, lang])
+  }, [completedLearningLessons, completedLearningMinutes, lang])
 
   const PIE_COLORS = ['#3BB8EB', '#FFD600', '#10B981', '#F59E0B']
 
@@ -2101,7 +2110,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           <div className="space-y-8">
             <StudentProfileOverview
               student={student}
-              completedLessons={completedLearningLessons.length}
+              completedMinutes={completedLearningMinutes}
               avatarId={profileAvatarId}
               profilePhotoURL={profilePhotoURL}
               leaderboard={leaderboard}

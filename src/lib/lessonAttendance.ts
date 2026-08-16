@@ -18,3 +18,8 @@ export function isCompletedLearningLesson(lesson: LearningLesson): boolean {
 
   return !LEGACY_ABSENCE_TEXT.test(`${lesson.book || ''}\n${lesson.comment || ''}`)
 }
+
+/** Số phút thực học được phép hiển thị trong tiến độ của học viên. */
+export function getCompletedLearningMinutes(lesson: LearningLesson): number {
+  return isCompletedLearningLesson(lesson) ? Number(lesson.minutes) : 0
+}
