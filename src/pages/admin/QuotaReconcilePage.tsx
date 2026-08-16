@@ -34,6 +34,7 @@ type Row = {
   actualHeld: number
   pastHeld: number
   futureHeld: number
+  holdingBookings: BookingRequest[]
   futureBookings: BookingRequest[]
   /** Chênh lệch số liệu (stored - actual). Khác 0 nghĩa là dữ liệu sai. */
   drift: number
@@ -118,7 +119,7 @@ export function QuotaReconcilePage() {
 
       out.push({
         student: s, remainingMinutes, storedHeld, actualHeld,
-        pastHeld, futureHeld, futureBookings: futureList, drift, overByActual,
+        pastHeld, futureHeld, holdingBookings: list, futureBookings: futureList, drift, overByActual,
       })
     })
 
@@ -155,13 +156,29 @@ export function QuotaReconcilePage() {
   const recalcOne = async (row: Row) => {
     await runTransaction(db, async (tx) => {
       const sRef = doc(db, 'students', row.student.id)
-      const sSnap = await tx.get(sRef)
+      const bookingRefs = row.holdingBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+      const [sSnap, ...bookingSnaps] = await Promise.all([
+        tx.get(sRef),
+        ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+      ])
       if (!sSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
       const fresh = { id: sSnap.id, ...sSnap.data() } as Student
+      const currentStoredHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
+      if (currentStoredHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
+      const currentActualHeld = bookingSnaps.reduce((sum, bookingSnap) => {
+        if (!bookingSnap.exists()) return sum
+        const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+        if (
+          booking.studentId !== row.student.id
+          || booking.lessonId
+          || (booking.status !== 'pending' && booking.status !== 'confirmed')
+        ) return sum
+        return sum + getBookingPoints(booking)
+      }, 0)
       const freshRemaining = getStudentPackageMinuteSummary(fresh).remainingMinutes
       tx.update(sRef, {
-        reservedMinutes: row.actualHeld,
-        heldMinutes: row.actualHeld,
+        reservedMinutes: currentActualHeld,
+        heldMinutes: currentActualHeld,
         // Bổ sung/đồng bộ luôn remainingMinutes để chốt chặn phía server hoạt động
         // (nhiều hồ sơ cũ thiếu field này nên rule không chặn được giữ vượt quỹ).
         remainingMinutes: freshRemaining,
@@ -175,7 +192,7 @@ export function QuotaReconcilePage() {
         changes: {
           studentName: row.student.name,
           heldBefore: row.storedHeld,
-          heldAfter: row.actualHeld,
+          heldAfter: currentActualHeld,
           remainingMinutes: freshRemaining,
         },
         createdAt: serverTimestamp(),
@@ -203,24 +220,43 @@ export function QuotaReconcilePage() {
 
   /** Huỷ dần ca TƯƠNG LAI (xa nhất trước) cho tới khi số giữ chỗ <= quỹ còn lại. */
   const cancelFutureOne = async (row: Row): Promise<number> => {
-    const need = row.actualHeld - row.remainingMinutes
-    if (need <= 0) return 0
-
-    const toCancel: BookingRequest[] = []
-    let freed = 0
-    for (const b of row.futureBookings) {
-      if (freed >= need) break
-      toCancel.push(b)
-      freed += getBookingPoints(b)
-    }
-    if (toCancel.length === 0) return 0
-
-    await runTransaction(db, async (tx) => {
+    return runTransaction(db, async (tx) => {
       const sRef = doc(db, 'students', row.student.id)
-      const sSnap = await tx.get(sRef)
+      const bookingRefs = row.holdingBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+      const [sSnap, ...bookingSnaps] = await Promise.all([
+        tx.get(sRef),
+        ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+      ])
       if (!sSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
-      const fresh = sSnap.data() as Student
+      const fresh = { id: sSnap.id, ...sSnap.data() } as Student
       const curHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
+      if (curHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
+      const freshRemaining = getStudentPackageMinuteSummary(fresh).remainingMinutes
+      const activeBookings = bookingSnaps.flatMap((bookingSnap) => {
+        if (!bookingSnap.exists()) return []
+        const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+        return booking.studentId === row.student.id
+          && !booking.lessonId
+          && (booking.status === 'pending' || booking.status === 'confirmed')
+          ? [booking]
+          : []
+      })
+      const actualHeld = activeBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const need = actualHeld - freshRemaining
+      if (need <= 0) return 0
+
+      const futureCandidates = activeBookings
+        .filter((booking) => Boolean(booking.requestedDate && booking.requestedDate >= todayISO))
+        .sort((left, right) => (right.requestedDate || '').localeCompare(left.requestedDate || ''))
+      const toCancel: BookingRequest[] = []
+      let freed = 0
+      for (const booking of futureCandidates) {
+        if (freed >= need) break
+        toCancel.push(booking)
+        freed += getBookingPoints(booking)
+      }
+      if (toCancel.length === 0) return 0
+
       const nextHeld = Math.max(0, curHeld - freed)
       tx.update(sRef, { reservedMinutes: nextHeld, heldMinutes: nextHeld, updatedAt: serverTimestamp() })
       toCancel.forEach((b) => {
@@ -246,8 +282,8 @@ export function QuotaReconcilePage() {
         },
         createdAt: serverTimestamp(),
       })
+      return toCancel.length
     })
-    return toCancel.length
   }
 
   const handleCancelFuture = async (row: Row) => {
@@ -260,7 +296,9 @@ export function QuotaReconcilePage() {
       setConfirmCancel(null)
     } catch (err: any) {
       console.error(err)
-      toast.error(`Không thể huỷ lịch${err?.message ? `: ${err.message}` : ''}`)
+      toast.error(err?.message === 'DATA_CHANGED_RELOAD'
+        ? 'Dữ liệu vừa thay đổi ở màn hình khác. Vui lòng tải lại trước khi đối soát.'
+        : `Không thể huỷ lịch${err?.message ? `: ${err.message}` : ''}`)
     } finally {
       setProcessing(false)
     }

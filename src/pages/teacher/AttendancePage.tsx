@@ -384,7 +384,15 @@ export function AttendancePage() {
         currency: subject?.currency || 'VND',
         salary: 0,
         // Dấu vết đối chiếu lịch để giáo vụ soát lại khi duyệt (không tốn truy vấn thêm)
-        ...(audit ? { scheduleCheck: audit.schedule, sameDayCount: audit.sameDayByTeacher + 1 } : {}),
+        ...(audit ? {
+          scheduleCheck: audit.schedule,
+          sameDayCount: audit.sameDayByTeacher + 1,
+          ...(audit.schedule.bookingIds?.length
+            ? { bookingRequestId: audit.schedule.bookingIds[0], bookingRequestIds: audit.schedule.bookingIds }
+            : audit.schedule.bookingId
+              ? { bookingRequestId: audit.schedule.bookingId }
+              : {}),
+        } : {}),
         createdAt: serverTimestamp(),
       })
 

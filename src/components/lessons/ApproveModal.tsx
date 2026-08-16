@@ -92,6 +92,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         id: lesson.id,
         bookingRequestId: lesson.bookingRequestId,
         bookingRequestIds: lesson.bookingRequestIds,
+        scheduleCheck: lesson.scheduleCheck,
         studentId: lesson.studentId,
         teacherId: lesson.teacherId,
         date: lesson.date,
@@ -343,6 +344,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       const code = err?.code || ''
       if (err?.message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (err?.message === 'BOOKING_MATCH_AMBIGUOUS' || err?.message === 'BOOKING_REFERENCE_INVALID') {
+        toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Vui lòng kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (err?.message === 'NOT_ENOUGH_POINTS') {
         toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'resource-exhausted' || code === 'unavailable') {

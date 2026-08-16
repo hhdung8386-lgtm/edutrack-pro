@@ -460,6 +460,7 @@ export function TeacherDetailPage() {
           id: lesson.id,
           bookingRequestId: lesson.bookingRequestId,
           bookingRequestIds: lesson.bookingRequestIds,
+          scheduleCheck: lesson.scheduleCheck,
           studentId: lesson.studentId,
           teacherId: lesson.teacherId,
           date: lesson.date,
@@ -719,6 +720,7 @@ export function TeacherDetailPage() {
               id: lesson.id,
               bookingRequestId: lesson.bookingRequestId,
               bookingRequestIds: lesson.bookingRequestIds,
+              scheduleCheck: lesson.scheduleCheck,
               studentId: lesson.studentId,
               teacherId: lesson.teacherId,
               date: lesson.date,
@@ -732,7 +734,7 @@ export function TeacherDetailPage() {
         const payrollIds = payrollSnap.docs.map((d) => d.id)
         const payrollRefs = payrollIds.map((payrollId) => doc(db, 'payroll', payrollId))
 
-        await runTransaction(db, async (tx) => {
+        const restoredHeldPoints = await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', lesson.studentId)
           const lessonRef = doc(db, 'lessons', lesson.id)
           const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
@@ -754,6 +756,16 @@ export function TeacherDetailPage() {
           }
 
           const hasStudent = studentSnap.exists()
+          if (targetStatus === 'pending' && !hasStudent) throw new Error('STUDENT_NOT_FOUND')
+          const lessonCurrent = lessonSnap.data() as Lesson
+          const bookingsEligibleToReopen = bookingSnapsToReopen.flatMap((bookingSnap) => {
+            if (!bookingSnap.exists()) return []
+            const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+            return booking.status === 'completed' && booking.lessonId === lesson.id ? [booking] : []
+          })
+          const heldPointsToRestore = targetStatus === 'pending' && lessonCurrent.bookingHoldConsumed === true
+            ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, teacher), 0)
+            : 0
 
           tx.update(lessonRef, {
             status: targetStatus,
@@ -763,11 +775,14 @@ export function TeacherDetailPage() {
             minutesBeforeApproval: 0,
             minutesAfterApproval: 0,
             salary: 0,
+            ...(targetStatus === 'pending' ? { bookingHoldConsumed: false } : {}),
             updatedAt: serverTimestamp(),
           })
 
           bookingSnapsToReopen.forEach((bookingSnap) => {
             if (!bookingSnap.exists()) return
+            const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+            if (booking.status !== 'completed' || booking.lessonId !== lesson.id) return
             tx.update(bookingSnap.ref, {
               status: 'confirmed',
               lessonId: deleteField(),
@@ -827,6 +842,9 @@ export function TeacherDetailPage() {
             const aggRemainingMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.remainingMinutes, 0)
 
             const primarySubject = updatedSubjects[0] || null
+            const currentHeldMinutes = Number(s.reservedMinutes ?? s.heldMinutes ?? 0) || 0
+            const nextHeldMinutes = currentHeldMinutes + heldPointsToRestore
+            if (nextHeldMinutes > aggRemainingMinutes) throw new Error('RESTORED_HOLD_EXCEEDS_REMAINING')
 
             tx.update(studentRef, {
               subjects: updatedSubjects,
@@ -836,6 +854,8 @@ export function TeacherDetailPage() {
               totalMinutes: aggTotalMinutes,
               usedMinutes: aggUsedMinutes,
               remainingMinutes: aggRemainingMinutes,
+              reservedMinutes: nextHeldMinutes,
+              heldMinutes: nextHeldMinutes,
               // Legacy compatibility
               subjectId: primarySubject ? primarySubject.subjectId : '',
               subjectName: primarySubject ? primarySubject.subjectName : '',
@@ -857,6 +877,7 @@ export function TeacherDetailPage() {
               voidedBy: user?.uid || '',
             })
           }
+          return heldPointsToRestore
         })
 
         await addDoc(collection(db, 'adminLogs'), {
@@ -868,6 +889,7 @@ export function TeacherDetailPage() {
             status: { from: 'approved', to: targetStatus },
             lessonDate: lesson.date,
             restoredPoints: lessonPointsToRestore,
+            restoredHeldPoints,
             voidedPayrolls: payrollIds.length,
             voidedSalary: lesson.salary || 0,
           },
@@ -903,6 +925,10 @@ export function TeacherDetailPage() {
         toast.error('Học viên không tồn tại')
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
+        toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
+      } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {
+        toast.error('Không thể mở lại lịch vì phần kim cương cần giữ vượt quỹ còn lại. Hãy đối soát quỹ học viên trước.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
         toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'permission-denied') {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc, deleteField } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
+import { BookingRequest, Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
 import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 import { resolveLessonBookings } from '@/lib/lessonBooking'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -253,6 +254,7 @@ export function PayrollPage() {
         id: lesson.id,
         bookingRequestId: lesson.bookingRequestId,
         bookingRequestIds: lesson.bookingRequestIds,
+        scheduleCheck: lesson.scheduleCheck,
         studentId: lesson.studentId,
         teacherId: lesson.teacherId,
         date: lesson.date,
@@ -260,6 +262,7 @@ export function PayrollPage() {
         subjectId: lesson.subjectId,
       })
       const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
+      const lessonTeacher = teachers.find((teacher) => teacher.id === lesson.teacherId)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', lesson.studentId)
@@ -278,6 +281,15 @@ export function PayrollPage() {
         if (currentPayrollSnaps.some((payroll) => payroll.exists() && payroll.data()?.paid === true && !payroll.data()?.voided)) {
           throw new Error('Lương buổi này đã thanh toán')
         }
+        const bookingsEligibleToReopen = bookingSnapsToReopen.flatMap((bookingSnap) => {
+          if (!bookingSnap.exists()) return []
+          const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+          return booking.status === 'completed' && booking.lessonId === lessonId ? [booking] : []
+        })
+        const lessonPoints = getLessonPoints(currentLesson, lessonTeacher)
+        const heldPointsToRestore = currentLesson.bookingHoldConsumed === true
+          ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, lessonTeacher), 0)
+          : 0
 
         const studentData = studentSnap.data() as Student
         let updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
@@ -300,7 +312,7 @@ export function PayrollPage() {
         const subjectIndex = updatedSubjects.findIndex((subject) => subject.subjectId === currentLesson.subjectId)
         if (subjectIndex === -1) throw new Error('Không tìm thấy gói giáo trình của buổi học')
         const subject = updatedSubjects[subjectIndex]
-        const usedMinutes = Math.max(0, subject.usedMinutes - currentLesson.minutes)
+        const usedMinutes = Math.max(0, subject.usedMinutes - lessonPoints)
         const minutesPerSession = subject.minutesPerSession || 50
         const usedSessionsRaw = usedMinutes / minutesPerSession
         updatedSubjects[subjectIndex] = {
@@ -318,6 +330,9 @@ export function PayrollPage() {
         const usedMinutesTotal = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.usedMinutes, 0)
         const remainingMinutes = updatedSubjects.reduce((sum, subjectItem) => sum + subjectItem.remainingMinutes, 0)
         const primarySubject = updatedSubjects[0]
+        const currentHeldMinutes = Number(studentData.reservedMinutes ?? studentData.heldMinutes ?? 0) || 0
+        const nextHeldMinutes = currentHeldMinutes + heldPointsToRestore
+        if (nextHeldMinutes > remainingMinutes) throw new Error('Phần kim cương cần giữ vượt quỹ còn lại; hãy đối soát học viên trước')
 
         tx.update(lessonRef, {
           status: 'pending',
@@ -329,6 +344,7 @@ export function PayrollPage() {
           sessionsAfterApproval: 0,
           minutesBeforeApproval: 0,
           minutesAfterApproval: 0,
+          bookingHoldConsumed: false,
           updatedAt: serverTimestamp(),
         })
         tx.update(studentRef, {
@@ -339,6 +355,8 @@ export function PayrollPage() {
           totalMinutes,
           usedMinutes: usedMinutesTotal,
           remainingMinutes,
+          reservedMinutes: nextHeldMinutes,
+          heldMinutes: nextHeldMinutes,
           subjectId: primarySubject?.subjectId || '',
           subjectName: primarySubject?.subjectName || '',
           minutesPerSession: primarySubject?.minutesPerSession || 50,
@@ -347,6 +365,8 @@ export function PayrollPage() {
         })
         bookingSnapsToReopen.forEach((bookingSnap) => {
           if (!bookingSnap.exists()) return
+          const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+          if (booking.status !== 'completed' || booking.lessonId !== lessonId) return
           tx.update(bookingSnap.ref, {
             status: 'confirmed',
             lessonId: deleteField(),

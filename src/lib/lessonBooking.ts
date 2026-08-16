@@ -2,6 +2,13 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import { db } from '@/lib/firebase'
 import { BookingRequest, Teacher } from '@/types'
 import { getBookingPoints } from '@/lib/points'
+import {
+  LessonBookingReference,
+  selectLessonBookingMatches,
+  validateExplicitLessonBookings,
+} from '@/lib/bookingLogic'
+
+export { selectLessonBookingMatches } from '@/lib/bookingLogic'
 
 /**
  * Số phút mà một ca đặt lịch ĐANG THỰC SỰ giữ của học viên.
@@ -27,21 +34,12 @@ export function bookingHoldPoints(
  */
 export const bookingHoldMinutes = bookingHoldPoints
 
-type LessonBookingReference = {
-  id: string
-  bookingRequestId?: string
-  bookingRequestIds?: string[]
-  studentId: string
-  teacherId: string
-  date: string
-  minutes: number
-  subjectId: string
-}
-
 export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
   const bookingIds = Array.from(new Set([
     ...(lesson.bookingRequestIds || []),
+    ...(lesson.scheduleCheck?.bookingIds || []),
     lesson.bookingRequestId,
+    lesson.scheduleCheck?.bookingId,
   ].filter((id): id is string => Boolean(id))))
 
   if (bookingIds.length > 0) {
@@ -51,7 +49,9 @@ export async function resolveLessonBookings(lesson: LessonBookingReference): Pro
     const resolved = bookingSnaps
       .filter((snap) => snap.exists())
       .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-    if (resolved.length > 0) return resolved
+    if (resolved.length !== bookingIds.length) throw new Error('BOOKING_REFERENCE_INVALID')
+    if (!validateExplicitLessonBookings(resolved, lesson)) throw new Error('BOOKING_REFERENCE_INVALID')
+    return resolved
   }
 
   const q = query(
@@ -65,13 +65,7 @@ export async function resolveLessonBookings(lesson: LessonBookingReference): Pro
   if (snap.empty) return []
 
   const matches = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
-  const exactMatch = matches.find(m => m.requestedMinutes === lesson.minutes && (m.status === 'confirmed' || m.status === 'pending'))
-  if (exactMatch) return [exactMatch]
-
-  const statusMatch = matches.find(m => m.status === 'confirmed' || m.status === 'pending')
-  if (statusMatch) return [statusMatch]
-
-  return matches[0] ? [matches[0]] : []
+  return selectLessonBookingMatches(matches, lesson)
 }
 
 export async function resolveLessonBooking(lesson: LessonBookingReference): Promise<BookingRequest | null> {

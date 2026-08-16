@@ -273,6 +273,8 @@ export interface LessonScheduleCheckSnapshot {
   status: 'matched' | 'mismatch_day' | 'other_teacher' | 'no_booking'
   scheduledDates: string[]
   bookingId?: string
+  /** Toàn bộ ca ghép vào một buổi dài (ví dụ 2 ca 25 phút cho buổi 50 phút). */
+  bookingIds?: string[]
   bookingStart?: string
   bookingEnd?: string
   minutesMismatch?: number

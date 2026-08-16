@@ -295,16 +295,31 @@ export function StudentDetailPage() {
     
     setCancellingSpecific(true)
     try {
-      const totalPointsToRefund = targetBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
-      
-      await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', id)
-        const studentSnap = await tx.get(studentRef)
+        const bookingRefs = targetBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+        const [studentSnap, ...bookingSnaps] = await Promise.all([
+          tx.get(studentRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const activeBookings = bookingSnaps.flatMap((bookingSnap) => {
+          if (!bookingSnap.exists()) return []
+          const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+          return booking.studentId === id
+            && (booking.status === 'pending' || booking.status === 'confirmed')
+            && !booking.lessonId
+            ? [booking]
+            : []
+        })
+        if (activeBookings.length === 0) return { count: 0, points: 0 }
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
+        const totalPointsToRefund = activeBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+        const refundedPoints = Math.min(currentHeld, totalPointsToRefund)
+        const nextHeld = currentHeld - refundedPoints
 
         // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
         // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
@@ -316,7 +331,7 @@ export function StudentDetailPage() {
           updatedAt: serverTimestamp(),
         })
 
-        for (const booking of targetBookings) {
+        for (const booking of activeBookings) {
           const requestRef = doc(db, 'bookingRequests', booking.id)
           tx.update(requestRef, {
             status: 'released',
@@ -332,15 +347,18 @@ export function StudentDetailPage() {
           targetId: id,
           changes: {
             studentName: studentData.name,
-            cancelledCount: targetBookings.length,
-            cancelledIds: targetBookings.map(b => b.id),
-            refundedPoints: totalPointsToRefund,
+            cancelledCount: activeBookings.length,
+            cancelledIds: activeBookings.map(b => b.id),
+            refundedPoints,
+            requestedRefundPoints: totalPointsToRefund,
           },
           createdAt: serverTimestamp(),
         })
+        return { count: activeBookings.length, points: refundedPoints }
       })
 
-      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả ${totalPointsToRefund} kim cương về quỹ học viên.`)
+      if (result.count === 0) toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+      else toast.success(`Hủy thành công ${result.count} ca học và hoàn trả ${result.points} kim cương về quỹ học viên.`)
       setSelectedBookingIds([])
     } catch (err) {
       console.error('Cancel specific bookings failed:', err)
@@ -368,17 +386,33 @@ export function StudentDetailPage() {
       const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
       
       // Filter future bookings
-      const futureBookings = bookings.filter(b => b.requestedDate && b.requestedDate >= todayISO)
-      const totalPointsToRefund = futureBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
+      const futureBookings = bookings.filter(b => b.requestedDate && b.requestedDate >= todayISO && !b.lessonId)
 
-      await runTransaction(db, async (tx) => {
+      const suspendResult = await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', id)
-        const studentSnap = await tx.get(studentRef)
+        const bookingRefs = futureBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+        const [studentSnap, ...bookingSnaps] = await Promise.all([
+          tx.get(studentRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const activeFutureBookings = bookingSnaps.flatMap((bookingSnap) => {
+          if (!bookingSnap.exists()) return []
+          const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+          return booking.studentId === id
+            && (booking.status === 'pending' || booking.status === 'confirmed')
+            && !booking.lessonId
+            && Boolean(booking.requestedDate && booking.requestedDate >= todayISO)
+            ? [booking]
+            : []
+        })
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
+        const totalPointsToRefund = activeFutureBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+        const refundedPoints = Math.min(currentHeld, totalPointsToRefund)
+        const nextHeld = currentHeld - refundedPoints
 
         // Update student status & refund minutes
         tx.update(studentRef, {
@@ -389,7 +423,7 @@ export function StudentDetailPage() {
         })
 
         // Update future bookings status to released
-        for (const booking of futureBookings) {
+        for (const booking of activeFutureBookings) {
           const requestRef = doc(db, 'bookingRequests', booking.id)
           tx.update(requestRef, {
             status: 'released',
@@ -406,16 +440,18 @@ export function StudentDetailPage() {
           targetId: id,
           changes: {
             studentName: studentData.name,
-            refundedBookingCount: futureBookings.length,
-            refundedBookingIds: futureBookings.map(b => b.id),
-            refundedPoints: totalPointsToRefund,
+            refundedBookingCount: activeFutureBookings.length,
+            refundedBookingIds: activeFutureBookings.map(b => b.id),
+            refundedPoints,
+            requestedRefundPoints: totalPointsToRefund,
             heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
         })
+        return { count: activeFutureBookings.length, points: refundedPoints }
       })
 
-      toast.success(`Học viên ${student.name} đã được chuyển sang trạng thái bảo lưu. Đã hủy ${futureBookings.length} ca tương lai và hoàn trả ${totalPointsToRefund} kim cương.`)
+      toast.success(`Học viên ${student.name} đã được chuyển sang trạng thái bảo lưu. Đã hủy ${suspendResult.count} ca tương lai và hoàn trả ${suspendResult.points} kim cương.`)
     } catch (err) {
       console.error('Suspend student failed:', err)
       toast.error('Gặp lỗi khi bảo lưu học viên')

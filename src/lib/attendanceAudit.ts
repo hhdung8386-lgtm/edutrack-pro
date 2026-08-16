@@ -121,18 +121,23 @@ export function evaluateLessonSchedule(
   const sameDayOwn = active.filter((b) => b.requestedDate === lesson.date && b.teacherId === lesson.teacherId)
 
   if (sameDayOwn.length > 0) {
-    // Ưu tiên ca trùng thời lượng để không báo lệch phút oan khi có nhiều ca trong ngày.
-    const exact = sameDayOwn.find((b) => !lesson.minutes || b.requestedMinutes === lesson.minutes)
-    const matched = exact || sameDayOwn[0]
+    const exactMatches = sameDayOwn.filter((b) => !lesson.minutes || b.requestedMinutes === lesson.minutes)
+    const exact = exactMatches.length === 1 ? exactMatches[0] : null
+    const combined = !exact && lesson.minutes && sameDayOwn.length > 1
+      && sameDayOwn.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0) === lesson.minutes
+      ? sameDayOwn
+      : []
+    const matched = exact || combined[0] || sameDayOwn[0]
     return {
       ...base,
       status: 'matched',
       scheduledDates: [lesson.date],
-      bookingId: matched.id,
+      ...(exact || combined.length > 0 ? { bookingId: matched.id } : {}),
+      ...(combined.length > 1 ? { bookingIds: combined.map((booking) => booking.id) } : {}),
       // Chỉ set khi có giá trị: buổi được ghi vào Firestore, field undefined sẽ làm hỏng lệnh ghi.
       ...(matched.requestedStart ? { bookingStart: matched.requestedStart } : {}),
       ...(matched.requestedEnd ? { bookingEnd: matched.requestedEnd } : {}),
-      ...(lesson.minutes && matched.requestedMinutes !== lesson.minutes
+      ...(lesson.minutes && combined.length === 0 && matched.requestedMinutes !== lesson.minutes
         ? { minutesMismatch: matched.requestedMinutes }
         : {}),
     }

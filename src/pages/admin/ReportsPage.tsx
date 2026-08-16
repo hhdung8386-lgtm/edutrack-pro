@@ -7,6 +7,7 @@ import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
 import { formatVND, getCurrentMonth } from '@/lib/constants'
+import { getBookingPoints } from '@/lib/points'
 import {
   Bar,
   BarChart,
@@ -186,6 +187,8 @@ export function ReportsPage() {
     }
   }, [])
 
+  const teachersById = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher])), [teachers])
+
   const fundRows = useMemo(() => {
     const bookingsByStudent = new Map<string, BookingRequest[]>()
     bookingRequests
@@ -215,7 +218,10 @@ export function ReportsPage() {
           0,
           pkg.remainingMinutes ?? ((pkg.remainingSessions || 0) * minutesPerSession),
         )
-        const bookedMinutes = matchingBookings.reduce((sum, booking) => sum + (booking.requestedMinutes || 0), 0)
+        const bookedMinutes = matchingBookings.reduce(
+          (sum, booking) => sum + getBookingPoints(booking, teachersById.get(booking.teacherId)),
+          0,
+        )
         const availableMinutes = Math.max(0, remainingMinutes - bookedMinutes)
         const totalUnlearnedMinutes = availableMinutes + bookedMinutes
 
@@ -238,7 +244,7 @@ export function ReportsPage() {
       studentBookings
         .filter((booking) => !usedBookingIds.has(booking.id))
         .forEach((booking) => {
-          const bookedMinutes = booking.requestedMinutes || 0
+          const bookedMinutes = getBookingPoints(booking, teachersById.get(booking.teacherId))
           if (bookedMinutes <= 0) return
           rows.push({
             id: `${student.id}:unmapped:${booking.id}`,
@@ -260,7 +266,7 @@ export function ReportsPage() {
       || right.totalUnlearnedMinutes - left.totalUnlearnedMinutes
       || left.studentName.localeCompare(right.studentName, 'vi')
     ))
-  }, [bookingRequests, students])
+  }, [bookingRequests, students, teachersById])
 
   const subjects = useMemo(() => {
     const bySubject = new Map<string, SubjectFundSummary>()

@@ -24,6 +24,12 @@ import {
 } from '@/components/lessons/lessonReport'
 import { AbsenceReportForm } from '@/components/lessons/AbsenceReportForm'
 import {
+  areConsecutiveBookings,
+  findConsecutiveAttendanceBookings,
+  findLaterSameDayBookings,
+  isSameAttendanceClass,
+} from '@/lib/bookingLogic'
+import {
   AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
   composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
 } from '@/components/lessons/absenceReport'
@@ -36,61 +42,6 @@ const isAttendanceAllowed = (booking: BookingRequest, nowMs = Date.now()) => {
   const vnTimeMs = utcMs - 7 * 60 * 60 * 1000 // Convert Vietnam (GMT+7) local to UTC time
   const allowedTimeMs = vnTimeMs + 5 * 60 * 1000 // 5 minutes after class ends
   return nowMs >= allowedTimeMs
-}
-
-/**
- * MỌI ca còn lại TRONG NGÀY của cùng học viên (giờ Việt Nam), sắp theo giờ bắt đầu.
- *
- * Học viên đã vắng một ca thì coi như vắng luôn các ca sau trong ngày hôm đó.
- * Hệ thống ghi vắng hết, nhưng chỉ tính tiền MỘT lần 25 phút: ca đầu 25 phút,
- * các ca sau 0 phút -> lương = 0. Đúng dù lớp là 25, 50 hay 100 phút.
- *
- * Chỉ quét ca của CHÍNH gia sư đang điểm danh (`bookings` đã lọc theo teacherId) —
- * gia sư không có quyền ghi buổi thay gia sư khác.
- *
- * So khớp trên dữ liệu GỐC (giờ VN), không dùng bản đã đổi múi giờ của gia sư.
- */
-export function findLaterSameDayBookings(
-  bookings: BookingRequest[],
-  current: BookingRequest | null | undefined,
-): BookingRequest[] {
-  if (!current?.requestedDate || !current?.requestedStart) return []
-  const currentStart = timeToMinutes(current.requestedStart)
-  return bookings
-    .filter((booking) => {
-      if (booking.id === current.id) return false
-      if (!isSameAttendanceClass(booking, current)) return false
-      if (booking.status !== 'confirmed' || booking.lessonId) return false
-      if ((booking.requestedDate || '') !== current.requestedDate) return false
-      if (!booking.requestedStart) return false
-      return timeToMinutes(booking.requestedStart) > currentStart
-    })
-    .sort((a, b) => timeToMinutes(a.requestedStart || '') - timeToMinutes(b.requestedStart || ''))
-}
-
-function isSameAttendanceClass(left: BookingRequest, right: BookingRequest) {
-  return Boolean(
-    left.studentId
-    && left.studentId === right.studentId
-    && (!left.studentCode || !right.studentCode || left.studentCode === right.studentCode)
-    && (left.subjectId || '') === (right.subjectId || '')
-    && (left.requestedDate || '') === (right.requestedDate || ''),
-  )
-}
-
-function areConsecutiveBookings(previous: BookingRequest, next: BookingRequest) {
-  if (!previous.requestedStart || !next.requestedStart) return false
-
-  const previousStart = timeToMinutes(previous.requestedStart)
-  const nextStart = timeToMinutes(next.requestedStart)
-  const requestedMinutes = Number(previous.requestedMinutes)
-  // Lịch chạy theo lưới 30 phút: một ca 25 phút có 5 phút chuyển tiếp,
-  // nên 20:00-20:25 và 20:30-20:55 vẫn là hai slot liền nhau.
-  const slotStep = Number.isFinite(requestedMinutes) && requestedMinutes > 0
-    ? Math.max(30, Math.ceil(requestedMinutes / 30) * 30)
-    : 30
-
-  return nextStart === previousStart + slotStep
 }
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -397,6 +348,20 @@ export function BookingSchedulesPage() {
       .sort((left, right) => (left.requestedStart || '').localeCompare(right.requestedStart || ''))
   }, [attendanceStatus, confirmedBookings, pendingAttendanceBookings, selectedBooking])
 
+  const defaultAttendanceBookingIds = useCallback((booking: BookingRequest) => {
+    const pendingIds = new Set(pendingAttendanceBookings.map((candidate) => candidate.id))
+    const eligible = confirmedBookings.filter((candidate) => pendingIds.has(candidate.id))
+    return findConsecutiveAttendanceBookings(eligible, booking).map((candidate) => candidate.id)
+  }, [confirmedBookings, pendingAttendanceBookings])
+
+  const selectedAttendanceMinutes = useMemo(
+    () => selectedBatchBookingIds.reduce(
+      (sum, id) => sum + Number(confirmedBookings.find((booking) => booking.id === id)?.requestedMinutes || 0),
+      0,
+    ),
+    [confirmedBookings, selectedBatchBookingIds],
+  )
+
   // Buổi đã huỷ của gia sư. Dùng truy vấn 1 điều kiện (giống trang Lịch sử buổi dạy)
   // rồi lọc phía client để KHÔNG phát sinh composite index mới trên Firestore.
   useEffect(() => {
@@ -524,6 +489,10 @@ export function BookingSchedulesPage() {
       setSelectedBatchBookingIds([selectedBooking.id])
     }
     if (status === 'present') {
+      if (selectedBooking) {
+        const rawBooking = confirmedBookings.find((booking) => booking.id === selectedBooking.id) || selectedBooking
+        setSelectedBatchBookingIds(defaultAttendanceBookingIds(rawBooking))
+      }
       setBook('')
     } else if (status === 'with_permission') {
       setBook('Học viên vắng')
@@ -1107,7 +1076,8 @@ export function BookingSchedulesPage() {
                         setAbsence(emptyAbsenceReport())
                         setImages([])
                         setAttendanceStatus('present')
-                        setSelectedBatchBookingIds([selectedBooking.id])
+                        const rawBooking = confirmedBookings.find((booking) => booking.id === selectedBooking.id) || selectedBooking
+                        setSelectedBatchBookingIds(defaultAttendanceBookingIds(rawBooking))
                         setShowAttendanceModal(true)
                       }}
                       disabled={!allowed}
@@ -1289,7 +1259,11 @@ export function BookingSchedulesPage() {
               </div>
               <div>
                 <span className="text-xs text-slate-500 font-semibold block">{t('sched.duration')}</span>
-                <span className="text-sm font-bold text-slate-800">{selectedBooking.requestedMinutes} {t('attendance.minutes')}</span>
+                <span className="text-sm font-bold text-slate-800">
+                  {attendanceStatus === 'present' && selectedAttendanceMinutes > 0
+                    ? selectedAttendanceMinutes
+                    : selectedBooking.requestedMinutes} {t('attendance.minutes')}
+                </span>
               </div>
             </div>
 
@@ -1302,8 +1276,8 @@ export function BookingSchedulesPage() {
                     </p>
                     <p className="mt-1 text-xs leading-5 text-indigo-700">
                       {lang === 'vi'
-                        ? `Các ca đã chọn sẽ được gộp thành một buổi điểm danh tổng ${selectedBatchBookingIds.reduce((sum, id) => sum + (confirmedBookings.find((booking) => booking.id === id)?.requestedMinutes || 0), 0)} phút.`
-                        : `Selected slots will be merged into one ${selectedBatchBookingIds.reduce((sum, id) => sum + (confirmedBookings.find((booking) => booking.id === id)?.requestedMinutes || 0), 0)}-minute attendance report.`}
+                        ? `Các ca đã chọn sẽ được gộp thành một buổi điểm danh tổng ${selectedAttendanceMinutes} phút.`
+                        : `Selected slots will be merged into one ${selectedAttendanceMinutes}-minute attendance report.`}
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200">

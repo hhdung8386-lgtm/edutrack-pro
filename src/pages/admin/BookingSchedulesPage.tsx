@@ -1191,54 +1191,55 @@ export function BookingSchedulesPage() {
   // Execute batch cancellation
   const executeBatchCancel = async () => {
     if (selectedBookingIds.length === 0) return
+    if (selectedBookingIds.length > 400) {
+      toast.warning('Vui lòng hủy tối đa 400 ca mỗi lần để đảm bảo transaction an toàn.')
+      return
+    }
     setCancellingBatch(true)
     try {
-      const bookingSnaps = await Promise.all(
-        selectedBookingIds.map((id) => getDoc(doc(db, 'bookingRequests', id)))
-      )
+      const cancelledCount = await runTransaction(db, async (tx) => {
+        const bookingRefs = selectedBookingIds.map((id) => doc(db, 'bookingRequests', id))
+        const bookingSnaps = await Promise.all(bookingRefs.map((bookingRef) => tx.get(bookingRef)))
+        const bookingsToCancel = bookingSnaps.flatMap((bookingSnap) => {
+          if (!bookingSnap.exists()) return []
+          const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+          return (booking.status === 'pending' || booking.status === 'confirmed') && !booking.lessonId
+            ? [booking]
+            : []
+        })
+        if (bookingsToCancel.length === 0) return 0
 
-      const bookingsToCancel = bookingSnaps
-        .filter((snap) => snap.exists())
-        .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-
-      if (bookingsToCancel.length === 0) {
-        toast.warning('Không tìm thấy thông tin các ca cần hủy')
-        setCancellingBatch(false)
-        return
-      }
-
-      // Group bookings by studentId
-      const studentRefunds: Record<string, { points: number; bookings: BookingRequest[] }> = {}
-      for (const booking of bookingsToCancel) {
-        if (!studentRefunds[booking.studentId]) {
-          studentRefunds[booking.studentId] = { points: 0, bookings: [] }
+        const studentRefunds: Record<string, { points: number; bookings: BookingRequest[] }> = {}
+        for (const booking of bookingsToCancel) {
+          if (!studentRefunds[booking.studentId]) studentRefunds[booking.studentId] = { points: 0, bookings: [] }
+          studentRefunds[booking.studentId].points += getBookingPoints(booking)
+          studentRefunds[booking.studentId].bookings.push(booking)
         }
-        studentRefunds[booking.studentId].points += getBookingPoints(booking)
-        studentRefunds[booking.studentId].bookings.push(booking)
-      }
+        const studentIds = Object.keys(studentRefunds)
+        const studentRefs = studentIds.map((studentId) => doc(db, 'students', studentId))
+        const studentSnaps = await Promise.all(studentRefs.map((studentRef) => tx.get(studentRef)))
 
-      await runTransaction(db, async (tx) => {
-        // Update each student's minutes balance
-        for (const studentId of Object.keys(studentRefunds)) {
-          const studentRef = doc(db, 'students', studentId)
-          const studentSnap = await tx.get(studentRef)
-          if (!studentSnap.exists()) continue
-
+        studentSnaps.forEach((studentSnap, index) => {
+          if (!studentSnap.exists()) return
           const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-          const refundPoints = studentRefunds[studentId].points
-          const nextHeld = Math.max(0, currentHeld - refundPoints)
-
-          tx.update(studentRef, {
+          const refundPoints = Math.min(currentHeld, studentRefunds[studentIds[index]].points)
+          const nextHeld = currentHeld - refundPoints
+          tx.update(studentRefs[index], {
             reservedMinutes: nextHeld,
             heldMinutes: nextHeld,
             updatedAt: serverTimestamp(),
           })
-        }
+        })
 
-        // Delete all selected booking documents
+        // Giữ bản ghi lịch sử để còn đối soát; chỉ chuyển trạng thái và nhả hold.
         for (const booking of bookingsToCancel) {
-          tx.delete(doc(db, 'bookingRequests', booking.id))
+          tx.update(doc(db, 'bookingRequests', booking.id), {
+            status: 'released',
+            releasedAt: serverTimestamp(),
+            releasedBy: user?.uid ?? 'admin',
+            releaseReason: 'batch_cancel_schedule',
+          })
         }
 
         // Add admin log
@@ -1251,14 +1252,16 @@ export function BookingSchedulesPage() {
             bookingIds: selectedBookingIds,
             refundSummary: Object.entries(studentRefunds).map(([id, info]) => ({
               studentId: id,
-              refundPoints: info.points,
+              requestedRefundPoints: info.points,
             })),
           },
           createdAt: serverTimestamp(),
         })
+        return bookingsToCancel.length
       })
 
-      toast.success(`Đã hủy thành công ${bookingsToCancel.length} ca xếp lớp và hoàn trả kim cương cho học viên.`)
+      if (cancelledCount === 0) toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+      else toast.success(`Đã hủy thành công ${cancelledCount} ca xếp lớp và hoàn trả kim cương cho học viên.`)
       setSelectedBookingIds([])
       setShowCancelBatchModal(false)
     } catch (error) {
@@ -1340,14 +1343,27 @@ export function BookingSchedulesPage() {
     if (!window.confirm(`Bạn có chắc chắn muốn hủy ca học ngày ${booking.requestedDate} (${booking.requestedStart} - ${booking.requestedEnd}) không? ${getBookingPoints(booking)} kim cương sẽ được hoàn về quỹ khả dụng.`)) return
 
     try {
-      await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
+        const bookingRef = doc(db, 'bookingRequests', booking.id)
         const studentRef = doc(db, 'students', booking.studentId)
-        const studentSnap = await tx.get(studentRef)
+        const [bookingSnap, studentSnap] = await Promise.all([
+          tx.get(bookingRef),
+          tx.get(studentRef),
+        ])
+        if (!bookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+        const currentBooking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+        if (
+          currentBooking.studentId !== booking.studentId
+          || !['pending', 'confirmed'].includes(currentBooking.status)
+          || currentBooking.lessonId
+        ) return { cancelled: false, points: 0 }
 
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-        const nextHeld = Math.max(0, currentHeld - getBookingPoints(booking))
+        const points = getBookingPoints(currentBooking)
+        const nextHeld = Math.max(0, currentHeld - points)
 
         tx.update(studentRef, {
           reservedMinutes: nextHeld,
@@ -1355,15 +1371,21 @@ export function BookingSchedulesPage() {
           updatedAt: serverTimestamp(),
         })
 
-        tx.update(doc(db, 'bookingRequests', booking.id), {
+        tx.update(bookingRef, {
           status: 'released',
           releasedAt: serverTimestamp(),
           releasedBy: user?.uid ?? 'admin',
         })
+        return { cancelled: true, points }
       })
 
+      if (!result.cancelled) {
+        toast.warning('Ca học đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+        setStudentFutureBookings(prev => prev.filter(b => b.id !== bookingId))
+        return
+      }
       setStudentFutureBookings(prev => prev.filter(b => b.id !== bookingId))
-      toast.success('Hủy ca học thành công!')
+      toast.success(`Hủy ca học thành công và hoàn ${result.points} kim cương.`)
     } catch (err) {
       console.error('Cancel booking failed:', err)
       toast.error('Gặp lỗi khi hủy ca học')
@@ -1377,14 +1399,26 @@ export function BookingSchedulesPage() {
 
     setCancellingAll(true)
     try {
-      const totalPointsToRefund = studentFutureBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const studentId = selectedBooking!.studentId
 
-      await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
-        const studentSnap = await tx.get(studentRef)
+        const bookingRefs = studentFutureBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+        const [studentSnap, ...bookingSnaps] = await Promise.all([
+          tx.get(studentRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
+        const currentBookings = bookingSnaps
+          .filter((bookingSnap) => bookingSnap.exists())
+          .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
+          .filter((booking) => (
+            booking.studentId === studentId
+            && ['pending', 'confirmed'].includes(booking.status)
+            && !booking.lessonId
+          ))
+        const totalPointsToRefund = currentBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
         const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
@@ -1395,17 +1429,19 @@ export function BookingSchedulesPage() {
           updatedAt: serverTimestamp(),
         })
 
-        for (const booking of studentFutureBookings) {
+        for (const booking of currentBookings) {
           tx.update(doc(db, 'bookingRequests', booking.id), {
             status: 'released',
             releasedAt: serverTimestamp(),
             releasedBy: user?.uid ?? 'admin',
           })
         }
+        return { count: currentBookings.length, points: totalPointsToRefund }
       })
 
       setStudentFutureBookings([])
-      toast.success(`Đã hủy toàn bộ ${studentFutureBookings.length} ca học của học viên và hoàn trả ${totalPointsToRefund} kim cương.`)
+      if (result.count === 0) toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+      else toast.success(`Đã hủy ${result.count} ca học của học viên và hoàn trả ${result.points} kim cương.`)
       setShowDetailModal(false)
       setSelectedBooking(null)
     } catch (err) {

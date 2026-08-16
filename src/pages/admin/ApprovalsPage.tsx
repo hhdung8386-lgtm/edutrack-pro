@@ -289,6 +289,7 @@ export function ApprovalsPage() {
         id: approvingLesson.id,
         bookingRequestId: approvingLesson.bookingRequestId,
         bookingRequestIds: approvingLesson.bookingRequestIds,
+        scheduleCheck: approvingLesson.scheduleCheck,
         studentId: approvingLesson.studentId,
         teacherId: approvingLesson.teacherId,
         date: approvingLesson.date,
@@ -550,6 +551,8 @@ export function ApprovalsPage() {
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
         setApprovingLesson(null)
+      } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
+        toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
         toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
       } else if (code === 'permission-denied') {
