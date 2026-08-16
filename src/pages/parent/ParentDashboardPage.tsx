@@ -35,6 +35,7 @@ import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
+import { isCompletedLearningLesson } from '@/lib/lessonAttendance'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -1503,6 +1504,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   // ─── Minute fund stats ───────────────────────────────────────────
   const packageMinuteSummary = getStudentPackageMinuteSummary(student)
+  // Lọc trên publicLessons đã tải sẵn nên không phát sinh thêm Firestore reads.
+  const completedLearningLessons = useMemo(
+    () => lessons.filter(isCompletedLearningLesson),
+    [lessons],
+  )
   const approvedLessonPointsBySubject = useMemo(() => {
     return lessons.reduce<Record<string, number>>((totals, lesson) => {
       const subjectId = lesson.subjectId || student.subjectId || '__legacy__'
@@ -1952,7 +1958,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       buckets[key] = { count: 0, minutes: 0 }
     }
-    for (const l of lessons) {
+    for (const l of completedLearningLessons) {
       const key = l.date?.slice(0, 7)
       if (key && buckets[key]) {
         buckets[key].count++
@@ -1969,7 +1975,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     })
 
     const durBuckets: Record<number, number> = {}
-    for (const l of lessons) {
+    for (const l of completedLearningLessons) {
       const m = l.minutes || 0
       if (!m) continue
       durBuckets[m] = (durBuckets[m] || 0) + 1
@@ -1978,9 +1984,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       .map(([m, c]) => ({ name: `${m} ${lang === 'vi' ? 'phút' : 'min'}`, value: c, mins: parseInt(m) }))
       .sort((a, b) => a.mins - b.mins)
 
-    const totalMinDone = lessons.reduce((s, l) => s + (l.minutes || 0), 0)
-    const avgMin = lessons.length > 0 ? Math.round(totalMinDone / lessons.length) : 0
-    const last30Days = lessons.filter(l => {
+    const totalMinDone = completedLearningLessons.reduce((s, l) => s + (l.minutes || 0), 0)
+    const avgMin = completedLearningLessons.length > 0 ? Math.round(totalMinDone / completedLearningLessons.length) : 0
+    const last30Days = completedLearningLessons.filter(l => {
       const d = new Date(l.date)
       const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
       return diff <= 30 && diff >= 0
@@ -1996,7 +2002,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       durationData: duration,
       insights: { avgMin, totalMin: totalMinDone, last30Count: last30Days.length, consistency: consistencyHint },
     }
-  }, [lessons, lang])
+  }, [completedLearningLessons, lang])
 
   const PIE_COLORS = ['#3BB8EB', '#FFD600', '#10B981', '#F59E0B']
 
@@ -2095,7 +2101,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           <div className="space-y-8">
             <StudentProfileOverview
               student={student}
-              completedLessons={lessons.length}
+              completedLessons={completedLearningLessons.length}
               avatarId={profileAvatarId}
               profilePhotoURL={profilePhotoURL}
               leaderboard={leaderboard}
@@ -2104,7 +2110,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               onUploadPhoto={uploadProfilePhoto}
               stats={{ total: pTotalMin, used: pUsedMin, held: pHeldMin, available: pAvailableMin }}
               usedPct={usedPct}
-              lessons={lessons}
+              lessons={completedLearningLessons}
               onGoTab={setTab}
               lang={lang}
             />

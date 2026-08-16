@@ -291,6 +291,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             report: lesson.report || null,
             rating: lesson.rating ?? null,
             imageURLs: lesson.imageURLs || [],
+            ...(lessonNow.attendanceStatus ? { attendanceStatus: lessonNow.attendanceStatus } : {}),
+            ...(lessonNow.absenceFollowUpOf ? { absenceFollowUpOf: lessonNow.absenceFollowUpOf } : {}),
             status: 'approved',
             createdAt: lesson.createdAt || serverTimestamp(),
             approvedAt: serverTimestamp(),

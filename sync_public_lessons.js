@@ -72,6 +72,8 @@ async function run() {
         homework: lesson.homework || '',
         book: lesson.book || '',
         imageURLs: lesson.imageURLs || [],
+        ...(lesson.attendanceStatus ? { attendanceStatus: lesson.attendanceStatus } : {}),
+        ...(lesson.absenceFollowUpOf ? { absenceFollowUpOf: lesson.absenceFollowUpOf } : {}),
         status: 'approved',
         createdAt: lesson.createdAt || null,
         approvedAt: lesson.approvedAt || null,

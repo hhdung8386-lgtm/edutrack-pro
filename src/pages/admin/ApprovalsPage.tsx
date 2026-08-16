@@ -487,6 +487,8 @@ export function ApprovalsPage() {
             homeworkItems: approvingLesson.homeworkItems || [],
             book: approvingLesson.book || '',
             imageURLs: approvingLesson.imageURLs || [],
+            ...(lessonNow.attendanceStatus ? { attendanceStatus: lessonNow.attendanceStatus } : {}),
+            ...(lessonNow.absenceFollowUpOf ? { absenceFollowUpOf: lessonNow.absenceFollowUpOf } : {}),
             status: 'approved',
             createdAt: approvingLesson.createdAt || serverTimestamp(),
             approvedAt: serverTimestamp(),

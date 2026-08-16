@@ -913,6 +913,7 @@ export function StudentDetailPage() {
             throw new Error('LESSON_ALREADY_PROCESSED')
           }
           const s = studentSnap.data()!
+          const lessonNow = lessonSnap.data() as Lesson
 
           const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
           const tData = tSnap.data()
@@ -1042,6 +1043,8 @@ export function StudentDetailPage() {
             homeworkItems: reApprovingLesson.homeworkItems || [],
             book: reApprovingLesson.book || '',
             imageURLs: reApprovingLesson.imageURLs || [],
+            ...(lessonNow.attendanceStatus ? { attendanceStatus: lessonNow.attendanceStatus } : {}),
+            ...(lessonNow.absenceFollowUpOf ? { absenceFollowUpOf: lessonNow.absenceFollowUpOf } : {}),
             status: 'approved',
             createdAt: reApprovingLesson.createdAt || serverTimestamp(),
             approvedAt: serverTimestamp(),

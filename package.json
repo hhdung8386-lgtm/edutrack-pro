@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:teacher-login": "node --experimental-strip-types --test tests/teacherLoginIdentity.test.ts",
+    "test:lesson-attendance": "node --experimental-strip-types --test tests/lessonAttendance.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
