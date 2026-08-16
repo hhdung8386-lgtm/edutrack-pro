@@ -372,6 +372,7 @@ export function BookingRequestsPage() {
   const handleReject = async () => {
     if (!rejecting) return
     setActioning(true)
+    let releasedPoints = 0
 
     try {
       await runTransaction(db, async (tx) => {
@@ -382,11 +383,34 @@ export function BookingRequestsPage() {
         const requestNow = requestSnap.data() as BookingRequest
         if (requestNow.status !== 'pending') throw new Error('REQUEST_ALREADY_PROCESSED')
 
+        let nextHeld: number | null = null
+        if (requestNow.heldImmediately === true) {
+          const studentRef = doc(db, 'students', requestNow.studentId)
+          const studentSnap = await tx.get(studentRef)
+          if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+
+          const teacherSnap = requestNow.teacherId
+            ? await tx.get(doc(db, 'teachers', requestNow.teacherId))
+            : null
+          const teacherData = teacherSnap?.exists() ? teacherSnap.data() : null
+          const student = { id: studentSnap.id, ...studentSnap.data() } as Student
+          const fund = getStudentMinuteFund(student)
+          releasedPoints = Math.min(fund.held, getBookingPoints(requestNow, teacherData))
+          nextHeld = Math.max(0, fund.held - releasedPoints)
+
+          tx.update(studentRef, {
+            reservedMinutes: nextHeld,
+            heldMinutes: nextHeld,
+            updatedAt: serverTimestamp(),
+          })
+        }
+
         tx.update(requestRef, {
           status: 'rejected',
           adminNote: adminNote.trim(),
           rejectedAt: serverTimestamp(),
           rejectedBy: user?.uid ?? '',
+          ...(nextHeld !== null ? { heldMinutesAfterReject: nextHeld } : {}),
         })
 
         tx.set(doc(collection(db, 'adminLogs')), {
@@ -395,15 +419,21 @@ export function BookingRequestsPage() {
           targetType: 'bookingRequest',
           targetId: rejecting.id,
           changes: {
-            studentId: rejecting.studentId,
-            teacherId: rejecting.teacherId,
+            studentId: requestNow.studentId,
+            teacherId: requestNow.teacherId,
             reason: adminNote.trim(),
+            releasedPoints,
+            heldMinutesAfter: nextHeld,
           },
           createdAt: serverTimestamp(),
         })
       })
 
-      toast.success('Đã từ chối yêu cầu')
+      toast.success(
+        releasedPoints > 0
+          ? `Đã từ chối và hoàn ${releasedPoints} kim cương đang giữ`
+          : 'Đã từ chối yêu cầu',
+      )
       setRejecting(null)
       setReloadVersion((version) => version + 1)
       setAdminNote('')

@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 
 export function FutureBookingsPage() {
@@ -31,20 +31,10 @@ export function FutureBookingsPage() {
   const [confirmTargets, setConfirmTargets] = useState<BookingRequest[] | null>(null)
 
   // Search & Filter state
-  const [selectedStudentId, setSelectedStudentId] = useState<string>(searchParams.get('studentId') || 'all')
+  const selectedStudentId = searchParams.get('studentId') || 'all'
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [filterDate, setFilterDate] = useState<string>('')
   const [filterDayOfWeek, setFilterDayOfWeek] = useState<string>('all')
-
-  // Sync state with URL search params
-  useEffect(() => {
-    const studentIdParam = searchParams.get('studentId')
-    if (studentIdParam) {
-      setSelectedStudentId(studentIdParam)
-    } else {
-      setSelectedStudentId('all')
-    }
-  }, [searchParams])
 
   // Load teachers -> build nickname map
   useEffect(() => {
@@ -106,12 +96,6 @@ export function FutureBookingsPage() {
     [bookings, todayISO]
   )
 
-  const overdueStats = useMemo(() => ({
-    count: overdueBookings.length,
-    points: overdueBookings.reduce((sum, b) => sum + getBookingPoints(b), 0),
-    students: new Set(overdueBookings.map((b) => b.studentId).filter(Boolean)).size,
-  }), [overdueBookings])
-
   const selectedStudentHeldBookings = useMemo(
     () => bookings.filter((booking) =>
       !booking.lessonId && (selectedStudentId === 'all' || booking.studentId === selectedStudentId),
@@ -125,6 +109,13 @@ export function FutureBookingsPage() {
     ),
     [selectedStudentHeldBookings, todayISO],
   )
+
+  const overdueReviewScope = selectedStudentId === 'all' ? overdueBookings : selectedStudentOverdueBookings
+  const overdueStats = useMemo(() => ({
+    count: overdueReviewScope.length,
+    points: overdueReviewScope.reduce((sum, b) => sum + getBookingPoints(b), 0),
+    students: new Set(overdueReviewScope.map((b) => b.studentId).filter(Boolean)).size,
+  }), [overdueReviewScope])
 
   // Filter and sort bookings client-side
   const futureBookings = useMemo(() => {
@@ -177,13 +168,13 @@ export function FutureBookingsPage() {
 
   // Handle student filter change
   const handleStudentChange = (studentId: string) => {
-    setSelectedStudentId(studentId)
+    const next = new URLSearchParams(searchParams)
     if (studentId === 'all') {
-      searchParams.delete('studentId')
+      next.delete('studentId')
     } else {
-      searchParams.set('studentId', studentId)
+      next.set('studentId', studentId)
     }
-    setSearchParams(searchParams)
+    setSearchParams(next, { replace: true })
     setSelectedBookingIds([])
   }
 
@@ -209,18 +200,33 @@ export function FutureBookingsPage() {
       const studentEntries = Object.entries(bookingsByStudent)
       setCancelProgress({ done: 0, total: studentEntries.length })
       let processedStudents = 0
+      let cancelledCount = 0
       for (const [studentId, allStudentBookings] of studentEntries) {
         for (let i = 0; i < allStudentBookings.length; i += CHUNK_SIZE) {
         const studentBookings = allStudentBookings.slice(i, i + CHUNK_SIZE)
-        const totalPointsToRefund = studentBookings.reduce((sum, b) => sum + getBookingPoints(b), 0)
 
-        await runTransaction(db, async (tx) => {
+        cancelledCount += await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', studentId)
-          const studentSnap = await tx.get(studentRef)
+          const bookingRefs = studentBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+          const [studentSnap, ...bookingSnaps] = await Promise.all([
+            tx.get(studentRef),
+            ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+          ])
+          const activeBookings = bookingSnaps.flatMap((bookingSnap) => {
+            if (!bookingSnap.exists()) return []
+            const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+            return (
+              (booking.status === 'confirmed' || booking.status === 'pending')
+              && !booking.lessonId
+            ) ? [booking] : []
+          })
+
+          if (activeBookings.length === 0) return 0
+          const totalPointsToRefund = activeBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
 
           if (!studentSnap.exists()) {
-            // Student was deleted — release the orphaned bookings, nothing to refund
-            for (const booking of studentBookings) {
+            // Student was deleted. Release only holds that are still active.
+            for (const booking of activeBookings) {
               tx.update(doc(db, 'bookingRequests', booking.id), {
                 status: 'released',
                 releasedAt: serverTimestamp(),
@@ -233,19 +239,20 @@ export function FutureBookingsPage() {
               targetType: 'student',
               targetId: studentId,
               changes: {
-                studentName: studentBookings[0]?.studentName || '',
-                cancelledCount: studentBookings.length,
-                cancelledIds: studentBookings.map(b => b.id),
+                studentName: activeBookings[0]?.studentName || '',
+                cancelledCount: activeBookings.length,
+                cancelledIds: activeBookings.map(b => b.id),
                 note: 'Student document no longer exists; bookings released without refund',
               },
               createdAt: serverTimestamp(),
             })
-            return
+            return activeBookings.length
           }
 
           const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
           const currentHeld = studentData.reservedMinutes ?? studentData.heldMinutes ?? 0
-          const nextHeld = Math.max(0, currentHeld - totalPointsToRefund)
+          const refundedPoints = Math.min(currentHeld, totalPointsToRefund)
+          const nextHeld = currentHeld - refundedPoints
 
           // Booking only ever holds minutes (held += m); remainingMinutes is untouched until
           // lesson approval. So cancelling must ONLY release the hold — adding minutes back to
@@ -258,7 +265,7 @@ export function FutureBookingsPage() {
           })
 
           // Mark bookings as released
-          for (const booking of studentBookings) {
+          for (const booking of activeBookings) {
             const requestRef = doc(db, 'bookingRequests', booking.id)
             tx.update(requestRef, {
               status: 'released',
@@ -275,24 +282,31 @@ export function FutureBookingsPage() {
             targetId: studentId,
             changes: {
               studentName: studentData.name,
-              cancelledCount: studentBookings.length,
-              cancelledIds: studentBookings.map(b => b.id),
-              refundedPoints: totalPointsToRefund,
+              cancelledCount: activeBookings.length,
+              cancelledIds: activeBookings.map(b => b.id),
+              refundedPoints,
+              requestedRefundPoints: totalPointsToRefund,
             },
             createdAt: serverTimestamp(),
           })
+          return activeBookings.length
         })
         }
         processedStudents++
         setCancelProgress({ done: processedStudents, total: studentEntries.length })
       }
 
-      toast.success(`Hủy thành công ${targetBookings.length} ca học và hoàn trả kim cương cho học viên tương ứng.`)
+      if (cancelledCount > 0) {
+        toast.success(`Đã hủy ${cancelledCount} ca học và hoàn kim cương đang giữ tương ứng.`)
+      } else {
+        toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+      }
       setSelectedBookingIds([])
       setConfirmTargets(null)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Cancel bookings failed:', err)
-      toast.error(`Gặp lỗi khi hủy các ca học đã chọn${err?.message ? `: ${err.message}` : ''}. Các ca đã xử lý xong vẫn được lưu, bạn có thể bấm lại để tiếp tục phần còn lại.`)
+      const message = err instanceof Error ? err.message : ''
+      toast.error(`Gặp lỗi khi hủy các ca học đã chọn${message ? `: ${message}` : ''}. Các ca đã xử lý xong vẫn được lưu, bạn có thể bấm lại để tiếp tục phần còn lại.`)
     } finally {
       setCancelling(false)
       setCancelProgress(null)
@@ -335,30 +349,16 @@ export function FutureBookingsPage() {
                   <span className="font-bold">{overdueStats.students} học viên</span> bị treo, không đặt lịch mới được.
                 </p>
                 <p className="text-xs text-amber-700 mt-1.5 font-semibold">
-                  Huỷ các ca này sẽ <span className="underline">hoàn lại toàn bộ kim cương đang giữ</span> cho học viên.
+                  Hãy mở trang rà soát để đối chiếu đúng giáo viên và buổi dạy trước khi nhả giữ chỗ.
                 </p>
-                {cancelProgress && (
-                  <div className="mt-3">
-                    <p className="text-xs font-bold text-amber-900">
-                      Đang xử lý {cancelProgress.done}/{cancelProgress.total} học viên — vui lòng không đóng trang…
-                    </p>
-                    <div className="mt-1.5 h-2 w-full max-w-md overflow-hidden rounded-full bg-amber-200">
-                      <div
-                        className="h-full bg-amber-500 transition-all duration-300"
-                        style={{ width: `${cancelProgress.total ? Math.round((cancelProgress.done / cancelProgress.total) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
             <Button
-              onClick={() => setConfirmTargets(overdueBookings)}
-              loading={cancelling}
-              className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={() => navigate(`/admin/overdue-bookings${selectedStudentId === 'all' ? '' : `?studentId=${selectedStudentId}`}`)}
+              className="flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
             >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Huỷ và hoàn kim cương ({overdueStats.count} ca)
+              <ShieldCheck className="w-4 h-4 mr-2" />
+              Rà soát an toàn ({overdueStats.count} ca)
             </Button>
           </div>
         </div>
@@ -510,21 +510,28 @@ export function FutureBookingsPage() {
           <span className="font-bold text-slate-900 text-sm">
             Danh sách ca học ({futureBookings.length} ca khớp bộ lọc)
           </span>
-          {selectedBookingIds.length > 0 && (
-            <Button
-              variant="danger"
-              size="sm"
-              loading={cancelling}
-              onClick={() => {
-                const targets = futureBookings.filter((b) => selectedBookingIds.includes(b.id))
-                if (targets.length > 0) setConfirmTargets(targets)
-              }}
-              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
-            >
-              <Trash2 className="w-4 h-4" />
-              Hủy {selectedBookingIds.length} ca đã chọn
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {cancelProgress && (
+              <span className="text-xs font-semibold text-slate-500" role="status">
+                Đang xử lý {cancelProgress.done}/{cancelProgress.total} học viên
+              </span>
+            )}
+            {selectedBookingIds.length > 0 && (
+              <Button
+                variant="danger"
+                size="sm"
+                loading={cancelling}
+                onClick={() => {
+                  const targets = futureBookings.filter((b) => selectedBookingIds.includes(b.id))
+                  if (targets.length > 0) setConfirmTargets(targets)
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Hủy {selectedBookingIds.length} ca đã chọn
+              </Button>
+            )}
+          </div>
         </div>
 
         {futureBookings.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   collection, query, where, onSnapshot, getDocs, runTransaction, doc, serverTimestamp,
 } from 'firebase/firestore'
@@ -13,17 +13,21 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import {
   ArrowLeft, AlertCircle, Search, Download, ExternalLink, Link2, RotateCcw,
-  Hourglass, CheckCircle2, XCircle, HelpCircle, Users,
+  Hourglass, CheckCircle2, XCircle, HelpCircle, ShieldAlert, UserRoundX,
 } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
+import { bookingHoldPoints } from '@/lib/lessonBooking'
+import {
+  diagnoseOverdueBookings,
+  type DiagnosedOverdueBooking,
+  type OverdueDiagnosis,
+} from '@/lib/overdueBookingDiagnosis'
 
 /**
  * Chẩn đoán vì sao một ca đã đặt bị quá hạn mà chưa được điểm danh.
- * Suy ra bằng cách đối chiếu với collection `lessons` của cùng học viên trong cùng ngày.
+ * Chỉ ghép tự động khi đúng học viên, ngày, giáo viên và có bằng chứng liên kết an toàn.
  */
-type Diagnosis = 'approved_lesson' | 'pending_lesson' | 'rejected_lesson' | 'no_lesson'
-
-const DIAGNOSIS_META: Record<Diagnosis, {
+const DIAGNOSIS_META: Record<OverdueDiagnosis, {
   label: string
   short: string
   desc: string
@@ -33,7 +37,7 @@ const DIAGNOSIS_META: Record<Diagnosis, {
   icon: React.ElementType
 }> = {
   pending_lesson: {
-    label: 'Gia sư đã điểm danh — CHỜ DUYỆT',
+    label: 'Gia sư đã điểm danh, chờ duyệt',
     short: 'Chờ duyệt',
     desc: 'Gia sư đã nộp báo cáo buổi dạy cho ngày này nhưng admin chưa duyệt.',
     advice: 'Không hoàn kim cương. Hãy vào trang Duyệt buổi dạy để duyệt; hệ thống sẽ tự trừ kim cương và nhả giữ chỗ đúng quy trình.',
@@ -42,7 +46,7 @@ const DIAGNOSIS_META: Record<Diagnosis, {
     icon: Hourglass,
   },
   approved_lesson: {
-    label: 'Đã dạy & ĐÃ DUYỆT — ca đặt bị đứt liên kết',
+    label: 'Đã dạy và đã duyệt, thiếu liên kết',
     short: 'Đã dạy (đứt liên kết)',
     desc: 'Đã có buổi dạy được duyệt cho ngày này, nhưng ca đặt lịch không được gắn vào buổi dạy đó nên vẫn giữ chỗ.',
     advice: 'Bấm "Gắn buổi dạy" để nối lại. Phút học đã bị trừ khi duyệt, nên thao tác này chỉ nhả phần giữ chỗ đang treo oan.',
@@ -60,27 +64,46 @@ const DIAGNOSIS_META: Record<Diagnosis, {
     icon: XCircle,
   },
   no_lesson: {
-    label: 'KHÔNG có báo cáo buổi dạy nào',
+    label: 'Không có báo cáo của đúng gia sư',
     short: 'Chưa điểm danh',
-    desc: 'Không tìm thấy buổi dạy nào của học viên này trong ngày đó — nhiều khả năng lớp không diễn ra hoặc gia sư quên điểm danh.',
+    desc: 'Không tìm thấy buổi dạy nào của đúng gia sư đã được xếp cho ca này.',
     advice: 'Xác minh với gia sư. Nếu lớp không diễn ra thì hoàn kim cương cho học viên.',
     badge: 'bg-slate-100 text-slate-700 border-slate-200',
     chip: 'bg-slate-400',
     icon: HelpCircle,
   },
-}
-
-type DiagnosedBooking = {
-  booking: BookingRequest
-  diagnosis: Diagnosis
-  matchedLesson: Lesson | null
-  daysOverdue: number
-  /** Gia sư có điểm danh học viên KHÁC trong cùng ngày không -> gia sư có đi làm hôm đó */
-  teacherWorkedThatDay: boolean
+  other_teacher_lesson: {
+    label: 'Có buổi của giáo viên khác cùng ngày',
+    short: 'Khác giáo viên',
+    desc: 'Học viên có buổi học cùng ngày nhưng do giáo viên khác dạy. Hệ thống không tự ghép để tránh nối sai dữ liệu.',
+    advice: 'Xác minh với đúng gia sư trong ca đặt. Không dùng buổi của giáo viên khác để gắn thay.',
+    badge: 'bg-violet-100 text-violet-700 border-violet-200',
+    chip: 'bg-violet-500',
+    icon: UserRoundX,
+  },
+  ambiguous_lesson: {
+    label: 'Có nhiều khả năng khớp',
+    short: 'Cần xác minh',
+    desc: 'Cùng giáo viên nhưng số ca, thời lượng hoặc liên kết chưa đủ rõ để hệ thống tự chọn.',
+    advice: 'Đối chiếu giờ học và báo cáo trước khi xử lý. Nút gắn tự động đã được khóa.',
+    badge: 'bg-orange-100 text-orange-700 border-orange-200',
+    chip: 'bg-orange-500',
+    icon: ShieldAlert,
+  },
+  conflicting_link: {
+    label: 'Liên kết dữ liệu đang mâu thuẫn',
+    short: 'Xung đột liên kết',
+    desc: 'Một hoặc nhiều buổi đang trỏ tới ca này nhưng thông tin giáo viên hoặc liên kết không thống nhất.',
+    advice: 'Không gắn hoặc hoàn tự động. Cần kiểm tra bản ghi trước để tránh làm sai lịch sử.',
+    badge: 'bg-rose-100 text-rose-800 border-rose-300',
+    chip: 'bg-rose-600',
+    icon: ShieldAlert,
+  },
 }
 
 export function OverdueBookingsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuthStore()
 
   const [bookings, setBookings] = useState<BookingRequest[]>([])
@@ -93,11 +116,12 @@ export function OverdueBookingsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
-  const [confirmRelease, setConfirmRelease] = useState<DiagnosedBooking[] | null>(null)
+  const [confirmRelease, setConfirmRelease] = useState<DiagnosedOverdueBooking[] | null>(null)
 
   // Filters
-  const [diagnosisFilter, setDiagnosisFilter] = useState<Diagnosis | 'all'>('all')
+  const [diagnosisFilter, setDiagnosisFilter] = useState<OverdueDiagnosis | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const studentFilter = searchParams.get('studentId') || 'all'
   const [teacherFilter, setTeacherFilter] = useState('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -110,7 +134,7 @@ export function OverdueBookingsPage() {
   // ── Load dữ liệu ────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(
-      query(collection(db, 'bookingRequests'), where('status', '==', 'confirmed')),
+      query(collection(db, 'bookingRequests'), where('status', 'in', ['confirmed', 'pending'])),
       (snap) => {
         setBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest)))
         setLoading(false)
@@ -152,70 +176,58 @@ export function OverdueBookingsPage() {
     [bookings, todayISO]
   )
 
+  const overdueDateRange = useMemo(() => {
+    const dates = overdue.map((booking) => booking.requestedDate).filter(Boolean).sort() as string[]
+    return dates.length > 0 ? { min: dates[0], max: dates[dates.length - 1] } : null
+  }, [overdue])
+
   // Nạp các buổi dạy trong đúng khoảng ngày của các ca quá hạn để đối chiếu
   useEffect(() => {
-    if (loading) return
-    if (overdue.length === 0) { setLessons([]); setLessonsLoading(false); return }
-    const dates = overdue.map((b) => b.requestedDate!).sort()
-    const minDate = dates[0]
-    const maxDate = dates[dates.length - 1]
-    setLessonsLoading(true)
-    getDocs(query(collection(db, 'lessons'), where('date', '>=', minDate), where('date', '<=', maxDate)))
-      .then((snap) => setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))))
-      .catch((err) => { console.error(err); toast.error('Không tải được dữ liệu buổi dạy để đối chiếu') })
-      .finally(() => setLessonsLoading(false))
-    // Chỉ chạy lại khi khoảng ngày đổi, tránh nạp lại liên tục
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, overdue.length, overdue[0]?.requestedDate])
+    let active = true
+    const loadLessons = async () => {
+      await Promise.resolve()
+      if (!active || loading) return
+      if (!overdueDateRange) {
+        setLessons([])
+        setLessonsLoading(false)
+        return
+      }
+
+      setLessonsLoading(true)
+      try {
+        const snap = await getDocs(query(
+          collection(db, 'lessons'),
+          where('date', '>=', overdueDateRange.min),
+          where('date', '<=', overdueDateRange.max),
+        ))
+        if (active) setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+      } catch (err: unknown) {
+        console.error(err)
+        if (active) toast.error('Không tải được dữ liệu buổi dạy để đối chiếu')
+      } finally {
+        if (active) setLessonsLoading(false)
+      }
+    }
+    void loadLessons()
+    return () => { active = false }
+  }, [loading, overdueDateRange])
 
   // ── Chẩn đoán ───────────────────────────────────────────────────
-  const diagnosed = useMemo<DiagnosedBooking[]>(() => {
-    const byStudentDate = new Map<string, Lesson[]>()
-    const teacherDate = new Set<string>()
-    lessons.forEach((l) => {
-      const k = `${l.studentId}|${l.date}`
-      if (!byStudentDate.has(k)) byStudentDate.set(k, [])
-      byStudentDate.get(k)!.push(l)
-      // Buổi bị từ chối hoặc gia sư tự huỷ coi như chưa từng điểm danh
-      if (l.status !== 'rejected' && l.status !== 'cancelled') teacherDate.add(`${l.teacherId}|${l.date}`)
-    })
-
-    return overdue.map((booking) => {
-      const candidates = byStudentDate.get(`${booking.studentId}|${booking.requestedDate}`) || []
-      // Ưu tiên buổi dạy của đúng gia sư đã đặt
-      const sameTeacher = candidates.filter((l) => l.teacherId === booking.teacherId)
-      const pool = sameTeacher.length > 0 ? sameTeacher : candidates
-      const matchedLesson =
-        pool.find((l) => l.status === 'approved') ||
-        pool.find((l) => l.status === 'pending') ||
-        pool.find((l) => l.status === 'rejected') ||
-        null
-
-      const diagnosis: Diagnosis = !matchedLesson
-        ? 'no_lesson'
-        : matchedLesson.status === 'approved'
-          ? 'approved_lesson'
-          : matchedLesson.status === 'pending'
-            ? 'pending_lesson'
-            : 'rejected_lesson'
-
-      const days = Math.max(
-        0,
-        Math.round((new Date(todayISO).getTime() - new Date(booking.requestedDate!).getTime()) / 86400000)
-      )
-
-      return {
-        booking,
-        diagnosis,
-        matchedLesson,
-        daysOverdue: days,
-        teacherWorkedThatDay: teacherDate.has(`${booking.teacherId}|${booking.requestedDate}`),
-      }
-    })
-  }, [overdue, lessons, todayISO])
+  const diagnosed = useMemo(
+    () => diagnoseOverdueBookings(overdue, lessons, todayISO),
+    [overdue, lessons, todayISO],
+  )
 
   const counts = useMemo(() => {
-    const c: Record<Diagnosis, number> = { pending_lesson: 0, approved_lesson: 0, rejected_lesson: 0, no_lesson: 0 }
+    const c: Record<OverdueDiagnosis, number> = {
+      pending_lesson: 0,
+      approved_lesson: 0,
+      rejected_lesson: 0,
+      no_lesson: 0,
+      other_teacher_lesson: 0,
+      ambiguous_lesson: 0,
+      conflicting_link: 0,
+    }
     diagnosed.forEach((d) => { c[d.diagnosis]++ })
     return c
   }, [diagnosed])
@@ -227,11 +239,27 @@ export function OverdueBookingsPage() {
       .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
   }, [diagnosed, teacherNicks])
 
+  const studentOptions = useMemo(() => {
+    const ids = new Set(diagnosed.map((d) => d.booking.studentId).filter(Boolean))
+    return Array.from(ids)
+      .map((id) => ({ id, code: studentMap[id]?.code || '', name: studentMap[id]?.name || id }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+  }, [diagnosed, studentMap])
+
+  const handleStudentFilter = (studentId: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (studentId === 'all') next.delete('studentId')
+    else next.set('studentId', studentId)
+    setSearchParams(next, { replace: true })
+    setSelectedIds([])
+  }
+
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
     return diagnosed
       .filter((d) => {
         if (diagnosisFilter !== 'all' && d.diagnosis !== diagnosisFilter) return false
+        if (studentFilter !== 'all' && d.booking.studentId !== studentFilter) return false
         if (teacherFilter !== 'all' && d.booking.teacherId !== teacherFilter) return false
         if (fromDate && (d.booking.requestedDate || '') < fromDate) return false
         if (toDate && (d.booking.requestedDate || '') > toDate) return false
@@ -250,18 +278,18 @@ export function OverdueBookingsPage() {
         if (dateCmp !== 0) return dateCmp
         return (a.booking.studentName || '').localeCompare(b.booking.studentName || '', 'vi')
       })
-  }, [diagnosed, diagnosisFilter, teacherFilter, fromDate, toDate, searchQuery, teacherNicks])
+  }, [diagnosed, diagnosisFilter, studentFilter, teacherFilter, fromDate, toDate, searchQuery, teacherNicks])
 
   const filteredPoints = filtered.reduce((s, d) => s + getBookingPoints(d.booking), 0)
   const selectedItems = filtered.filter((d) => selectedIds.includes(d.booking.id))
   const allFilteredSelected = filtered.length > 0 && filtered.every((d) => selectedIds.includes(d.booking.id))
 
   // ── Hành động: hoàn phút (nhả giữ chỗ) ──────────────────────────
-  const releaseHolds = async (items: DiagnosedBooking[]) => {
+  const releaseHolds = async (items: DiagnosedOverdueBooking[]) => {
     if (items.length === 0) return
     setProcessing(true)
     try {
-      const byStudent: Record<string, DiagnosedBooking[]> = {}
+      const byStudent: Record<string, DiagnosedOverdueBooking[]> = {}
       items.forEach((it) => {
         const sid = it.booking.studentId
         if (!sid) return
@@ -271,24 +299,41 @@ export function OverdueBookingsPage() {
       const entries = Object.entries(byStudent)
       setProgress({ done: 0, total: entries.length })
       let done = 0
+      let releasedCount = 0
 
       for (const [studentId, list] of entries) {
         const CHUNK = 300
         for (let i = 0; i < list.length; i += CHUNK) {
           const chunk = list.slice(i, i + CHUNK)
-          const points = chunk.reduce((s, it) => s + getBookingPoints(it.booking), 0)
-          await runTransaction(db, async (tx) => {
+          releasedCount += await runTransaction(db, async (tx) => {
             const sRef = doc(db, 'students', studentId)
-            const sSnap = await tx.get(sRef)
+            const bookingRefs = chunk.map((item) => doc(db, 'bookingRequests', item.booking.id))
+            const [sSnap, ...bookingSnaps] = await Promise.all([
+              tx.get(sRef),
+              ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+            ])
+            const activeItems = bookingSnaps.flatMap((bookingSnap, index) => {
+              if (!bookingSnap.exists()) return []
+              const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+              return (
+                (booking.status === 'confirmed' || booking.status === 'pending')
+                && !booking.lessonId
+              ) ? [{ ...chunk[index], booking }] : []
+            })
+            if (activeItems.length === 0) return 0
+
+            const points = activeItems.reduce((sum, item) => sum + bookingHoldPoints(item.booking), 0)
+            let releasedPoints = 0
             if (sSnap.exists()) {
               const sd = sSnap.data() as Student
               const cur = sd.reservedMinutes ?? sd.heldMinutes ?? 0
-              const next = Math.max(0, cur - points)
+              releasedPoints = Math.min(cur, points)
+              const next = cur - releasedPoints
               // Chỉ nhả phần GIỮ CHỖ. Không cộng vào remainingMinutes vì lúc đặt
               // lịch hệ thống chỉ giữ chứ chưa trừ quỹ -> cộng thêm sẽ hoàn khống.
               tx.update(sRef, { reservedMinutes: next, heldMinutes: next, updatedAt: serverTimestamp() })
             }
-            chunk.forEach((it) => {
+            activeItems.forEach((it) => {
               tx.update(doc(db, 'bookingRequests', it.booking.id), {
                 status: 'released',
                 releasedAt: serverTimestamp(),
@@ -302,26 +347,33 @@ export function OverdueBookingsPage() {
               targetType: 'student',
               targetId: studentId,
               changes: {
-                studentName: chunk[0]?.booking.studentName || '',
-                count: chunk.length,
-                bookingIds: chunk.map((c) => c.booking.id),
-                releasedPoints: points,
-                diagnoses: chunk.map((c) => c.diagnosis),
+                studentName: activeItems[0]?.booking.studentName || '',
+                count: activeItems.length,
+                bookingIds: activeItems.map((c) => c.booking.id),
+                releasedPoints,
+                requestedReleasePoints: points,
+                diagnoses: activeItems.map((c) => c.diagnosis),
               },
               createdAt: serverTimestamp(),
             })
+            return activeItems.length
           })
         }
         done++
         setProgress({ done, total: entries.length })
       }
 
-      toast.success(`Đã hoàn kim cương giữ chỗ cho ${items.length} ca học.`)
+      if (releasedCount > 0) {
+        toast.success(`Đã hoàn kim cương giữ chỗ cho ${releasedCount} ca học.`)
+      } else {
+        toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
+      }
       setSelectedIds([])
       setConfirmRelease(null)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('release overdue failed', err)
-      toast.error(`Lỗi khi hoàn kim cương${err?.message ? `: ${err.message}` : ''}. Phần đã xử lý vẫn được lưu, bấm lại để tiếp tục.`)
+      const message = err instanceof Error ? err.message : ''
+      toast.error(`Lỗi khi hoàn kim cương${message ? `: ${message}` : ''}. Phần đã xử lý vẫn được lưu, bấm lại để tiếp tục.`)
     } finally {
       setProcessing(false)
       setProgress(null)
@@ -329,10 +381,10 @@ export function OverdueBookingsPage() {
   }
 
   // ── Hành động: gắn ca đặt vào buổi dạy đã duyệt ─────────────────
-  const linkToLesson = async (items: DiagnosedBooking[]) => {
-    const targets = items.filter((it) => it.diagnosis === 'approved_lesson' && it.matchedLesson)
+  const linkToLesson = async (items: DiagnosedOverdueBooking[]) => {
+    const targets = items.filter((it) => it.canLink && it.diagnosis === 'approved_lesson' && it.matchedLesson)
     if (targets.length === 0) {
-      toast.warning('Không có ca nào thuộc nhóm "Đã dạy (đứt liên kết)" trong lựa chọn')
+      toast.warning('Không có ca nào đủ bằng chứng an toàn để gắn tự động')
       return
     }
     setProcessing(true)
@@ -349,19 +401,61 @@ export function OverdueBookingsPage() {
             const sRef = doc(db, 'students', it.booking.studentId)
             const [bSnap, lSnap, sSnap] = await Promise.all([tx.get(bRef), tx.get(lRef), tx.get(sRef)])
             if (!bSnap.exists() || !lSnap.exists()) throw new Error('NOT_FOUND')
-            if ((bSnap.data() as BookingRequest).lessonId) return // đã xử lý ở lần khác
+            const bookingData = { id: bSnap.id, ...bSnap.data() } as BookingRequest
+            if (bookingData.lessonId) return // đã xử lý ở lần khác
+            if (bookingData.status !== 'confirmed' && bookingData.status !== 'pending') throw new Error('BOOKING_NOT_HOLDING')
 
             const lessonData = lSnap.data() as Lesson
-            // Nếu lúc duyệt đã nhả giữ chỗ rồi thì không nhả lần nữa.
-            const holdToRelease = lessonData.bookingHoldConsumed === true ? 0 : getBookingPoints(it.booking)
+            if (
+              lessonData.status !== 'approved'
+              || lessonData.studentId !== bookingData.studentId
+              || lessonData.teacherId !== bookingData.teacherId
+              || lessonData.date !== bookingData.requestedDate
+            ) {
+              throw new Error('LESSON_MISMATCH')
+            }
+
+            const storedLessonBookingIds = Array.from(new Set([
+              lessonData.bookingRequestId,
+              ...(lessonData.bookingRequestIds || []),
+            ].filter((id): id is string => Boolean(id))))
+            const hasExplicitReference = storedLessonBookingIds.includes(bookingData.id)
+              || lessonData.scheduleCheck?.bookingId === bookingData.id
+
+            if (it.matchKind === 'explicit' && !hasExplicitReference) throw new Error('LINK_CHANGED')
+            if (it.matchKind === 'unique') {
+              if (
+                storedLessonBookingIds.length > 0
+                || lessonData.scheduleCheck?.bookingId
+                || lessonData.bookingHoldConsumed === true
+                || Number(lessonData.minutes) !== Number(bookingData.requestedMinutes)
+              ) {
+                throw new Error('LINK_NO_LONGER_UNIQUE')
+              }
+            }
+
+            // Nếu buổi đã ghi nhận chính ca này và hold đã được nhả thì không nhả lần hai.
+            const holdAlreadyConsumedForThisBooking = hasExplicitReference && lessonData.bookingHoldConsumed === true
+            const holdToRelease = holdAlreadyConsumedForThisBooking ? 0 : bookingHoldPoints(bookingData)
             if (holdToRelease > 0 && sSnap.exists()) {
               const sd = sSnap.data() as Student
               const cur = sd.reservedMinutes ?? sd.heldMinutes ?? 0
               const next = Math.max(0, cur - holdToRelease)
               tx.update(sRef, { reservedMinutes: next, heldMinutes: next, updatedAt: serverTimestamp() })
             }
-            tx.update(bRef, { lessonId: lesson.id, updatedAt: serverTimestamp() })
-            tx.update(lRef, { bookingRequestId: it.booking.id, bookingHoldConsumed: true, updatedAt: serverTimestamp() })
+            const mergedBookingIds = Array.from(new Set([...storedLessonBookingIds, bookingData.id]))
+            tx.update(bRef, {
+              lessonId: lesson.id,
+              status: 'completed',
+              completedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+            tx.update(lRef, {
+              bookingRequestId: lessonData.bookingRequestId || bookingData.id,
+              bookingRequestIds: mergedBookingIds,
+              bookingHoldConsumed: true,
+              updatedAt: serverTimestamp(),
+            })
             tx.set(doc(collection(db, 'adminLogs')), {
               adminId: user?.uid ?? 'admin',
               action: 'RESOLVE_OVERDUE_BOOKINGS_LINK',
@@ -371,6 +465,7 @@ export function OverdueBookingsPage() {
                 studentName: it.booking.studentName || '',
                 lessonId: lesson.id,
                 lessonDate: lesson.date,
+                matchKind: it.matchKind,
                 releasedHoldPoints: holdToRelease,
               },
               createdAt: serverTimestamp(),
@@ -384,7 +479,7 @@ export function OverdueBookingsPage() {
         setProgress({ done: ok + failed, total: targets.length })
       }
       if (failed === 0) toast.success(`Đã gắn ${ok} ca vào buổi dạy tương ứng.`)
-      else toast.warning(`Đã gắn ${ok} ca; ${failed} ca lỗi — vui lòng thử lại.`)
+      else toast.warning(`Đã gắn ${ok} ca; ${failed} ca đã dừng vì dữ liệu thay đổi hoặc không còn khớp.`)
       setSelectedIds([])
     } finally {
       setProcessing(false)
@@ -420,8 +515,10 @@ export function OverdueBookingsPage() {
 
   if (loading) return <LoadingSpinner />
 
-  const selectedReleasable = selectedItems.filter((d) => d.diagnosis !== 'pending_lesson')
-  const selectedLinkable = selectedItems.filter((d) => d.diagnosis === 'approved_lesson')
+  const selectedReleasable = selectedItems.filter((d) =>
+    d.diagnosis === 'no_lesson' || d.diagnosis === 'rejected_lesson',
+  )
+  const selectedLinkable = selectedItems.filter((d) => d.canLink)
 
   return (
     <div className="space-y-5 pt-2 lg:pt-6">
@@ -432,7 +529,7 @@ export function OverdueBookingsPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900">Rà soát ca học quá hạn</h1>
-          <p className="text-sm text-slate-500">Xem rõ từng ca đang vướng gì trước khi quyết định hoàn kim cương</p>
+          <p className="text-sm text-slate-500">Đối chiếu đúng giáo viên và buổi dạy trước khi nhả phần giữ chỗ</p>
         </div>
       </div>
 
@@ -446,15 +543,15 @@ export function OverdueBookingsPage() {
 
       {lessonsLoading && (
         <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
-          Đang đối chiếu với dữ liệu buổi dạy để chẩn đoán nguyên nhân…
+          Đang đối chiếu với dữ liệu buổi dạy để chẩn đoán nguyên nhân...
         </div>
       )}
 
       {/* Phân loại nguyên nhân */}
       <Card>
-        <p className="text-sm font-bold text-slate-800 mb-3">Phân loại theo nguyên nhân — bấm để lọc</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {(Object.keys(DIAGNOSIS_META) as Diagnosis[]).map((key) => {
+        <p className="text-sm font-bold text-slate-800 mb-3">Phân loại theo nguyên nhân, bấm để lọc</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {(Object.keys(DIAGNOSIS_META) as OverdueDiagnosis[]).map((key) => {
             const meta = DIAGNOSIS_META[key]
             const Icon = meta.icon
             const active = diagnosisFilter === key
@@ -475,7 +572,7 @@ export function OverdueBookingsPage() {
                       <span className="text-sm font-bold text-slate-700">{meta.label}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">{meta.desc}</p>
-                    <p className="text-xs text-slate-700 mt-1.5 font-semibold leading-relaxed">→ {meta.advice}</p>
+                    <p className="text-xs text-slate-700 mt-1.5 font-semibold leading-relaxed">Cách xử lý: {meta.advice}</p>
                   </div>
                 </div>
               </button>
@@ -491,18 +588,25 @@ export function OverdueBookingsPage() {
 
       {/* Bộ lọc */}
       <Card>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+          <div className="md:col-span-2 xl:col-span-2">
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Tìm kiếm</label>
             <div className="relative">
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tên/mã học viên, gia sư, môn học…"
+                placeholder="Tên/mã học viên, gia sư, môn học..."
                 className="h-10 w-full pl-9 pr-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-500"
               />
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Học viên</label>
+            <select value={studentFilter} onChange={(e) => handleStudentFilter(e.target.value)} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-indigo-500">
+              <option value="all">Tất cả học viên</option>
+              {studentOptions.map((student) => <option key={student.id} value={student.id}>[{student.code}] {student.name}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Gia sư</label>
@@ -511,7 +615,7 @@ export function OverdueBookingsPage() {
               {teacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 xl:col-span-2">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Từ ngày</label>
               <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm outline-none focus:border-indigo-500" />
@@ -539,9 +643,9 @@ export function OverdueBookingsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm font-bold text-indigo-900">
               Đã chọn {selectedIds.length} ca
-              {selectedItems.some((d) => d.diagnosis === 'pending_lesson') && (
+              {selectedItems.length > selectedReleasable.length + selectedLinkable.length && (
                 <span className="ml-2 font-semibold text-amber-700">
-                  ({selectedItems.filter((d) => d.diagnosis === 'pending_lesson').length} ca đang chờ duyệt sẽ được bỏ qua khi hoàn kim cương)
+                  ({selectedItems.length - selectedReleasable.length - selectedLinkable.length} ca cần kiểm tra riêng, không xử lý hàng loạt)
                 </span>
               )}
             </div>
@@ -566,7 +670,7 @@ export function OverdueBookingsPage() {
           </div>
           {progress && (
             <div className="mt-3">
-              <p className="text-xs font-bold text-indigo-900">Đang xử lý {progress.done}/{progress.total} — vui lòng không đóng trang…</p>
+              <p className="text-xs font-bold text-indigo-900">Đang xử lý {progress.done}/{progress.total}, vui lòng không đóng trang...</p>
               <div className="mt-1.5 h-2 w-full max-w-md overflow-hidden rounded-full bg-indigo-200">
                 <div className="h-full bg-indigo-500 transition-all" style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }} />
               </div>
@@ -621,7 +725,7 @@ export function OverdueBookingsPage() {
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <p className="font-semibold text-slate-800">{d.booking.requestedDate}</p>
-                        <p className="text-xs text-slate-500">{d.booking.requestedStart}–{d.booking.requestedEnd} · {d.booking.requestedMinutes}p</p>
+                        <p className="text-xs text-slate-500">{d.booking.requestedStart}-{d.booking.requestedEnd} · {d.booking.requestedMinutes}p</p>
                         <p className="text-[11px] font-bold text-rose-500 mt-0.5">Quá {d.daysOverdue} ngày</p>
                       </td>
                       <td className="px-3 py-3">
@@ -635,20 +739,25 @@ export function OverdueBookingsPage() {
                       </td>
                       <td className="px-3 py-3">
                         <Link to={`/admin/teachers/${d.booking.teacherId}`} className="font-medium text-slate-700 hover:text-indigo-600 hover:underline">
-                          {teacherNicks[d.booking.teacherId] || d.booking.teacherName || '—'}
+                          {teacherNicks[d.booking.teacherId] || d.booking.teacherName || 'Chưa rõ'}
                         </Link>
                         <p className={`text-[11px] mt-0.5 font-semibold ${d.teacherWorkedThatDay ? 'text-emerald-600' : 'text-slate-400'}`}>
                           {d.teacherWorkedThatDay ? 'Có dạy HV khác hôm đó' : 'Không dạy ai hôm đó'}
                         </p>
                       </td>
-                      <td className="px-3 py-3 text-slate-600">{d.booking.subjectName || '—'}</td>
+                      <td className="px-3 py-3 text-slate-600">{d.booking.subjectName || 'Chưa rõ'}</td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-bold ${meta.badge}`}>
                           <meta.icon className="w-3.5 h-3.5" />{meta.short}
                         </span>
                         {d.matchedLesson && (
                           <p className="text-[11px] text-slate-500 mt-1">
-                            Buổi dạy: {d.matchedLesson.minutes}p · {d.matchedLesson.attendanceStatus === 'present' ? 'Có mặt' : d.matchedLesson.attendanceStatus === 'with_permission' ? 'Vắng có phép' : d.matchedLesson.attendanceStatus === 'without_permission' ? 'Vắng KP' : '—'}
+                            Buổi dạy: {d.matchedLesson.minutes}p · {d.matchedLesson.attendanceStatus === 'present' ? 'Có mặt' : d.matchedLesson.attendanceStatus === 'with_permission' ? 'Vắng có phép' : d.matchedLesson.attendanceStatus === 'without_permission' ? 'Vắng KP' : 'Chưa rõ'}
+                          </p>
+                        )}
+                        {d.diagnosis === 'other_teacher_lesson' && d.relatedLessons.length > 0 && (
+                          <p className="text-[11px] text-violet-700 mt-1 font-semibold">
+                            Buổi cùng ngày: {Array.from(new Set(d.relatedLessons.map((lesson) => lesson.teacherName || lesson.teacherCode || 'Giáo viên khác'))).join(', ')}
                           </p>
                         )}
                       </td>
@@ -658,7 +767,7 @@ export function OverdueBookingsPage() {
                             <Link to="/admin/approvals" className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100">
                               <ExternalLink className="w-3 h-3" />Đi duyệt
                             </Link>
-                          ) : d.diagnosis === 'approved_lesson' ? (
+                          ) : d.canLink ? (
                             <button
                               type="button"
                               disabled={processing}
@@ -668,7 +777,7 @@ export function OverdueBookingsPage() {
                               <Link2 className="w-3 h-3" />Gắn buổi dạy
                             </button>
                           ) : null}
-                          {d.diagnosis !== 'pending_lesson' && (
+                          {d.diagnosis !== 'pending_lesson' && d.diagnosis !== 'conflicting_link' && (
                             <button
                               type="button"
                               disabled={processing}
@@ -705,7 +814,7 @@ export function OverdueBookingsPage() {
         title={`Hoàn kim cương giữ chỗ cho ${confirmRelease?.length ?? 0} ca học?`}
         description={
           confirmRelease && confirmRelease.length === 1
-            ? `Ca ngày ${confirmRelease[0].booking.requestedDate} của học viên ${confirmRelease[0].booking.studentName} — chẩn đoán: ${DIAGNOSIS_META[confirmRelease[0].diagnosis].short}.`
+            ? `Ca ngày ${confirmRelease[0].booking.requestedDate} của học viên ${confirmRelease[0].booking.studentName}. Chẩn đoán: ${DIAGNOSIS_META[confirmRelease[0].diagnosis].short}.`
             : `${confirmRelease?.length ?? 0} ca sẽ được huỷ giữ chỗ và hoàn ${(confirmRelease ?? []).reduce((s, d) => s + getBookingPoints(d.booking), 0).toLocaleString('vi-VN')} kim cương về quỹ khả dụng của các học viên tương ứng.`
         }
         consequence="Chỉ nhả phần giữ chỗ, không cộng khống buổi. Ca học sẽ được giải phóng khỏi lịch gia sư và ghi vào nhật ký admin."
