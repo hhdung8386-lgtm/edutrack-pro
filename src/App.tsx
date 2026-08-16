@@ -59,6 +59,7 @@ const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m
 const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
 const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default: m.LienHePage })))
 const PublicTeacherProfilePage = lazy(() => import('@/pages/PublicTeacherProfilePage').then(m => ({ default: m.PublicTeacherProfilePage })))
+const PublicTeachersPage = lazy(() => import('@/pages/PublicTeachersPage').then(m => ({ default: m.PublicTeachersPage })))
 const PublicEvaluationPage = lazy(() => import('@/pages/PublicEvaluationPage'))
 
 const RootRedirect = () => {
@@ -111,6 +112,7 @@ function App() {
           <Route path="/lien-he" element={<LienHePage />} />
           <Route path="/bai-viet" element={<BaiVietPage />} />
           <Route path="/bai-viet/:slug" element={<BaiVietChiTietPage />} />
+          <Route path="/giao-vien" element={<PublicTeachersPage />} />
           <Route path="/giao-vien/:id" element={<PublicTeacherProfilePage />} />
           <Route path="/giao-vien/*" element={<Navigate to="/login" replace />} />
           <Route path="/tracking" element={<TrackingPage />} />

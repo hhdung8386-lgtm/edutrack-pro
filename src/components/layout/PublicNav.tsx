@@ -6,9 +6,14 @@ import { Logo } from '@/components/shared/Logo'
 const NAV_ITEMS = [
   { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
   { to: '/chuong-trinh-hoc', label: 'Chương trình học', match: ['/chuong-trinh-hoc'] },
+  { to: '/giao-vien', label: 'Gia sư', match: ['/giao-vien'] },
   { to: '/bai-viet', label: 'Bài viết', match: ['/bai-viet'] },
   { to: '/lien-he', label: 'Liên hệ', match: ['/lien-he'] },
 ]
+
+function isNavItemActive(pathname: string, match: string[]) {
+  return match.some((path) => pathname === path || (path !== '/' && pathname.startsWith(`${path}/`)))
+}
 
 export function PublicNav() {
   const location = useLocation()
@@ -33,7 +38,7 @@ export function PublicNav() {
 
         <div className="hidden items-center gap-8 text-sm font-semibold text-slate-600 lg:flex">
           {NAV_ITEMS.map((item) => {
-            const active = item.match.some((path) => location.pathname === path)
+            const active = isNavItemActive(location.pathname, item.match)
             return (
               <Link
                 key={item.to}
@@ -89,7 +94,7 @@ export function PublicNav() {
       >
         <div className="mx-auto max-w-7xl space-y-1 px-5 py-4 sm:px-8">
           {NAV_ITEMS.map((item) => {
-            const active = item.match.some((path) => location.pathname === path)
+            const active = isNavItemActive(location.pathname, item.match)
             return (
               <Link
                 key={item.to}
