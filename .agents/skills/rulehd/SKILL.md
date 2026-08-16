@@ -23,6 +23,19 @@ description: Quy ước bắt buộc bảo vệ 123English khi thay đổi giao 
 - Không thay đổi schema, xóa trường, ghi đè mảng, xóa dữ liệu hoặc chạy cập nhật hàng loạt nếu chưa đánh giá tương thích dữ liệu cũ và có phương án an toàn.
 - Luôn giữ tương thích dữ liệu cũ: dùng giá trị mặc định, kiểm tra null/undefined và hiển thị trạng thái trống phù hợp khi dữ liệu chưa có.
 
+## 2A. Kiểm toán ảnh hưởng toàn hệ thống và chống suy đoán phạm vi
+
+- Không được tự kết luận một trang, vai trò hoặc chức năng là "không liên quan" chỉ dựa vào tên file, vị trí menu hoặc cảm giác về phạm vi. Chỉ được loại khỏi phạm vi hồi quy sau khi đã tìm kiếm và xác nhận nó không đọc, ghi, tổng hợp, hiển thị hoặc phản ứng với cùng dữ liệu, trạng thái hay invariant đang thay đổi.
+- Trước khi sửa, bắt buộc lập ma trận ảnh hưởng tối thiểu gồm: thực thể/trường dữ liệu, nguồn tạo, nơi cập nhật/xóa, trạng thái trước và sau, tất cả nơi đọc/hiển thị/tổng hợp, quyền thực hiện, tác vụ nền, và kết quả mong đợi. Ma trận phải bao phủ admin, kế toán, gia sư, phụ huynh/học viên, trang công khai và tiến trình hệ thống nếu các nhóm đó có thể chạm tới dữ liệu dùng chung.
+- Phải tìm kiếm toàn repository theo collection, field, type, helper, status, route và tên hành động liên quan; không chỉ đọc file đang sửa. Kiểm tra cả frontend, functions/backend, rules/index/config, báo cáo, xuất file, thông báo, lịch, lương, đối soát và các mã tương thích dữ liệu cũ.
+- Với dữ liệu số như buổi, phút, kim cương, tiền hoặc lương, phải viết rõ phương trình invariant và đối chiếu trước/sau ở mọi vai trò. Ví dụ: tổng còn lại, phần đang giữ, phần khả dụng, phần đã dùng và trạng thái booking/lesson phải khớp nhau; không được chỉ làm cho một con số trên một màn hình "trông đúng".
+- Với workflow trạng thái, phải rà toàn bộ đường chuyển trạng thái hợp lệ và bất hợp lệ: tạo, chờ, xác nhận, từ chối, hoàn tất, hủy/nhả, duyệt, hủy duyệt, xử lý lại và dữ liệu lịch sử. Mỗi chuyển trạng thái phải được kiểm tra về dữ liệu gốc, số tổng hợp, quyền, nhật ký và khả năng chạy lặp mà không cộng/trừ hai lần.
+- Phải kiểm tra tác động gián tiếp và tình huống xấu: hai người thao tác đồng thời, dữ liệu thay đổi giữa lúc mở và bấm, tải lại, listener/cache cũ, lỗi mạng giữa chừng, bản ghi thiếu, dữ liệu legacy, trùng lặp, sai liên kết, khác múi giờ, ngày quá khứ/tương lai và ranh giới ngày.
+- Không được dùng một lần thao tác thành công hoặc một màn hình hiển thị đúng làm bằng chứng toàn hệ thống đúng. Cần đối chiếu ít nhất nguồn dữ liệu, màn hình phát sinh, màn hình quản trị, màn hình của vai trò nhận kết quả và các số tổng hợp liên quan.
+- Khi thiếu tài khoản/quyền hoặc môi trường để thử một vai trò, phải static-audit đường code của vai trò đó và ghi rõ "chưa kiểm thử thực tế" cùng rủi ro còn lại. Không được âm thầm coi là đã kiểm tra hoặc tuyên bố không ảnh hưởng.
+- Không sửa lan sang phần không liên quan khi chưa cần thiết, nhưng việc **kiểm tra** phải rộng hơn phạm vi **chỉnh sửa**. Nếu audit phát hiện lỗi liên quan mới, tách rõ: lỗi chặn thay đổi hiện tại, lỗi nên sửa cùng để giữ invariant, và lỗi độc lập cần báo người dùng trước khi mở rộng phạm vi.
+- Trước khi kết thúc, báo cáo phải có bảng hoặc danh sách kiểm chứng gồm: vai trò/luồng đã kiểm tra, bằng chứng, kết quả, phần chưa kiểm tra được và lý do. Cụm từ "đã kiểm tra toàn bộ" chỉ được dùng khi danh sách này thực sự đầy đủ.
+
 ## 3. Firebase và quyền dữ liệu
 
 - Không tự ý chỉnh hoặc triển khai Firebase Security Rules, Storage Rules, Firestore Indexes hoặc cấu hình Firebase.
@@ -47,6 +60,7 @@ description: Quy ước bắt buộc bảo vệ 123English khi thay đổi giao 
 - Chạy kiểm tra kiểu dữ liệu và build trước khi giao việc triển khai. Không tiếp tục deploy nếu bất kỳ kiểm tra nào lỗi.
 - Thử các luồng bị tác động trên desktop và mobile: mở trang, điều hướng, lưu/hủy, tải lại, dữ liệu trống, lỗi quyền và thao tác chọn hàng loạt nếu có.
 - Khi phần thay đổi có thể ảnh hưởng chức năng cũ, thực hiện kiểm tra hồi quy tương ứng, gồm các luồng liên quan đến đặt lịch/kim cương, ca quá hạn, nhận xét, duyệt buổi, tính lại, lương và báo cáo.
+- Chạy lại ma trận ảnh hưởng ở mục 2A sau khi sửa để phát hiện tác động mới do chính diff tạo ra. So sánh invariant trước/sau, không chỉ kiểm tra happy path của yêu cầu ban đầu.
 - Không tuyên bố "không có lỗi" tuyệt đối. Chỉ báo những gì đã kiểm tra, kết quả, giới hạn chưa thể kiểm tra và rủi ro còn lại.
 
 ## 6. Quy tắc triển khai
@@ -62,6 +76,7 @@ description: Quy ước bắt buộc bảo vệ 123English khi thay đổi giao 
 
 - Trước khi thực hiện: nêu phạm vi, giả định và phần nào sẽ không đụng tới.
 - Sau khi thực hiện: nêu file/chức năng đã thay đổi, liên kết dữ liệu đã kiểm tra, desktop/mobile đã kiểm tra, và việc Firebase/deploy nếu có.
+- Báo cáo riêng phạm vi kiểm toán theo vai trò và hệ thống: admin, kế toán, gia sư, phụ huynh/học viên, public, backend/tác vụ nền; ghi `đã kiểm thử`, `chỉ static-audit` hoặc `không áp dụng` cho từng nhóm, kèm lý do.
 - Nếu phát hiện yêu cầu có thể làm mất dữ liệu hoặc phá luồng cũ, dừng để xin xác nhận có hiểu biết trước khi thực hiện.
 
 ## 8. Theo dõi chi phí data sau tối ưu
