@@ -562,12 +562,19 @@ export function BookingSchedulesPage() {
     const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
     const q = query(
       collection(db, 'bookingRequests'),
-      where('studentId', '==', selectedBooking.studentId),
-      where('status', 'in', ['confirmed', 'pending']),
-      where('requestedDate', '>=', todayISO)
+      where('studentId', '==', selectedBooking.studentId)
     )
     getDocs(q).then((snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      // Keep this query single-field so opening the detail modal does not depend on
+      // a production-only composite Firestore index. The transaction handlers still
+      // re-read every booking before releasing it, so this client filter is display-
+      // only and cannot weaken the cancellation guard.
+      const docs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+        .filter(booking => (
+          isBookingCancellable(booking)
+          && Boolean(booking.requestedDate && booking.requestedDate >= todayISO)
+        ))
       docs.sort((a, b) => {
         const dateA = a.requestedDate || ''
         const dateB = b.requestedDate || ''
