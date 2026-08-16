@@ -35,7 +35,7 @@ import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
-import { isCompletedLearningLesson } from '@/lib/lessonAttendance'
+import { getCompletedLearningSessionUnits, isCompletedLearningLesson } from '@/lib/lessonAttendance'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -1509,6 +1509,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     () => lessons.filter(isCompletedLearningLesson),
     [lessons],
   )
+  const completedLearningSessions = useMemo(
+    () => completedLearningLessons.reduce((total, lesson) => total + getCompletedLearningSessionUnits(lesson), 0),
+    [completedLearningLessons],
+  )
   const approvedLessonPointsBySubject = useMemo(() => {
     return lessons.reduce<Record<string, number>>((totals, lesson) => {
       const subjectId = lesson.subjectId || student.subjectId || '__legacy__'
@@ -1961,7 +1965,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     for (const l of completedLearningLessons) {
       const key = l.date?.slice(0, 7)
       if (key && buckets[key]) {
-        buckets[key].count++
+        buckets[key].count += getCompletedLearningSessionUnits(l)
         buckets[key].minutes += l.minutes || 0
       }
     }
@@ -2101,7 +2105,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           <div className="space-y-8">
             <StudentProfileOverview
               student={student}
-              completedLessons={completedLearningLessons.length}
+              completedLessons={completedLearningSessions}
               avatarId={profileAvatarId}
               profilePhotoURL={profilePhotoURL}
               leaderboard={leaderboard}

@@ -4,6 +4,7 @@ type LearningLesson = Pick<Lesson, 'status' | 'minutes' | 'attendanceStatus'>
   & Partial<Pick<Lesson, 'book' | 'comment' | 'absenceFollowUpOf'>>
 
 const LEGACY_ABSENCE_TEXT = /học viên vắng|vắng không phép|student (?:was )?absent/i
+const SESSION_MINUTES = 25
 
 /**
  * Một "buổi đã học" phải là báo cáo đã duyệt, có thời lượng thực học và học
@@ -17,4 +18,10 @@ export function isCompletedLearningLesson(lesson: LearningLesson): boolean {
   if (lesson.absenceFollowUpOf) return false
 
   return !LEGACY_ABSENCE_TEXT.test(`${lesson.book || ''}\n${lesson.comment || ''}`)
+}
+
+/** Quy đổi thời lượng thực học thành số buổi chuẩn 25 phút. */
+export function getCompletedLearningSessionUnits(lesson: LearningLesson): number {
+  if (!isCompletedLearningLesson(lesson)) return 0
+  return Math.floor(Number(lesson.minutes) / SESSION_MINUTES)
 }
