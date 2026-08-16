@@ -18,6 +18,7 @@ import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
+import { teacherDisplayName } from '@/lib/teacherDisplay'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -137,7 +138,8 @@ export function StudentDetailPage() {
     teacherUid: Record<string, string>
     teacherCountry: Record<string, string>
     teacherPoints: Record<string, number>
-  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {}, teacherCountry: {}, teacherPoints: {} })
+    teacherLabel: Record<string, string>
+  }>({ subjectPrice: {}, teacherLevel: {}, teacherUid: {}, teacherCountry: {}, teacherPoints: {}, teacherLabel: {} })
   const [recalcLesson, setRecalcLesson] = useState<{
     lesson: Lesson
     newPrice: number
@@ -204,7 +206,14 @@ export function StudentDetailPage() {
       }))),
       Promise.all(teacherIds.map(tid => getDoc(doc(db, 'teachers', tid)).then(t => {
         const data = t.data()
-        return [tid, data?.level ?? 1, data?.uid ?? '', data?.country ?? 'VN', data?.pointsPer25Minutes ?? 25] as const
+        return [
+          tid,
+          data?.level ?? 1,
+          data?.uid ?? '',
+          data?.country ?? 'VN',
+          data?.pointsPer25Minutes ?? 25,
+          teacherDisplayName(data?.code, data?.name),
+        ] as const
       }))),
     ]).then(([subjs, tchrs]) => {
       if (cancelled) return
@@ -214,13 +223,15 @@ export function StudentDetailPage() {
       const teacherUid: Record<string, string> = {}
       const teacherCountry: Record<string, string> = {}
       const teacherPoints: Record<string, number> = {}
-      tchrs.forEach(([k, lv, uid, country, points]) => {
+      const teacherLabel: Record<string, string> = {}
+      tchrs.forEach(([k, lv, uid, country, points, displayName]) => {
         teacherLevel[k] = lv as number
         teacherUid[k] = uid as string
         teacherCountry[k] = country as string
         teacherPoints[k] = Number(points) || 25
+        teacherLabel[k] = displayName
       })
-      setLiveRates({ subjectPrice, teacherLevel, teacherUid, teacherCountry, teacherPoints })
+      setLiveRates({ subjectPrice, teacherLevel, teacherUid, teacherCountry, teacherPoints, teacherLabel })
     })
     return () => { cancelled = true }
   }, [lessons.length, student?.subjectId])
@@ -1307,16 +1318,23 @@ export function StudentDetailPage() {
     }
   }
 
+  const historyTeacherLabel = (lesson: Lesson) => (
+    liveRates.teacherLabel[lesson.teacherId]
+    || teacherDisplayName(lesson.teacherCode, lesson.teacherName)
+    || 'Chưa có tên'
+  )
+
   const filteredHistoryLessons = lessons.filter((lesson) => {
     const actionType = lesson.status === 'approved' ? 'approved' : lesson.status === 'rejected' ? 'rejected' : 'pending'
     const salary = lesson.salary || 0
+    const searchableTeacherName = `${historyTeacherLabel(lesson)} ${lesson.teacherName || ''}`.toLowerCase()
     const salaryMatches = historyFilters.salary === 'all'
       || (historyFilters.salary === 'positive' && salary > 0)
       || (historyFilters.salary === 'zero' && salary <= 0)
 
     return (selectedSubjectFilter === 'all' || lesson.subjectId === selectedSubjectFilter)
       && (!historyFilters.date || lesson.date.includes(historyFilters.date))
-      && (!historyFilters.teacher || lesson.teacherName.toLowerCase().includes(historyFilters.teacher.toLowerCase()))
+      && (!historyFilters.teacher || searchableTeacherName.includes(historyFilters.teacher.toLowerCase()))
       && (historyFilters.subject === 'all' || lesson.subjectId === historyFilters.subject)
       && (!historyFilters.book || (lesson.book || '').toLowerCase().includes(historyFilters.book.toLowerCase()))
       && (historyFilters.minutes === 'all' || String(lesson.minutes) === historyFilters.minutes)
@@ -1940,14 +1958,14 @@ export function StudentDetailPage() {
                       <td className="px-4 py-3 text-slate-600">
                         {lesson.teacherId ? (
                           <Link
-                            to={`/admin/booking-schedules?teacherId=${lesson.teacherId}`}
+                            to={`/admin/teachers/${lesson.teacherId}`}
                             className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
-                            title="Mở lịch xếp lớp của gia sư này"
+                            title="Mở hồ sơ gia sư"
                           >
-                            {lesson.teacherName}
+                            {historyTeacherLabel(lesson)}
                           </Link>
                         ) : (
-                          lesson.teacherName
+                          historyTeacherLabel(lesson)
                         )}
                       </td>
                       <td className="px-3 py-3 text-slate-600">

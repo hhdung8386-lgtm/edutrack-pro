@@ -2201,7 +2201,7 @@ export function BookingSchedulesPage() {
                               className={`w-full py-2.5 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition shadow-sm ${
                                 isSelected
                                   ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/30'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-md shadow-emerald-200/70'
                               }`}
                             >
                               {isSelected ? 'ĐÃ CHỌN' : 'OPEN'}
