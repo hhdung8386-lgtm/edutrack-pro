@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   findConsecutiveAttendanceBookings,
+  isBookingAttended,
+  isBookingCancellable,
   selectLessonBookingMatches,
   validateExplicitLessonBookings,
   type LessonBookingReference,
@@ -77,4 +79,19 @@ test('ignores released bookings when using the legacy fallback matcher', () => {
   const active = booking('active', '20:00', { requestedMinutes: 50 })
   const released = booking('released', '20:30', { requestedMinutes: 50, status: 'released' })
   assert.deepEqual(selectLessonBookingMatches([released, active], lesson(50)).map((item) => item.id), ['active'])
+})
+
+test('distinguishes scheduled bookings from attended and cancellable bookings', () => {
+  const scheduled = booking('scheduled', '20:00')
+  const pending = booking('pending', '20:30', { status: 'pending' })
+  const attended = booking('attended', '21:00', { lessonId: 'lesson-1' })
+  const completed = booking('completed', '21:30', { status: 'completed' })
+
+  assert.equal(isBookingAttended(scheduled), false)
+  assert.equal(isBookingCancellable(scheduled), true)
+  assert.equal(isBookingCancellable(pending), true)
+  assert.equal(isBookingAttended(attended), true)
+  assert.equal(isBookingCancellable(attended), false)
+  assert.equal(isBookingAttended(completed), true)
+  assert.equal(isBookingCancellable(completed), false)
 })

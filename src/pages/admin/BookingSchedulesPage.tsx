@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, doc, getDoc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
+import { collection, doc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
 import {
   AlertTriangle,
   BookOpen,
   BriefcaseBusiness,
   CalendarClock,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -41,6 +42,7 @@ import {
   type TeacherSubjectGroup,
 } from '@/lib/teacherSubjects'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
+import { isBookingAttended, isBookingCancellable } from '@/lib/bookingLogic'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -493,6 +495,14 @@ export function BookingSchedulesPage() {
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
       setBookingRequests(list)
+      // Đồng bộ modal/chọn hàng loạt khi gia sư vừa điểm danh ở một màn hình khác.
+      setSelectedBooking((current) => current
+        ? (list.find((booking) => booking.id === current.id) || current)
+        : null)
+      setSelectedBookingIds((current) => current.filter((id) => {
+        const booking = list.find((item) => item.id === id)
+        return isBookingCancellable(booking)
+      }))
     }, (error) => {
       console.error('Error loading booking requests:', error)
     })
@@ -732,8 +742,8 @@ export function BookingSchedulesPage() {
     return Number.MAX_SAFE_INTEGER
   }
 
-  // Find the oldest active booking overlapping this cell. Historical duplicate
-  // documents must never make a newer booking visually replace the original one.
+  // Giữ cả booking đã hoàn tất trên timetable để giáo vụ thấy lịch sử giống
+  // màn hình gia sư. Ưu tiên bản đã điểm danh nếu dữ liệu cũ có booking trùng ô.
   const findBookingForCell = (dateISO: string, time: string) => {
     const cellStart = timeToMinutes(time)
     const cellEnd = cellStart + 30
@@ -744,10 +754,12 @@ export function BookingSchedulesPage() {
     }
     return bookingRequests
       .filter((req) => {
-        if (req.status !== 'confirmed' && req.status !== 'pending') return false
+        if (req.status !== 'confirmed' && req.status !== 'pending' && req.status !== 'completed') return false
         return bookingIntervalsOverlap(req, cellInterval)
       })
       .sort((left, right) => {
+        const attendedDiff = Number(isBookingAttended(right)) - Number(isBookingAttended(left))
+        if (attendedDiff) return attendedDiff
         const createdAtDiff = getBookingCreatedAt(left) - getBookingCreatedAt(right)
         return createdAtDiff || left.id.localeCompare(right.id)
       })[0]
@@ -770,6 +782,10 @@ export function BookingSchedulesPage() {
     const booking = findBookingForCell(dateISO, time)
     if (booking) {
       if (multiSelectMode) {
+        if (!isBookingCancellable(booking)) {
+          toast.info('Ca đã được giáo viên điểm danh nên không thể chọn để hủy.')
+          return
+        }
         setSelectedBookingIds((current) => {
           const exists = current.includes(booking.id)
           if (exists) {
@@ -1289,7 +1305,8 @@ export function BookingSchedulesPage() {
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
         const requestNow = requestSnap.data() as BookingRequest
-        if (requestNow.status !== 'confirmed') throw new Error('REQUEST_NOT_CONFIRMED')
+        if (isBookingAttended(requestNow)) throw new Error('BOOKING_ALREADY_ATTENDED')
+        if (!isBookingCancellable(requestNow)) throw new Error('REQUEST_NOT_CONFIRMED')
 
         const student = { id: studentSnap.id, ...studentSnap.data() } as Student
         const fund = getStudentMinuteFund(student)
@@ -1331,7 +1348,9 @@ export function BookingSchedulesPage() {
       setSelectedBooking(null)
     } catch (error: unknown) {
       console.error('Release booking failed:', error)
-      toast.error('Nhả lịch thất bại')
+      toast.error(error instanceof Error && error.message === 'BOOKING_ALREADY_ATTENDED'
+        ? 'Ca đã được giáo viên điểm danh nên không thể hủy lịch.'
+        : 'Nhả lịch thất bại')
     } finally {
       setReleasing(false)
     }
@@ -2073,6 +2092,17 @@ export function BookingSchedulesPage() {
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] font-bold text-slate-600" aria-label="Chú thích trạng thái lịch">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              Đã xếp · chưa điểm danh
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Đã điểm danh · khóa hủy
+            </span>
+          </div>
+
           {/* Grid Schedule Table */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-x-auto">
             <table className="w-full min-w-[750px] border-collapse text-sm">
@@ -2131,22 +2161,27 @@ export function BookingSchedulesPage() {
                         >
                           {booking ? (
                             (() => {
-                              const isBookingSelected = selectedBookingIds.includes(booking.id)
+                              const attended = isBookingAttended(booking)
+                              const isBookingSelected = !attended && selectedBookingIds.includes(booking.id)
                               return (
                                 <button
                                   type="button"
                                   onClick={() => handleCellClick(day, iso, start)}
+                                  title={attended ? 'Đã điểm danh — không thể hủy lịch' : 'Đã xếp lớp — bấm để xem chi tiết'}
                                   className={`w-full py-1.5 px-0.5 rounded-xl border transition shadow-sm text-center block ${
                                     isBookingSelected
                                       ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-500 text-rose-900'
-                                      : 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border border-amber-200/50'
+                                      : attended
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200/60'
+                                        : 'bg-amber-100/90 hover:bg-amber-200/90 text-amber-900 border-amber-200/50'
                                   }`}
                                 >
                                   <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-0.5">
+                                    {attended && <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-emerald-500" />}
                                     <span>{booking.studentCode}</span>
                                     {isBookingSelected && <span className="text-[8px] bg-rose-500 text-white px-1.5 py-0.5 rounded font-black leading-none flex-shrink-0">HỦY</span>}
                                   </div>
-                                  <div className="text-[9px] text-amber-800/80 font-bold truncate leading-tight mt-0.5 max-w-full px-1 block" title={booking.studentName}>
+                                  <div className={`text-[9px] font-bold truncate leading-tight mt-0.5 max-w-full px-1 block ${attended ? 'text-emerald-700/80' : 'text-amber-800/80'}`} title={booking.studentName}>
                                     {booking.studentName}
                                   </div>
                                 </button>
@@ -2514,10 +2549,21 @@ export function BookingSchedulesPage() {
           title="Chi tiết ca học đã xếp"
           footer={
             <div className="flex gap-3 justify-between w-full">
-              <Button variant="danger" loading={releasing} onClick={handleReleaseBooking}>
-                <Trash2 className="w-4 h-4" />
-                Hủy xếp lớp (Nhả lịch)
-              </Button>
+              {isBookingCancellable(selectedBooking) ? (
+                <Button variant="danger" loading={releasing} onClick={handleReleaseBooking}>
+                  <Trash2 className="w-4 h-4" />
+                  Hủy xếp lớp (Nhả lịch)
+                </Button>
+              ) : isBookingAttended(selectedBooking) ? (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Đã điểm danh — không thể hủy lịch
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                  Ca không còn hiệu lực — không thể hủy
+                </div>
+              )}
               <Button variant="ghost" onClick={() => {
                 setShowDetailModal(false)
                 setSelectedBooking(null)
@@ -2528,8 +2574,8 @@ export function BookingSchedulesPage() {
           }
         >
           <div className="space-y-4">
-            <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 space-y-2">
-              <p className="text-xs font-semibold uppercase text-amber-700">Thông tin ca dạy</p>
+            <div className={`rounded-xl border p-4 space-y-2 ${isBookingAttended(selectedBooking) ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/50'}`}>
+              <p className={`text-xs font-semibold uppercase ${isBookingAttended(selectedBooking) ? 'text-emerald-700' : 'text-amber-700'}`}>Thông tin ca dạy</p>
               <p className="text-sm font-bold text-slate-800">
                 Thứ {selectedBooking.requestedDay === 'sun' ? 'Nhật' : selectedBooking.requestedDay === 'mon' ? '2' : selectedBooking.requestedDay === 'tue' ? '3' : selectedBooking.requestedDay === 'wed' ? '4' : selectedBooking.requestedDay === 'thu' ? '5' : selectedBooking.requestedDay === 'fri' ? '6' : '7'}
                 {` (${selectedBooking.requestedDate})`} · Từ {selectedBooking.requestedStart} đến {selectedBooking.requestedEnd} ({selectedBooking.requestedMinutes} phút)
@@ -2551,8 +2597,8 @@ export function BookingSchedulesPage() {
                 </div>
                 <div>
                   <span className="text-slate-500 font-semibold">Trạng thái: </span>
-                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
-                    Đã xếp lớp
+                  <span className={`px-2 py-0.5 rounded-full font-bold ${isBookingAttended(selectedBooking) ? 'bg-emerald-100 text-emerald-800' : isBookingCancellable(selectedBooking) ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                    {isBookingAttended(selectedBooking) ? 'Đã điểm danh' : isBookingCancellable(selectedBooking) ? 'Đã xếp lớp' : 'Không còn hiệu lực'}
                   </span>
                 </div>
               </div>

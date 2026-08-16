@@ -12,6 +12,20 @@ export type LessonBookingReference = {
   subjectId: string
 }
 
+/** Booking đã có báo cáo điểm danh hoặc đã được duyệt hoàn tất. */
+export function isBookingAttended(booking: BookingRequest | null | undefined): boolean {
+  return Boolean(booking && (booking.lessonId || booking.status === 'completed'))
+}
+
+/** Chỉ lịch đang giữ chỗ và chưa có báo cáo điểm danh mới được phép nhả/xóa. */
+export function isBookingCancellable(booking: BookingRequest | null | undefined): boolean {
+  return Boolean(
+    booking
+    && (booking.status === 'pending' || booking.status === 'confirmed')
+    && !booking.lessonId,
+  )
+}
+
 const ACTIVE_BOOKING_STATUSES = new Set<BookingRequest['status']>(['pending', 'confirmed'])
 
 function timeToMinutes(time: string) {
