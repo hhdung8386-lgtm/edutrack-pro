@@ -101,6 +101,13 @@ const DIAGNOSIS_META: Record<OverdueDiagnosis, {
   },
 }
 
+function lessonStatusLabel(status: Lesson['status']): string {
+  if (status === 'approved') return 'Đã duyệt'
+  if (status === 'pending') return 'Chờ duyệt'
+  if (status === 'rejected') return 'Từ chối'
+  return 'Đã hủy'
+}
+
 export function OverdueBookingsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -112,6 +119,8 @@ export function OverdueBookingsPage() {
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [lessonsLoading, setLessonsLoading] = useState(true)
+  const [loadedLessonScopeKey, setLoadedLessonScopeKey] = useState<string | null>(null)
+  const [lessonsError, setLessonsError] = useState(false)
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processing, setProcessing] = useState(false)
@@ -176,10 +185,20 @@ export function OverdueBookingsPage() {
     [bookings, todayISO]
   )
 
+  const diagnosisScope = useMemo(
+    () => studentFilter === 'all'
+      ? overdue
+      : overdue.filter((booking) => booking.studentId === studentFilter),
+    [overdue, studentFilter],
+  )
+
   const overdueDateRange = useMemo(() => {
-    const dates = overdue.map((booking) => booking.requestedDate).filter(Boolean).sort() as string[]
+    const dates = diagnosisScope.map((booking) => booking.requestedDate).filter(Boolean).sort() as string[]
     return dates.length > 0 ? { min: dates[0], max: dates[dates.length - 1] } : null
-  }, [overdue])
+  }, [diagnosisScope])
+  const lessonScopeKey = overdueDateRange
+    ? `${studentFilter}|${overdueDateRange.min}|${overdueDateRange.max}`
+    : `${studentFilter}|empty`
 
   // Nạp các buổi dạy trong đúng khoảng ngày của các ca quá hạn để đối chiếu
   useEffect(() => {
@@ -189,33 +208,49 @@ export function OverdueBookingsPage() {
       if (!active || loading) return
       if (!overdueDateRange) {
         setLessons([])
+        setLessonsError(false)
+        setLoadedLessonScopeKey(lessonScopeKey)
         setLessonsLoading(false)
         return
       }
 
       setLessonsLoading(true)
+      setLessonsError(false)
+      setLoadedLessonScopeKey(null)
       try {
-        const snap = await getDocs(query(
-          collection(db, 'lessons'),
-          where('date', '>=', overdueDateRange.min),
-          where('date', '<=', overdueDateRange.max),
-        ))
-        if (active) setLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson)))
+        const lessonsQuery = studentFilter === 'all'
+          ? query(
+              collection(db, 'lessons'),
+              where('date', '>=', overdueDateRange.min),
+              where('date', '<=', overdueDateRange.max),
+            )
+          : query(collection(db, 'lessons'), where('studentId', '==', studentFilter))
+        const snap = await getDocs(lessonsQuery)
+        if (active) {
+          setLessons(snap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as Lesson))
+            .filter((lesson) => lesson.date >= overdueDateRange.min && lesson.date <= overdueDateRange.max))
+          setLoadedLessonScopeKey(lessonScopeKey)
+        }
       } catch (err: unknown) {
         console.error(err)
-        if (active) toast.error('Không tải được dữ liệu buổi dạy để đối chiếu')
+        if (active) {
+          setLessonsError(true)
+          toast.error('Không tải được dữ liệu buổi dạy để đối chiếu')
+        }
       } finally {
         if (active) setLessonsLoading(false)
       }
     }
     void loadLessons()
     return () => { active = false }
-  }, [loading, overdueDateRange])
+  }, [lessonScopeKey, loading, overdueDateRange, studentFilter])
 
   // ── Chẩn đoán ───────────────────────────────────────────────────
+  const diagnosisReady = !lessonsLoading && loadedLessonScopeKey === lessonScopeKey
   const diagnosed = useMemo(
-    () => diagnoseOverdueBookings(overdue, lessons, todayISO),
-    [overdue, lessons, todayISO],
+    () => diagnosisReady ? diagnoseOverdueBookings(diagnosisScope, lessons, todayISO) : [],
+    [diagnosisReady, diagnosisScope, lessons, todayISO],
   )
 
   const counts = useMemo(() => {
@@ -240,11 +275,11 @@ export function OverdueBookingsPage() {
   }, [diagnosed, teacherNicks])
 
   const studentOptions = useMemo(() => {
-    const ids = new Set(diagnosed.map((d) => d.booking.studentId).filter(Boolean))
+    const ids = new Set(overdue.map((booking) => booking.studentId).filter(Boolean))
     return Array.from(ids)
       .map((id) => ({ id, code: studentMap[id]?.code || '', name: studentMap[id]?.name || id }))
       .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-  }, [diagnosed, studentMap])
+  }, [overdue, studentMap])
 
   const handleStudentFilter = (studentId: string) => {
     const next = new URLSearchParams(searchParams)
@@ -535,13 +570,17 @@ export function OverdueBookingsPage() {
 
       {/* KPI */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Ca quá hạn</p><p className="text-2xl font-bold text-slate-900 mt-1">{diagnosed.length}</p></Card>
-        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Kim cương đang treo</p><p className="text-2xl font-bold text-amber-600 mt-1">{diagnosed.reduce((s, d) => s + getBookingPoints(d.booking), 0).toLocaleString('vi-VN')}</p></Card>
-        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Học viên</p><p className="text-2xl font-bold text-sky-600 mt-1">{new Set(diagnosed.map((d) => d.booking.studentId)).size}</p></Card>
-        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Gia sư</p><p className="text-2xl font-bold text-violet-600 mt-1">{new Set(diagnosed.map((d) => d.booking.teacherId)).size}</p></Card>
+        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Ca quá hạn</p><p className="text-2xl font-bold text-slate-900 mt-1">{diagnosisScope.length}</p></Card>
+        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Kim cương đang treo</p><p className="text-2xl font-bold text-amber-600 mt-1">{diagnosisScope.reduce((sum, booking) => sum + getBookingPoints(booking), 0).toLocaleString('vi-VN')}</p></Card>
+        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Học viên</p><p className="text-2xl font-bold text-sky-600 mt-1">{new Set(diagnosisScope.map((booking) => booking.studentId)).size}</p></Card>
+        <Card><p className="text-xs font-semibold text-slate-500 uppercase">Gia sư</p><p className="text-2xl font-bold text-violet-600 mt-1">{new Set(diagnosisScope.map((booking) => booking.teacherId)).size}</p></Card>
       </div>
 
-      {lessonsLoading && (
+      {lessonsError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800" role="alert">
+          Không thể đối chiếu dữ liệu buổi dạy. Các thao tác đã được khóa để bảo vệ quỹ học viên. Hãy tải lại trang để thử lại.
+        </div>
+      ) : !diagnosisReady && (
         <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
           Đang đối chiếu với dữ liệu buổi dạy để chẩn đoán nguyên nhân...
         </div>
@@ -758,6 +797,11 @@ export function OverdueBookingsPage() {
                         {d.diagnosis === 'other_teacher_lesson' && d.relatedLessons.length > 0 && (
                           <p className="text-[11px] text-violet-700 mt-1 font-semibold">
                             Buổi cùng ngày: {Array.from(new Set(d.relatedLessons.map((lesson) => lesson.teacherName || lesson.teacherCode || 'Giáo viên khác'))).join(', ')}
+                          </p>
+                        )}
+                        {d.diagnosis === 'ambiguous_lesson' && d.relatedLessons.length > 0 && (
+                          <p className="text-[11px] text-orange-700 mt-1 font-semibold">
+                            Cùng gia sư: {d.relatedLessons.map((lesson) => `${lesson.minutes}p (${lessonStatusLabel(lesson.status)})`).join(', ')}
                           </p>
                         )}
                       </td>
