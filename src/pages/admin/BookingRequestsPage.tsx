@@ -36,6 +36,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { getBookingPoints } from '@/lib/points'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import {
   bookingConflictMessage,
   checkBookingCandidates,
@@ -315,8 +316,16 @@ export function BookingRequestsPage() {
         const fund = getStudentMinuteFund(student)
         const heldAmount = getBookingPoints(requestNow, teacherData)
         const holdAlreadyApplied = requestNow.heldImmediately === true
+        const subjectFund = resolveStudentSubjectFund(student, requestNow.subjectId)
 
-        if (holdAlreadyApplied ? fund.held < heldAmount : fund.available < heldAmount) throw new Error('NOT_ENOUGH_MINUTES')
+        if (
+          student.status === 'reserved'
+          || student.status === 'expired'
+          || !subjectFund
+          || subjectFund.remainingMinutes <= 0
+          || subjectFund.remainingMinutes < heldAmount
+          || (holdAlreadyApplied ? fund.held < heldAmount : fund.available < heldAmount)
+        ) throw new Error('NOT_ENOUGH_MINUTES')
 
         const nextHeld = holdAlreadyApplied ? fund.held : fund.held + heldAmount
 

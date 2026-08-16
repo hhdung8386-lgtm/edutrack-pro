@@ -9,6 +9,7 @@ import { GraduationCap, Search, ArrowLeft, Share2, User, BookOpen } from 'lucide
 import { maskPhone } from '@/lib/constants'
 import { useSearchParams } from 'react-router-dom'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { getStudentSubjectMinuteFunds } from '@/lib/studentQuotaCore'
 import { getLessonPoints } from '@/lib/points'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
 
@@ -217,7 +218,10 @@ function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { studen
   }, {})
   const approvedHistoryPoints = Object.values(historyPointsBySubject).reduce((sum, points) => sum + points, 0)
   const usedPoints = Math.max(minuteSummary.usedMinutes, approvedHistoryPoints)
-  const remainingPoints = Math.max(0, minuteSummary.totalMinutes - usedPoints)
+  const remainingPoints = getStudentSubjectMinuteFunds(student).reduce((sum, fund) => {
+    const historyPoints = historyPointsBySubject[fund.subjectId || student.subjectId || '__legacy__'] || 0
+    return sum + Math.max(0, fund.totalMinutes - Math.max(fund.usedMinutes, historyPoints))
+  }, 0)
   const packageSessions = student.subjects?.length
     ? student.subjects.reduce((summary, subject) => {
         const unitPoints = Number(subject.minutesPerSession) || 25
@@ -236,7 +240,15 @@ function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { studen
           approvedHistoryPoints / (student.minutesPerSession || 25),
         ),
       }
-  const remainingSessions = Math.max(0, packageSessions.total - packageSessions.used)
+  const remainingSessions = student.subjects?.length
+    ? student.subjects.reduce((sum, subject) => {
+        const unitPoints = Number(subject.minutesPerSession) || 25
+        const totalSessions = Number(subject.totalSessions) || 0
+        const storedUsedSessions = Number(subject.usedSessions) || 0
+        const historyUsedSessions = (historyPointsBySubject[subject.subjectId] || 0) / unitPoints
+        return sum + Math.max(0, totalSessions - Math.max(storedUsedSessions, historyUsedSessions))
+      }, 0)
+    : Math.max(0, packageSessions.total - packageSessions.used)
   const usedPctRaw = minuteSummary.totalMinutes > 0
     ? Math.round((usedPoints / minuteSummary.totalMinutes) * 100)
     : 0

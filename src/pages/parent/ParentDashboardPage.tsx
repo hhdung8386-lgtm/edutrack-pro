@@ -28,7 +28,8 @@ import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
 } from 'recharts'
-import { getHeldBookingMinutes, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { getHeldBookingMinutes, getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import { rewardMonthKey } from '@/lib/rewards'
 import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
@@ -1534,13 +1535,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   // reduce a valid stored balance, while stale under-counts are repaired from
   // the approved lesson history.
   const pUsedMin = Math.max(packageMinuteSummary.usedMinutes, approvedLessonPoints)
-  const pRemainingMin = Math.max(0, pTotalMin - pUsedMin)
-  const pHeldMin = useMemo(() => {
-    return bookings
-      .filter(b => !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
-      .reduce((sum, b) => sum + getBookingPoints(b, teacherMap[b.teacherId]), 0)
-  }, [bookings, teacherMap])
-  const pAvailableMin = Math.max(0, pRemainingMin - pHeldMin)
+  // Các môn là quỹ độc lập: khóa cũ âm không được trừ vào số dư khóa mới.
+  const bookingQuota = useMemo(() => getStudentBookingQuotaBreakdown(student, bookings), [bookings, student])
+  const pRemainingMin = bookingQuota.remainingMinutes
+  const pHeldMin = bookingQuota.actualHeld
+  const pAvailableMin = bookingQuota.subjects.reduce(
+    (sum, subject) => sum + Math.max(0, subject.remainingMinutes - subject.heldMinutes),
+    0,
+  )
   const usedPct = pTotalMin > 0 ? Math.min(100, Math.round((pUsedMin / pTotalMin) * 100)) : 0
 
   // ─── Bookings ────────────────────────────────────────────────────
@@ -1914,7 +1916,15 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
         const currentAvailable = Math.max(0, currentFund.remainingMinutes - currentHeld)
         const extraNeeded = Math.max(0, profileBookingPoints - reusablePoints)
-        if (currentAvailable < extraNeeded) throw new Error('NOT_ENOUGH_POINTS')
+        const currentSubjectFund = resolveStudentSubjectFund(currentStudent, subjectPackage.subjectId)
+        if (
+          currentStudent.status === 'reserved'
+          || currentStudent.status === 'expired'
+          || !currentSubjectFund
+          || currentSubjectFund.remainingMinutes <= 0
+          || currentSubjectFund.remainingMinutes < extraNeeded
+          || currentAvailable < extraNeeded
+        ) throw new Error('NOT_ENOUGH_POINTS')
 
         const heldAfter = currentHeld + profileBookingPoints - reusablePoints
         tx.update(studentRef, {
@@ -2158,6 +2168,8 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             lang={lang}
             usedMinutesOverride={pUsedMin}
             heldMinutesOverride={pHeldMin}
+            remainingMinutesOverride={pRemainingMin}
+            availableMinutesOverride={pAvailableMin}
           />
         )}
         {tab === 'history' && (

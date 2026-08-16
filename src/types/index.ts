@@ -262,6 +262,11 @@ export interface Lesson {
   currency?: string
   points?: number
   pointsPer25Minutes?: number
+  /** Dấu vết khi admin mở lại một buổi đã trả lương để kiểm tra. */
+  payrollPaidBeforeReopen?: boolean
+  payrollPaidAmount?: number
+  payrollPaidCurrency?: string
+  payrollPaidAt?: Timestamp
   /** Kết quả đối chiếu với lịch đã xếp tại thời điểm gia sư gửi điểm danh. */
   scheduleCheck?: LessonScheduleCheckSnapshot
   /** Số buổi điểm danh của cùng học viên + cùng gia sư trong ngày, tính cả buổi này. */

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
+import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
 interface ApproveModalProps {
   lesson: Lesson
@@ -306,13 +307,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             teacherId: lesson.teacherId,
             teacherName: lesson.teacherName,
             lessonId: lesson.id,
-            amount: salary,
             minutes: lesson.minutes,
             pricePerMinute,
             level: teacherLevel,
             month,
-            currency,
-            paid: false,
+            ...buildPayrollApprovalFields(lessonNow, salary, currency),
             createdAt: serverTimestamp(),
           })
 

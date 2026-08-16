@@ -3,7 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { collection, getDocs, query, where, runTransaction, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Student } from '@/types'
-import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import {
+  getStudentBookingQuotaBreakdown,
+  getStudentPackageMinuteSummary,
+  type StudentQuotaBreakdown,
+} from '@/lib/studentMinutes'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { Card } from '@/components/ui/Card'
@@ -40,6 +44,7 @@ type Row = {
   drift: number
   /** Vượt quỹ theo số liệu thực tế của lịch */
   overByActual: number
+  quotaBySubject: StudentQuotaBreakdown[]
 }
 
 export function QuotaReconcilePage() {
@@ -99,17 +104,18 @@ export function QuotaReconcilePage() {
     const out: Row[] = []
     students.forEach((s) => {
       const list = byStudent.get(s.id) || []
-      const actualHeld = list.reduce((sum, b) => sum + getBookingPoints(b), 0)
+      const quota = getStudentBookingQuotaBreakdown(s, list)
+      const actualHeld = quota.actualHeld
       const storedHeld = s.reservedMinutes ?? s.heldMinutes ?? 0
       // Quỹ còn lại tính từ các gói môn (chuẩn nhất), không phụ thuộc field có thể thiếu
-      const remainingMinutes = getStudentPackageMinuteSummary(s).remainingMinutes
+      const remainingMinutes = quota.remainingMinutes
       const pastHeld = list.filter((b) => (b.requestedDate || '') < todayISO).reduce((sum, b) => sum + getBookingPoints(b), 0)
       const futureList = list
         .filter((b) => (b.requestedDate || '') >= todayISO)
         .sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || '')) // xa nhất trước
       const futureHeld = futureList.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const drift = storedHeld - actualHeld
-      const overByActual = actualHeld - remainingMinutes
+      const overByActual = quota.overByActual
 
       // Chỉ đưa vào danh sách khi ĐANG có vấn đề: vượt quỹ (theo số lưu hoặc số thực) hoặc lệch số liệu
       const hasProblem = storedHeld > remainingMinutes || overByActual > 0 || drift !== 0
@@ -120,6 +126,7 @@ export function QuotaReconcilePage() {
       out.push({
         student: s, remainingMinutes, storedHeld, actualHeld,
         pastHeld, futureHeld, holdingBookings: list, futureBookings: futureList, drift, overByActual,
+        quotaBySubject: quota.subjects,
       })
     })
 
@@ -231,7 +238,6 @@ export function QuotaReconcilePage() {
       const fresh = { id: sSnap.id, ...sSnap.data() } as Student
       const curHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
       if (curHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
-      const freshRemaining = getStudentPackageMinuteSummary(fresh).remainingMinutes
       const activeBookings = bookingSnaps.flatMap((bookingSnap) => {
         if (!bookingSnap.exists()) return []
         const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
@@ -241,19 +247,26 @@ export function QuotaReconcilePage() {
           ? [booking]
           : []
       })
-      const actualHeld = activeBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
-      const need = actualHeld - freshRemaining
-      if (need <= 0) return 0
+      const freshQuota = getStudentBookingQuotaBreakdown(fresh, activeBookings)
+      if (freshQuota.overByActual <= 0) return 0
+      // Không vừa sửa sai số vừa huỷ lịch trong cùng thao tác: bắt buộc đồng bộ
+      // số đang giữ trước để tránh lấy một field cũ làm căn cứ xoá lịch thật.
+      if (freshQuota.actualHeld !== curHeld) throw new Error('RECALC_REQUIRED')
 
-      const futureCandidates = activeBookings
-        .filter((booking) => Boolean(booking.requestedDate && booking.requestedDate >= todayISO))
-        .sort((left, right) => (right.requestedDate || '').localeCompare(left.requestedDate || ''))
       const toCancel: BookingRequest[] = []
       let freed = 0
-      for (const booking of futureCandidates) {
-        if (freed >= need) break
-        toCancel.push(booking)
-        freed += getBookingPoints(booking)
+      for (const subjectQuota of freshQuota.subjects.filter((item) => item.overBy > 0)) {
+        let subjectFreed = 0
+        const futureCandidates = subjectQuota.bookings
+          .filter((booking) => Boolean(booking.requestedDate && booking.requestedDate >= todayISO))
+          .sort((left, right) => (right.requestedDate || '').localeCompare(left.requestedDate || ''))
+        for (const booking of futureCandidates) {
+          if (subjectFreed >= subjectQuota.overBy) break
+          const points = getBookingPoints(booking)
+          toCancel.push(booking)
+          subjectFreed += points
+          freed += points
+        }
       }
       if (toCancel.length === 0) return 0
 
@@ -298,7 +311,9 @@ export function QuotaReconcilePage() {
       console.error(err)
       toast.error(err?.message === 'DATA_CHANGED_RELOAD'
         ? 'Dữ liệu vừa thay đổi ở màn hình khác. Vui lòng tải lại trước khi đối soát.'
-        : `Không thể huỷ lịch${err?.message ? `: ${err.message}` : ''}`)
+        : err?.message === 'RECALC_REQUIRED'
+          ? 'Số đang giữ chưa khớp lịch thật. Hãy bấm Tính lại trước, hệ thống chưa huỷ lịch nào.'
+          : `Không thể huỷ lịch${err?.message ? `: ${err.message}` : ''}`)
     } finally {
       setProcessing(false)
     }
@@ -505,7 +520,14 @@ export function QuotaReconcilePage() {
                     <td className="px-3 py-3 font-semibold text-slate-700">{r.actualHeld}</td>
                     <td className="px-3 py-3">
                       {r.overByActual > 0
-                        ? <span className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 border border-rose-200">+{r.overByActual}</span>
+                        ? <div>
+                            <span className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 border border-rose-200">+{r.overByActual}</span>
+                            {r.quotaBySubject.filter((item) => item.overBy > 0).map((item) => (
+                              <p key={item.key} className="mt-1 max-w-36 truncate text-[10px] font-semibold text-rose-600" title={item.subjectName || item.subjectId || 'Không xác định môn'}>
+                                {item.subjectName || item.subjectId || 'Không xác định môn'}: +{item.overBy}
+                              </p>
+                            ))}
+                          </div>
                         : <span className="text-xs font-semibold text-emerald-600">Đủ</span>}
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-600">

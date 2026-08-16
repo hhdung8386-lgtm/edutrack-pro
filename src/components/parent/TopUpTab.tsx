@@ -14,11 +14,15 @@ export function TopUpTab({
   lang,
   usedMinutesOverride,
   heldMinutesOverride,
+  remainingMinutesOverride,
+  availableMinutesOverride,
 }: {
   student: Student
   lang: string
   usedMinutesOverride?: number
   heldMinutesOverride?: number
+  remainingMinutesOverride?: number
+  availableMinutesOverride?: number
 }) {
   const [settings, setSettings] = useState<PaymentSettings | null>(null)
   const [packages, setPackages] = useState<TopUpPackage[]>([])
@@ -62,13 +66,16 @@ export function TopUpTab({
   const minuteSummary = getStudentPackageMinuteSummary(student)
   const totalMinutes = minuteSummary.totalMinutes
   const usedMinutes = Math.max(minuteSummary.usedMinutes, usedMinutesOverride ?? 0)
-  const remainingMinutes = Math.max(0, totalMinutes - usedMinutes)
+  const remainingMinutes = Math.max(0, remainingMinutesOverride ?? minuteSummary.remainingMinutes)
   const heldMinutes = Math.max(
     0,
     heldMinutesOverride ?? student.reservedMinutes ?? student.heldMinutes ?? 0,
   )
-  const availableMinutes = Math.max(0, remainingMinutes - heldMinutes)
-  const usedPercent = totalMinutes > 0 ? Math.min(100, Math.round((usedMinutes / totalMinutes) * 100)) : 0
+  const availableMinutes = Math.max(0, availableMinutesOverride ?? (remainingMinutes - heldMinutes))
+  // Thanh tỷ lệ mô tả quỹ đã tiêu, không dùng phần học vượt của khóa cũ để
+  // che khuất số dư hợp lệ của khóa mới. Số thực tế đã học vẫn hiển thị riêng.
+  const consumedFundMinutes = Math.max(0, totalMinutes - remainingMinutes)
+  const usedPercent = totalMinutes > 0 ? Math.min(100, Math.round((consumedFundMinutes / totalMinutes) * 100)) : 0
   const heldPercent = totalMinutes > 0 ? Math.min(100 - usedPercent, Math.round((heldMinutes / totalMinutes) * 100)) : 0
   const availablePercent = totalMinutes > 0 ? Math.min(100 - usedPercent - heldPercent, Math.round((availableMinutes / totalMinutes) * 100)) : 0
 

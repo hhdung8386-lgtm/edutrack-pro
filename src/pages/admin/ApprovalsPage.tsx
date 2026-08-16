@@ -24,6 +24,7 @@ import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
+import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import {
   auditLessonForAdmin, describeDailyCount, describeSchedule, formatShortDate,
   countsAsDailyAttendance,
@@ -500,13 +501,11 @@ export function ApprovalsPage() {
             teacherId: approvingLesson.teacherId,
             teacherName: approvingLesson.teacherName ?? '',
             lessonId: approvingLesson.id,
-            amount: salary,
             minutes: lessonMinutes,
             pricePerMinute,
             level: teacherLevel,
             month,
-            currency,
-            paid: false,
+            ...buildPayrollApprovalFields(lessonNow, salary, currency),
             createdAt: serverTimestamp(),
           })
 

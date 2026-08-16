@@ -10,7 +10,8 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { getVietnamDateISO } from '@/lib/constants'
-import { getTeacherPointsPer25Minutes } from '@/lib/points'
+import { getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import { getCountryRate } from '@/lib/countryPricing'
 import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
@@ -641,20 +642,53 @@ export function BookingSchedulesPage() {
           if (bookingData.status !== 'confirmed' || bookingData.lessonId) {
             throw new Error(index < attendanceBookings.length ? 'BOOKING_ALREADY_PROCESSED' : 'FOLLOW_UP_ALREADY_PROCESSED')
           }
+          if (
+            bookingData.studentId !== studentId
+            || bookingData.teacherId !== teacherId
+            || bookingData.requestedDate !== primaryBooking.requestedDate
+          ) {
+            throw new Error('BOOKING_CLASS_CHANGED')
+          }
         })
+
+        const freshAttendanceBookings = bookingSnaps
+          .slice(0, attendanceBookings.length)
+          .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
+        const freshPrimaryBooking = freshAttendanceBookings[0]
+        const subjectId = freshPrimaryBooking?.subjectId || primaryBooking.subjectId || ''
+        if (!freshAttendanceBookings.every((booking) => (booking.subjectId || '') === subjectId)) {
+          throw new Error('BOOKING_CLASS_CHANGED')
+        }
+
+        // Chốt chặn tại giao dịch cuối: ca đã được đặt không có nghĩa là gia sư
+        // được phép tiếp tục điểm danh một gói môn đã hết/bảo lưu. Kiểm tra đúng
+        // quỹ của môn này, không dùng số dư tổng của các khóa khác.
+        const subjectFund = resolveStudentSubjectFund(studentData, subjectId)
+        const chargedPoints = isPresent
+          ? freshAttendanceBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+          : (isUnexcused ? getTeacherPointsPer25Minutes(teacherData) : 0)
+        if (
+          studentData.status === 'reserved'
+          || studentData.status === 'expired'
+          || !subjectFund
+          || subjectFund.remainingMinutes <= 0
+          || subjectFund.remainingMinutes < chargedPoints
+        ) {
+          throw new Error('STUDENT_EXPIRED')
+        }
 
         // Load pricing snapshot from subject or student subject rates
         let pricePerMinute = 0
         let currency = 'VND'
         const teacherCountry = teacherData?.country || 'VN'
-        const activeSub = studentData.subjects?.find(s => s.subjectId === primaryBooking.subjectId)
+        const activeSub = studentData.subjects?.find(s => s.subjectId === subjectId)
         if (activeSub) {
           const rate = getCountryRate(activeSub, teacherCountry)
           pricePerMinute = rate.price
           currency = rate.currency
         } else {
           // fallback to main subject price
-          const subSnap = await getDoc(doc(db, 'subjects', primaryBooking.subjectId || ''))
+          const subSnap = await getDoc(doc(db, 'subjects', subjectId))
           if (subSnap.exists()) {
             const rate = getCountryRate(subSnap.data() as Subject, teacherCountry)
             pricePerMinute = rate.price
@@ -681,8 +715,8 @@ export function BookingSchedulesPage() {
             teacherId,
             teacherCode: teacherData.code,
             teacherName: teacherData.name,
-            subjectId: primaryBooking.subjectId || '',
-            subjectName: primaryBooking.subjectName || '',
+            subjectId,
+            subjectName: freshPrimaryBooking.subjectName || primaryBooking.subjectName || '',
             date: primaryBooking.requestedDate || getVietnamDateISO(),
             minutes: isPresent
               ? minutes
@@ -801,8 +835,10 @@ export function BookingSchedulesPage() {
           ? (lang === 'vi' ? 'Một ca vừa được điểm danh hoặc hủy. Vui lòng tải lại lịch rồi thử lại.' : 'A selected session was just submitted or cancelled. Reload the schedule and try again.')
           : errorMessage === 'STUDENT_NOT_FOUND'
             ? (lang === 'vi' ? 'Không tìm thấy hồ sơ học viên của ca này.' : 'The student profile for this session could not be found.')
-            : errorMessage === 'BOOKING_NOT_FOUND'
+              : errorMessage === 'BOOKING_NOT_FOUND'
               ? (lang === 'vi' ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.' : 'The booking no longer exists. Reload the schedule.')
+              : errorMessage === 'BOOKING_CLASS_CHANGED'
+                ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
               : errorMessage === 'STUDENT_EXPIRED'
                 ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
                 : t('attendance.submit_fail')

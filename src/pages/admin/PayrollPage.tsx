@@ -278,9 +278,10 @@ export function PayrollPage() {
         if (!currentLessonSnap.exists() || !studentSnap.exists()) throw new Error('Dữ liệu buổi học hoặc học viên không còn tồn tại')
         const currentLesson = currentLessonSnap.data() as Lesson
         if (currentLesson.status !== 'approved') throw new Error('Buổi học đã được xử lý trước đó')
-        if (currentPayrollSnaps.some((payroll) => payroll.exists() && payroll.data()?.paid === true && !payroll.data()?.voided)) {
-          throw new Error('Lương buổi này đã thanh toán')
-        }
+        const paidPayroll = currentPayrollSnaps.find(
+          (payroll) => payroll.exists() && payroll.data()?.paid === true && !payroll.data()?.voided,
+        )
+        const paidPayrollData = paidPayroll?.data()
         const bookingsEligibleToReopen = bookingSnapsToReopen.flatMap((bookingSnap) => {
           if (!bookingSnap.exists()) return []
           const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
@@ -345,6 +346,12 @@ export function PayrollPage() {
           minutesBeforeApproval: 0,
           minutesAfterApproval: 0,
           bookingHoldConsumed: false,
+          ...(paidPayrollData ? {
+            payrollPaidBeforeReopen: true,
+            payrollPaidAmount: Number(paidPayrollData.amount || 0),
+            payrollPaidCurrency: String(paidPayrollData.currency || currentLesson.currency || 'VND'),
+            ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+          } : {}),
           updatedAt: serverTimestamp(),
         })
         tx.update(studentRef, {
@@ -377,12 +384,20 @@ export function PayrollPage() {
         tx.delete(doc(db, 'publicLessons', lessonId))
         currentPayrollSnaps.forEach((payroll) => {
           if (payroll.exists() && !payroll.data()?.voided) {
-            tx.update(payroll.ref, {
-              voided: true,
-              amount: 0,
-              voidedAt: serverTimestamp(),
-              voidedBy: user?.uid || '',
-            })
+            if (payroll.data()?.paid === true) {
+              tx.update(payroll.ref, {
+                lessonReviewReopened: true,
+                lessonReviewReopenedAt: serverTimestamp(),
+                lessonReviewReopenedBy: user?.uid || '',
+              })
+            } else {
+              tx.update(payroll.ref, {
+                voided: true,
+                amount: 0,
+                voidedAt: serverTimestamp(),
+                voidedBy: user?.uid || '',
+              })
+            }
           }
         })
       })
@@ -436,7 +451,7 @@ export function PayrollPage() {
         })
         toast.success(`Đã chuyển ${changed} buổi về chờ duyệt`)
       }
-      if (skipped > 0) toast.warning(`${skipped} buổi không thể chuyển do đã thanh toán hoặc đã được xử lý`)
+      if (skipped > 0) toast.warning(`${skipped} buổi không thể chuyển vì dữ liệu đã thay đổi hoặc không còn hợp lệ`)
       setSelectedLessonPayrollIds(new Set())
     } catch (error) {
       console.error('Error bulk returning lessons to pending:', error)

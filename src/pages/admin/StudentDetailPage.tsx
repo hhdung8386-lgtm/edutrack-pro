@@ -19,6 +19,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
+import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -661,13 +662,21 @@ export function StudentDetailPage() {
   const totalMinutesFund = activeSubjects.length > 0
     ? activeSubjects.reduce((sum, subject) => sum + subject.totalMinutes, 0)
     : (student.totalMinutes ?? student.totalSessions * mps)
-  const actualRemainingMinutes = totalMinutesFund - actualUsedMinutes
+  // Không bù trừ âm/dương giữa các môn. Một khóa cũ học vượt chỉ còn 0,
+  // không được ăn vào quỹ còn lại của khóa đang học.
+  const actualRemainingMinutes = activeSubjects.reduce(
+    (sum, subject) => sum + Math.max(0, subject.remainingMinutes),
+    0,
+  )
   const actualUsedSessionsRaw = mps > 0 ? actualUsedMinutes / mps : 0
   const actualUsedSessions =
     Math.abs(actualUsedSessionsRaw - Math.round(actualUsedSessionsRaw)) < 0.001
       ? Math.round(actualUsedSessionsRaw)
       : Math.round(actualUsedSessionsRaw * 100) / 100
-  const actualRemainingSessions = Math.floor(actualRemainingMinutes / mps)
+  const actualRemainingSessions = activeSubjects.reduce(
+    (sum, subject) => sum + Math.max(0, Number(subject.remainingSessions) || 0),
+    0,
+  )
 
   // ─── Stored values (from student doc) ──
   const storedUsedMinutes = student.usedMinutes ?? student.usedSessions * mps
@@ -791,12 +800,6 @@ export function StudentDetailPage() {
         query(collection(db, 'payroll'), where('lessonId', '==', reversingLesson.id)),
       )
       
-      const payrollPaid = payrollSnap.docs.some((d) => d.data().paid === true)
-      if (payrollPaid) {
-        toast.warning('Lương buổi này đã thanh toán, không thể huỷ duyệt')
-        return
-      }
-
       const payrollIds = payrollSnap.docs.map((d) => d.id)
       const payrollRefs = payrollIds.map((payrollId) => doc(db, 'payroll', payrollId))
       const reversingPoints = lessonFundPoints(reversingLesson)
@@ -811,9 +814,10 @@ export function StudentDetailPage() {
         ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
         if (!lessonSnap.exists() || lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
-        if (payrollSnaps.some((payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided)) {
-          throw new Error('PAYROLL_ALREADY_PAID')
-        }
+        const paidPayroll = payrollSnaps.find(
+          (payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided,
+        )
+        const paidPayrollData = paidPayroll?.data()
         const s = studentSnap.data()!
 
         // Initialize subjects array for backward compatibility if needed
@@ -875,6 +879,12 @@ export function StudentDetailPage() {
           minutesBeforeApproval: 0,
           minutesAfterApproval: 0,
           salary: 0,
+          ...(paidPayrollData ? {
+            payrollPaidBeforeReopen: true,
+            payrollPaidAmount: Number(paidPayrollData.amount || 0),
+            payrollPaidCurrency: String(paidPayrollData.currency || reversingLesson.currency || 'VND'),
+            ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+          } : {}),
           updatedAt: serverTimestamp(),
         })
 
@@ -897,15 +907,23 @@ export function StudentDetailPage() {
         const publicLessonRef = doc(db, 'publicLessons', reversingLesson.id)
         tx.delete(publicLessonRef)
 
-        // Void all payroll entries for this lesson (set amount=0, voided=true)
+        // Khoản đã trả phải được giữ nguyên để không mất lịch sử chi tiền.
         for (const payroll of payrollSnaps) {
           if (!payroll.exists()) continue
-          tx.update(payroll.ref, {
-            voided: true,
-            amount: 0,
-            voidedAt: serverTimestamp(),
-            voidedBy: user?.uid || '',
-          })
+          if (payroll.data().paid === true && !payroll.data().voided) {
+            tx.update(payroll.ref, {
+              lessonReviewReopened: true,
+              lessonReviewReopenedAt: serverTimestamp(),
+              lessonReviewReopenedBy: user?.uid || '',
+            })
+          } else {
+            tx.update(payroll.ref, {
+              voided: true,
+              amount: 0,
+              voidedAt: serverTimestamp(),
+              voidedBy: user?.uid || '',
+            })
+          }
         }
       })
 
@@ -1102,12 +1120,11 @@ export function StudentDetailPage() {
             teacherId: reApprovingLesson.teacherId,
             teacherName: reApprovingLesson.teacherName,
             lessonId: reApprovingLesson.id,
-            amount: salary,
             minutes: reApprovingLesson.minutes,
             pricePerMinute,
             level: teacherLevel,
             month,
-            paid: false,
+            ...buildPayrollApprovalFields(lessonNow, salary, currency),
             createdAt: serverTimestamp(),
           })
         },
@@ -1148,10 +1165,15 @@ export function StudentDetailPage() {
     ? Math.min(100, Math.round((usedMinutesFund / totalMinutesFund) * 100))
     : 0
   const displayPrimarySubject = activeSubjects.find((subject) => subject.remainingMinutes > 0) || activeSubjects[0] || null
-  const totalBookedPoints = bookingRequests
-    .filter((booking) => !booking.lessonId)
-    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
-  const availableDiamondBalance = Math.max(0, actualRemainingMinutes - totalBookedPoints)
+  const availableDiamondBalance = activeSubjects.reduce((sum, subject) => {
+    const bookedForSubject = heldBookings
+      .filter((booking) => (
+        booking.subjectId === subject.subjectId
+        || (activeSubjects.length === 1 && unmatchedHeldBookings.some((item) => item.id === booking.id))
+      ))
+      .reduce((booked, booking) => booked + getBookingPoints(booking), 0)
+    return sum + Math.max(0, subject.remainingMinutes - bookedForSubject)
+  }, 0)
   const rewardStarBalance = Number(student.rewardPoints || 0)
   const reconciledStudent = {
     ...student,
@@ -1560,16 +1582,22 @@ export function StudentDetailPage() {
                 {(() => {
                   const totalSessions25 = Math.floor(pkg.totalMinutes / 25)
                   const usedSessions25 = Math.floor(pkg.usedMinutes / 25)
-                  const bookedPoints = bookingRequests
-                    .filter((b) => b.subjectId === pkg.subjectId && !b.lessonId)
+                  // Nếu hồ sơ chỉ còn đúng một gói, vẫn hiển thị đủ tổng lịch đang
+                  // giữ (kể cả ca mang mã môn cũ) để thẻ và banner không lệch nhau.
+                  // Các ca này vẫn được cảnh báo và KHÔNG được phép điểm danh cho
+                  // tới khi giáo vụ sửa đúng môn.
+                  const packageBookings = heldBookings.filter((booking) => (
+                    booking.subjectId === pkg.subjectId
+                    || (activeSubjects.length === 1 && unmatchedHeldBookings.some((item) => item.id === booking.id))
+                  ))
+                  const bookedPoints = packageBookings
                     .reduce((sum, b) => sum + getBookingPoints(b), 0)
-                  const bookedSessions = bookingRequests.filter((b) => b.subjectId === pkg.subjectId && !b.lessonId).length
+                  const bookedSessions = packageBookings.length
                   const availablePoints = Math.max(0, pkg.remainingMinutes - bookedPoints)
                   const availableSessions25 = Math.floor(availablePoints / 25)
                   // "Đã đặt" hiển thị theo thời lượng THỰC của các ca đang giữ chỗ,
                   // vì kim cương của ca phụ thuộc bậc gia sư nên không suy ra được từ điểm.
-                  const bookedMinutes = bookingRequests
-                    .filter((b) => b.subjectId === pkg.subjectId && !b.lessonId)
+                  const bookedMinutes = packageBookings
                     .reduce((sum, b) => sum + (Number(b.requestedMinutes) || 0), 0)
 
                   return (
@@ -1782,7 +1810,7 @@ export function StudentDetailPage() {
             Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
             {unmatchedHeldBookings.length > 0 && (
-              <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; cần kiểm tra trước khi điểm danh.</>
+              <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng vẫn bị chặn điểm danh đến khi giáo vụ sửa đúng môn.</>
             )}
           </p>
         </div>

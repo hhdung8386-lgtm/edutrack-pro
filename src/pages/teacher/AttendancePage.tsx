@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
-  collection, query, where, getDocs, addDoc, serverTimestamp,
+  collection, query, where, getDocs, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
@@ -29,6 +29,7 @@ import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink, CalendarX2
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
+import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import {
   auditTeacherAttendance, describeDailyCount, describeSchedule,
   formatShortDate, MAX_DAILY_ATTENDANCE_PER_STUDENT,
@@ -343,7 +344,7 @@ export function AttendancePage() {
       const currentRemainingMinutes = selectedPkg.remainingMinutes
       const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
 
-      await addDoc(collection(db, 'lessons'), {
+      const lessonPayload = {
         studentId: student.id,
         studentCode: student.code,
         studentName: student.name,
@@ -394,6 +395,24 @@ export function AttendancePage() {
               : {}),
         } : {}),
         createdAt: serverTimestamp(),
+      }
+
+      // Đọc lại và chặn ngay trong giao dịch ghi cuối. Nhờ vậy form mở từ trước
+      // cũng không thể gửi điểm danh nếu giáo vụ vừa làm gói môn hết hiệu lực.
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', student.id)
+        const latestStudentSnap = await tx.get(studentRef)
+        if (!latestStudentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+        const latestStudent = { id: latestStudentSnap.id, ...latestStudentSnap.data() } as Student
+        const latestSubjectFund = resolveStudentSubjectFund(latestStudent, selectedSubjectId)
+        if (
+          latestStudent.status === 'reserved'
+          || latestStudent.status === 'expired'
+          || !latestSubjectFund
+          || latestSubjectFund.remainingMinutes <= 0
+          || latestSubjectFund.remainingMinutes < lessonPoints
+        ) throw new Error('STUDENT_EXPIRED')
+        tx.set(doc(collection(db, 'lessons')), lessonPayload)
       })
 
       setAuditPrompt(null)
@@ -413,7 +432,11 @@ export function AttendancePage() {
       }, 2000)
     } catch (err) {
       console.error(err)
-      toast.error(t('attendance.submit_fail'))
+      toast.error(err instanceof Error && err.message === 'STUDENT_EXPIRED'
+        ? (lang === 'vi'
+            ? 'Gói môn học này đã hết hoặc không đủ kim cương nên không thể điểm danh.'
+            : 'This subject package is exhausted or does not have enough diamonds for attendance.')
+        : t('attendance.submit_fail'))
     } finally {
       setSubmitting(false)
     }

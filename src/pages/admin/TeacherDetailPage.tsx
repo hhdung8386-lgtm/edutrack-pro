@@ -26,6 +26,7 @@ import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
+import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -678,13 +679,11 @@ export function TeacherDetailPage() {
             teacherId: lesson.teacherId,
             teacherName: lesson.teacherName ?? '',
             lessonId: lesson.id,
-            amount: salary,
             minutes: lessonMinutes,
             pricePerMinute,
-            currency,
             level: teacherLevel,
             month,
-            paid: false,
+            ...buildPayrollApprovalFields(lessonNow, salary, currency),
             createdAt: serverTimestamp(),
           })
 
@@ -751,9 +750,10 @@ export function TeacherDetailPage() {
 
           if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
           if (lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
-          if (payrollSnaps.some((payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided)) {
-            throw new Error('PAYROLL_ALREADY_PAID')
-          }
+          const paidPayroll = payrollSnaps.find(
+            (payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided,
+          )
+          const paidPayrollData = paidPayroll?.data()
 
           const hasStudent = studentSnap.exists()
           if (targetStatus === 'pending' && !hasStudent) throw new Error('STUDENT_NOT_FOUND')
@@ -775,6 +775,12 @@ export function TeacherDetailPage() {
             minutesBeforeApproval: 0,
             minutesAfterApproval: 0,
             salary: 0,
+            ...(paidPayrollData ? {
+              payrollPaidBeforeReopen: true,
+              payrollPaidAmount: Number(paidPayrollData.amount || 0),
+              payrollPaidCurrency: String(paidPayrollData.currency || lessonCurrent.currency || 'VND'),
+              ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+            } : {}),
             ...(targetStatus === 'pending' ? { bookingHoldConsumed: false } : {}),
             updatedAt: serverTimestamp(),
           })
@@ -870,12 +876,20 @@ export function TeacherDetailPage() {
 
           for (const payroll of payrollSnaps) {
             if (!payroll.exists()) continue
-            tx.update(payroll.ref, {
-              voided: true,
-              amount: 0,
-              voidedAt: serverTimestamp(),
-              voidedBy: user?.uid || '',
-            })
+            if (payroll.data().paid === true && !payroll.data().voided) {
+              tx.update(payroll.ref, {
+                lessonReviewReopened: true,
+                lessonReviewReopenedAt: serverTimestamp(),
+                lessonReviewReopenedBy: user?.uid || '',
+              })
+            } else {
+              tx.update(payroll.ref, {
+                voided: true,
+                amount: 0,
+                voidedAt: serverTimestamp(),
+                voidedBy: user?.uid || '',
+              })
+            }
           }
           return heldPointsToRestore
         })
