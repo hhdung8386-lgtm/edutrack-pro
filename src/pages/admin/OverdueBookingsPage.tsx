@@ -118,6 +118,7 @@ export function OverdueBookingsPage() {
   const [studentMap, setStudentMap] = useState<Record<string, Student>>({})
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [loadedBookingScope, setLoadedBookingScope] = useState<string | null>(null)
   const [lessonsLoading, setLessonsLoading] = useState(true)
   const [loadedLessonScopeKey, setLoadedLessonScopeKey] = useState<string | null>(null)
   const [lessonsError, setLessonsError] = useState(false)
@@ -142,16 +143,28 @@ export function OverdueBookingsPage() {
 
   // ── Load dữ liệu ────────────────────────────────────────────────
   useEffect(() => {
+    const bookingsQuery = studentFilter === 'all'
+      ? query(collection(db, 'bookingRequests'), where('status', 'in', ['confirmed', 'pending']))
+      : query(collection(db, 'bookingRequests'), where('studentId', '==', studentFilter))
     const unsub = onSnapshot(
-      query(collection(db, 'bookingRequests'), where('status', 'in', ['confirmed', 'pending'])),
+      bookingsQuery,
       (snap) => {
-        setBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest)))
+        setBookings(snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
+          .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending'))
+        setLoadedBookingScope(studentFilter)
         setLoading(false)
       },
-      (err) => { console.error(err); toast.error('Không tải được danh sách ca đặt lịch'); setLoading(false) }
+      (err) => {
+        console.error(err)
+        toast.error('Không tải được danh sách ca đặt lịch')
+        setBookings([])
+        setLoadedBookingScope(studentFilter)
+        setLoading(false)
+      }
     )
     return unsub
-  }, [])
+  }, [studentFilter])
 
   useEffect(() => {
     let active = true
@@ -548,7 +561,7 @@ export function OverdueBookingsPage() {
     URL.revokeObjectURL(url)
   }
 
-  if (loading) return <LoadingSpinner />
+  if (loading || loadedBookingScope !== studentFilter) return <LoadingSpinner />
 
   const selectedReleasable = selectedItems.filter((d) =>
     d.diagnosis === 'no_lesson' || d.diagnosis === 'rejected_lesson',
