@@ -6,7 +6,7 @@ import { logger } from 'firebase-functions'
 import { defineSecret } from 'firebase-functions/params'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
-import { buildReminderEmail, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
+import { buildReminderEmail, reminderTeacherName, type ReminderEmailBooking, type ReminderEmailStudent } from './reminderEmail'
 import { groupReminderDays, groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
 import { aggregateTeacherRanking, type TeacherRankingProfile, type TeacherRankingRow } from './teacherRanking'
 import { decideTeacherLoginRecovery, teacherLoginEmail } from './teacherLoginRecovery'
@@ -155,7 +155,7 @@ async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise
       studentCode: candidate.booking.studentCode || '',
       studentName: candidate.booking.studentName || '',
       teacherId: [...new Set(candidate.bookings.map((booking) => booking.teacherId).filter(Boolean))].join(', '),
-      teacherName: [...new Set(candidate.bookings.map((booking) => booking.teacherName).filter(Boolean))].join(', '),
+      teacherName: [...new Set(candidate.bookings.map((booking) => reminderTeacherName(booking)).filter(Boolean))].join(', '),
       subjectId: [...new Set(candidate.bookings.map((booking) => booking.subjectId).filter(Boolean))].join(', '),
       subjectName: [...new Set(candidate.bookings.map((booking) => booking.subjectName).filter(Boolean))].join(', '),
       processingLeaseUntil: Timestamp.fromMillis(now.getTime() + PROCESSING_LEASE_MS),
@@ -611,6 +611,9 @@ export const getEmailReminderHistory = onCall({
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
       const fallbackBookings = itemBookingIds.map((bookingId) => bookingsById.get(bookingId) || {})
       const fallbackBooking = fallbackBookings[0] || {}
+      const fallbackTeacherNames = [...new Set(fallbackBookings
+        .map((booking) => reminderTeacherName(booking))
+        .filter(Boolean))]
       const scheduleTimes = Array.isArray(data.scheduleTimes)
         ? data.scheduleTimes.filter((value): value is string => typeof value === 'string' && value.length > 0)
         : fallbackBookings
@@ -627,7 +630,8 @@ export const getEmailReminderHistory = onCall({
         studentId: typeof data.studentId === 'string' ? data.studentId : (fallbackBooking.studentId || ''),
         studentCode: typeof data.studentCode === 'string' ? data.studentCode : (fallbackBooking.studentCode || ''),
         studentName: typeof data.studentName === 'string' ? data.studentName : (fallbackBooking.studentName || ''),
-        teacherName: typeof data.teacherName === 'string' ? data.teacherName : (fallbackBooking.teacherName || ''),
+        teacherName: fallbackTeacherNames.join(', ')
+          || (typeof data.teacherName === 'string' ? data.teacherName : (fallbackBooking.teacherName || '')),
         subjectName: typeof data.subjectName === 'string' ? data.subjectName : (fallbackBooking.subjectName || ''),
         bookingIds: itemBookingIds,
         bookingCount: itemBookingIds.length,

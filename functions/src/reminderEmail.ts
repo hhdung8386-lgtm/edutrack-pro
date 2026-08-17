@@ -2,6 +2,7 @@ export type ReminderEmailBooking = {
   id?: string
   studentId?: string
   studentCode?: string
+  teacherCode?: string
   teacherName?: string
   subjectId?: string
   subjectName?: string
@@ -37,6 +38,17 @@ type EmailSlot = {
 const BRAND_LOGO_URL = 'https://www.123english.edu.vn/brand-logo.png'
 const PARENT_PORTAL_URL = 'https://www.123english.edu.vn/parent'
 const FALLBACK_VALUE = 'Đang cập nhật'
+const AUTO_TEACHER_CODE = /^GV[A-Z0-9]{4,}$/i
+
+/**
+ * Tên gia sư gửi cho học viên: ưu tiên nickname tiếng Anh. Mã GV... chỉ là
+ * mã tự sinh của dữ liệu cũ nên không dùng làm tên hiển thị.
+ */
+export function reminderTeacherName(booking: Pick<ReminderEmailBooking, 'teacherCode' | 'teacherName'>): string {
+  const teacherCode = booking.teacherCode?.trim() || ''
+  if (teacherCode && !AUTO_TEACHER_CODE.test(teacherCode)) return teacherCode
+  return booking.teacherName?.trim() || teacherCode
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -104,7 +116,7 @@ function sortAndDedupeBookings(bookings: ReminderEmailBooking[]): ReminderEmailB
       const key = [
         booking.requestedStart || '',
         booking.requestedEnd || '',
-        booking.teacherName || '',
+        reminderTeacherName(booking),
         booking.subjectId || booking.subjectName || '',
       ].join('|')
       if (seen.has(key)) return false
@@ -122,7 +134,7 @@ function buildSlots(bookings: ReminderEmailBooking[], student: ReminderEmailStud
   return sortedBookings.map((booking) => ({
     booking,
     time: slotTime(booking),
-    teacherName: booking.teacherName?.trim() || FALLBACK_VALUE,
+    teacherName: reminderTeacherName(booking) || FALLBACK_VALUE,
     subjectName: booking.subjectName?.trim() || FALLBACK_VALUE,
     classroomURL: canonicalClassroomURL,
     curriculumURL: findCurriculumURL(booking, student),

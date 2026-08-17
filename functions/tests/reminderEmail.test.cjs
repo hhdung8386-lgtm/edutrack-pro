@@ -38,6 +38,34 @@ test('một email liệt kê đủ từng slot trong ngày theo đúng giờ', (
   assert.equal((email.html.match(/class="email-action"/g) || []).length, 3)
 })
 
+test('ưu tiên nickname tiếng Anh của gia sư trong nội dung email', () => {
+  const email = buildReminderEmail([
+    {
+      id: 'nickname', studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
+      requestedStart: '14:00', requestedEnd: '14:25', teacherCode: 'Mirabelle', teacherName: 'Trần Đỗ Thúy Mai',
+      subjectId: 'english', subjectName: 'Tiếng Anh',
+    },
+  ], student, 'trước khoảng 12 giờ')
+
+  assert.match(email.text, /Gia sư: Mirabelle/)
+  assert.match(email.html, />Mirabelle</)
+  assert.doesNotMatch(email.text, /Trần Đỗ Thúy Mai/)
+  assert.doesNotMatch(email.html, /Trần Đỗ Thúy Mai/)
+})
+
+test('không dùng mã GV legacy làm tên gia sư', () => {
+  const email = buildReminderEmail([
+    {
+      id: 'legacy', studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
+      requestedStart: '14:00', requestedEnd: '14:25', teacherCode: 'GVABC123', teacherName: 'Nguyễn Dung Trọng Tín',
+      subjectId: 'english', subjectName: 'Tiếng Anh',
+    },
+  ], student, 'trước khoảng 30 phút')
+
+  assert.match(email.text, /Gia sư: Nguyễn Dung Trọng Tín/)
+  assert.doesNotMatch(email.text, /Gia sư: GVABC123/)
+})
+
 test('loại bản ghi trùng cùng slot khỏi nội dung nhưng vẫn giữ slot khác', () => {
   const duplicate = {
     studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
