@@ -140,7 +140,7 @@ export function LoginPage() {
       )
     },
     'chuong-trinh': {
-      title: 'Chương trình học',
+      title: 'Chương Trình Tiêu Chuẩn',
       content: (
         <div className="space-y-6">
           <p className="text-slate-600">Dựa trên cấu trúc trang web và các hoạt động trên mạng xã hội, chương trình học tại đây khá đa dạng:</p>

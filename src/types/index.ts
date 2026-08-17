@@ -136,6 +136,8 @@ export interface Teacher {
   studentsTaughtCount?: number
   studentAgesTaught?: string
   teachingFormats?: string[]
+  /** Mã các khu vực tại TP.HCM mà gia sư có thể nhận lớp trực tiếp. */
+  offlineTeachingAreas?: string[]
   studentResults?: string
   strengths?: string[]
   otherStrengths?: string

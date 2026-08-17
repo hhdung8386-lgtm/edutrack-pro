@@ -25,6 +25,7 @@ import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
+import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
@@ -1569,6 +1570,22 @@ export function TeacherDetailPage() {
                   <div className="md:col-span-3">
                     <span className="text-slate-500 font-medium">Ưu điểm khác: </span>
                     <span className="text-slate-700">{teacher.otherStrengths}</span>
+                  </div>
+                )}
+                {teacher.teachingFormats?.includes('offline') && (
+                  <div className="md:col-span-3 rounded-xl border border-sky-100 bg-sky-50/70 p-3">
+                    <span className="text-slate-600 font-semibold">Khu vực có thể nhận lớp Offline</span>
+                    {offlineTeachingAreaLabels(teacher.offlineTeachingAreas).length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {offlineTeachingAreaLabels(teacher.offlineTeachingAreas).map((area) => (
+                          <span key={area} className="inline-flex rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
+                            {area}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-sm italic text-slate-500">Chưa cập nhật khu vực nhận lớp.</p>
+                    )}
                   </div>
                 )}
               </div>

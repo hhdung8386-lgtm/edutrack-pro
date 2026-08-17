@@ -387,7 +387,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'landing.login_note': { vi: 'Chỉ dành cho gia sư và quản trị hệ thống.', en: 'For teachers and system administrators only.' },
   'landing.nav_home': { vi: 'Trang chủ', en: 'Home' },
   'landing.nav_about': { vi: 'Giới thiệu', en: 'About' },
-  'landing.nav_programs': { vi: 'Chương trình học', en: 'Programs' },
+  'landing.nav_programs': { vi: 'Chương Trình Tiêu Chuẩn', en: 'Standard Program' },
   'landing.nav_news': { vi: 'Tin tức', en: 'News' },
   'landing.nav_contact': { vi: 'Liên hệ', en: 'Contact' },
 }

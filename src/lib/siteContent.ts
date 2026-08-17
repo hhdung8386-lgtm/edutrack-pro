@@ -18,7 +18,7 @@ export type SitePageId = 'home' | 'curriculum' | 'contact'
 
 export const SITE_PAGES: { id: SitePageId; label: string; path: string; description: string }[] = [
   { id: 'home', label: 'Trang chủ', path: '/login', description: 'Trang khách nhìn thấy đầu tiên' },
-  { id: 'curriculum', label: 'Chương trình học', path: '/chuong-trinh-hoc', description: 'Giới thiệu lộ trình và giáo trình' },
+  { id: 'curriculum', label: 'Chương Trình Tiêu Chuẩn', path: '/chuong-trinh-hoc', description: 'Giới thiệu lộ trình và giáo trình' },
   { id: 'contact', label: 'Liên hệ', path: '/lien-he', description: 'Thông tin liên hệ và tư vấn' },
 ]
 
@@ -180,7 +180,7 @@ export const DEFAULT_CONTENT: Record<SitePageId, SitePageContent> = {
         id: 'cur-hero',
         type: 'hero',
         enabled: true,
-        eyebrow: 'Chương trình học 123English',
+        eyebrow: 'Chương Trình Tiêu Chuẩn 123English',
         title: 'Chọn đúng giáo trình cho từng chặng tiến bộ.',
         subtitle: '9 cấp độ rõ ràng, 16 giáo trình và lộ trình phù hợp cho từng độ tuổi.',
         ctaLabel: 'Xem bản đồ giáo trình',

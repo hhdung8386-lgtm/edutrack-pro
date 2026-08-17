@@ -265,7 +265,7 @@ export function ChuongTrinhHocPage() {
           <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 md:py-20 lg:px-12">
             <div className="program-hero-copy relative">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
-                {primaryHero?.eyebrow || 'Chương trình học 123English'}
+                {primaryHero?.eyebrow || 'Chương Trình Tiêu Chuẩn 123English'}
               </p>
               <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.045em] sm:text-5xl lg:text-6xl">
                 {primaryHero?.title || 'Chọn đúng giáo trình cho từng chặng tiến bộ.'}

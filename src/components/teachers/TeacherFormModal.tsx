@@ -23,6 +23,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
 import { downloadImage } from '@/lib/downloadImage'
 import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
+import { OFFLINE_TEACHING_AREA_OPTIONS } from '@/lib/offlineTeachingAreas'
 
 interface Branch {
   id: string
@@ -123,6 +124,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
     if (teacher?.isTester || defaultCategory === 'tester') return []
     return [defaultCategory]
   })
+  const [offlineTeachingAreas, setOfflineTeachingAreas] = useState<string[]>(teacher?.offlineTeachingAreas || [])
   const [isTester, setIsTester] = useState(teacher?.isTester ?? defaultCategory === 'tester')
   const [studentResults, setStudentResults] = useState(teacher?.studentResults || '')
   const [strengths, setStrengths] = useState<string[]>(teacher?.strengths || [])
@@ -353,6 +355,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
         bookingPriority: Math.max(0, Number(bookingPriority) || 0),
         studentAgesTaught: studentAgesTaught || '',
         teachingFormats: teachingFormats || [],
+        offlineTeachingAreas: offlineTeachingAreas || [],
         studentResults: studentResults || '',
         strengths: strengths || [],
         otherStrengths: otherStrengths || '',
@@ -1379,6 +1382,28 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+
+            {teachingFormats.includes('offline') && (
+              <fieldset className="rounded-xl border border-sky-200 bg-sky-50/70 p-3 sm:p-4">
+                <legend className="px-1 text-xs font-bold text-slate-700">Khu vực có thể nhận lớp Offline</legend>
+                <p className="mb-3 text-xs leading-5 text-slate-500">Có thể chọn nhiều khu vực. Hồ sơ cũ chưa có dữ liệu vẫn được giữ nguyên và hiển thị “Chưa cập nhật”.</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {OFFLINE_TEACHING_AREA_OPTIONS.map((area) => (
+                    <label key={area.value} className="flex min-h-10 cursor-pointer items-start gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-sky-100 transition-colors hover:bg-sky-50">
+                      <input
+                        type="checkbox"
+                        checked={offlineTeachingAreas.includes(area.value)}
+                        onChange={(event) => setOfflineTeachingAreas((current) => event.target.checked
+                          ? [...current, area.value]
+                          : current.filter((value) => value !== area.value))}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      />
+                      <span>{area.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-2">Ưu điểm nổi bật</label>

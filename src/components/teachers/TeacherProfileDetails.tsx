@@ -12,6 +12,7 @@ import { Subject, Teacher } from '@/types'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
+import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 
 const STRENGTH_LABELS: Record<string, string> = {
   pronunciation: 'Phát âm chuẩn',
@@ -214,6 +215,20 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           </div>
         )}
         {teacher.otherStrengths && <div className="mt-3"><DetailItem label="Ưu điểm khác" value={teacher.otherStrengths} /></div>}
+        {teacher.teachingFormats?.includes('offline') && (
+          <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/70 p-3">
+            <p className="text-xs font-semibold text-slate-600">Khu vực có thể nhận lớp Offline</p>
+            {offlineTeachingAreaLabels(teacher.offlineTeachingAreas).length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {offlineTeachingAreaLabels(teacher.offlineTeachingAreas).map((area) => (
+                  <span key={area} className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">{area}</span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-sm italic text-slate-500">Chưa cập nhật khu vực nhận lớp.</p>
+            )}
+          </div>
+        )}
       </section>
       {certificateImage && (
         <ImageLightbox
