@@ -6,6 +6,7 @@ import { Logo } from '@/components/shared/Logo'
 const NAV_ITEMS = [
   { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
   { to: '/chuong-trinh-hoc', label: 'Chương Trình Tiêu Chuẩn', match: ['/chuong-trinh-hoc'] },
+  { to: '/chuong-trinh-ca-nhan-hoa', label: 'Chương Trình Cá Nhân Hoá', match: ['/chuong-trinh-ca-nhan-hoa'] },
   { to: '/giao-vien', label: 'Gia sư', match: ['/giao-vien'] },
   { to: '/bai-viet', label: 'Bài viết', match: ['/bai-viet'] },
   { to: '/lien-he', label: 'Liên hệ', match: ['/lien-he'] },
@@ -36,14 +37,14 @@ export function PublicNav() {
           <Logo className="h-10 w-auto max-w-[160px] sm:h-11 sm:max-w-[176px]" clickable={false} />
         </Link>
 
-        <div className="hidden items-center gap-8 text-sm font-semibold text-slate-600 lg:flex">
+        <div className="hidden items-center gap-4 text-[13px] font-semibold text-slate-600 xl:flex 2xl:gap-6 2xl:text-sm">
           {NAV_ITEMS.map((item) => {
             const active = isNavItemActive(location.pathname, item.match)
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`border-b-2 pb-1 transition-colors ${
+                className={`whitespace-nowrap border-b-2 pb-1 transition-colors ${
                   active
                     ? 'border-[#FFC107] text-slate-950'
                     : 'border-transparent hover:border-[#FFC107]/50 hover:text-slate-950'
@@ -74,7 +75,7 @@ export function PublicNav() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((open) => !open)}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:border-[#FFC107] hover:bg-amber-50 lg:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:border-[#FFC107] hover:bg-amber-50 xl:hidden"
             aria-label={mobileMenuOpen ? 'Đóng menu' : 'Mở menu'}
             aria-expanded={mobileMenuOpen}
             aria-controls="public-mobile-menu"
@@ -86,7 +87,7 @@ export function PublicNav() {
 
       <div
         id="public-mobile-menu"
-        className={`absolute inset-x-0 top-full border-b border-slate-200 bg-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-[opacity,transform,visibility] duration-200 lg:hidden ${
+        className={`absolute inset-x-0 top-full border-b border-slate-200 bg-white shadow-[0_18px_36px_rgba(15,23,42,0.12)] transition-[opacity,transform,visibility] duration-200 xl:hidden ${
           mobileMenuOpen
             ? 'visible translate-y-0 opacity-100'
             : 'invisible -translate-y-2 opacity-0'
