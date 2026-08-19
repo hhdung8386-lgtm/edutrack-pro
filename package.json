@@ -12,6 +12,7 @@
     "test:recurring-schedule": "node --experimental-strip-types --test tests/recurringSchedule.test.ts",
     "test:subject-pricing": "node --experimental-strip-types --test tests/countryPricing.test.ts",
     "test:subject-sorting": "node --experimental-strip-types --test tests/subjectSorting.test.ts",
+    "test:subject-lifecycle": "node --experimental-strip-types --test tests/subjectLifecycle.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

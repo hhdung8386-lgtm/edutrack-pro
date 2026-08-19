@@ -1,6 +1,6 @@
 import { Children, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import {
-  addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction,
+  addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, runTransaction,
   serverTimestamp, setDoc, updateDoc,
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
@@ -22,6 +22,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney } from '@/lib/constants'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 
 type Tab = 'gifts' | 'redemptions' | 'payment' | 'requests'
 type GiftForm = Omit<RewardGift, 'id' | 'createdAt' | 'updatedAt'>
@@ -67,7 +68,9 @@ export function StudentExperiencePage() {
   useEffect(() => onSnapshot(collection(db, 'rewardRedemptions'), (snap) => setRedemptions(snap.docs.map(d => ({ id: d.id, ...d.data() } as RewardRedemption)).sort(byNewest)), () => setDataError(true)), [])
   useEffect(() => onSnapshot(collection(db, 'topUpPackages'), (snap) => setPackages(snap.docs.map(d => ({ id: d.id, ...d.data() } as TopUpPackage)).sort((a, b) => a.price - b.price)), () => setDataError(true)), [])
   useEffect(() => onSnapshot(collection(db, 'topUpRequests'), (snap) => setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() } as TopUpRequest)).sort(byNewest)), () => setDataError(true)), [])
-  useEffect(() => onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(sortSubjectsByName(snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(s => s.status === 'active')))), [])
+  useEffect(() => onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(sortSubjectsByName(
+    snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(isSelectableSubject),
+  ))), [])
   useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snap) => {
     if (snap.exists()) setSettings(snap.data() as PaymentSettings)
   }), [])
@@ -146,7 +149,18 @@ export function StudentExperiencePage() {
     if (!subject) return
     setSaving(true)
     try {
-      const payload = { ...packageForm, name: packageForm.name.trim(), subjectName: subject.name, updatedAt: serverTimestamp() }
+      const latestSubjectSnapshot = await getDoc(doc(db, 'subjects', subject.id))
+      if (!latestSubjectSnapshot.exists()) {
+        toast.error('Môn học không còn tồn tại; gói nạp chưa được lưu.')
+        return
+      }
+      const latestSubject = { id: latestSubjectSnapshot.id, ...latestSubjectSnapshot.data() } as Subject
+      if (!isSelectableSubject(latestSubject)) {
+        toast.error('Môn học đã tạm dừng hoặc xoá khỏi danh mục; không thể mở gói nạp mới.')
+        return
+      }
+
+      const payload = { ...packageForm, name: packageForm.name.trim(), subjectName: latestSubject.name, updatedAt: serverTimestamp() }
       if (editingPackage) await updateDoc(doc(db, 'topUpPackages', editingPackage.id), payload)
       else await addDoc(collection(db, 'topUpPackages'), { ...payload, createdAt: serverTimestamp() })
       toast.success(editingPackage ? 'Đã cập nhật gói nạp' : 'Đã thêm gói nạp')

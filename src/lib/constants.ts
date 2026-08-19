@@ -31,20 +31,24 @@ export function formatVND(amount: number): string {
 
 export function formatMoney(amount: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
-  if (curr === 'USD') {
-    return new Intl.NumberFormat('en-US', {
+  const locale = curr === 'VND' ? 'vi-VN' : 'en-US'
+  const maximumFractionDigits = ['VND', 'JPY', 'KRW'].includes(curr) ? 0 : 4
+
+  try {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: 'USD',
+      currency: curr,
+      currencyDisplay: curr === 'VND' || curr === 'USD' ? 'symbol' : 'code',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
+      maximumFractionDigits,
     }).format(amount)
+  } catch {
+    const formatted = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits,
+    }).format(Number.isFinite(amount) ? amount : 0)
+    return `${curr} ${formatted}`
   }
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
 }
 
 export function formatMoneyTotals(
@@ -70,14 +74,14 @@ export function formatMoneyTotals(
 
 export function formatPricePerMinute(price: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
-  if (curr === 'USD') {
-    const formatted = new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(price)
-    return `$${formatted}/phút`
-  }
-  return `${price.toLocaleString('vi-VN')}đ/phút`
+  const locale = curr === 'VND' ? 'vi-VN' : 'en-US'
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(Number.isFinite(price) ? price : 0)
+
+  // Luôn hiện mã tiền tệ để 1.75 PHP không bị hiểu nhầm thành 1,75 VND.
+  return `${curr} ${formatted}/phút`
 }
 
 

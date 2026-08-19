@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { collection, addDoc, updateDoc, deleteDoc, deleteField, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs } from 'firebase/firestore'
+import { collection, addDoc, updateDoc, deleteField, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs, runTransaction } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -14,10 +14,11 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { BookOpen, CircleDollarSign, Plus, Pencil, Search, Trash2 } from 'lucide-react'
+import { ArrowDownAZ, ArrowUpZA, BookOpen, CircleDollarSign, Plus, Pencil, Search, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { formatPricePerMinute } from '@/lib/constants'
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
-import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isDeletedSubject, isVisibleSubject } from '@/lib/subjectLifecycle'
+import { sortSubjectsByName, SubjectSortDirection } from '@/lib/subjectSorting'
 
 function parseVietnameseNumber(str: string): number {
   if (!str) return 0;
@@ -214,15 +215,25 @@ export function SubjectsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [editSubject, setEditSubject] = useState<Subject | null>(null)
   const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null)
-  const [deleteInfo, setDeleteInfo] = useState<{ studentCount: number; lessonCount: number } | null>(null)
+  const [deleteInfo, setDeleteInfo] = useState<{
+    studentCount: number
+    lessonCount: number
+    bookingCount: number
+    packageCount: number
+    requestCount: number
+    incomplete?: boolean
+  } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [search, setSearch] = useState('')
+  const [sortDirection, setSortDirection] = useState<SubjectSortDirection>('asc')
 
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'subjects'), orderBy('createdAt', 'desc')),
       (snap) => {
-        setSubjects(sortSubjectsByName(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject))))
+        setSubjects(snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Subject))
+          .filter(isVisibleSubject))
         setLoading(false)
       },
       (err) => {
@@ -243,8 +254,31 @@ export function SubjectsPage() {
     Promise.all([
       getDocs(query(collection(db, 'students'), where('subjectId', '==', deletingSubject.id))),
       getDocs(query(collection(db, 'lessons'), where('subjectId', '==', deletingSubject.id))),
-    ]).then(([sSnap, lSnap]) => {
-      if (!cancelled) setDeleteInfo({ studentCount: sSnap.size, lessonCount: lSnap.size })
+      getDocs(query(collection(db, 'bookingRequests'), where('subjectId', '==', deletingSubject.id))),
+      getDocs(query(collection(db, 'topUpPackages'), where('subjectId', '==', deletingSubject.id))),
+      getDocs(query(collection(db, 'topUpRequests'), where('subjectId', '==', deletingSubject.id))),
+    ]).then(([sSnap, lSnap, bSnap, pSnap, rSnap]) => {
+      if (!cancelled) {
+        setDeleteInfo({
+          studentCount: sSnap.size,
+          lessonCount: lSnap.size,
+          bookingCount: bSnap.size,
+          packageCount: pSnap.size,
+          requestCount: rSnap.size,
+        })
+      }
+    }).catch((error) => {
+      console.error('Unable to inspect all subject references:', error)
+      if (!cancelled) {
+        setDeleteInfo({
+          studentCount: 0,
+          lessonCount: 0,
+          bookingCount: 0,
+          packageCount: 0,
+          requestCount: 0,
+          incomplete: true,
+        })
+      }
     })
     return () => { cancelled = true }
   }, [deletingSubject])
@@ -253,31 +287,94 @@ export function SubjectsPage() {
     if (!deletingSubject) return
     setDeleting(true)
     try {
-      await deleteDoc(doc(db, 'subjects', deletingSubject.id))
-      await addDoc(collection(db, 'adminLogs'), {
-        adminId: user?.uid || '',
-        action: 'DELETE_SUBJECT',
-        targetType: 'subject',
-        targetId: deletingSubject.id,
-        changes: {
-          name: deletingSubject.name,
-          pricePerMinute: deletingSubject.pricePerMinute,
-          studentsAffected: deleteInfo?.studentCount ?? 0,
-          lessonsAffected: deleteInfo?.lessonCount ?? 0,
-        },
-        createdAt: serverTimestamp(),
+      const subjectRef = doc(db, 'subjects', deletingSubject.id)
+      const packageSnapshot = await getDocs(
+        query(collection(db, 'topUpPackages'), where('subjectId', '==', deletingSubject.id)),
+      )
+      if (packageSnapshot.size > 450) {
+        throw new Error('TOO_MANY_DEPENDENT_PACKAGES')
+      }
+
+      const logRef = doc(collection(db, 'adminLogs'))
+      const result = await runTransaction(db, async (transaction) => {
+        const [subjectSnapshot, ...packageSnapshots] = await Promise.all([
+          transaction.get(subjectRef),
+          ...packageSnapshot.docs.map((packageDocument) => transaction.get(packageDocument.ref)),
+        ])
+
+        if (!subjectSnapshot.exists()) throw new Error('SUBJECT_NOT_FOUND')
+
+        const currentSubject = { id: subjectSnapshot.id, ...subjectSnapshot.data() } as Subject
+        if (isDeletedSubject(currentSubject)) return { alreadyDeleted: true, pausedPackages: 0 }
+
+        const rate = getCanonicalSubjectRate(currentSubject)
+        transaction.update(subjectRef, {
+          status: 'inactive',
+          isDeleted: true,
+          deletedAt: serverTimestamp(),
+          deletedBy: user?.uid || '',
+          updatedAt: serverTimestamp(),
+        })
+
+        let pausedPackages = 0
+        packageSnapshots.forEach((packageDocument) => {
+          if (!packageDocument.exists() || packageDocument.data().status !== 'active') return
+          transaction.update(packageDocument.ref, {
+            status: 'inactive',
+            updatedAt: serverTimestamp(),
+          })
+          pausedPackages += 1
+        })
+
+        transaction.set(logRef, {
+          adminId: user?.uid || '',
+          action: 'ARCHIVE_SUBJECT',
+          targetType: 'subject',
+          targetId: deletingSubject.id,
+          changes: {
+            deletionMode: 'soft',
+            name: currentSubject.name,
+            pricePerMinute: rate.price,
+            currency: rate.currency,
+            previousStatus: currentSubject.status,
+            studentsReferenced: deleteInfo?.studentCount ?? null,
+            lessonsReferenced: deleteInfo?.lessonCount ?? null,
+            bookingsReferenced: deleteInfo?.bookingCount ?? null,
+            topUpRequestsReferenced: deleteInfo?.requestCount ?? null,
+            pausedPackageCount: pausedPackages,
+          },
+          createdAt: serverTimestamp(),
+        })
+
+        return { alreadyDeleted: false, pausedPackages }
       })
-      toast.success(`Đã xoá môn "${deletingSubject.name}"`)
+
+      if (result.alreadyDeleted) toast.info('Môn học này đã được xoá khỏi danh mục trước đó')
+      else {
+        const packageNote = result.pausedPackages > 0
+          ? `; đã tạm dừng ${result.pausedPackages} gói nạp đang mở`
+          : ''
+        toast.success(`Đã xoá môn khỏi danh mục, toàn bộ dữ liệu cũ vẫn được giữ${packageNote}`)
+      }
       setDeletingSubject(null)
     } catch (err) {
       console.error(err)
-      toast.error('Xoá thất bại')
+      if (err instanceof Error && err.message === 'SUBJECT_NOT_FOUND') {
+        toast.error('Môn học không còn tồn tại; không có dữ liệu nào bị thay đổi')
+      } else if (err instanceof Error && err.message === 'TOO_MANY_DEPENDENT_PACKAGES') {
+        toast.error('Có quá nhiều gói liên quan; vui lòng liên hệ kỹ thuật để lưu trữ an toàn')
+      } else {
+        toast.error('Không thể xoá an toàn; dữ liệu hiện tại vẫn được giữ nguyên')
+      }
     } finally {
       setDeleting(false)
     }
   }
 
-  const filtered = sortSubjectsByName(subjects.filter(s => s.name.toLowerCase().includes(search.toLowerCase())))
+  const filtered = sortSubjectsByName(
+    subjects.filter((subject) => subject.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))),
+    sortDirection,
+  )
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6">
@@ -308,11 +405,29 @@ export function SubjectsPage() {
         />
       ) : (
         <Card padding="none">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
             <thead className="border-b border-slate-200">
               <tr>
-                {['Tên môn', 'Giá / phút', 'Trạng thái', 'Hành động'].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-medium text-slate-500 uppercase">{h}</th>
+                <th
+                  className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500"
+                  aria-sort={sortDirection === 'asc' ? 'ascending' : 'descending'}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg px-2 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    title={sortDirection === 'asc' ? 'Đang xếp A-Z, bấm để đổi Z-A' : 'Đang xếp Z-A, bấm để đổi A-Z'}
+                  >
+                    <span>Tên môn</span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 font-bold normal-case text-indigo-700">
+                      {sortDirection === 'asc' ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpZA className="h-3.5 w-3.5" />}
+                      {sortDirection === 'asc' ? 'A-Z' : 'Z-A'}
+                    </span>
+                  </button>
+                </th>
+                {['Giá / phút', 'Trạng thái', 'Hành động'].map((heading) => (
+                  <th key={heading} className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">{heading}</th>
                 ))}
               </tr>
             </thead>
@@ -354,6 +469,7 @@ export function SubjectsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -365,8 +481,8 @@ export function SubjectsPage() {
           open
           onClose={() => setDeletingSubject(null)}
           onConfirm={handleDelete}
-          title={`Xoá môn "${deletingSubject.name}"?`}
-          confirmLabel="Xoá vĩnh viễn"
+          title={`Xoá môn "${deletingSubject.name}" khỏi danh mục?`}
+          confirmLabel="Xoá khỏi danh mục"
           confirmVariant="danger"
           loading={deleting}
         >
@@ -374,24 +490,31 @@ export function SubjectsPage() {
             <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-500 text-center">
               Đang kiểm tra dữ liệu liên quan...
             </div>
-          ) : deleteInfo.studentCount > 0 || deleteInfo.lessonCount > 0 ? (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm space-y-2">
-              <p className="font-semibold text-rose-700">⚠ Môn này đang được sử dụng:</p>
-              <ul className="text-rose-700 space-y-1 pl-4 list-disc">
-                {deleteInfo.studentCount > 0 && (
-                  <li><strong>{deleteInfo.studentCount}</strong> học viên đang học môn này</li>
-                )}
-                {deleteInfo.lessonCount > 0 && (
-                  <li><strong>{deleteInfo.lessonCount}</strong> buổi học đã ghi với môn này</li>
-                )}
-              </ul>
-              <p className="text-rose-600 text-xs pt-1">
-                Xoá sẽ làm các học viên/buổi học mất tham chiếu môn. Khuyên: chỉnh sang "Tạm dừng" thay vì xoá.
-              </p>
-            </div>
           ) : (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700">
-              ✓ Không có học viên hay buổi học nào dùng môn này — an toàn để xoá.
+            <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p className="font-bold">Dữ liệu đã có sẽ không bị xoá.</p>
+                  <p className="mt-1 text-xs leading-5 text-emerald-700">
+                    Hệ thống chỉ ẩn môn khỏi danh mục tạo mới. Tên môn, đơn giá, học viên, lịch học, buổi đã duyệt, lương và yêu cầu cũ vẫn được giữ dưới dạng dữ liệu lịch sử.
+                  </p>
+                </div>
+              </div>
+              {deleteInfo.incomplete ? (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Chưa tải đủ số lượng tham chiếu để hiển thị, nhưng thao tác vẫn dùng xoá mềm và không xoá các bản ghi lịch sử.</span>
+                </div>
+              ) : (
+                <ul className="grid gap-1 text-xs sm:grid-cols-2">
+                  <li>Hồ sơ chính: <strong>{deleteInfo.studentCount}</strong></li>
+                  <li>Buổi học: <strong>{deleteInfo.lessonCount}</strong></li>
+                  <li>Lịch đặt: <strong>{deleteInfo.bookingCount}</strong></li>
+                  <li>Yêu cầu nạp: <strong>{deleteInfo.requestCount}</strong></li>
+                  <li className="sm:col-span-2">Gói nạp liên quan: <strong>{deleteInfo.packageCount}</strong> — gói đang mở sẽ chuyển sang tạm dừng.</li>
+                </ul>
+              )}
             </div>
           )}
         </ConfirmDialog>

@@ -180,6 +180,10 @@ export interface Subject {
   status: 'active' | 'inactive'
   createdAt: Timestamp
   currency?: string
+  /** Soft delete: giữ document làm tombstone để mọi dữ liệu lịch sử còn đọc được. */
+  isDeleted?: boolean
+  deletedAt?: Timestamp
+  deletedBy?: string
 }
 
 // Báo cáo buổi học có cấu trúc (form điểm danh mẫu mới).

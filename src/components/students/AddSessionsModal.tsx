@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -88,6 +89,12 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
       }
 
       const prevPkg = updatedSubjects[sIdx]
+      const globalSubjSnap = await getDoc(doc(db, 'subjects', prevPkg.subjectId))
+      if (!globalSubjSnap.exists() || !isSelectableSubject(globalSubjSnap.data())) {
+        toast.error('Môn học đã tạm dừng hoặc xoá khỏi danh mục; dữ liệu cũ vẫn được giữ nhưng không thể cấp thêm buổi mới.')
+        return
+      }
+
       const addedMinutes = data.minutes
       const addedSessions = prevPkg.minutesPerSession > 0 ? Math.round((addedMinutes / prevPkg.minutesPerSession) * 100) / 100 : 0
       const newTotalSessions = prevPkg.totalSessions + addedSessions
@@ -98,10 +105,7 @@ export function AddSessionsModal({ student, onClose }: { student: Student; onClo
       // If pricePerMinute is 0, we can fetch it from the global subjects table
       let rate = prevPkg.pricePerMinute || 0
       if (rate === 0) {
-        const globalSubjSnap = await getDoc(doc(db, 'subjects', prevPkg.subjectId))
-        if (globalSubjSnap.exists()) {
-          rate = globalSubjSnap.data().pricePerMinute || 0
-        }
+        rate = globalSubjSnap.data().pricePerMinute || 0
       }
 
       const today = new Date()

@@ -24,6 +24,7 @@ import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
 import { downloadImage } from '@/lib/downloadImage'
 import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { OFFLINE_TEACHING_AREA_OPTIONS } from '@/lib/offlineTeachingAreas'
 
 interface Branch {
@@ -169,7 +170,9 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
 
   useEffect(() => {
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
-      setSubjects(sortSubjectsByName(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject))))
+      setSubjects(sortSubjectsByName(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)).filter(isSelectableSubject),
+      ))
     })
   }, [])
 

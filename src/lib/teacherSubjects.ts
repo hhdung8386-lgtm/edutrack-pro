@@ -33,6 +33,7 @@ export interface SubjectFilterCatalogItem {
   id: string
   name: string
   status?: string
+  isDeleted?: boolean
 }
 
 export type TeacherSubjectGroup = 'language' | 'academic' | 'legacy'
@@ -144,7 +145,7 @@ export function buildTeacherSubjectFilterOptions(
   }
 
   catalog.forEach((subject) => {
-    if (subject.status === 'inactive') return
+    if (subject.isDeleted || subject.status === 'inactive') return
     addCandidate(subject.name || '', 'legacy', subject.id)
   })
 

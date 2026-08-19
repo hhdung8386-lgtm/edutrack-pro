@@ -18,6 +18,7 @@ import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD 
 import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
@@ -304,7 +305,7 @@ export function TeacherDetailPage() {
 
   const handleSaveStudentSubject = async (studentId: string) => {
     const newSubject = subjects.find(sub => sub.id === selectedSubjectId)
-    if (!newSubject) {
+    if (!newSubject || !isSelectableSubject(newSubject)) {
       toast.error('Không tìm thấy môn học đã chọn')
       return
     }
@@ -1787,9 +1788,10 @@ export function TeacherDetailPage() {
                                 )}
                                 
                                 {showSubjectsList && (() => {
+                                  const selectableSubjects = subjects.filter(isSelectableSubject)
                                   const displayedSubjects = isSubjectSearching
-                                    ? subjects.filter(sub => sub.name.toLowerCase().includes(subjectSearch.toLowerCase()))
-                                    : subjects;
+                                    ? selectableSubjects.filter(sub => sub.name.toLowerCase().includes(subjectSearch.toLowerCase()))
+                                    : selectableSubjects;
                                   return (
                                     <div className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1">
                                       {displayedSubjects.map(sub => (

@@ -18,3 +18,17 @@ test('sắp tên môn A-Z không phân biệt hoa thường và giữ mảng ngu
   ])
   assert.equal(source[0].name, 'Toán 10')
 })
+
+test('nút sắp xếp có thể đổi từ A-Z sang Z-A', () => {
+  const source = [
+    { id: '1', name: 'A1' },
+    { id: '2', name: 'C1' },
+    { id: '3', name: 'B1' },
+  ]
+
+  assert.deepEqual(sortSubjectsByName(source, 'desc').map((subject) => subject.name), [
+    'C1',
+    'B1',
+    'A1',
+  ])
+})

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { BookOpen, Check, ChevronDown, Globe2, Search } from 'lucide-react'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -149,7 +150,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     // Fetch all active subjects
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active')))
       .then((snap) => {
-        const list = sortSubjectsByName(snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)))
+        const list = sortSubjectsByName(
+          snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(isSelectableSubject),
+        )
         const existingIds = currentSubjects.map(cs => cs.subjectId)
         setSubjectsList(list.filter(s => s.id === editingSubjectId || !existingIds.includes(s.id)))
       })

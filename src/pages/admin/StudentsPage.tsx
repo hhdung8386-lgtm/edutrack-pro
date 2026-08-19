@@ -16,6 +16,7 @@ import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare, Cop
 import { useNavigate } from 'react-router-dom'
 import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { isSelectableSubject } from '@/lib/subjectLifecycle'
 
 /**
  * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
@@ -153,8 +154,13 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     getDocs(collection(db, 'subjects'))
       .then((snap) => {
         const list = snap.docs
-          .map(d => ({ id: d.id, name: (d.data().name as string) || '', status: d.data().status as string }))
-          .filter(s => s.name && s.status !== 'inactive')
+          .map(d => ({
+            id: d.id,
+            name: (d.data().name as string) || '',
+            status: d.data().status as string,
+            isDeleted: d.data().isDeleted === true,
+          }))
+          .filter(s => s.name && isSelectableSubject(s))
           .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
         setSubjects(list)
       })
