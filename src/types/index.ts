@@ -41,6 +41,13 @@ export interface Student {
   id: string
   code: string
   name: string
+  /** Hồ sơ cũ không có field này luôn được hiểu là học viên 1 kèm 1. */
+  recordType?: 'individual' | 'group_class'
+  /** Danh sách lớp nhóm mà tài khoản học viên đang tham gia. */
+  groupClassIds?: string[]
+  /** Chỉ dùng trên hồ sơ lớp nhóm được lưu tương thích trong collection students. */
+  enrolledStudentIds?: string[]
+  enrolledStudents?: GroupClassMember[]
   parentPhone: string
   email?: string
   subjectId: string
@@ -77,6 +84,12 @@ export interface Student {
   profilePhotoURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp
+}
+
+export interface GroupClassMember {
+  studentId: string
+  studentCode: string
+  studentName: string
 }
 
 export interface Teacher {
@@ -216,11 +229,17 @@ export interface Lesson {
   studentId: string
   studentCode: string
   studentName: string
+  /** Snapshot lớp nhóm tại thời điểm điểm danh; buổi cũ/1 kèm 1 không có. */
+  groupClassId?: string
+  groupClassCode?: string
+  groupClassName?: string
+  groupClassMemberIds?: string[]
   teacherId: string
   teacherCode: string
   teacherName: string
   subjectId: string
   subjectName: string
+  curriculumLink?: string
   date: string
   /** 0 phút = vắng có phép (vẫn ghi nhận buổi nhưng không tính giờ dạy). */
   minutes: 0 | 25 | 50 | 75 | 100
@@ -303,6 +322,8 @@ export interface Payroll {
   type?: 'adjustment'
   adjustmentNote?: string
   createdBy?: string
+  evaluationId?: string
+  rewardKind?: 'evaluation_base' | 'student_registration'
   amount: number
   minutes: number
   pricePerMinute: number
@@ -327,6 +348,11 @@ export interface BookingRequest {
   studentId: string
   studentCode: string
   studentName: string
+  /** Snapshot lớp nhóm tại thời điểm xếp lịch; booking cũ/1 kèm 1 không có. */
+  groupClassId?: string
+  groupClassCode?: string
+  groupClassName?: string
+  groupClassMemberIds?: string[]
   subjectId?: string
   subjectName?: string
   requestedDay: DayOfWeek
@@ -340,6 +366,7 @@ export interface BookingRequest {
   note?: string
   adminNote?: string
   classroomURL?: string
+  curriculumLink?: string
   createdAt: Timestamp
   confirmedAt?: Timestamp
   confirmedBy?: string

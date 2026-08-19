@@ -13,6 +13,8 @@
     "test:subject-pricing": "node --experimental-strip-types --test tests/countryPricing.test.ts",
     "test:subject-sorting": "node --experimental-strip-types --test tests/subjectSorting.test.ts",
     "test:subject-lifecycle": "node --experimental-strip-types --test tests/subjectLifecycle.test.ts",
+    "test:evaluation-rewards": "node --experimental-strip-types --test tests/evaluationRewards.test.ts",
+    "test:group-classes": "node --experimental-strip-types --test tests/groupClasses.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

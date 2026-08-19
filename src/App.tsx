@@ -18,6 +18,7 @@ const WaitingApprovalPage = lazy(() => import('@/pages/WaitingApprovalPage').the
 
 // Lazy loaded Admin Pages
 const StudentsPage = lazy(() => import('@/pages/admin/StudentsPage').then(m => ({ default: m.StudentsPage })))
+const GroupClassesPage = lazy(() => import('@/pages/admin/GroupClassesPage').then(m => ({ default: m.GroupClassesPage })))
 const StudentDetailPage = lazy(() => import('@/pages/admin/StudentDetailPage').then(m => ({ default: m.StudentDetailPage })))
 const StudentAlertsPage = lazy(() => import('@/pages/admin/StudentAlertsPage').then(m => ({ default: m.StudentAlertsPage })))
 const TeachersPage = lazy(() => import('@/pages/admin/TeachersPage').then(m => ({ default: m.TeachersPage })))
@@ -71,7 +72,7 @@ const RootRedirect = () => {
   if (!user) return <Navigate to="/login" replace />
   
   if (accessScope === 'booking_only') return <Navigate to="/admin/booking-schedules" replace />
-  if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/fixed" replace />
+  if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/one-to-one" replace />
   if (role === 'teacher_manager') return <Navigate to="/admin/teachers/online" replace />
   if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
   if (role === 'guest') return <Navigate to="/waiting" replace />
@@ -83,7 +84,7 @@ const RootRedirect = () => {
 const AdminIndexRedirect = () => {
   const role = useAuthStore((state) => state.role)
   const accessScope = useAuthStore((state) => state.accessScope)
-  return <Navigate to={accessScope === 'booking_only' ? 'booking-schedules' : role === 'teacher_manager' ? 'teachers/online' : 'students/fixed'} replace />
+  return <Navigate to={accessScope === 'booking_only' ? 'booking-schedules' : role === 'teacher_manager' ? 'teachers/online' : 'students/one-to-one'} replace />
 }
 
 function App() {
@@ -136,10 +137,13 @@ function App() {
           >
             {/* Dashboard cũ đã bị loại bỏ vì tự quét/ghi dữ liệu khi mở trang.
                 Giữ redirect để bookmark cũ không rơi vào trang 404. */}
-            <Route path="dashboard" element={<Navigate to="/admin/students/fixed" replace />} />
-            <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
-            <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
-            <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
+            <Route path="dashboard" element={<Navigate to="/admin/students/one-to-one" replace />} />
+            <Route path="students" element={<Navigate to="/admin/students/one-to-one" replace />} />
+            <Route path="students/one-to-one" element={<StudentsPage key="one-to-one" learningScheduleType="all" />} />
+            <Route path="students/group" element={<GroupClassesPage />} />
+            {/* Bookmark cũ vẫn mở đúng danh sách 1 kèm 1, không mất đường dẫn. */}
+            <Route path="students/fixed" element={<Navigate to="/admin/students/one-to-one" replace />} />
+            <Route path="students/flexible" element={<Navigate to="/admin/students/one-to-one" replace />} />
             <Route path="student-alerts" element={<StudentAlertsPage />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<Navigate to="online" replace />} />

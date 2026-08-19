@@ -40,8 +40,12 @@ export function generateTeacherCode(): string {
   return 'GV' + randomCode(6)
 }
 
-export async function generateUniqueCode(type: 'student' | 'teacher'): Promise<string> {
-  const prefix = type === 'student' ? 'HS' : 'GV'
+export function generateGroupClassCode(): string {
+  return 'LN' + randomCode(6)
+}
+
+export async function generateUniqueCode(type: 'student' | 'teacher' | 'groupClass'): Promise<string> {
+  const prefix = type === 'student' ? 'HS' : type === 'teacher' ? 'GV' : 'LN'
   const fallbackCode = prefix + randomCode(6)
   
   try {

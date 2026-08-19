@@ -353,6 +353,13 @@ export function AttendancePage() {
         teacherName: teacher.name,
         subjectId: selectedSubjectId,
         subjectName: selectedPkg.subjectName,
+        ...(selectedPkg.curriculumLink ? { curriculumLink: selectedPkg.curriculumLink } : {}),
+        ...(student.recordType === 'group_class' ? {
+          groupClassId: student.id,
+          groupClassCode: student.code,
+          groupClassName: student.name,
+          groupClassMemberIds: student.enrolledStudentIds || [],
+        } : {}),
         date: data.date,
         minutes: selectedMinutes,
         points: lessonPoints,

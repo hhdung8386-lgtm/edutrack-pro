@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
+import { isGroupClass } from '@/lib/groupClasses'
 
 /**
  * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
@@ -43,7 +44,7 @@ type StudentGroupView = 'all' | 'fixed' | 'flexible'
 
 const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: string; emptyDescription: string }> = {
   all: {
-    title: 'Tất cả học viên',
+    title: 'Lớp 1 kèm 1',
     emptyTitle: 'Chưa có học viên',
     emptyDescription: 'Bấm “Thêm học viên” để tạo hồ sơ đầu tiên.',
   },
@@ -170,6 +171,9 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   }, [])
 
   const filtered = students.filter((s) => {
+    // Hồ sơ lớp nhóm dùng chung collection để tương thích Rules hiện tại nhưng
+    // tuyệt đối không được lẫn vào danh sách tài khoản học viên 1 kèm 1.
+    if (isGroupClass(s)) return false
     // Chưa phân loại (field trống/'unclassified') được tính là CỐ ĐỊNH.
     const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
     const matchScheduleType = learningScheduleType === 'all' || normalizedGroup === learningScheduleType
@@ -198,6 +202,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   // Thống kê theo nhóm đang xem (chưa áp bộ lọc tìm kiếm/trạng thái) để đối chiếu
   // với Dashboard — giúp thấy rõ tổng hồ sơ tách theo từng trạng thái.
   const groupStudents = students.filter((s) => {
+    if (isGroupClass(s)) return false
     const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
     return learningScheduleType === 'all' || normalizedGroup === learningScheduleType
   })

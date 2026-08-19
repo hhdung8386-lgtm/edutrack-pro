@@ -46,6 +46,7 @@ interface BookingExperienceTabProps {
   onSelectBooking: (booking: BookingRequest) => void
   onOpenTeacherProfile: (teacherId: string) => void
   onCancelBooking: (booking: BookingRequest) => void
+  canManageBooking: (booking: BookingRequest) => boolean
   onPickTeacher: () => void
   showRecommendations: boolean
   onCloseRecommendations: () => void
@@ -100,6 +101,7 @@ function ScheduleCard({
   roomLink,
   cancellationPending,
   rebookRequired,
+  canCancel,
   onDetail,
   onTeacherProfile,
   onCancel,
@@ -111,13 +113,14 @@ function ScheduleCard({
   roomLink: string
   cancellationPending: boolean
   rebookRequired?: boolean
+  canCancel: boolean
   onDetail: () => void
   onTeacherProfile: () => void
   onCancel: () => void
   lang: string
 }) {
   const nickname = teacherNickname(teacher, booking.teacherCode, lang)
-  const curriculumLink = normalizeLink(subjectPackage?.curriculumLink)
+  const curriculumLink = normalizeLink(booking.curriculumLink || subjectPackage?.curriculumLink)
   const classroomLink = normalizeLink(roomLink)
   const confirmed = booking.status === 'confirmed'
   const courseName = displayCourseName(booking.subjectName, lang)
@@ -145,12 +148,17 @@ function ScheduleCard({
                   <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">
                     {courseName}
                   </p>
+                  {booking.groupClassId && (
+                    <p className="mt-1 text-[10px] font-extrabold uppercase tracking-wide text-cyan-700">
+                      {lang === 'vi' ? `Lớp nhóm · ${booking.groupClassCode || ''}` : `Group class · ${booking.groupClassCode || ''}`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className={`rounded-lg px-2 py-1 text-[10px] font-black ${confirmed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {confirmed ? (lang === 'vi' ? 'Sắp diễn ra' : 'Upcoming') : (lang === 'vi' ? 'Chờ xác nhận' : 'Pending')}
                   </span>
-                  {['pending', 'confirmed'].includes(booking.status) && (
+                  {canCancel && ['pending', 'confirmed'].includes(booking.status) && (
                     <button
                       type="button"
                       onClick={onCancel}
@@ -209,6 +217,7 @@ export function BookingExperienceTab({
   onSelectBooking,
   onOpenTeacherProfile,
   onCancelBooking,
+  canManageBooking,
   onPickTeacher,
   showRecommendations,
   onCloseRecommendations,
@@ -301,6 +310,7 @@ export function BookingExperienceTab({
       roomLink={roomLinkOf(booking)}
       cancellationPending={pendingCancellationIds.has(booking.id)}
       rebookRequired={rebookRequired}
+      canCancel={canManageBooking(booking)}
       onDetail={() => onSelectBooking(booking)}
       onTeacherProfile={() => onOpenTeacherProfile(booking.teacherId)}
       onCancel={() => onCancelBooking(booking)}

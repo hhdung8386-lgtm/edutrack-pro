@@ -20,6 +20,7 @@ import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import { isGroupClass } from '@/lib/groupClasses'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -1419,6 +1420,7 @@ export function StudentDetailPage() {
   }
 
   const trackingUrl = `${window.location.origin}/tracking?student=${student.code}`
+  const groupClass = isGroupClass(student)
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-none">
@@ -1428,7 +1430,7 @@ export function StudentDetailPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900">{student.name}</h1>
-          <p className="text-sm text-slate-500">Chi tiết học viên</p>
+          <p className="text-sm text-slate-500">{groupClass ? 'Chi tiết lớp nhóm' : 'Chi tiết học viên'}</p>
         </div>
       </div>
 
@@ -1444,13 +1446,20 @@ export function StudentDetailPage() {
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm mt-2">
               <div>
-                <span className="text-slate-500">Họ tên: </span>
+                <span className="text-slate-500">{groupClass ? 'Tên lớp: ' : 'Họ tên: '}</span>
                 <span className="text-slate-700 font-medium">{student.name}</span>
               </div>
-              <div>
-                <span className="text-slate-500">SĐT PH: </span>
-                <span className="text-slate-700">{student.parentPhone}</span>
-              </div>
+              {groupClass ? (
+                <div>
+                  <span className="text-slate-500">Đã enrol: </span>
+                  <span className="text-slate-700 font-medium">{student.enrolledStudentIds?.length || 0} học viên</span>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-slate-500">SĐT PH: </span>
+                  <span className="text-slate-700">{student.parentPhone}</span>
+                </div>
+              )}
               <div>
                 <span className="text-slate-500">Môn học: </span>
                 <span className="text-slate-700">{student.subjectName || '—'}</span>
@@ -1475,14 +1484,20 @@ export function StudentDetailPage() {
                 <DiamondPointsIcon className="h-4 w-4" />
                 <span>{availableDiamondBalance.toLocaleString('vi-VN')} kim cương khả dụng</span>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-                <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
-                <span>{rewardStarBalance.toLocaleString('vi-VN')} sao hiện có</span>
-              </div>
+              {!groupClass && (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                  <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
+                  <span>{rewardStarBalance.toLocaleString('vi-VN')} sao hiện có</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
+            {groupClass ? (
+              <Button size="sm" variant="outline" onClick={() => navigate('/admin/students/group')}>Quản lý enrol</Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
+            )}
             <Button size="sm" variant="primary" onClick={() => setShowAddSessions(true)}>+ Thêm buổi</Button>
             {student.status === 'reserved' ? (
               <Button
@@ -1491,7 +1506,7 @@ export function StudentDetailPage() {
                 onClick={handleReactivateStudent}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
               >
-                Kích hoạt lại
+                {groupClass ? 'Mở lại lớp' : 'Kích hoạt lại'}
               </Button>
             ) : (
               <Button
@@ -1500,7 +1515,7 @@ export function StudentDetailPage() {
                 onClick={handleSuspendStudent}
                 className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
               >
-                Bảo lưu
+                {groupClass ? 'Tạm ngưng lớp' : 'Bảo lưu'}
               </Button>
             )}
           </div>

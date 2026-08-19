@@ -6,6 +6,7 @@ import {
   bookingIntervalStartInMinutes,
   bookingIntervalsOverlap,
 } from '@/lib/bookingTime'
+import { bookingParticipantsOverlap } from '@/lib/groupClasses'
 
 export { bookingIntervalsOverlap, bookingTimeToMinutes } from '@/lib/bookingTime'
 
@@ -20,6 +21,7 @@ export type BookingCandidate = Pick<
   | 'requestedEnd'
 > & Partial<Pick<BookingRequest, 'id' | 'teacherName' | 'studentName' | 'studentCode'>> & {
   requestedMinutes?: number
+  groupClassMemberIds?: string[]
 }
 
 export interface BookingConflict {
@@ -44,7 +46,7 @@ export function isActiveBooking(booking: Pick<BookingRequest, 'status' | 'teache
 function conflictReasons(candidate: BookingCandidate, existing: BookingCandidate) {
   const reasons: BookingConflictReason[] = []
   if (candidate.teacherId && candidate.teacherId === existing.teacherId) reasons.push('teacher')
-  if (candidate.studentId && candidate.studentId === existing.studentId) reasons.push('student')
+  if (bookingParticipantsOverlap(candidate, existing)) reasons.push('student')
   return reasons
 }
 
@@ -95,13 +97,20 @@ export function findBookingConflicts(
 
 export async function loadRelevantActiveBookings(candidates: BookingCandidate[]) {
   const teacherIds = Array.from(new Set(candidates.map((item) => item.teacherId).filter(Boolean)))
-  const studentIds = Array.from(new Set(candidates.map((item) => item.studentId).filter(Boolean)))
+  const studentIds = Array.from(new Set(candidates.flatMap((item) => [
+    item.studentId,
+    ...(item.groupClassMemberIds || []),
+  ]).filter(Boolean)))
   const snapshots = await Promise.all([
     // Lịch là dữ liệu giao dịch: luôn đọc trực tiếp từ server. Dùng getDocs() ở đây có thể
     // trả về cache cũ trong lúc hai chuỗi lịch vừa được tạo sát nhau, khiến ca thứ hai
     // không nhìn thấy ca thứ nhất và cùng ghi vào một khung giờ.
     ...teacherIds.map((teacherId) => getDocsFromServer(query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)))),
     ...studentIds.map((studentId) => getDocsFromServer(query(collection(db, 'bookingRequests'), where('studentId', '==', studentId)))),
+    // Một học viên có thể đang bận trong một lớp nhóm mà `studentId` của booking
+    // là mã lớp. Tra thêm snapshot thành viên để lịch 1 kèm 1 và lịch nhóm không
+    // bao giờ được xếp chồng lên nhau.
+    ...studentIds.map((studentId) => getDocsFromServer(query(collection(db, 'bookingRequests'), where('groupClassMemberIds', 'array-contains', studentId)))),
   ])
 
   const byId = new Map<string, BookingRequest>()
@@ -131,6 +140,7 @@ export function findExistingBookingConflictPairs(bookings: BookingRequest[]) {
     const keys = [
       booking.teacherId ? `teacher:${booking.teacherId}` : '',
       booking.studentId ? `student:${booking.studentId}` : '',
+      ...(booking.groupClassMemberIds || []).map((studentId) => `student:${studentId}`),
     ].filter(Boolean)
     keys.forEach((key) => groups.set(key, [...(groups.get(key) || []), booking]))
   }

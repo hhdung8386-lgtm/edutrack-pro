@@ -223,6 +223,15 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
+            ...(chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink ? {
+              curriculumLink: chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink,
+            } : {}),
+            ...(bookingNow?.groupClassId || lessonNow.groupClassId ? {
+              groupClassId: bookingNow?.groupClassId || lessonNow.groupClassId,
+              groupClassCode: bookingNow?.groupClassCode || lessonNow.groupClassCode || lessonNow.studentCode,
+              groupClassName: bookingNow?.groupClassName || lessonNow.groupClassName || lessonNow.studentName,
+              groupClassMemberIds: bookingNow?.groupClassMemberIds || lessonNow.groupClassMemberIds || [],
+            } : {}),
             sessionsBeforeApproval: subPkg.remainingSessions,
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
@@ -281,6 +290,15 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             teacherName: lesson.teacherName,
             subjectId: chosenSubjectPkg.subjectId,
             subjectName: chosenSubjectPkg.subjectName,
+            ...(chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink ? {
+              curriculumLink: chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink,
+            } : {}),
+            ...(bookingNow?.groupClassId || lessonNow.groupClassId ? {
+              groupClassId: bookingNow?.groupClassId || lessonNow.groupClassId,
+              groupClassCode: bookingNow?.groupClassCode || lessonNow.groupClassCode || lessonNow.studentCode,
+              groupClassName: bookingNow?.groupClassName || lessonNow.groupClassName || lessonNow.studentName,
+              groupClassMemberIds: bookingNow?.groupClassMemberIds || lessonNow.groupClassMemberIds || [],
+            } : {}),
             date: lesson.date,
             minutes: lesson.minutes,
             points: lessonPoints,

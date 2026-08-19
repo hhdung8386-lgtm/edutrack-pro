@@ -44,6 +44,7 @@ import {
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable } from '@/lib/bookingLogic'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { isGroupClass } from '@/lib/groupClasses'
 import {
   buildFutureRecurringSlots,
   estimateRecurringWeeks,
@@ -290,6 +291,7 @@ export function BookingSchedulesPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
+  const selectedIsGroupClass = isGroupClass(selectedStudent)
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const selectedSlotsContainPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const availabilityFilterActive = filterDays.length > 0
@@ -758,7 +760,7 @@ export function BookingSchedulesPage() {
   const filteredStudents = useMemo(() => {
     const keyword = studentSearch.trim().toLowerCase()
     if (!keyword) return []
-    return students.filter(s => `${s.name} ${s.code}`.toLowerCase().includes(keyword))
+    return students.filter(s => `${s.name} ${s.code} ${isGroupClass(s) ? 'lớp nhóm lop nhom' : 'lớp 1 kèm 1'}`.toLowerCase().includes(keyword))
   }, [studentSearch, students])
 
   // Get selected student's active subjects/packages
@@ -862,6 +864,12 @@ export function BookingSchedulesPage() {
       return
     }
 
+    const groupClassMemberIds = selectedIsGroupClass ? [...(selectedStudent.enrolledStudentIds || [])] : []
+    if (selectedIsGroupClass && groupClassMemberIds.length === 0) {
+      toast.warning('Lớp nhóm chưa enrol học viên nào')
+      return
+    }
+
     const pointsPer25Minutes = getTeacherPointsPer25Minutes(selectedTeacher)
     const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
     const totalRequiredPoints = selectedSlots.length * pointsPerLesson
@@ -959,14 +967,20 @@ export function BookingSchedulesPage() {
       // Capture both calendar revisions before conflict detection. The transaction
       // below may only write when these revisions are still current, preventing two
       // near-simultaneous scheduling actions from committing the same time slot.
-      const [studentCalendarSnap, teacherCalendarSnap] = await Promise.all([
+      const memberRefs = groupClassMemberIds.map((memberId) => doc(db, 'students', memberId))
+      const [studentCalendarSnap, teacherCalendarSnap, ...memberCalendarSnaps] = await Promise.all([
         getDocFromServer(doc(db, 'students', studentId)),
         getDocFromServer(doc(db, 'teachers', selectedTeacher.id)),
+        ...memberRefs.map((memberRef) => getDocFromServer(memberRef)),
       ])
       if (!studentCalendarSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
       if (!teacherCalendarSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
       const expectedStudentScheduleRevision = Number(studentCalendarSnap.data().bookingScheduleRevision || 0)
       const expectedTeacherScheduleRevision = Number(teacherCalendarSnap.data().bookingScheduleRevision || 0)
+      const expectedMemberScheduleRevisions = new Map(memberCalendarSnaps.map((snapshot, index) => {
+        if (!snapshot.exists()) throw new Error('GROUP_MEMBER_NOT_FOUND')
+        return [memberRefs[index].id, Number(snapshot.data().bookingScheduleRevision || 0)]
+      }))
 
       const candidates = []
       if (!isRecurring) {
@@ -981,6 +995,7 @@ export function BookingSchedulesPage() {
             requestedStart: slot.time,
             requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
             requestedMinutes: duration,
+            ...(selectedIsGroupClass ? { groupClassMemberIds } : {}),
           })
         })
       } else {
@@ -996,6 +1011,7 @@ export function BookingSchedulesPage() {
             requestedStart: slot.time,
             requestedEnd: minutesToTime(timeToMinutes(slot.time) + duration),
             requestedMinutes: duration,
+            ...(selectedIsGroupClass ? { groupClassMemberIds } : {}),
           })
         }
       }
@@ -1010,18 +1026,24 @@ export function BookingSchedulesPage() {
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const teacherRef = doc(db, 'teachers', selectedTeacher.id)
-        const [studentSnap, teacherSnap] = await Promise.all([
+        const [studentSnap, teacherSnap, ...memberSnaps] = await Promise.all([
           tx.get(studentRef),
           tx.get(teacherRef),
+          ...memberRefs.map((memberRef) => tx.get(memberRef)),
         ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
         if (!teacherSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
 
         const currentStudentScheduleRevision = Number(studentSnap.data().bookingScheduleRevision || 0)
         const currentTeacherScheduleRevision = Number(teacherSnap.data().bookingScheduleRevision || 0)
+        const groupMembersChanged = memberSnaps.some((snapshot, index) => (
+          !snapshot.exists()
+          || Number(snapshot.data().bookingScheduleRevision || 0) !== expectedMemberScheduleRevisions.get(memberRefs[index].id)
+        ))
         if (
           currentStudentScheduleRevision !== expectedStudentScheduleRevision
           || currentTeacherScheduleRevision !== expectedTeacherScheduleRevision
+          || groupMembersChanged
         ) {
           throw new Error('BOOKING_CALENDAR_CHANGED')
         }
@@ -1062,8 +1084,15 @@ export function BookingSchedulesPage() {
               studentId: currentStudent.id,
               studentCode: currentStudent.code,
               studentName: currentStudent.name,
+              ...(selectedIsGroupClass ? {
+                groupClassId: currentStudent.id,
+                groupClassCode: currentStudent.code,
+                groupClassName: currentStudent.name,
+                groupClassMemberIds,
+              } : {}),
               subjectId: selectedSubjectId,
               subjectName: sub.subjectName,
+              curriculumLink: sub.curriculumLink || '',
               requestedDay: slot.day,
               requestedDate: slot.dateISO,
               requestedWeekStart: weekStartISO,
@@ -1111,8 +1140,15 @@ export function BookingSchedulesPage() {
               studentId: currentStudent.id,
               studentCode: currentStudent.code,
               studentName: currentStudent.name,
+              ...(selectedIsGroupClass ? {
+                groupClassId: currentStudent.id,
+                groupClassCode: currentStudent.code,
+                groupClassName: currentStudent.name,
+                groupClassMemberIds,
+              } : {}),
               subjectId: selectedSubjectId,
               subjectName: sub.subjectName,
+              curriculumLink: sub.curriculumLink || '',
               requestedDay: slot.day,
               requestedDate: slot.dateISO,
               requestedWeekStart: formatDateISO(getMonday(slotDate)),
@@ -1149,6 +1185,16 @@ export function BookingSchedulesPage() {
           bookingScheduleUpdatedAt: serverTimestamp(),
         })
 
+        memberRefs.forEach((memberRef, index) => {
+          const memberSnapshot = memberSnaps[index]
+          if (!memberSnapshot?.exists()) throw new Error('GROUP_MEMBER_NOT_FOUND')
+          const memberRevision = Number(memberSnapshot.data().bookingScheduleRevision || 0)
+          tx.update(memberRef, {
+            bookingScheduleRevision: memberRevision + 1,
+            bookingScheduleUpdatedAt: serverTimestamp(),
+          })
+        })
+
         // Set booking documents
         for (const booking of bookingsToCreate) {
           const bookingRef = doc(collection(db, 'bookingRequests'))
@@ -1166,7 +1212,7 @@ export function BookingSchedulesPage() {
             : isRecurring
             ? 'RECURRING_BATCH_SCHEDULE_CLASSES'
             : 'BATCH_SCHEDULE_CLASSES',
-          targetType: 'student',
+          targetType: selectedIsGroupClass ? 'group_class' : 'student',
           targetId: studentId,
           changes: {
             teacherId: selectedTeacher.id,
@@ -1179,6 +1225,7 @@ export function BookingSchedulesPage() {
             recurringMode: isRecurring ? recurringMode : null,
             requestedRecurringSessions: isRecurring && recurringMode === 'custom' ? recurringSessionCount : null,
             scheduleMode,
+            groupClassMemberIds: selectedIsGroupClass ? groupClassMemberIds : null,
           },
           createdAt: serverTimestamp(),
         })
@@ -1208,6 +1255,10 @@ export function BookingSchedulesPage() {
       }
       if (errorMessage === 'BOOKING_CALENDAR_CHANGED') {
         toast.error('Lịch vừa được thay đổi ở thao tác khác. Hệ thống chưa tạo ca nào; vui lòng chọn lại lịch mới nhất.')
+        return
+      }
+      if (errorMessage === 'GROUP_MEMBER_NOT_FOUND') {
+        toast.error('Danh sách enrol của lớp nhóm vừa thay đổi. Vui lòng mở lại lớp và thử lần nữa.')
         return
       }
       if (errorMessage === 'NOT_ENOUGH_MINUTES') {
@@ -2344,7 +2395,7 @@ export function BookingSchedulesPage() {
 
             {/* Search Student */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-bold text-slate-700">Tìm kiếm học viên *</label>
+              <label className="block text-sm font-bold text-slate-700">Tìm mã học viên hoặc mã lớp *</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                 <input
@@ -2354,7 +2405,7 @@ export function BookingSchedulesPage() {
                     setStudentSearch(e.target.value)
                     if (selectedStudent) setSelectedStudent(null)
                   }}
-                  placeholder="Gõ mã hoặc tên học viên để tìm..."
+                  placeholder="Gõ mã hoặc tên học viên, lớp nhóm..."
                   className="w-full rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm outline-none focus:border-indigo-500"
                 />
               </div>
@@ -2363,7 +2414,7 @@ export function BookingSchedulesPage() {
               {!selectedStudent && studentSearch.trim() && (
                 <div className="max-h-[180px] overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-lg space-y-1 p-1">
                   {filteredStudents.length === 0 ? (
-                    <p className="text-xs text-slate-500 p-2">Không tìm thấy học viên nào</p>
+                    <p className="text-xs text-slate-500 p-2">Không tìm thấy học viên hoặc lớp nhóm</p>
                   ) : (
                     filteredStudents.map((st) => (
                       <button
@@ -2373,8 +2424,15 @@ export function BookingSchedulesPage() {
                         className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 rounded-md flex items-center justify-between"
                       >
                         <div>
-                          <p className="font-bold text-slate-800">{st.name}</p>
-                          <p className="text-xs text-slate-500 font-mono">{st.code}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-bold text-slate-800">{st.name}</p>
+                            {isGroupClass(st) && (
+                              <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-cyan-700">Lớp nhóm</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono">
+                            {st.code}{isGroupClass(st) ? ` · ${st.enrolledStudentIds?.length || 0} học viên` : ''}
+                          </p>
                         </div>
                         <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded">Chọn</span>
                       </button>
@@ -2393,7 +2451,11 @@ export function BookingSchedulesPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900">{selectedStudent.name}</h3>
-                    <p className="text-xs text-slate-500 font-mono">{selectedStudent.code} · SĐT: {selectedStudent.parentPhone || '—'}</p>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {selectedStudent.code} · {selectedIsGroupClass
+                        ? `${selectedStudent.enrolledStudentIds?.length || 0} học viên đã enrol`
+                        : `SĐT: ${selectedStudent.parentPhone || '—'}`}
+                    </p>
                   </div>
                 </div>
 

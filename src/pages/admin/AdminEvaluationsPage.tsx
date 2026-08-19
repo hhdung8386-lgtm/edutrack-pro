@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, runTransaction, getDocs, where, writeBatch } from 'firebase/firestore'
+import { collection, query, onSnapshot, doc, updateDoc, serverTimestamp, getDoc, runTransaction, where, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -12,6 +12,12 @@ import { ClipboardCheck, Search, Copy, Trash2, Edit3, X, ExternalLink, Check, Ho
 import { EVALUATION_FORM_LABELS, getCourseOptions, normalizeCourseLabel, normalizeSelectedCourseLevels, TUTOR_SKILL_OPTIONS, type EvaluationFormType } from '@/lib/evaluationOptions'
 import { EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY, formatMoney, getCurrentMonth } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
+import {
+  evaluationBasePayrollId,
+  evaluationRegistrationPayrollId,
+  isValidRegistrationRewardVnd,
+  normalizeRegistrationRewardVnd,
+} from '@/lib/evaluationRewards'
 
 interface Evaluation {
   id: string
@@ -45,6 +51,11 @@ interface Evaluation {
   rewardAmount?: number
   /** Tháng bảng lương đã nhận khoản thưởng (phiếu cũ chưa có -> suy từ approvedAt). */
   rewardMonth?: string
+  registrationRewardPayrollId?: string
+  registrationRewardAmount?: number
+  registrationRewardedAt?: unknown
+  registrationRewardedBy?: string
+  studentRegistered?: boolean
 }
 
 /** Đổi Timestamp/Date/số của Firestore về `YYYY-MM`, không đọc được thì trả '' */
@@ -88,6 +99,7 @@ function formatPayrollMonth(month: string): string {
 
 type EvalStatus = 'pending' | 'approved' | 'rejected'
 const evalStatusOf = (e: Evaluation): EvalStatus => e.status === 'approved' ? 'approved' : e.status === 'rejected' ? 'rejected' : 'pending'
+const errorCode = (value: unknown) => value instanceof Error ? value.message : ''
 
 const RESULT_LABELS = {
   direct: 'Phù hợp đăng ký ngay',
@@ -147,7 +159,15 @@ export default function AdminEvaluationsPage() {
   const [payrollMonthFilter, setPayrollMonthFilter] = useState('')
   const [processingId, setProcessingId] = useState<string | null>(null)
   // Đối soát tháng của khoản thưởng đã cộng trước đây (xem khối "Đối soát" bên dưới)
-  const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, { evaluationId: string; month: string; paid: boolean }>>({})
+  const [rewardPayrolls, setRewardPayrolls] = useState<Record<string, {
+    evaluationId: string
+    month: string
+    paid: boolean
+    amount: number
+    rewardKind: 'evaluation_base' | 'student_registration'
+  }>>({})
+  const [registrationRewardEvaluationId, setRegistrationRewardEvaluationId] = useState<string | null>(null)
+  const [registrationRewardInput, setRegistrationRewardInput] = useState('40000')
   const [fixingMonths, setFixingMonths] = useState(false)
   // Đã tự động đưa các khoản lệch về đúng tháng trong lần mở trang này chưa (chỉ chạy 1 lần)
   const autoFixedRef = useRef(false)
@@ -243,11 +263,30 @@ export default function AdminEvaluationsPage() {
   useEffect(() => {
     const q = query(collection(db, 'payroll'), where('type', '==', 'adjustment'))
     return onSnapshot(q, (snap) => {
-      const map: Record<string, { evaluationId: string; month: string; paid: boolean }> = {}
+      const map: Record<string, {
+        evaluationId: string
+        month: string
+        paid: boolean
+        amount: number
+        rewardKind: 'evaluation_base' | 'student_registration'
+      }> = {}
       snap.docs.forEach((d) => {
-        const data = d.data() as { evaluationId?: string; month?: string; paid?: boolean; voided?: boolean }
+        const data = d.data() as {
+          evaluationId?: string
+          month?: string
+          paid?: boolean
+          voided?: boolean
+          amount?: number
+          rewardKind?: 'evaluation_base' | 'student_registration'
+        }
         if (!data.evaluationId || data.voided) return
-        map[d.id] = { evaluationId: data.evaluationId, month: data.month || '', paid: data.paid === true }
+        map[d.id] = {
+          evaluationId: data.evaluationId,
+          month: data.month || '',
+          paid: data.paid === true,
+          amount: Number.isFinite(Number(data.amount)) ? Number(data.amount) : EVALUATION_REWARD_AMOUNT,
+          rewardKind: data.rewardKind === 'student_registration' ? 'student_registration' : 'evaluation_base',
+        }
       })
       setRewardPayrolls(map)
     }, (err) => {
@@ -370,11 +409,40 @@ export default function AdminEvaluationsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Bạn có chắc chắn muốn xóa phiếu đánh giá này?')) return
     try {
-      await deleteDoc(doc(db, 'evaluations', id))
+      await runTransaction(db, async (tx) => {
+        const evalRef = doc(db, 'evaluations', id)
+        const evalSnap = await tx.get(evalRef)
+        if (!evalSnap.exists()) return
+        const current = evalSnap.data() as Evaluation
+        const payrollIds = Array.from(new Set([
+          current.rewardPayrollId,
+          current.registrationRewardPayrollId,
+          evaluationBasePayrollId(id),
+          evaluationRegistrationPayrollId(id),
+        ].filter(Boolean) as string[]))
+        const payrollRefs = payrollIds.map((payrollId) => doc(db, 'payroll', payrollId))
+        const payrollSnaps = await Promise.all(payrollRefs.map((payrollRef) => tx.get(payrollRef)))
+        if (payrollSnaps.some((snapshot) => snapshot.exists() && snapshot.data()?.paid === true && snapshot.data()?.voided !== true)) {
+          throw new Error('REWARD_ALREADY_PAID')
+        }
+        payrollSnaps.forEach((snapshot, index) => {
+          if (!snapshot.exists() || snapshot.data()?.voided === true) return
+          tx.update(payrollRefs[index], {
+            voided: true,
+            voidedOriginalAmount: Number(snapshot.data()?.amount || 0),
+            amount: 0,
+            voidedAt: serverTimestamp(),
+            voidedBy: user?.uid || 'admin',
+          })
+        })
+        tx.delete(evalRef)
+      })
       toast.success('Đã xóa phiếu đánh giá')
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err)
-      toast.error('Lỗi khi xóa phiếu đánh giá')
+      toast.error(errorCode(err) === 'REWARD_ALREADY_PAID'
+        ? 'Phiếu có khoản thưởng đã thanh toán nên không thể xóa. Hãy giữ phiếu để đối soát bảng lương.'
+        : 'Lỗi khi xóa phiếu đánh giá')
     }
   }
 
@@ -409,7 +477,9 @@ export default function AdminEvaluationsPage() {
         const current = evalSnap.data() as Evaluation
         if (current.status === 'approved') throw new Error('ALREADY_APPROVED')
 
-        const payrollRef = doc(collection(db, 'payroll'))
+        const payrollRef = doc(db, 'payroll', evaluationBasePayrollId(evaluation.id))
+        const payrollSnap = await tx.get(payrollRef)
+        if (payrollSnap.exists() && payrollSnap.data()?.voided !== true) throw new Error('ALREADY_APPROVED')
         tx.set(payrollRef, {
           teacherId: evaluation.teacherId,
           teacherName,
@@ -425,8 +495,9 @@ export default function AdminEvaluationsPage() {
           paid: false,
           createdBy: user?.uid || 'admin',
           evaluationId: evaluation.id,
+          rewardKind: 'evaluation_base',
           createdAt: serverTimestamp(),
-        })
+        }, { merge: true })
 
         tx.update(evalRef, {
           status: 'approved',
@@ -447,11 +518,127 @@ export default function AdminEvaluationsPage() {
       toast.success(month === getCurrentMonth()
         ? `Đã duyệt và cộng ${reward} vào lương tháng ${month} của ${teacherName}`
         : `Đã duyệt và cộng ${reward} vào lương THÁNG ${month} của ${teacherName} (theo tháng của buổi dạy thử, không phải tháng này) — nhớ mở bảng lương tháng ${month} để chi trả.`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('approve evaluation failed', err)
-      if (err?.message === 'ALREADY_APPROVED') toast.warning('Phiếu này đã được duyệt trước đó — không cộng tiền lần nữa')
-      else if (err?.message === 'EVAL_NOT_FOUND') toast.error('Phiếu đánh giá không tồn tại')
+      if (errorCode(err) === 'ALREADY_APPROVED') toast.warning('Phiếu này đã được duyệt trước đó — không cộng tiền lần nữa')
+      else if (errorCode(err) === 'EVAL_NOT_FOUND') toast.error('Phiếu đánh giá không tồn tại')
       else toast.error('Không thể duyệt phiếu, vui lòng thử lại')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const openRegistrationReward = (evaluation: Evaluation) => {
+    setRegistrationRewardEvaluationId(evaluation.id)
+    setRegistrationRewardInput(String(evaluation.registrationRewardAmount || 40000))
+  }
+
+  /**
+   * Ghi thưởng đăng ký như một dòng lương riêng. Nếu phiếu vẫn đang chờ duyệt,
+   * transaction cũng tạo khoản cơ bản 25.000đ để một lần xác nhận cho ra đủ hai khoản.
+   */
+  const handleRegistrationReward = async (evaluation: Evaluation) => {
+    const amount = normalizeRegistrationRewardVnd(registrationRewardInput)
+    if (!isValidRegistrationRewardVnd(amount)) {
+      toast.error('Số tiền thưởng phải từ 1.000đ đến 100.000.000đ')
+      return
+    }
+    if (!evaluation.teacherId) {
+      toast.error('Phiếu này không gắn với gia sư nào nên không thể cộng thưởng')
+      return
+    }
+
+    setProcessingId(evaluation.id)
+    try {
+      const teacherSnap = await getDoc(doc(db, 'teachers', evaluation.teacherId))
+      const teacherLevel = teacherSnap.exists() ? (teacherSnap.data()?.level ?? 1) : 1
+      const teacherName = evaluation.teacherName || (teacherSnap.exists() ? teacherSnap.data()?.name : '') || 'Gia sư'
+      const month = evaluationRewardMonth(evaluation)
+
+      await runTransaction(db, async (tx) => {
+        const evalRef = doc(db, 'evaluations', evaluation.id)
+        const registrationRef = doc(db, 'payroll', evaluationRegistrationPayrollId(evaluation.id))
+        const evalSnap = await tx.get(evalRef)
+        if (!evalSnap.exists()) throw new Error('EVAL_NOT_FOUND')
+        const current = evalSnap.data() as Evaluation
+        const baseRef = doc(db, 'payroll', current.rewardPayrollId || evaluationBasePayrollId(evaluation.id))
+        const [registrationSnap, baseSnap] = await Promise.all([
+          tx.get(registrationRef),
+          tx.get(baseRef),
+        ])
+        if (registrationSnap.exists() && registrationSnap.data()?.voided !== true) {
+          throw new Error('ALREADY_REWARDED')
+        }
+
+        const shouldCreateBase = current.status !== 'approved'
+          || !baseSnap.exists()
+          || baseSnap.data()?.voided === true
+        if (shouldCreateBase) {
+          tx.set(baseRef, {
+            teacherId: evaluation.teacherId,
+            teacherName,
+            lessonId: '',
+            type: 'adjustment',
+            adjustmentNote: `Đánh giá học sinh mới: ${evaluation.studentName || 'Không rõ tên'}`,
+            amount: EVALUATION_REWARD_AMOUNT,
+            minutes: 0,
+            pricePerMinute: 0,
+            level: teacherLevel,
+            month,
+            currency: EVALUATION_REWARD_CURRENCY,
+            paid: false,
+            voided: false,
+            createdBy: user?.uid || 'admin',
+            evaluationId: evaluation.id,
+            rewardKind: 'evaluation_base',
+            createdAt: serverTimestamp(),
+          }, { merge: true })
+        }
+
+        tx.set(registrationRef, {
+          teacherId: evaluation.teacherId,
+          teacherName,
+          lessonId: '',
+          type: 'adjustment',
+          adjustmentNote: `Thưởng học viên đăng ký: ${evaluation.studentName || 'Không rõ tên'}`,
+          amount,
+          minutes: 0,
+          pricePerMinute: 0,
+          level: teacherLevel,
+          month,
+          currency: EVALUATION_REWARD_CURRENCY,
+          paid: false,
+          voided: false,
+          createdBy: user?.uid || 'admin',
+          evaluationId: evaluation.id,
+          rewardKind: 'student_registration',
+          createdAt: serverTimestamp(),
+        }, { merge: true })
+
+        tx.update(evalRef, {
+          status: 'approved',
+          approvedAt: current.approvedAt || serverTimestamp(),
+          approvedBy: current.approvedBy || user?.uid || 'admin',
+          rewardPayrollId: baseRef.id,
+          rewardAmount: EVALUATION_REWARD_AMOUNT,
+          rewardMonth: month,
+          registrationRewardPayrollId: registrationRef.id,
+          registrationRewardAmount: amount,
+          registrationRewardedAt: serverTimestamp(),
+          registrationRewardedBy: user?.uid || 'admin',
+          studentRegistered: true,
+          rejectedReason: '',
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      setRegistrationRewardEvaluationId(null)
+      toast.success(`Đã cộng thưởng đăng ký ${formatMoney(amount, EVALUATION_REWARD_CURRENCY)} cho ${teacherName}`)
+    } catch (err: unknown) {
+      console.error('registration reward failed', err)
+      if (errorCode(err) === 'ALREADY_REWARDED') toast.warning('Học viên này đã được ghi thưởng đăng ký trước đó')
+      else if (errorCode(err) === 'EVAL_NOT_FOUND') toast.error('Phiếu đánh giá không tồn tại')
+      else toast.error('Không thể cộng thưởng đăng ký, vui lòng thử lại')
     } finally {
       setProcessingId(null)
     }
@@ -463,34 +650,48 @@ export default function AdminEvaluationsPage() {
     if (reason === null) return
     setProcessingId(evaluation.id)
     try {
-      // Nếu trước đó đã duyệt & cộng tiền -> chỉ thu hồi khi khoản đó CHƯA thanh toán.
-      if (evaluation.rewardPayrollId) {
-        const payrollRef = doc(db, 'payroll', evaluation.rewardPayrollId)
-        const paySnap = await getDoc(payrollRef)
-        if (paySnap.exists()) {
-          if (paySnap.data()?.paid === true) {
-            toast.error('Khoản thưởng của phiếu này đã được thanh toán — không thể thu hồi tự động. Vui lòng điều chỉnh thủ công ở trang Lương gia sư.')
-            setProcessingId(null)
-            return
-          }
-          await updateDoc(payrollRef, {
+      await runTransaction(db, async (tx) => {
+        const evalRef = doc(db, 'evaluations', evaluation.id)
+        const evalSnap = await tx.get(evalRef)
+        if (!evalSnap.exists()) throw new Error('EVAL_NOT_FOUND')
+        const current = evalSnap.data() as Evaluation
+        const payrollIds = Array.from(new Set([
+          current.rewardPayrollId,
+          current.registrationRewardPayrollId,
+          evaluationBasePayrollId(evaluation.id),
+          evaluationRegistrationPayrollId(evaluation.id),
+        ].filter(Boolean) as string[]))
+        const payrollRefs = payrollIds.map((id) => doc(db, 'payroll', id))
+        const payrollSnaps = await Promise.all(payrollRefs.map((payrollRef) => tx.get(payrollRef)))
+        if (payrollSnaps.some((snapshot) => snapshot.exists() && snapshot.data()?.paid === true && snapshot.data()?.voided !== true)) {
+          throw new Error('REWARD_ALREADY_PAID')
+        }
+        payrollSnaps.forEach((snapshot, index) => {
+          if (!snapshot.exists() || snapshot.data()?.voided === true) return
+          tx.update(payrollRefs[index], {
             voided: true,
+            voidedOriginalAmount: Number(snapshot.data()?.amount || 0),
             amount: 0,
             voidedAt: serverTimestamp(),
             voidedBy: user?.uid || 'admin',
           })
-        }
-      }
-      await updateDoc(doc(db, 'evaluations', evaluation.id), {
-        status: 'rejected',
-        rejectedReason: reason.trim(),
-        rewardAmount: 0,
-        updatedAt: serverTimestamp(),
+        })
+        tx.update(evalRef, {
+          status: 'rejected',
+          rejectedReason: reason.trim(),
+          rewardAmount: 0,
+          registrationRewardAmount: 0,
+          studentRegistered: false,
+          updatedAt: serverTimestamp(),
+        })
       })
       toast.success('Đã từ chối phiếu đánh giá')
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('reject evaluation failed', err)
-      toast.error('Không thể từ chối phiếu, vui lòng thử lại')
+      if (errorCode(err) === 'REWARD_ALREADY_PAID') {
+        toast.error('Có khoản thưởng đã thanh toán nên không thể thu hồi tự động. Vui lòng điều chỉnh thủ công ở trang Lương gia sư.')
+      } else if (errorCode(err) === 'EVAL_NOT_FOUND') toast.error('Phiếu đánh giá không tồn tại')
+      else toast.error('Không thể từ chối phiếu, vui lòng thử lại')
     } finally {
       setProcessingId(null)
     }
@@ -503,10 +704,12 @@ export default function AdminEvaluationsPage() {
   }, [evaluations])
 
   const rewardPayrollByEvaluationId = useMemo(() => {
-    const map = new Map<string, { month: string; paid: boolean }>()
+    const map = new Map<string, { month: string; paid: boolean; amount: number; rewardKind: 'evaluation_base' | 'student_registration' }[]>()
     Object.values(rewardPayrolls).forEach((payroll) => {
       if (!payroll.evaluationId) return
-      map.set(payroll.evaluationId, { month: payroll.month, paid: payroll.paid })
+      const rows = map.get(payroll.evaluationId) || []
+      rows.push(payroll)
+      map.set(payroll.evaluationId, rows)
     })
     return map
   }, [rewardPayrolls])
@@ -514,7 +717,8 @@ export default function AdminEvaluationsPage() {
   const rewardMonthByEvaluationId = useMemo(() => {
     const map = new Map<string, string>()
     evaluations.forEach((evaluation) => {
-      const payrollMonth = rewardPayrollByEvaluationId.get(evaluation.id)?.month
+      const payrollRows = rewardPayrollByEvaluationId.get(evaluation.id) || []
+      const payrollMonth = payrollRows.find((row) => row.rewardKind === 'evaluation_base')?.month || payrollRows[0]?.month
       const month = payrollMonth
         || evaluation.rewardMonth
         || monthOfTimestamp(evaluation.approvedAt)
@@ -524,18 +728,21 @@ export default function AdminEvaluationsPage() {
     return map
   }, [evaluations, rewardPayrollByEvaluationId])
 
-  const trialPayrollRows = useMemo(() => evaluations
-    .filter((evaluation) => evalStatusOf(evaluation) === 'approved')
-    .map((evaluation) => {
-      const payroll = rewardPayrollByEvaluationId.get(evaluation.id)
-      const configuredAmount = Number(evaluation.rewardAmount)
-      return {
+  const trialPayrollRows = useMemo(() => {
+    const byId = new Map(evaluations.map((evaluation) => [evaluation.id, evaluation]))
+    return Object.entries(rewardPayrolls).flatMap(([payrollId, payroll]) => {
+      const evaluation = byId.get(payroll.evaluationId)
+      if (!evaluation) return []
+      return [{
+        payrollId,
         evaluation,
-        month: rewardMonthByEvaluationId.get(evaluation.id) || evaluationRewardMonth(evaluation),
-        amount: Number.isFinite(configuredAmount) ? configuredAmount : EVALUATION_REWARD_AMOUNT,
-        paid: payroll?.paid === true,
-      }
-    }), [evaluations, rewardPayrollByEvaluationId, rewardMonthByEvaluationId])
+        month: payroll.month || evaluationRewardMonth(evaluation),
+        amount: payroll.amount,
+        paid: payroll.paid,
+        rewardKind: payroll.rewardKind,
+      }]
+    })
+  }, [evaluations, rewardPayrolls])
 
   const payrollMonthOptions = useMemo(() => Array.from(new Set(
     trialPayrollRows.map((row) => row.month).filter(Boolean),
@@ -602,6 +809,7 @@ export default function AdminEvaluationsPage() {
     let done = 0
     for (let i = 0; i < items.length; i += CHUNK) {
       const batch = writeBatch(db)
+      const updatedEvaluationIds = new Set<string>()
       for (const item of items.slice(i, i + CHUNK)) {
         batch.update(doc(db, 'payroll', item.payrollId), {
           month: item.correctMonth,
@@ -610,10 +818,13 @@ export default function AdminEvaluationsPage() {
           monthFixedAt: serverTimestamp(),
           monthFixedBy: user?.uid || 'admin',
         })
-        batch.update(doc(db, 'evaluations', item.evaluation.id), {
-          rewardMonth: item.correctMonth,
-          updatedAt: serverTimestamp(),
-        })
+        if (!updatedEvaluationIds.has(item.evaluation.id)) {
+          batch.update(doc(db, 'evaluations', item.evaluation.id), {
+            rewardMonth: item.correctMonth,
+            updatedAt: serverTimestamp(),
+          })
+          updatedEvaluationIds.add(item.evaluation.id)
+        }
         done += 1
       }
       await batch.commit()
@@ -703,7 +914,7 @@ export default function AdminEvaluationsPage() {
         <p className="text-xs text-slate-500 mt-1">
           Duyệt phiếu đánh giá của gia sư — mỗi phiếu được duyệt sẽ cộng{' '}
           <span className="font-bold text-emerald-600">{formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)}</span>{' '}
-          vào bảng lương tháng của gia sư đó
+          vào bảng lương; nếu học viên đăng ký có thể cộng thêm mức thưởng do admin nhập
         </p>
       </div>
 
@@ -825,7 +1036,7 @@ export default function AdminEvaluationsPage() {
                 <p className="mt-1 text-lg font-black text-emerald-700">
                   {formatMoney(trialPayrollSummary.total, EVALUATION_REWARD_CURRENCY)}
                 </p>
-                <p className="mt-1 text-[11px] font-semibold text-slate-500">{trialPayrollSummary.count} trial class</p>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">{trialPayrollSummary.count} khoản thưởng</p>
               </div>
               <div className="rounded-xl border border-white bg-white px-3 py-3">
                 <p className="text-[11px] font-bold text-slate-500">Đã thanh toán</p>
@@ -923,71 +1134,106 @@ export default function AdminEvaluationsPage() {
 
               {/* Khu vực duyệt & thưởng */}
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                {evalStatusOf(item) === 'approved' ? (
-                  <div className="flex items-center justify-between gap-2">
-                    {/* Nêu rõ THÁNG đã cộng — phiếu duyệt trễ tháng vẫn tra được đúng bảng lương.
-                        Phiếu duyệt trước bản vá này chưa có rewardMonth -> suy ra từ ngày duyệt. */}
-                    {(() => {
-                      // Ưu tiên THÁNG THẬT của dòng lương (đã nạp ở trên) để không hiện tháng cũ
-                      // khi phiếu chưa kịp cập nhật `rewardMonth`.
-                      const payrollMonth = item.rewardPayrollId ? rewardPayrolls[item.rewardPayrollId]?.month : ''
-                      const rewardMonth = payrollMonth || item.rewardMonth || monthOfTimestamp(item.approvedAt)
-                      return (
-                        <p className="text-xs font-bold text-emerald-700 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                          <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>
-                            Đã cộng {formatMoney(item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} vào lương
-                          </span>
-                          {rewardMonth && (
-                            <Link
-                              to={`/admin/payroll?month=${rewardMonth}`}
-                              className="underline decoration-emerald-400 underline-offset-2 hover:text-emerald-900"
-                              title="Mở bảng lương đúng tháng đã cộng khoản này"
-                            >
-                              tháng {rewardMonth}
-                            </Link>
-                          )}
+                {(() => {
+                  const status = evalStatusOf(item)
+                  const activePayrolls = rewardPayrollByEvaluationId.get(item.id) || []
+                  const basePayroll = activePayrolls.find((payroll) => payroll.rewardKind === 'evaluation_base')
+                  const registrationPayroll = activePayrolls.find((payroll) => payroll.rewardKind === 'student_registration')
+                  const rewardMonth = basePayroll?.month || item.rewardMonth || monthOfTimestamp(item.approvedAt)
+                  const hasRegistrationReward = Boolean(registrationPayroll)
+                    || (item.studentRegistered === true && Number(item.registrationRewardAmount) > 0)
+                  const registrationAmount = registrationPayroll?.amount || Number(item.registrationRewardAmount || 0)
+                  const rewardFormOpen = registrationRewardEvaluationId === item.id
+
+                  return (
+                    <div className="space-y-3">
+                      {status === 'approved' ? (
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="space-y-1.5">
+                            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-bold text-emerald-700">
+                              <Wallet className="h-3.5 w-3.5 shrink-0" />
+                              <span>Đã cộng {formatMoney(basePayroll?.amount ?? item.rewardAmount ?? EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)} tiền dạy đánh giá</span>
+                              {rewardMonth && (
+                                <Link to={`/admin/payroll?month=${rewardMonth}`} className="underline decoration-emerald-400 underline-offset-2 hover:text-emerald-900">
+                                  tháng {rewardMonth}
+                                </Link>
+                              )}
+                            </p>
+                            {hasRegistrationReward && (
+                              <p className="text-xs font-bold text-cyan-700">
+                                Thưởng học viên đăng ký: {formatMoney(registrationAmount, EVALUATION_REWARD_CURRENCY)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={processingId === item.id}
+                            onClick={() => handleReject(item)}
+                            className="text-[11px] font-bold text-rose-600 hover:underline disabled:opacity-50"
+                          >
+                            Huỷ duyệt
+                          </button>
+                        </div>
+                      ) : status === 'rejected' ? (
+                        <p className="text-xs font-semibold text-rose-700">
+                          Đã từ chối{item.rejectedReason ? `: ${item.rejectedReason}` : ''}
                         </p>
-                      )
-                    })()}
-                    <button
-                      type="button"
-                      disabled={processingId === item.id}
-                      onClick={() => handleReject(item)}
-                      className="text-[11px] font-bold text-rose-600 hover:underline disabled:opacity-50"
-                    >
-                      Huỷ duyệt
-                    </button>
-                  </div>
-                ) : evalStatusOf(item) === 'rejected' ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-rose-700 min-w-0 truncate">
-                      Đã từ chối{item.rejectedReason ? `: ${item.rejectedReason}` : ''}
-                    </p>
-                    <Button size="sm" loading={processingId === item.id} onClick={() => handleApprove(item)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl">
-                      <Check className="w-3.5 h-3.5 mr-1" />Duyệt lại
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-slate-600">
-                      Duyệt để cộng <span className="font-bold text-emerald-600">{formatMoney(EVALUATION_REWARD_AMOUNT, EVALUATION_REWARD_CURRENCY)}</span> cho gia sư
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={processingId === item.id}
-                        onClick={() => handleReject(item)}
-                        className="rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                      >
-                        Từ chối
-                      </button>
-                      <Button size="sm" loading={processingId === item.id} onClick={() => handleApprove(item)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl">
-                        <Check className="w-3.5 h-3.5 mr-1" />Duyệt
-                      </Button>
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-600">
+                          Duyệt đề xuất và chọn đúng loại thưởng cho gia sư
+                        </p>
+                      )}
+
+                      {!hasRegistrationReward && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {status !== 'approved' && (
+                            <button
+                              type="button"
+                              disabled={processingId === item.id}
+                              onClick={() => handleReject(item)}
+                              className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                            >
+                              Từ chối
+                            </button>
+                          )}
+                          {status !== 'approved' && (
+                            <Button size="sm" loading={processingId === item.id} onClick={() => handleApprove(item)} className="rounded-xl border border-amber-300 bg-white text-amber-800 hover:bg-amber-50">
+                              <Check className="mr-1 h-3.5 w-3.5" />Duyệt 25.000đ
+                            </Button>
+                          )}
+                          <Button size="sm" onClick={() => rewardFormOpen ? setRegistrationRewardEvaluationId(null) : openRegistrationReward(item)} className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+                            Thưởng học viên đăng ký
+                          </Button>
+                        </div>
+                      )}
+
+                      {rewardFormOpen && !hasRegistrationReward && (
+                        <div className="rounded-xl border border-emerald-200 bg-white p-3">
+                          <label className="text-[11px] font-bold text-slate-600" htmlFor={`registration-reward-${item.id}`}>Số tiền thưởng</label>
+                          <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                            <div className="flex min-h-10 flex-1 items-center rounded-xl border border-slate-200 bg-white focus-within:border-emerald-500">
+                              <input
+                                id={`registration-reward-${item.id}`}
+                                inputMode="numeric"
+                                value={registrationRewardInput}
+                                onChange={(event) => setRegistrationRewardInput(String(normalizeRegistrationRewardVnd(event.target.value)))}
+                                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-bold text-slate-800 outline-none"
+                                aria-describedby={`registration-reward-help-${item.id}`}
+                              />
+                              <span className="border-l border-slate-200 px-3 text-xs font-bold text-slate-500">đ</span>
+                            </div>
+                            <Button size="sm" loading={processingId === item.id} onClick={() => handleRegistrationReward(item)} className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+                              Xác nhận
+                            </Button>
+                          </div>
+                          <p id={`registration-reward-help-${item.id}`} className="mt-1.5 text-[10px] font-semibold text-slate-400">
+                            Xác nhận sẽ tự duyệt 25.000đ nếu phiếu này chưa được duyệt.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
               </div>
 
               <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-100">

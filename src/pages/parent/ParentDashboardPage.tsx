@@ -37,6 +37,7 @@ import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
+import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -54,6 +55,10 @@ function loadSession(): { code: string; studentId?: string } | null {
 }
 function clearSession() { localStorage.removeItem(STORAGE_KEY) }
 
+function learningRecordIds(student: Student) {
+  return Array.from(new Set([student.id, ...normalizeGroupClassIds(student.groupClassIds)]))
+}
+
 export function ParentDashboardPage() {
   const navigate = useNavigate()
   const [studentCode, setStudentCode] = useState('')
@@ -62,6 +67,8 @@ export function ParentDashboardPage() {
   const [result, setResult] = useState<{ student: Student; lessons: Lesson[]; bookings: BookingRequest[] } | null>(null)
   const [autoLoading, setAutoLoading] = useState(true)
   const { lang, setLang } = useLanguageStore()
+  const liveStudentId = result?.student.id
+  const liveGroupClassIdsKey = normalizeGroupClassIds(result?.student.groupClassIds).join('|')
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -83,8 +90,12 @@ export function ParentDashboardPage() {
   }, [])
 
   useEffect(() => {
-    const studentId = result?.student.id
+    const studentId = liveStudentId
     if (!studentId) return
+    const recordIds = Array.from(new Set([
+      studentId,
+      ...liveGroupClassIdsKey.split('|').filter(Boolean),
+    ]))
 
     const unsubscribeStudent = onSnapshot(doc(db, 'students', studentId), (snapshot) => {
       if (!snapshot.exists()) return
@@ -95,25 +106,46 @@ export function ParentDashboardPage() {
       console.error('Keep student diamond balance in sync failed:', snapshotError)
     })
 
-    const bookingQuery = query(
-      collection(db, 'bookingRequests'),
-      where('studentId', '==', studentId),
-      where('status', 'in', ['confirmed', 'pending']),
-    )
-    const unsubscribeBookings = onSnapshot(bookingQuery, (snapshot) => {
-      const nextBookings = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
+    const bookingSources = new Map<string, BookingRequest[]>()
+    const lessonSources = new Map<string, Lesson[]>()
+    const publishBookings = () => {
+      const byId = new Map<string, BookingRequest>()
+      bookingSources.forEach((items) => items.forEach((item) => byId.set(item.id, item)))
       setResult((current) => current && current.student.id === studentId
-        ? { ...current, bookings: nextBookings }
+        ? { ...current, bookings: Array.from(byId.values()) }
         : current)
-    }, (snapshotError) => {
-      console.error('Keep student bookings in sync failed:', snapshotError)
-    })
+    }
+    const publishLessons = () => {
+      const byId = new Map<string, Lesson>()
+      lessonSources.forEach((items) => items.forEach((item) => byId.set(item.id, item)))
+      const nextLessons = Array.from(byId.values()).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
+      setResult((current) => current && current.student.id === studentId
+        ? { ...current, lessons: nextLessons }
+        : current)
+    }
+    const unsubscribeBookings = recordIds.map((recordId) => onSnapshot(query(
+      collection(db, 'bookingRequests'),
+      where('studentId', '==', recordId),
+      where('status', 'in', ['confirmed', 'pending']),
+    ), (snapshot) => {
+      bookingSources.set(recordId, snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest)))
+      publishBookings()
+    }, (snapshotError) => console.error('Keep student bookings in sync failed:', snapshotError)))
+    const unsubscribeLessons = recordIds.map((recordId) => onSnapshot(query(
+      collection(db, 'publicLessons'),
+      where('studentId', '==', recordId),
+      where('status', '==', 'approved'),
+    ), (snapshot) => {
+      lessonSources.set(recordId, snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Lesson)))
+      publishLessons()
+    }, (snapshotError) => console.error('Keep student lessons in sync failed:', snapshotError)))
 
     return () => {
       unsubscribeStudent()
-      unsubscribeBookings()
+      unsubscribeBookings.forEach((unsubscribe) => unsubscribe())
+      unsubscribeLessons.forEach((unsubscribe) => unsubscribe())
     }
-  }, [result?.student.id])
+  }, [liveStudentId, liveGroupClassIdsKey])
 
   const handleLogin = async (code?: string, cachedStudentId?: string) => {
     setError('')
@@ -137,12 +169,18 @@ export function ParentDashboardPage() {
         student = { id: studentSnap.docs[0].id, ...studentSnap.docs[0].data() } as Student
       }
 
-      const lq = query(collection(db, 'publicLessons'), where('studentId', '==', student.id), where('status', '==', 'approved'))
-      const bq = query(collection(db, 'bookingRequests'), where('studentId', '==', student.id), where('status', 'in', ['confirmed', 'pending']))
-      const [lSnap, bSnap] = await Promise.all([getDocs(lq), getDocs(bq)])
-      const lessons = lSnap.docs.map(d => ({ id: d.id, ...d.data() } as Lesson))
+      const recordIds = learningRecordIds(student)
+      const [lessonSnaps, bookingSnaps] = await Promise.all([
+        Promise.all(recordIds.map((recordId) => getDocs(query(collection(db, 'publicLessons'), where('studentId', '==', recordId), where('status', '==', 'approved'))))),
+        Promise.all(recordIds.map((recordId) => getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', recordId), where('status', 'in', ['confirmed', 'pending']))))),
+      ])
+      const lessonsById = new Map<string, Lesson>()
+      lessonSnaps.forEach((snapshot) => snapshot.docs.forEach((item) => lessonsById.set(item.id, { id: item.id, ...item.data() } as Lesson)))
+      const lessons = Array.from(lessonsById.values())
       lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
-      const bookings = bSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      const bookingsById = new Map<string, BookingRequest>()
+      bookingSnaps.forEach((snapshot) => snapshot.docs.forEach((item) => bookingsById.set(item.id, { id: item.id, ...item.data() } as BookingRequest)))
+      const bookings = Array.from(bookingsById.values())
 
       saveSession(finalCode, student.id)
       setResult({ student, lessons, bookings })
@@ -1298,6 +1336,12 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   const openCancellationDialog = (booking: BookingRequest) => {
     if (!['pending', 'confirmed'].includes(booking.status)) return
+    if (!canStudentManageBooking(booking, student.id)) {
+      toast.info(lang === 'vi'
+        ? 'Lịch lớp nhóm do trung tâm quản lý. Vui lòng liên hệ học vụ nếu cần thay đổi.'
+        : 'Group-class schedules are managed by the center. Contact support to request a change.')
+      return
+    }
 
     // Còn buổi đã huỷ chưa đặt lại → cảnh báo, không cho huỷ tiếp.
     if (student.pendingRebookBookingId) {
@@ -1319,6 +1363,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const submitCancellationRequest = async () => {
     const booking = cancellationDialog?.booking
     if (!booking || cancellationDialog.mode !== 'confirm' || !['pending', 'confirmed'].includes(booking.status)) return
+    if (!canStudentManageBooking(booking, student.id)) {
+      setCancellationDialog(null)
+      toast.error(lang === 'vi' ? 'Bạn không thể tự hủy lịch lớp nhóm.' : 'You cannot cancel a group-class schedule yourself.')
+      return
+    }
 
     const startsAt = bookingStartTime(booking)
     if (booking.status === 'confirmed' && (!startsAt || startsAt.getTime() - Date.now() < 60 * 60 * 1000)) {
@@ -1411,6 +1460,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   const submitTeacherRating = async (lesson: Lesson, rating: number) => {
     if (!lesson.id || !lesson.teacherId || rating < 1 || rating > 5 || teacherReviews[lesson.id]) return
+    if (lesson.studentId !== student.id) {
+      toast.info(lang === 'vi' ? 'Buổi lớp nhóm không nhận đánh giá thay mặt cả lớp.' : 'Group-class lessons cannot be rated on behalf of the class.')
+      return
+    }
     await setDoc(doc(db, 'teacherLessonReviews', lesson.id), {
       lessonId: lesson.id,
       studentId: student.id,
@@ -2149,6 +2202,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             }}
             onOpenTeacherProfile={setProfileTeacherId}
             onCancelBooking={openCancellationDialog}
+            canManageBooking={(booking) => canStudentManageBooking(booking, student.id)}
             cancellationRequests={cancellationRequests}
             rebookRequired={Boolean(student.pendingRebookBookingId)}
             onOpenHistory={() => setTab('history')}
@@ -2175,6 +2229,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         {tab === 'history' && (
           <HistoryTab
             lessons={lessons}
+            signedInStudentId={student.id}
             teacherMap={teacherMap}
             subjectPackages={subjectPackages}
             rewardPoints={student.rewardPoints || 0}
@@ -2412,6 +2467,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               {(() => {
                 const roomLink = roomLinkOf(selectedParentBooking)
                 const subjectPkg = student.subjects?.find((s) => s.subjectId === selectedParentBooking.subjectId)
+                const curriculumLink = selectedParentBooking.curriculumLink || subjectPkg?.curriculumLink
                 return (
                   <>
                     {roomLink && (
@@ -2433,6 +2489,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                         </a>
                       </div>
                     )}
+                    {curriculumLink && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <a href={curriculumLink.startsWith('http') ? curriculumLink : `https://${curriculumLink}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:underline">
+                          <BookOpen className="h-3.5 w-3.5" />{lang === 'vi' ? 'Mở giáo trình' : 'Open curriculum'}
+                        </a>
+                      </div>
+                    )}
                     {subjectPkg?.timetableNote && (
                       <div className="pt-3 border-t border-slate-100">
                         <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
@@ -2448,7 +2511,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               })()}
             </div>
 
-            {['pending', 'confirmed'].includes(selectedParentBooking.status) && (() => {
+            {selectedParentBooking.groupClassId && (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-xs font-semibold leading-5 text-cyan-900">
+                {lang === 'vi' ? 'Đây là lịch lớp nhóm do trung tâm quản lý. Liên hệ học vụ nếu cần thay đổi lịch.' : 'This group-class schedule is managed by the center. Contact support to request a change.'}
+              </div>
+            )}
+
+            {canStudentManageBooking(selectedParentBooking, student.id) && ['pending', 'confirmed'].includes(selectedParentBooking.status) && (() => {
               const pendingRequest = cancellationRequests.find((item) => item.bookingId === selectedParentBooking.id && item.status === 'pending')
 
               if (pendingRequest) {
@@ -3276,8 +3345,9 @@ function cleanLessonText(value: string) {
     .trim()
 }
 
-function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teacherReviews, onDetail, onTeacherProfile, onRateTeacher, onRebook, onRewards, lang }: {
+function HistoryTab({ lessons, signedInStudentId, teacherMap, subjectPackages, rewardPoints, teacherReviews, onDetail, onTeacherProfile, onRateTeacher, onRebook, onRewards, lang }: {
   lessons: Lesson[]
+  signedInStudentId: string
   teacherMap: Record<string, TeacherLite>
   subjectPackages: StudentSubject[]
   rewardPoints: number
@@ -3370,7 +3440,7 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
             const storedTeacherHint = lesson.teacherCode || lesson.teacherName?.trim().split(/\s+/).slice(-1)[0] || ''
             const nickname = teacherNickname(teacher, storedTeacherHint, genericTeacherLabel)
             const subjectPackage = subjectPackages.find((item) => item.subjectId === lesson.subjectId)
-            const rawDocumentLink = subjectPackage?.curriculumLink || ''
+            const rawDocumentLink = lesson.curriculumLink || subjectPackage?.curriculumLink || ''
             const documentLink = rawDocumentLink ? (rawDocumentLink.startsWith('http') ? rawDocumentLink : `https://${rawDocumentLink}`) : ''
             // Buổi cũ chưa có `report` -> đọc ngược từ chuỗi nhận xét để hiển thị
             // giống hệt buổi mới (tránh cảnh mỗi ngày hiện một kiểu).
@@ -3457,7 +3527,7 @@ function HistoryTab({ lessons, teacherMap, subjectPackages, rewardPoints, teache
                     </button>
                   </section>
 
-                  {lesson.teacherId && (
+                  {lesson.teacherId && lesson.studentId === signedInStudentId && (
                     <section className="mt-3 rounded-2xl border border-amber-100 bg-amber-50/55 p-3.5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
