@@ -20,8 +20,8 @@ import {
 const PAGE_TITLES: Record<string, string> = {
   '/admin/students/one-to-one': 'Lớp 1 kèm 1',
   '/admin/students/group': 'Lớp nhóm',
-  '/admin/students/fixed': 'Lớp 1 kèm 1',
-  '/admin/students/flexible': 'Lớp 1 kèm 1',
+  '/admin/students/fixed': 'Học viên cố định',
+  '/admin/students/flexible': 'Học viên linh hoạt',
   '/admin/students': 'Học viên',
   '/admin/student-alerts': 'Cảnh báo học viên',
   '/admin/teachers/online': 'Gia sư online',

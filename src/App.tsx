@@ -72,7 +72,7 @@ const RootRedirect = () => {
   if (!user) return <Navigate to="/login" replace />
   
   if (accessScope === 'booking_only') return <Navigate to="/admin/booking-schedules" replace />
-  if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/one-to-one" replace />
+  if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/fixed" replace />
   if (role === 'teacher_manager') return <Navigate to="/admin/teachers/online" replace />
   if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
   if (role === 'guest') return <Navigate to="/waiting" replace />
@@ -84,7 +84,7 @@ const RootRedirect = () => {
 const AdminIndexRedirect = () => {
   const role = useAuthStore((state) => state.role)
   const accessScope = useAuthStore((state) => state.accessScope)
-  return <Navigate to={accessScope === 'booking_only' ? 'booking-schedules' : role === 'teacher_manager' ? 'teachers/online' : 'students/one-to-one'} replace />
+  return <Navigate to={accessScope === 'booking_only' ? 'booking-schedules' : role === 'teacher_manager' ? 'teachers/online' : 'students/fixed'} replace />
 }
 
 function App() {
@@ -137,13 +137,12 @@ function App() {
           >
             {/* Dashboard cũ đã bị loại bỏ vì tự quét/ghi dữ liệu khi mở trang.
                 Giữ redirect để bookmark cũ không rơi vào trang 404. */}
-            <Route path="dashboard" element={<Navigate to="/admin/students/one-to-one" replace />} />
-            <Route path="students" element={<Navigate to="/admin/students/one-to-one" replace />} />
-            <Route path="students/one-to-one" element={<StudentsPage key="one-to-one" learningScheduleType="all" />} />
+            <Route path="dashboard" element={<Navigate to="/admin/students/fixed" replace />} />
+            <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
+            <Route path="students/one-to-one" element={<Navigate to="/admin/students/fixed" replace />} />
             <Route path="students/group" element={<GroupClassesPage />} />
-            {/* Bookmark cũ vẫn mở đúng danh sách 1 kèm 1, không mất đường dẫn. */}
-            <Route path="students/fixed" element={<Navigate to="/admin/students/one-to-one" replace />} />
-            <Route path="students/flexible" element={<Navigate to="/admin/students/one-to-one" replace />} />
+            <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
+            <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
             <Route path="student-alerts" element={<StudentAlertsPage />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<Navigate to="online" replace />} />

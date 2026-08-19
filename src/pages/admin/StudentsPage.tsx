@@ -44,7 +44,7 @@ type StudentGroupView = 'all' | 'fixed' | 'flexible'
 
 const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: string; emptyDescription: string }> = {
   all: {
-    title: 'Lớp 1 kèm 1',
+    title: 'Tất cả học viên',
     emptyTitle: 'Chưa có học viên',
     emptyDescription: 'Bấm “Thêm học viên” để tạo hồ sơ đầu tiên.',
   },

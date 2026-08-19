@@ -15,6 +15,7 @@
     "test:subject-lifecycle": "node --experimental-strip-types --test tests/subjectLifecycle.test.ts",
     "test:evaluation-rewards": "node --experimental-strip-types --test tests/evaluationRewards.test.ts",
     "test:group-classes": "node --experimental-strip-types --test tests/groupClasses.test.ts",
+    "test:admin-navigation": "node --experimental-strip-types --test tests/adminNavigation.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
