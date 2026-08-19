@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney } from '@/lib/constants'
+import { sortSubjectsByName } from '@/lib/subjectSorting'
 
 type Tab = 'gifts' | 'redemptions' | 'payment' | 'requests'
 type GiftForm = Omit<RewardGift, 'id' | 'createdAt' | 'updatedAt'>
@@ -66,7 +67,7 @@ export function StudentExperiencePage() {
   useEffect(() => onSnapshot(collection(db, 'rewardRedemptions'), (snap) => setRedemptions(snap.docs.map(d => ({ id: d.id, ...d.data() } as RewardRedemption)).sort(byNewest)), () => setDataError(true)), [])
   useEffect(() => onSnapshot(collection(db, 'topUpPackages'), (snap) => setPackages(snap.docs.map(d => ({ id: d.id, ...d.data() } as TopUpPackage)).sort((a, b) => a.price - b.price)), () => setDataError(true)), [])
   useEffect(() => onSnapshot(collection(db, 'topUpRequests'), (snap) => setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() } as TopUpRequest)).sort(byNewest)), () => setDataError(true)), [])
-  useEffect(() => onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(s => s.status === 'active'))), [])
+  useEffect(() => onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(sortSubjectsByName(snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(s => s.status === 'active')))), [])
   useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snap) => {
     if (snap.exists()) setSettings(snap.data() as PaymentSettings)
   }), [])

@@ -10,6 +10,11 @@ import { buildReminderEmail, reminderTeacherName, type ReminderEmailBooking, typ
 import { groupReminderDays, groupReminderSessions, type ReminderSessionBooking } from './reminderSessions'
 import { aggregateTeacherRanking, type TeacherRankingProfile, type TeacherRankingRow } from './teacherRanking'
 import { decideTeacherLoginRecovery, teacherLoginEmail } from './teacherLoginRecovery'
+import {
+  accountDeletionBlockReason,
+  normalizedAccountEmail,
+  PROTECTED_ACCOUNT_EMAILS,
+} from './staffAccountManagement'
 
 initializeApp()
 
@@ -376,6 +381,202 @@ export const getTeacherRanking = onCall({
     forceRefresh,
   })
   return { rows, cached: false }
+})
+
+function accountTimestampISO(value: unknown): string | null {
+  if (value instanceof Timestamp) return value.toDate().toISOString()
+  if (typeof value !== 'string' || !value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+async function requireSystemAdmin(uid: string | undefined): Promise<string> {
+  if (!uid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại để quản lý tài khoản.')
+  const actorSnapshot = await db.collection('users').doc(uid).get()
+  if (actorSnapshot.data()?.role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Chỉ Admin cấp cao được quản lý tài khoản đăng nhập.')
+  }
+  return uid
+}
+
+export const listStaffAccounts = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+}, async (request) => {
+  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  const authService = getAuth()
+  const authUsers: Awaited<ReturnType<typeof authService.listUsers>>['users'] = []
+  let pageToken: string | undefined
+
+  do {
+    const page = await authService.listUsers(1000, pageToken)
+    authUsers.push(...page.users)
+    pageToken = page.pageToken
+  } while (pageToken)
+
+  const profilesSnapshot = await db.collection('users').get()
+  const profilesByUid = new Map(profilesSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]))
+  const profileCountByEmail = new Map<string, number>()
+  profilesSnapshot.docs.forEach((snapshot) => {
+    const email = normalizedAccountEmail(snapshot.data().email)
+    if (email) profileCountByEmail.set(email, (profileCountByEmail.get(email) || 0) + 1)
+  })
+
+  const accounts = authUsers.map((authUser) => {
+    const profile = profilesByUid.get(authUser.uid)
+    const email = normalizedAccountEmail(authUser.email || profile?.email)
+    const role = typeof profile?.role === 'string' ? profile.role : 'missing_profile'
+    const username = typeof profile?.username === 'string' && profile.username.trim()
+      ? profile.username.trim()
+      : authUser.displayName?.trim() || email.split('@')[0] || authUser.uid
+    const lastSignInAt = accountTimestampISO(authUser.metadata.lastSignInTime)
+    const createdAt = accountTimestampISO(authUser.metadata.creationTime)
+      || accountTimestampISO(profile?.createdAt)
+
+    return {
+      uid: authUser.uid,
+      email,
+      username,
+      role,
+      accessScope: typeof profile?.accessScope === 'string' ? profile.accessScope : null,
+      disabled: authUser.disabled,
+      protected: authUser.uid === actorUid || role === 'admin' || PROTECTED_ACCOUNT_EMAILS.has(email),
+      profileExists: Boolean(profile),
+      duplicateProfileCount: email ? profileCountByEmail.get(email) || 0 : 0,
+      createdAt,
+      lastSignInAt,
+    }
+  })
+
+  accounts.sort((left, right) => {
+    const leftTime = left.lastSignInAt ? Date.parse(left.lastSignInAt) : 0
+    const rightTime = right.lastSignInAt ? Date.parse(right.lastSignInAt) : 0
+    if (leftTime !== rightTime) return rightTime - leftTime
+    return left.username.localeCompare(right.username, 'vi')
+  })
+
+  logger.info('Staff accounts listed', {
+    actorUid,
+    authAccountCount: accounts.length,
+    profileCount: profilesSnapshot.size,
+  })
+  return { accounts }
+})
+
+function firebaseAuthErrorCode(error: unknown): string {
+  return typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+}
+
+export const deleteStaffAccounts = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 120,
+  memory: '256MiB',
+}, async (request) => {
+  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  const rawUids: unknown[] = Array.isArray(request.data?.uids) ? request.data.uids : []
+  const uids = [...new Set(rawUids
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter((value) => value && !value.includes('/') && value.length <= 160))]
+
+  if (!uids.length) throw new HttpsError('invalid-argument', 'Chưa chọn tài khoản cần xóa.')
+  if (uids.length > 50) {
+    throw new HttpsError('invalid-argument', 'Mỗi lượt chỉ được xóa tối đa 50 tài khoản để đảm bảo an toàn.')
+  }
+
+  const authService = getAuth()
+  const deletedUids: string[] = []
+  const failures: Array<{ uid: string; message: string }> = []
+
+  // Xử lý tuần tự để tránh dồn tải lên Authentication và giữ kết quả từng UID
+  // rõ ràng nếu một tài khoản được đổi quyền trong lúc thao tác.
+  for (const uid of uids) {
+    try {
+      const profileRef = db.collection('users').doc(uid)
+      const profileSnapshot = await profileRef.get()
+      const profile = profileSnapshot.data() || {}
+      let authEmail = ''
+      try {
+        const authUser = await authService.getUser(uid)
+        authEmail = normalizedAccountEmail(authUser.email)
+      } catch (error) {
+        if (firebaseAuthErrorCode(error) !== 'auth/user-not-found') throw error
+      }
+
+      const profileEmail = normalizedAccountEmail(profile.email)
+      if (accountDeletionBlockReason({
+        actorUid,
+        targetUid: uid,
+        role: profile.role,
+        authEmail,
+        profileEmail,
+      })) {
+        failures.push({ uid, message: 'Tài khoản Admin hoặc phiên đang đăng nhập được bảo vệ.' })
+        continue
+      }
+
+      await db.runTransaction(async (transaction) => {
+        const latestProfileSnapshot = await transaction.get(profileRef)
+        const latestProfile = latestProfileSnapshot.data() || {}
+        if (latestProfile.role === 'admin') {
+          throw new Error('PROTECTED_ACCOUNT_CHANGED')
+        }
+
+        const teacherId = typeof latestProfile.teacherId === 'string' ? latestProfile.teacherId.trim() : ''
+        if (teacherId) {
+          const teacherRef = db.collection('teachers').doc(teacherId)
+          const teacherSnapshot = await transaction.get(teacherRef)
+          if (teacherSnapshot.exists && teacherSnapshot.data()?.loginAccountUid === uid) {
+            transaction.set(teacherRef, {
+              loginAccountUid: '',
+              loginAccountUpdatedAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true })
+          }
+        }
+        transaction.delete(profileRef)
+      })
+
+      // Xóa hồ sơ quyền trước rồi mới xóa Authentication. Nếu dịch vụ Auth lỗi
+      // giữa chừng, tài khoản vẫn bị khóa quyền và lần thử sau có thể hoàn tất.
+      try {
+        await authService.deleteUser(uid)
+      } catch (error) {
+        if (firebaseAuthErrorCode(error) !== 'auth/user-not-found') throw error
+      }
+      deletedUids.push(uid)
+    } catch (error) {
+      const message = error instanceof Error && error.message === 'PROTECTED_ACCOUNT_CHANGED'
+        ? 'Tài khoản vừa được đổi thành Admin nên đã dừng xóa hồ sơ quyền.'
+        : 'Không thể xóa hoàn toàn tài khoản này. Vui lòng tải lại và thử lại.'
+      failures.push({ uid, message })
+      logger.error('Failed to delete staff account', {
+        actorUid,
+        targetUid: uid,
+        code: firebaseAuthErrorCode(error),
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  await db.collection('adminLogs').add({
+    adminId: actorUid,
+    action: 'DELETE_STAFF_ACCOUNTS',
+    targetType: 'user',
+    targetIds: uids,
+    deletedUids,
+    failures,
+    createdAt: FieldValue.serverTimestamp(),
+  })
+
+  logger.info('Staff account deletion completed', {
+    actorUid,
+    requestedCount: uids.length,
+    deletedCount: deletedUids.length,
+    failedCount: failures.length,
+  })
+  return { deletedUids, failures }
 })
 
 export const recoverTeacherLogin = onCall({

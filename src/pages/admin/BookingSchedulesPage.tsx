@@ -43,6 +43,13 @@ import {
 } from '@/lib/teacherSubjects'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable } from '@/lib/bookingLogic'
+import { sortSubjectsByName } from '@/lib/subjectSorting'
+import {
+  buildFutureRecurringSlots,
+  estimateRecurringWeeks,
+  recurringSessionTarget,
+  type RecurringScheduleMode,
+} from '@/lib/recurringSchedule'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -210,33 +217,6 @@ interface SelectedSlot {
   time: string
 }
 
-function buildFutureRecurringSlots(
-  baseSlots: SelectedSlot[],
-  maxSessions: number,
-  todayISO: string,
-  currentTime: string
-): SelectedSlot[] {
-  if (baseSlots.length === 0 || maxSessions <= 0) return []
-
-  const slots: SelectedSlot[] = []
-  let weekIndex = 0
-
-  while (slots.length < maxSessions) {
-    for (const baseSlot of baseSlots) {
-      if (slots.length >= maxSessions) break
-
-      const dateISO = formatDateISO(addDays(parseDateISO(baseSlot.dateISO), weekIndex * 7))
-      const isPast = dateISO < todayISO || (dateISO === todayISO && baseSlot.time < currentTime)
-      if (isPast) continue
-
-      slots.push({ ...baseSlot, dateISO })
-    }
-    weekIndex += 1
-  }
-
-  return slots
-}
-
 export function BookingSchedulesPage() {
   const { user } = useAuthStore()
   const [searchParams] = useSearchParams()
@@ -294,6 +274,8 @@ export function BookingSchedulesPage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
   const duration = 25
   const [isRecurring, setIsRecurring] = useState(false)
+  const [recurringMode, setRecurringMode] = useState<RecurringScheduleMode>('all')
+  const [recurringSessionCount, setRecurringSessionCount] = useState(1)
   const [scheduling, setScheduling] = useState(false)
   const [scheduleConflictMessage, setScheduleConflictMessage] = useState('')
   const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
@@ -400,10 +382,10 @@ export function BookingSchedulesPage() {
   useEffect(() => {
     getDocs(collection(db, 'subjects'))
       .then((snapshot) => {
-        setSubjects(snapshot.docs.map((document) => ({
+        setSubjects(sortSubjectsByName(snapshot.docs.map((document) => ({
           id: document.id,
           ...document.data(),
-        } as Subject)))
+        } as Subject))))
       })
       .catch((error) => {
         console.error('Error loading subject catalog:', error)
@@ -837,6 +819,8 @@ export function BookingSchedulesPage() {
       // Reset scheduling form
       setScheduleMode('regular')
       setIsRecurring(false)
+      setRecurringMode('all')
+      setRecurringSessionCount(1)
       setSelectedStudent(null)
       setStudentSearch('')
       setSelectedSubjectId('')
@@ -885,6 +869,24 @@ export function BookingSchedulesPage() {
       .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
       .reduce((sum, b) => sum + getBookingPoints(b), 0)
     const availableSubjectPoints = Math.max(0, sub.remainingMinutes - bookedPointsForSubject)
+    const maxRecurringSessions = pointsPerLesson > 0
+      ? Math.floor(availableSubjectPoints / pointsPerLesson)
+      : 0
+    if (isRecurring && recurringMode === 'custom') {
+      if (!Number.isInteger(recurringSessionCount) || recurringSessionCount < 1) {
+        toast.error('Số buổi muốn xếp phải là số nguyên lớn hơn 0.')
+        return
+      }
+      if (recurringSessionCount > maxRecurringSessions) {
+        toast.error(`Học viên chỉ còn đủ kim cương để xếp tối đa ${maxRecurringSessions} buổi.`)
+        return
+      }
+    }
+    const plannedRecurringSessions = recurringSessionTarget(
+      recurringMode,
+      recurringSessionCount,
+      maxRecurringSessions,
+    )
     if (!isRecurring && availableSubjectPoints < totalRequiredPoints) {
       toast.error('Học viên không đủ kim cương khả dụng cho môn học này để xếp lịch!')
       return
@@ -915,7 +917,7 @@ export function BookingSchedulesPage() {
     const slotsToCheck = isRecurring
       ? buildFutureRecurringSlots(
         selectedSlots,
-        pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0,
+        plannedRecurringSessions,
         todayISO,
         currentMinutesStr
       )
@@ -982,8 +984,7 @@ export function BookingSchedulesPage() {
           })
         })
       } else {
-        const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
-        const recurringSlots = buildFutureRecurringSlots(selectedSlots, maxSessions, todayISO, currentMinutesStr)
+        const recurringSlots = buildFutureRecurringSlots(selectedSlots, plannedRecurringSessions, todayISO, currentMinutesStr)
         for (const slot of recurringSlots) {
           candidates.push({
             teacherId: selectedTeacher.id,
@@ -1087,11 +1088,15 @@ export function BookingSchedulesPage() {
           }
         } else {
           const maxSessions = pointsPerLesson > 0 ? Math.floor(availableSubjectPoints / pointsPerLesson) : 0
-          if (maxSessions === 0) {
+          const targetSessions = recurringSessionTarget(recurringMode, recurringSessionCount, maxSessions)
+          if (maxSessions === 0 || targetSessions === 0) {
+            throw new Error('NOT_ENOUGH_MINUTES')
+          }
+          if (recurringMode === 'custom' && recurringSessionCount > maxSessions) {
             throw new Error('NOT_ENOUGH_MINUTES')
           }
 
-          const recurringSlots = buildFutureRecurringSlots(selectedSlots, maxSessions, todayISO, currentMinutesStr)
+          const recurringSlots = buildFutureRecurringSlots(selectedSlots, targetSessions, todayISO, currentMinutesStr)
           for (const slot of recurringSlots) {
             const slotDate = parseDateISO(slot.dateISO)
             const startMin = timeToMinutes(slot.time)
@@ -1171,6 +1176,8 @@ export function BookingSchedulesPage() {
             totalRequired,
             heldMinutesAfter: nextHeld,
             isRecurring,
+            recurringMode: isRecurring ? recurringMode : null,
+            requestedRecurringSessions: isRecurring && recurringMode === 'custom' ? recurringSessionCount : null,
             scheduleMode,
           },
           createdAt: serverTimestamp(),
@@ -1185,6 +1192,8 @@ export function BookingSchedulesPage() {
       setSelectedStudent(null)
       setStudentSearch('')
       setIsRecurring(false)
+      setRecurringMode('all')
+      setRecurringSessionCount(1)
     } catch (error: unknown) {
       console.error('Direct scheduling failed:', error)
       const errorMessage = error instanceof Error ? error.message : ''
@@ -1494,6 +1503,8 @@ export function BookingSchedulesPage() {
     // available future week. It must stay recurring so no regular booking can be
     // written into the past; makeup remains a separate explicit action.
     setIsRecurring(mode === 'regular' && hasPast)
+    setRecurringMode('all')
+    setRecurringSessionCount(1)
     setSelectedStudent(null)
     setStudentSearch('')
     setSelectedSubjectId('')
@@ -2496,47 +2507,102 @@ export function BookingSchedulesPage() {
 
 
 
-            {/* Recurring schedule switch */}
+            {/* Recurring scheduling plan */}
             {selectedStudent && scheduleMode === 'regular' && (
-              <div className="rounded-xl border border-indigo-100 bg-slate-50 p-4 space-y-2">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isRecurring}
-                    onChange={(e) => setIsRecurring(e.target.checked)}
-                    disabled={selectedSlotsContainPast}
-                    className="h-4.5 w-4.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 mt-0.5"
-                  />
-                  <div>
-                    <span className="text-sm font-bold text-slate-800 block">
-                      {selectedSlotsContainPast
-                        ? 'Rải lịch từ tuần kế tiếp (bắt buộc với ca mẫu đã qua)'
-                        : 'Lặp lại lịch hàng tuần (Xếp lịch định kỳ)'}
-                    </span>
-                    <span className="text-xs text-slate-500 block mt-0.5">
-                      {selectedSlotsContainPast
-                        ? 'Hệ thống giữ đúng thứ và giờ đã chọn, tự bỏ qua mọi ngày đã qua rồi bắt đầu ở tuần gần nhất còn hợp lệ.'
-                        : 'Hệ thống sẽ tự động xếp ca này định kỳ các tuần tiếp theo cho đến khi học viên hết số phút học.'}
-                    </span>
+              <div className="space-y-3 rounded-xl border border-indigo-100 bg-slate-50 p-4">
+                {selectedSlotsContainPast ? (
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 className="mt-0.5 h-4.5 w-4.5 shrink-0 text-indigo-600" />
+                    <div>
+                      <span className="block text-sm font-bold text-slate-800">Rải lịch từ ca hợp lệ kế tiếp</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Ca đã qua chỉ được dùng làm mẫu. Hệ thống giữ đúng thứ và giờ, bỏ qua ngày đã qua và không ghi lịch ngược thời gian.
+                      </span>
+                    </div>
                   </div>
-                </label>
+                ) : (
+                  <label className="flex cursor-pointer items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isRecurring}
+                      onChange={(event) => setIsRecurring(event.target.checked)}
+                      className="mt-0.5 h-4.5 w-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <span className="block text-sm font-bold text-slate-800">Lặp lại lịch hàng tuần</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">Dùng các thứ và giờ đã chọn làm mẫu cho những tuần tiếp theo.</span>
+                    </div>
+                  </label>
+                )}
 
                 {isRecurring && (() => {
-                  // Estimate based on the selected subject package (same rule as the scheduling transaction)
-                  const pkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
+                  if (!selectedTeacher) return null
+                  const pkg = selectedStudent.subjects?.find((subject) => subject.subjectId === selectedSubjectId)
                   const bookedForSubject = selectedStudentBookings
-                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
-                    .reduce((sum, b) => sum + getBookingPoints(b), 0)
+                    .filter((booking) => booking.subjectId === selectedSubjectId && !booking.lessonId)
+                    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
                   const availableForSubject = pkg ? Math.max(0, (pkg.remainingMinutes || 0) - bookedForSubject) : 0
                   const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
                   const maxSessions = pointsForOneLesson > 0 ? Math.floor(availableForSubject / pointsForOneLesson) : 0
-                  const slotsPerWeek = Math.max(1, selectedSlots.length)
-                  const maxWeeks = Math.ceil(maxSessions / slotsPerWeek)
+                  const targetSessions = recurringSessionTarget(recurringMode, recurringSessionCount, maxSessions)
+                  const weeks = estimateRecurringWeeks(targetSessions, selectedSlots.length)
+
                   return (
-                    <div className="mt-2 text-xs font-bold text-indigo-600 border-t border-slate-200/50 pt-2 flex justify-between">
-                      <span>Dự kiến xếp liên tục:</span>
-                      <span>{maxWeeks} tuần ({maxSessions} ca)</span>
-                    </div>
+                    <fieldset className="space-y-3 border-t border-slate-200 pt-3">
+                      <legend className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">Cách xếp lịch</legend>
+                      <label className={`block cursor-pointer rounded-xl border p-3 transition ${recurringMode === 'all' ? 'border-indigo-300 bg-white ring-2 ring-indigo-100' : 'border-slate-200 bg-white hover:border-indigo-200'}`}>
+                        <span className="flex items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="recurring-schedule-mode"
+                            value="all"
+                            checked={recurringMode === 'all'}
+                            onChange={() => setRecurringMode('all')}
+                            className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>
+                            <strong className="block text-sm text-slate-900">Xếp tất cả các buổi còn lại</strong>
+                            <span className="mt-0.5 block text-xs leading-5 text-slate-500">Tự động xếp toàn bộ số buổi còn đủ kim cương theo các thứ và giờ đã chọn.</span>
+                            <span className="mt-1 block text-xs font-bold text-indigo-700">Dự kiến kéo dài: {estimateRecurringWeeks(maxSessions, selectedSlots.length)} tuần ({maxSessions} ca)</span>
+                          </span>
+                        </span>
+                      </label>
+
+                      <label className={`block cursor-pointer rounded-xl border p-3 transition ${recurringMode === 'custom' ? 'border-indigo-300 bg-white ring-2 ring-indigo-100' : 'border-slate-200 bg-white hover:border-indigo-200'}`}>
+                        <span className="flex items-start gap-2.5">
+                          <input
+                            type="radio"
+                            name="recurring-schedule-mode"
+                            value="custom"
+                            checked={recurringMode === 'custom'}
+                            onChange={() => setRecurringMode('custom')}
+                            className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <strong className="block text-sm text-slate-900">Xếp theo số buổi</strong>
+                            <span className="mt-0.5 block text-xs leading-5 text-slate-500">Chỉ xếp trước số buổi mong muốn; số buổi còn lại có thể xếp sau.</span>
+                            <span className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-700">
+                              Số buổi muốn xếp:
+                              <span className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <button type="button" onClick={() => { setRecurringMode('custom'); setRecurringSessionCount((count) => Math.max(1, count - 1)) }} className="h-8 w-8 text-slate-600 hover:bg-slate-100" aria-label="Giảm một buổi">−</button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={Math.max(1, maxSessions)}
+                                  value={recurringSessionCount}
+                                  onFocus={() => setRecurringMode('custom')}
+                                  onChange={(event) => setRecurringSessionCount(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                                  className="h-8 w-14 border-x border-slate-200 text-center text-sm font-black text-slate-900 outline-none"
+                                  aria-label="Số buổi muốn xếp"
+                                />
+                                <button type="button" onClick={() => { setRecurringMode('custom'); setRecurringSessionCount((count) => Math.min(Math.max(1, maxSessions), count + 1)) }} className="h-8 w-8 text-slate-600 hover:bg-slate-100" aria-label="Tăng một buổi">+</button>
+                              </span>
+                              <span>{targetSessions} buổi · dự kiến {weeks} tuần</span>
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    </fieldset>
                   )
                 })()}
               </div>

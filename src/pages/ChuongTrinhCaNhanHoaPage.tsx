@@ -61,28 +61,24 @@ const PERSONAL_PATHS: {
   title: string
   goal: string
   path: string[]
-  layout: string
 }[] = [
   {
     icon: BriefcaseBusiness,
     title: 'Sales Manager',
     goal: 'Làm việc với khách hàng quốc tế.',
     path: ['Small Talk', 'Product Introduction', 'Client Meeting', 'Negotiation', 'Handling Objections', 'Follow-up'],
-    layout: 'md:col-span-7 md:row-span-2',
   },
   {
     icon: Plane,
     title: 'Chuẩn bị du lịch',
     goal: 'Tự tin giao tiếp trong chuyến đi nước ngoài.',
     path: ['Airport', 'Immigration', 'Hotel', 'Restaurant', 'Transportation', 'Emergency'],
-    layout: 'md:col-span-5',
   },
   {
     icon: Monitor,
     title: 'Nhân viên văn phòng',
     goal: 'Sử dụng tiếng Anh trong môi trường công việc.',
     path: ['Introducing Yourself', 'Emails', 'Meetings', 'Reporting', 'Presentations', 'International Teams'],
-    layout: 'md:col-span-5',
   },
 ]
 
@@ -418,11 +414,11 @@ export function ChuongTrinhCaNhanHoaPage() {
               title="Một học viên, một lộ trình"
               body="Hai người có thể cùng trình độ tiếng Anh. Nếu mục tiêu khác nhau, chương trình cũng nên khác nhau."
             />
-            <div className="mt-10 grid gap-5 md:grid-cols-12">
-              {PERSONAL_PATHS.map(({ icon: Icon, title, goal, path, layout }, index) => (
+            <div className="mt-10 grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {PERSONAL_PATHS.map(({ icon: Icon, title, goal, path }, index) => (
                 <article
                   key={title}
-                  className={`rounded-[2rem] border p-6 sm:p-8 ${layout} ${index === 0 ? 'border-[#E5BF34] bg-[#FFF8DA]' : 'border-slate-200 bg-white shadow-[0_24px_56px_-46px_rgba(16,33,58,0.45)]'}`}
+                  className={`flex h-full flex-col rounded-[2rem] border p-6 sm:p-8 ${index === 0 ? 'border-[#E5BF34] bg-[#FFF8DA]' : 'border-slate-200 bg-white shadow-[0_24px_56px_-46px_rgba(16,33,58,0.45)]'}`}
                 >
                   <div className="flex items-center gap-4">
                     <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#FFC107] text-[#10213A]">
@@ -433,11 +429,11 @@ export function ChuongTrinhCaNhanHoaPage() {
                       <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{goal}</p>
                     </div>
                   </div>
-                  <div className="mt-6 flex flex-wrap items-center gap-2">
+                  <div className="mt-6 flex flex-wrap items-center gap-x-2 gap-y-3">
                     {path.map((item, pathIndex) => (
-                      <span key={item} className="contents">
-                        <span className="rounded-xl border border-[#E8D28A] bg-white px-3 py-2 text-xs font-black text-slate-700">{item}</span>
-                        {pathIndex < path.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-[#A76500]" aria-hidden />}
+                      <span key={item} className="inline-flex items-center gap-2">
+                        {pathIndex > 0 && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[#A76500]" aria-hidden />}
+                        <span className="whitespace-nowrap rounded-xl border border-[#E8D28A] bg-white px-3 py-2 text-xs font-black text-slate-700">{item}</span>
                       </span>
                     ))}
                   </div>

@@ -17,6 +17,7 @@ import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil
 import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
 import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
+import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
@@ -246,7 +247,7 @@ export function TeacherDetailPage() {
     })
 
     getDocs(collection(db, 'subjects')).then((snap) => {
-      setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)))
+      setSubjects(sortSubjectsByName(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject))))
     }).catch((error) => {
       console.error('Load subjects for teacher profile failed:', error)
     }).finally(() => {

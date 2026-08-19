@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "test:teacher-login": "node --experimental-strip-types --test tests/teacherLoginIdentity.test.ts",
     "test:lesson-attendance": "node --experimental-strip-types --test tests/lessonAttendance.test.ts",
+    "test:recurring-schedule": "node --experimental-strip-types --test tests/recurringSchedule.test.ts",
+    "test:subject-pricing": "node --experimental-strip-types --test tests/countryPricing.test.ts",
+    "test:subject-sorting": "node --experimental-strip-types --test tests/subjectSorting.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

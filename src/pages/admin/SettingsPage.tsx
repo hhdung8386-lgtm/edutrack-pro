@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, setDoc,
   getDocFromServer, onSnapshot, serverTimestamp, query, orderBy,
@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, type UserCredential } from 'firebase/auth'
-import { BookUser, Building2, Check, MapPin, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
+import { AlertTriangle, BookUser, Building2, Check, Clock3, MapPin, Pencil, Plus, RefreshCw, Search, Trash2, Users, X } from 'lucide-react'
 import {
   DEFAULT_TEACHER_NICKNAMES,
   loadCustomTeacherNicknames,
@@ -20,16 +20,67 @@ import {
   type TeacherNicknameLibrary,
 } from '@/lib/nameGenerator'
 import { getCurrentMonth } from '@/lib/constants'
+import {
+  deleteStaffAccounts,
+  loadStaffAccounts,
+  type StaffAccount,
+} from '@/lib/staffAccounts'
 
 export interface Branch {
   id: string
   name: string
   address: string
   status: 'active' | 'inactive'
-  createdAt: any
+  createdAt: unknown
 }
 
 type StaffAccountKind = 'student_manager' | 'teacher_manager' | 'booking_assistant' | 'admin'
+type AccountActivityFilter = 'all' | 'never' | 'inactive_1' | 'inactive_3' | 'inactive_4' | 'inactive_6'
+
+const ACCOUNT_DELETE_BATCH_SIZE = 50
+
+function accountRoleLabel(account: StaffAccount) {
+  if (account.accessScope === 'booking_only') return 'Trợ lý xếp lớp'
+  if (account.role === 'admin') return 'Admin'
+  if (account.role === 'student_manager') return 'Quản lý Học viên'
+  if (account.role === 'teacher_manager') return 'Quản lý Gia sư'
+  if (account.role === 'teacher') return 'Gia sư'
+  if (account.role === 'inactive_teacher') return 'Gia sư ngừng hoạt động'
+  if (account.role === 'guest') return 'Khách'
+  if (account.role === 'missing_profile') return 'Thiếu hồ sơ quyền'
+  return account.role || 'Chưa phân quyền'
+}
+
+function formatAccountDate(value: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatLastSignIn(value: string | null, referenceTime: number) {
+  if (!value) return 'Chưa từng đăng nhập'
+  const time = new Date(value).getTime()
+  if (!Number.isFinite(time)) return 'Không xác định'
+  const elapsedDays = Math.max(0, Math.floor((referenceTime - time) / 86_400_000))
+  if (elapsedDays === 0) return 'Hôm nay'
+  if (elapsedDays < 30) return `${elapsedDays} ngày trước`
+  const elapsedMonths = Math.floor(elapsedDays / 30)
+  if (elapsedMonths < 12) return `${elapsedMonths} tháng trước`
+  const elapsedYears = Math.floor(elapsedMonths / 12)
+  return `${elapsedYears} năm trước`
+}
+
+function inactiveMonths(filter: AccountActivityFilter) {
+  const match = /^inactive_(\d+)$/.exec(filter)
+  return match ? Number(match[1]) : null
+}
 
 function normalizeStaffEmail(value: string) {
   const normalized = value.trim().toLowerCase()
@@ -63,12 +114,17 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
 
   // Account management states (only for admin)
-  const [accounts, setAccounts] = useState<any[]>([])
+  const [accounts, setAccounts] = useState<StaffAccount[]>([])
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [showAccountModal, setShowAccountModal] = useState(false)
   const [savingAccount, setSavingAccount] = useState(false)
-  const [deleteAcc, setDeleteAcc] = useState<any | null>(null)
+  const [deleteAcc, setDeleteAcc] = useState<StaffAccount | null>(null)
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [accountSearch, setAccountSearch] = useState('')
+  const [accountActivityFilter, setAccountActivityFilter] = useState<AccountActivityFilter>('all')
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(() => new Set())
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [accountReferenceTime, setAccountReferenceTime] = useState(() => Date.now())
 
   // Account form states
   const [email, setEmail] = useState('')
@@ -100,37 +156,78 @@ export function SettingsPage() {
     )
   }, [])
 
-  // Load accounts (only if activeTab is accounts and role is admin)
+  const refreshAccounts = useCallback(async () => {
+    setLoadingAccounts(true)
+    try {
+      const nextAccounts = await loadStaffAccounts()
+      setAccounts(nextAccounts)
+      setAccountReferenceTime(Date.now())
+      setSelectedAccountIds((current) => {
+        const existingIds = new Set(nextAccounts.map((account) => account.uid))
+        return new Set([...current].filter((uid) => existingIds.has(uid)))
+      })
+    } catch (error) {
+      console.error('Error loading staff accounts:', error)
+      toast.error('Không tải được danh sách tài khoản xác thực. Vui lòng thử lại.')
+    } finally {
+      setLoadingAccounts(false)
+    }
+  }, [])
+
+  // Load the canonical Firebase Authentication accounts instead of rendering
+  // stale/duplicated Firestore profiles as separate login accounts.
   useEffect(() => {
     if (role !== 'admin' || activeTab !== 'accounts') return
-    setLoadingAccounts(true)
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'))
-    return onSnapshot(
-      q,
-      (snap) => {
-        setAccounts(snap.docs.map(d => d.data()))
-        setLoadingAccounts(false)
-      },
-      (err) => {
-        console.error('Error loading users:', err)
-        toast.error('Lỗi khi tải danh sách tài khoản')
-        setLoadingAccounts(false)
+    const timer = window.setTimeout(() => void refreshAccounts(), 0)
+    return () => window.clearTimeout(timer)
+  }, [activeTab, refreshAccounts, role])
+
+  const filteredAccounts = useMemo(() => {
+    const search = accountSearch.trim().toLowerCase()
+    const months = inactiveMonths(accountActivityFilter)
+    const inactivityCutoff = months === null ? null : accountReferenceTime - months * 30 * 86_400_000
+
+    return accounts.filter((account) => {
+      const matchesSearch = !search || [
+        account.username,
+        account.email,
+        accountRoleLabel(account),
+      ].some((value) => value.toLowerCase().includes(search))
+      if (!matchesSearch) return false
+      if (accountActivityFilter === 'never') return !account.lastSignInAt
+      if (inactivityCutoff !== null) {
+        return !account.lastSignInAt || Date.parse(account.lastSignInAt) < inactivityCutoff
       }
-    )
-  }, [activeTab, role])
+      return true
+    })
+  }, [accountActivityFilter, accountReferenceTime, accountSearch, accounts])
+
+  const selectableAccounts = useMemo(
+    () => filteredAccounts.filter((account) => !account.protected),
+    [filteredAccounts],
+  )
+  const allVisibleSelected = selectableAccounts.length > 0
+    && selectableAccounts.every((account) => selectedAccountIds.has(account.uid))
 
   useEffect(() => {
     if (role !== 'admin' || activeTab !== 'nicknames') return
-    setLoadingNicknames(true)
-    loadCustomTeacherNicknames()
-      .then(setCustomNicknames)
-      .finally(() => setLoadingNicknames(false))
+    let active = true
+    const timer = window.setTimeout(() => {
+      setLoadingNicknames(true)
+      loadCustomTeacherNicknames()
+        .then((library) => { if (active) setCustomNicknames(library) })
+        .finally(() => { if (active) setLoadingNicknames(false) })
+    }, 0)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [activeTab, role])
 
   useEffect(() => {
     if (role !== 'admin' || activeTab !== 'payroll_tax') return
-    setPayrollTaxLoading(true)
-    return onSnapshot(
+    const loadingTimer = window.setTimeout(() => setPayrollTaxLoading(true), 0)
+    const unsubscribe = onSnapshot(
       doc(db, 'paymentSettings', 'main'),
       (snapshot) => {
         const data = snapshot.data() || {}
@@ -147,6 +244,10 @@ export function SettingsPage() {
         toast.error('Không tải được cấu hình thuế TNCN')
       },
     )
+    return () => {
+      window.clearTimeout(loadingTimer)
+      unsubscribe()
+    }
   }, [activeTab, role])
 
   const saveNicknameChanges = async (next: TeacherNicknameLibrary, successMessage: string) => {
@@ -252,7 +353,7 @@ export function SettingsPage() {
       await deleteDoc(doc(db, 'branches', deleteBranch.id))
       toast.success('Đã xóa chi nhánh')
       setDeleteBranch(null)
-    } catch (err) {
+    } catch {
       toast.error('Không thể xóa chi nhánh')
     } finally {
       setDeleting(false)
@@ -333,6 +434,7 @@ export function SettingsPage() {
       setPassword('')
       setUsername('')
       setSelectedRole('student_manager')
+      await refreshAccounts()
     } catch (err: unknown) {
       console.error('Error creating staff account:', err)
       const errorMessage = err instanceof Error ? err.message : ''
@@ -358,13 +460,66 @@ export function SettingsPage() {
     if (!deleteAcc) return
     setDeletingAccount(true)
     try {
-      // Deleting user document from users collection
-      await deleteDoc(doc(db, 'users', deleteAcc.uid))
-      toast.success('Đã thu hồi quyền truy cập của tài khoản nhân viên!')
-      setDeleteAcc(null)
-    } catch (err) {
-      console.error(err)
-      toast.error('Không thể thu hồi quyền truy cập của tài khoản nhân viên')
+      const result = await deleteStaffAccounts([deleteAcc.uid])
+      if (result.deletedUids.includes(deleteAcc.uid)) {
+        toast.success('Đã xóa tài khoản đăng nhập và hồ sơ quyền; dữ liệu lớp học được giữ nguyên.')
+        setDeleteAcc(null)
+      } else {
+        toast.error(result.failures[0]?.message || 'Không thể xóa tài khoản này.')
+      }
+      await refreshAccounts()
+    } catch (error) {
+      console.error(error)
+      toast.error('Không thể xóa tài khoản lúc này. Không có dữ liệu lớp học nào bị thay đổi.')
+    } finally {
+      setDeletingAccount(false)
+    }
+  }
+
+  const toggleAccountSelection = (uid: string) => {
+    setSelectedAccountIds((current) => {
+      const next = new Set(current)
+      if (next.has(uid)) next.delete(uid)
+      else next.add(uid)
+      return next
+    })
+  }
+
+  const toggleAllVisibleAccounts = () => {
+    setSelectedAccountIds((current) => {
+      const next = new Set(current)
+      if (allVisibleSelected) selectableAccounts.forEach((account) => next.delete(account.uid))
+      else selectableAccounts.forEach((account) => next.add(account.uid))
+      return next
+    })
+  }
+
+  const handleBulkDeleteAccounts = async () => {
+    const requestedUids = [...selectedAccountIds]
+    if (!requestedUids.length) return
+    setDeletingAccount(true)
+    const deletedUids: string[] = []
+    const failures: Array<{ uid: string; message: string }> = []
+    try {
+      for (let index = 0; index < requestedUids.length; index += ACCOUNT_DELETE_BATCH_SIZE) {
+        const result = await deleteStaffAccounts(requestedUids.slice(index, index + ACCOUNT_DELETE_BATCH_SIZE))
+        deletedUids.push(...result.deletedUids)
+        failures.push(...result.failures)
+      }
+
+      setSelectedAccountIds(new Set(failures.map((failure) => failure.uid)))
+      setShowBulkDeleteConfirm(false)
+      if (deletedUids.length > 0) {
+        toast.success(`Đã xóa ${deletedUids.length} tài khoản; dữ liệu lớp học được giữ nguyên.`)
+      }
+      if (failures.length > 0) {
+        toast.error(`${failures.length} tài khoản được bảo vệ hoặc chưa thể xóa; hệ thống đã giữ lại để kiểm tra.`)
+      }
+      await refreshAccounts()
+    } catch (error) {
+      console.error(error)
+      toast.error('Quá trình xóa hàng loạt bị gián đoạn. Hãy tải lại danh sách trước khi thử tiếp.')
+      await refreshAccounts()
     } finally {
       setDeletingAccount(false)
     }
@@ -549,38 +704,100 @@ export function SettingsPage() {
       {/* Account Management Section (Only visible for Admin role) */}
       {activeTab === 'accounts' && role === 'admin' && (
         <Card className="animate-slide-up">
-          <div className="flex items-center justify-between mb-5">
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
                 <Users className="w-5 h-5 text-indigo-500" />
               </div>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">Quản lý tài khoản nhân viên</h2>
-                <p className="text-xs text-slate-500">{accounts.length} tài khoản</p>
+                <p className="text-xs text-slate-500">{accounts.length} tài khoản xác thực · đang hiển thị {filteredAccounts.length}</p>
               </div>
             </div>
-            <Button onClick={() => setShowAccountModal(true)} size="sm">
-              <Plus className="w-4 h-4 mr-1" />
-              Tạo tài khoản
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => void refreshAccounts()} size="sm" variant="outline" disabled={loadingAccounts} aria-label="Tải lại danh sách tài khoản">
+                <RefreshCw className={`h-4 w-4 ${loadingAccounts ? 'animate-spin' : ''}`} />
+                Tải lại
+              </Button>
+              <Button onClick={() => setShowAccountModal(true)} size="sm">
+                <Plus className="w-4 h-4" />
+                Tạo tài khoản
+              </Button>
+            </div>
           </div>
+
+          <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={accountSearch}
+                onChange={(event) => setAccountSearch(event.target.value)}
+                placeholder="Tìm tên, email hoặc vai trò..."
+                className="min-h-[42px] w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              />
+            </label>
+            <select
+              value={accountActivityFilter}
+              onChange={(event) => setAccountActivityFilter(event.target.value as AccountActivityFilter)}
+              className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              aria-label="Lọc theo lần đăng nhập gần nhất"
+            >
+              <option value="all">Tất cả lần đăng nhập</option>
+              <option value="never">Chưa từng đăng nhập</option>
+              <option value="inactive_1">Không đăng nhập ≥ 1 tháng</option>
+              <option value="inactive_3">Không đăng nhập ≥ 3 tháng</option>
+              <option value="inactive_4">Không đăng nhập ≥ 4 tháng</option>
+              <option value="inactive_6">Không đăng nhập ≥ 6 tháng</option>
+            </select>
+          </div>
+
+          {!loadingAccounts && accounts.length > 0 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisibleAccounts}
+                  disabled={selectableAccounts.length === 0}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Chọn tất cả đang hiển thị ({selectableAccounts.length})
+              </label>
+              {selectedAccountIds.size > 0 && (
+                <Button size="sm" variant="danger" onClick={() => setShowBulkDeleteConfirm(true)}>
+                  <Trash2 className="h-4 w-4" />
+                  Xóa {selectedAccountIds.size} tài khoản đã chọn
+                </Button>
+              )}
+            </div>
+          )}
 
           {loadingAccounts ? (
             <div className="flex justify-center py-8">
               <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : accounts.length === 0 ? (
+          ) : filteredAccounts.length === 0 ? (
             <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-xl">
               <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500 text-sm mb-3">Chưa có tài khoản nhân viên nào</p>
+              <p className="text-slate-500 text-sm mb-3">
+                {accounts.length === 0 ? 'Chưa có tài khoản nhân viên nào' : 'Không có tài khoản phù hợp bộ lọc'}
+              </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {accounts.map((acc) => (
+              {filteredAccounts.map((acc) => (
                 <div
                   key={acc.uid}
-                  className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm transition-all duration-200"
+                  className={`flex items-start gap-3 rounded-xl border p-3.5 transition-all duration-200 ${selectedAccountIds.has(acc.uid) ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedAccountIds.has(acc.uid)}
+                    onChange={() => toggleAccountSelection(acc.uid)}
+                    disabled={acc.protected}
+                    aria-label={`Chọn tài khoản ${acc.username || acc.email}`}
+                    className="mt-2.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-30"
+                  />
                   <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                     acc.accessScope === 'booking_only'
                       ? 'bg-emerald-50 text-emerald-600'
@@ -608,25 +825,29 @@ export function SettingsPage() {
                           ? 'bg-amber-100 text-amber-700'
                           : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {acc.accessScope === 'booking_only'
-                          ? 'Trợ lý xếp lớp'
-                          : acc.role === 'admin'
-                          ? 'Admin'
-                          : acc.role === 'student_manager'
-                          ? 'Quản lý Học viên'
-                          : acc.role === 'teacher_manager'
-                          ? 'Quản lý Gia sư'
-                          : acc.role}
+                        {accountRoleLabel(acc)}
                       </span>
+                      {acc.disabled && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-slate-600">Đã khóa Auth</span>}
+                      {!acc.profileExists && <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-rose-700">Thiếu hồ sơ quyền</span>}
+                      {acc.duplicateProfileCount > 1 && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-800">
+                          <AlertTriangle className="h-3 w-3" /> {acc.duplicateProfileCount} hồ sơ trùng email
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 truncate mt-0.5">{acc.email}</p>
+                    <p className={`mt-1 flex items-center gap-1.5 text-xs font-semibold ${acc.lastSignInAt ? 'text-slate-600' : 'text-amber-700'}`} title={formatAccountDate(acc.lastSignInAt)}>
+                      <Clock3 className="h-3.5 w-3.5" />
+                      Đăng nhập gần nhất: {formatLastSignIn(acc.lastSignInAt, accountReferenceTime)}
+                      {acc.lastSignInAt && <span className="font-normal text-slate-400">· {formatAccountDate(acc.lastSignInAt)}</span>}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {acc.email !== 'admin@edutrackpro.app' && acc.email !== 'admin@123english.edu.vn' && (
+                    {!acc.protected && (
                       <button
                         onClick={() => setDeleteAcc(acc)}
                         className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                        aria-label="Xóa tài khoản"
+                        aria-label={`Xóa tài khoản ${acc.username || acc.email}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -908,13 +1129,31 @@ export function SettingsPage() {
           open
           onClose={() => setDeleteAcc(null)}
           onConfirm={handleDeleteAccount}
-          title={`Thu hồi quyền của tài khoản "${deleteAcc.username || deleteAcc.email}"?`}
-          confirmLabel="Thu hồi quyền"
+          title={`Xóa tài khoản "${deleteAcc.username || deleteAcc.email}"?`}
+          confirmLabel="Xóa tài khoản"
+          confirmVariant="danger"
           loading={deletingAccount}
         >
           <p className="text-sm text-slate-500">
-            Hệ thống chỉ xóa hồ sơ phân quyền, không xóa dữ liệu lớp học. Có thể tạo lại bằng đúng email và mật khẩu để khôi phục quyền sau này.
+            Hệ thống sẽ xóa tài khoản Firebase Authentication và hồ sơ phân quyền. Hồ sơ gia sư, học viên, lịch học, điểm danh và lịch sử tài chính vẫn được giữ nguyên.
           </p>
+        </ConfirmDialog>
+      )}
+
+      {showBulkDeleteConfirm && (
+        <ConfirmDialog
+          open
+          onClose={() => setShowBulkDeleteConfirm(false)}
+          onConfirm={handleBulkDeleteAccounts}
+          title={`Xóa ${selectedAccountIds.size} tài khoản đã chọn?`}
+          description="Admin, tài khoản đang đăng nhập và các tài khoản hệ thống được bảo vệ sẽ không bị xóa."
+          confirmLabel={`Xóa ${selectedAccountIds.size} tài khoản`}
+          confirmVariant="danger"
+          loading={deletingAccount}
+        >
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            Đây là thao tác không thể hoàn tác đối với thông tin đăng nhập. Dữ liệu lớp học và lịch sử tài chính không bị xóa.
+          </div>
         </ConfirmDialog>
       )}
     </div>

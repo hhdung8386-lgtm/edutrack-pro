@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { BookOpen, Check, ChevronDown, Globe2, Search } from 'lucide-react'
+import { sortSubjectsByName } from '@/lib/subjectSorting'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -148,9 +149,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     // Fetch all active subjects
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active')))
       .then((snap) => {
-        const list = snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as Subject))
-          .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }))
+        const list = sortSubjectsByName(snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)))
         const existingIds = currentSubjects.map(cs => cs.subjectId)
         setSubjectsList(list.filter(s => s.id === editingSubjectId || !existingIds.includes(s.id)))
       })
@@ -256,11 +255,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 usedMinutes: 0,
                 remainingMinutes: prevPkg.remainingMinutes,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
-                otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-                ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
                 currency: selectedSubjectObj.currency || 'VND',
                 batches: [{
                   id: '1',
@@ -281,11 +275,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 subjectId: selectedSubjectObj.id,
                 subjectName: selectedSubjectObj.name,
                 pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
-                pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
-                otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-                ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
                 currency: selectedSubjectObj.currency || 'VND',
                 totalSessions: calculatedTotalSessions,
                 remainingSessions: calculatedTotalSessions,
@@ -374,11 +363,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           usedMinutes: 0,
           remainingMinutes: data.totalMinutes,
           pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-          pricePerMinuteVN: selectedSubjectObj.pricePerMinuteVN || selectedSubjectObj.pricePerMinute || 0,
-          pricePerMinutePH: selectedSubjectObj.pricePerMinutePH || selectedSubjectObj.pricePerMinute || 0,
-          pricePerMinuteNative: selectedSubjectObj.pricePerMinuteNative || selectedSubjectObj.pricePerMinute || 0,
-          otherCountriesPrices: selectedSubjectObj.otherCountriesPrices || {},
-          ...(selectedSubjectObj.countryPrices ? { countryPrices: selectedSubjectObj.countryPrices } : {}),
           currency: selectedSubjectObj.currency || 'VND',
           batches: [{
             id: '1',
