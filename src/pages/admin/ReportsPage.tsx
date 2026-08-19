@@ -6,14 +6,12 @@ import { BookingRequest, Lesson, Student, StudentSubject, Teacher } from '@/type
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
-import { formatVND, getCurrentMonth } from '@/lib/constants'
+import { formatMoneyTotals, getCurrentMonth } from '@/lib/constants'
 import { getBookingPoints } from '@/lib/points'
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -92,7 +90,11 @@ export function ReportsPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
-  const [chartData, setChartData] = useState<{ month: string; count: number; salary: number }[]>([])
+  const [chartData, setChartData] = useState<{
+    month: string
+    count: number
+    salaryItems: { amount: number; currency?: string }[]
+  }[]>([])
   const [fundsLoading, setFundsLoading] = useState(true)
   const [fundsError, setFundsError] = useState('')
   const [search, setSearch] = useState('')
@@ -150,7 +152,10 @@ export function ReportsPage() {
         return {
           month: `${targetMonth.slice(5)}/${targetMonth.slice(2, 4)}`,
           count: monthLessons.length,
-          salary: monthLessons.reduce((sum, lesson) => sum + (lesson.salary || 0), 0),
+          salaryItems: monthLessons.map((lesson) => ({
+            amount: lesson.salary || 0,
+            currency: lesson.currency,
+          })),
         }
       })
       if (active) setChartData(data)
@@ -330,14 +335,20 @@ export function ReportsPage() {
     booked: subject.bookedMinutes,
   })), [filteredSubjects])
 
-  const totalSalary = lessons.reduce((sum, lesson) => sum + (lesson.salary || 0), 0)
+  const totalSalaryLabel = formatMoneyTotals(
+    lessons.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
+    'VND',
+  )
   const totalMinutes = lessons.reduce((sum, lesson) => sum + lesson.minutes, 0)
   const teacherStats = teachers.map((teacher) => {
     const teacherLessons = lessons.filter((lesson) => lesson.teacherId === teacher.id)
     return {
       ...teacher,
       lessonCount: teacherLessons.length,
-      salary: teacherLessons.reduce((sum, lesson) => sum + (lesson.salary || 0), 0),
+      salaryLabel: formatMoneyTotals(
+        teacherLessons.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
+        'VND',
+      ),
       minutes: teacherLessons.reduce((sum, lesson) => sum + lesson.minutes, 0),
     }
   }).filter((teacher) => teacher.lessonCount > 0)
@@ -581,7 +592,7 @@ export function ReportsPage() {
             {[
               { label: 'Buổi đã duyệt', value: lessons.length, icon: CalendarDays, tone: 'text-brand-700 bg-brand-50' },
               { label: 'Tổng phút dạy', value: `${numberFormat(totalMinutes)} phút`, icon: BarChart3, tone: 'text-sky-700 bg-sky-50' },
-              { label: 'Tổng lương', value: formatVND(totalSalary), icon: Sparkles, tone: 'text-emerald-700 bg-emerald-50' },
+              { label: 'Tổng lương', value: totalSalaryLabel, icon: Sparkles, tone: 'text-emerald-700 bg-emerald-50' },
               { label: 'Gia sư hoạt động', value: teacherStats.length, icon: GraduationCap, tone: 'text-violet-700 bg-violet-50' },
             ].map((metric) => {
               const Icon = metric.icon
@@ -590,7 +601,19 @@ export function ReportsPage() {
           </section>
           <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <Card className="p-5"><CardHeader title="Buổi dạy theo tháng" subtitle="6 tháng gần nhất" /><div className="mt-5 h-64"><ResponsiveContainer><BarChart data={chartData}><CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0' }} /><Bar dataKey="count" fill="#fbbf24" radius={[6, 6, 0, 0]} name="Buổi dạy" /></BarChart></ResponsiveContainer></div></Card>
-            <Card className="p-5"><CardHeader title="Lương theo tháng" subtitle="6 tháng gần nhất" /><div className="mt-5 h-64"><ResponsiveContainer><LineChart data={chartData}><CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0' }} formatter={(value) => [formatVND(Number(value || 0)), 'Lương']} /><Line type="monotone" dataKey="salary" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} /></LineChart></ResponsiveContainer></div></Card>
+            <Card className="p-5">
+              <CardHeader title="Lương theo tháng" subtitle="6 tháng gần nhất · tách theo tiền tệ" />
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {chartData.map((item) => (
+                  <div key={item.month} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-4 text-center">
+                    <p className="text-xs font-bold text-slate-500">{item.month}</p>
+                    <p className="mt-2 break-words text-sm font-black text-emerald-600">
+                      {formatMoneyTotals(item.salaryItems, 'VND')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Card>
           </section>
         </div>
       )}
@@ -604,7 +627,7 @@ export function ReportsPage() {
                   {teacher.photoURL ? <img src={teacher.photoURL} alt={teacher.name} className="h-11 w-11 rounded-xl object-cover" /> : <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 font-black text-brand-700">{teacher.name[0]}</div>}
                   <div className="min-w-0"><p className="truncate font-black text-slate-900">{teacher.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{teacher.lessonCount} buổi đã duyệt · {numberFormat(teacher.minutes)} phút</p></div>
                 </div>
-                <p className="shrink-0 text-sm font-black text-emerald-600">{formatVND(teacher.salary)}</p>
+                <p className="shrink-0 text-sm font-black text-emerald-600">{teacher.salaryLabel}</p>
               </div>
             </Card>
           ))}

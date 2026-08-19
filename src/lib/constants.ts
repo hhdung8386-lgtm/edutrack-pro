@@ -33,22 +33,13 @@ export function formatMoney(amount: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
   const locale = curr === 'VND' ? 'vi-VN' : 'en-US'
   const maximumFractionDigits = ['VND', 'JPY', 'KRW'].includes(curr) ? 0 : 4
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(Number.isFinite(amount) ? amount : 0)
 
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: curr,
-      currencyDisplay: curr === 'VND' || curr === 'USD' ? 'symbol' : 'code',
-      minimumFractionDigits: 0,
-      maximumFractionDigits,
-    }).format(amount)
-  } catch {
-    const formatted = new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits,
-    }).format(Number.isFinite(amount) ? amount : 0)
-    return `${curr} ${formatted}`
-  }
+  // Luôn đặt mã tiền tệ trước số để lương VND/PHP/USD không bị hiểu nhầm.
+  return `${curr} ${formatted}`
 }
 
 export function formatMoneyTotals(
@@ -64,7 +55,7 @@ export function formatMoneyTotals(
     totals[curr] = (totals[curr] || 0) + item.amount
   }
   const parts = Object.entries(totals)
-    .filter(([_, val]) => val !== 0)
+    .filter(([, val]) => val !== 0)
     .map(([curr, val]) => formatMoney(val, curr))
   if (parts.length === 0) {
     return formatMoney(0, fallbackCurrency)

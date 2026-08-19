@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getCanonicalSubjectRate, getCountryRate } from '../src/lib/countryPricing.ts'
-import { formatMoney, formatPricePerMinute } from '../src/lib/constants.ts'
+import { formatMoney, formatMoneyTotals, formatPricePerMinute } from '../src/lib/constants.ts'
 
 test('one canonical subject rate applies to every teacher country', () => {
   const legacySubject = {
@@ -37,6 +37,11 @@ test('price label always includes the canonical currency code', () => {
   assert.equal(formatPricePerMinute(1.75, 'PHP'), 'PHP 1.75/phút')
   assert.equal(formatPricePerMinute(2000, 'VND'), 'VND 2.000/phút')
   assert.equal(formatPricePerMinute(0.12, 'USD'), 'USD 0.12/phút')
-  assert.match(formatMoney(1.75, 'PHP'), /PHP/)
-  assert.doesNotMatch(formatMoney(1.75, 'PHP'), /₫/)
+  assert.equal(formatMoney(525000, 'VND'), 'VND 525.000')
+  assert.equal(formatMoney(1.75, 'PHP'), 'PHP 1.75')
+  assert.equal(formatMoney(0.12, 'USD'), 'USD 0.12')
+  assert.equal(formatMoneyTotals([
+    { amount: 525000, currency: 'VND' },
+    { amount: 1.75, currency: 'PHP' },
+  ]), 'VND 525.000 + PHP 1.75')
 })

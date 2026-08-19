@@ -17,7 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
+import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2 } from 'lucide-react'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
@@ -775,7 +775,7 @@ export function ApprovalsPage() {
                         </span>
                       )}
                       <span className="text-emerald-400 font-semibold">
-                        Lương: +{formatVND(lesson.salary || 0)}
+                        Lương: +{formatMoney(lesson.salary || 0, lesson.currency)}
                       </span>
                     </div>
                   )}
