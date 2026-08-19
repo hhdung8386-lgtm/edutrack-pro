@@ -18,6 +18,7 @@ import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
+import { parseStoredStudentListLimit, studentListLimitStorageKey } from '@/lib/studentList'
 
 /**
  * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
@@ -63,6 +64,7 @@ const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: 
 export function StudentsPage({ learningScheduleType = 'all' }: { learningScheduleType?: StudentGroupView }) {
   const navigate = useNavigate()
   const storagePrefix = `students_${learningScheduleType}`
+  const limitStorageKey = studentListLimitStorageKey(storagePrefix)
   const pageMeta = STUDENT_GROUP_META[learningScheduleType]
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
@@ -84,8 +86,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   const [bulkUpdating, setBulkUpdating] = useState(false)
   // Mặc định tải TẤT CẢ hồ sơ để không ai tưởng "mất" học viên; admin có thể giảm để nhẹ máy.
   const [limitVal, setLimitVal] = useState<number>(() => {
-    const stored = sessionStorage.getItem(`${storagePrefix}_limitVal`)
-    return stored ? Number(stored) : 200
+    return parseStoredStudentListLimit(sessionStorage.getItem(limitStorageKey))
   })
 
   // Sync filters to sessionStorage
@@ -95,8 +96,8 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     sessionStorage.setItem(`${storagePrefix}_branchFilter`, branchFilter)
     sessionStorage.setItem(`${storagePrefix}_subjectFilter`, subjectFilter)
     sessionStorage.setItem(`${storagePrefix}_sortBy`, sortBy)
-    sessionStorage.setItem(`${storagePrefix}_limitVal`, String(limitVal))
-  }, [search, statusFilter, branchFilter, subjectFilter, sortBy, limitVal, storagePrefix])
+    sessionStorage.setItem(limitStorageKey, String(limitVal))
+  }, [search, statusFilter, branchFilter, subjectFilter, sortBy, limitVal, limitStorageKey, storagePrefix])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
