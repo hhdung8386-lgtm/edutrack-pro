@@ -156,6 +156,28 @@ export function AdminLayout() {
                 const isOpen = mobileOpenGroupId === group.id
                 const isActive = isAdminNavGroupActive(group, location.pathname)
                 const groupBadgeCount = group.items.reduce((total, item) => total + badgeCount(item.badge), 0)
+
+                if (group.directTo) {
+                  return (
+                    <NavLink
+                      key={group.id}
+                      to={group.directTo}
+                      onClick={() => setSheetOpen(false)}
+                      className={`flex min-h-14 items-center gap-3 rounded-2xl border px-3.5 py-3 text-left text-sm font-extrabold transition active:scale-[0.99] ${isActive ? 'border-brand-300 bg-brand-50/60 text-brand-900' : 'border-slate-100 bg-slate-50/70 text-slate-800'}`}
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm ring-1 ring-slate-100">
+                        <group.icon className="h-5 w-5" />
+                      </span>
+                      <span className="flex-1">{group.label}</span>
+                      {groupBadgeCount > 0 && (
+                        <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                          {groupBadgeCount > 99 ? '99+' : groupBadgeCount}
+                        </span>
+                      )}
+                    </NavLink>
+                  )
+                }
+
                 return (
                   <section key={group.id} className={`overflow-hidden rounded-2xl border ${isActive ? 'border-brand-300 bg-brand-50/60' : 'border-slate-100 bg-slate-50/70'}`}>
                     <button

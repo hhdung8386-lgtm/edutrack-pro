@@ -924,7 +924,7 @@ function AdjustmentBar({ teacherId, teacherName, teacherLevel, month, currency, 
         <input
           type="text"
           inputMode="numeric"
-          value={amount ? Number(String(amount).replace(/[^\d]/g, '')).toLocaleString('vi-VN') : ''}
+          value={amount ? Number(String(amount).replace(/[^\d]/g, '')).toLocaleString('en-US').replace(/,/g, ' ') : ''}
           onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
           placeholder={`Số tiền (${currency})`}
           className="h-9 w-full sm:w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold outline-none focus:border-indigo-500 tabular-nums"

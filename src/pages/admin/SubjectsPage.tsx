@@ -20,47 +20,35 @@ import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isDeletedSubject, isVisibleSubject } from '@/lib/subjectLifecycle'
 import { sortSubjectsByName, SubjectSortDirection } from '@/lib/subjectSorting'
 
-function parseVietnameseNumber(str: string): number {
-  if (!str) return 0;
-  // Remove all whitespace
-  let clean = str.trim().replace(/\s+/g, '');
-  
-  if (clean.includes('.') && clean.includes(',')) {
-    const lastDot = clean.lastIndexOf('.');
-    const lastComma = clean.lastIndexOf(',');
-    if (lastComma > lastDot) {
-      clean = clean.replace(/\./g, '').replace(/,/g, '.');
-    } else {
-      clean = clean.replace(/,/g, '');
-    }
-  } else if (clean.includes(',')) {
-    const lastComma = clean.lastIndexOf(',');
-    const charsAfter = clean.length - 1 - lastComma;
-    if (charsAfter === 3) {
-      clean = clean.replace(/,/g, '');
-    } else {
-      clean = clean.replace(/,/g, '.');
-    }
-  } else if (clean.includes('.')) {
-    const lastDot = clean.lastIndexOf('.');
-    const charsAfter = clean.length - 1 - lastDot;
-    if (charsAfter === 3) {
-      clean = clean.replace(/\./g, '');
-    }
+function parseCurrencyInput(str: string, currency: string): number {
+  if (!str.trim()) return 0
+  const curr = (currency || 'VND').toUpperCase()
+  let clean = str.trim().replace(/\s+/g, '')
+
+  if (curr === 'VND') {
+    // VND mới chỉ nhận số nguyên và khoảng trắng. Vẫn đọc được dữ liệu nhập kiểu
+    // cũ 2.500 / 2,500, nhưng từ chối 833.33 để không vô tình lưu thành 83 333.
+    if (/^\d+$/.test(clean)) return Number(clean)
+    if (/^\d{1,3}(?:[.,]\d{3})+$/.test(clean)) return Number(clean.replace(/[.,]/g, ''))
+    return Number.NaN
   }
-  
-  const parsed = parseFloat(clean);
-  return isNaN(parsed) ? 0 : parsed;
+
+  // Ngoại tệ: khoảng trắng nhóm hàng nghìn, dấu chấm là phần thập phân.
+  // Chấp nhận dấu phẩy cũ chỉ khi rõ ràng là nhóm hàng nghìn.
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(clean)) clean = clean.replace(/,/g, '')
+  else if (clean.includes(',')) return Number.NaN
+  if (!/^\d+(?:\.\d+)?$/.test(clean)) return Number.NaN
+  return Number(clean)
 }
 
 function formatVietnameseNumberInput(val: number): string {
-  if (val === undefined || val === null || isNaN(val)) return '';
-  const parts = val.toString().split('.');
-  const integerPart = Number(parts[0]).toLocaleString('vi-VN');
+  if (val === undefined || val === null || isNaN(val)) return ''
+  const parts = val.toString().split('.')
+  const integerPart = Number(parts[0]).toLocaleString('en-US').replace(/,/g, ' ')
   if (parts.length > 1) {
-    return `${integerPart},${parts[1]}`;
+    return `${integerPart}.${parts[1]}`
   }
-  return integerPart;
+  return integerPart
 }
 
 const schema = z.object({
@@ -87,9 +75,11 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
 
   const onSubmit = async (data: FormData) => {
     try {
-      const pricePerMinute = parseVietnameseNumber(priceInput)
+      const pricePerMinute = parseCurrencyInput(priceInput, currency)
       if (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0) {
-        toast.error('Vui lòng nhập một đơn giá mỗi phút hợp lệ')
+        toast.error(currency === 'VND'
+          ? 'VND chỉ nhận số nguyên; dùng khoảng trắng để tách hàng nghìn, ví dụ 2 500'
+          : `${currency} dùng dấu chấm cho phần thập phân, ví dụ 5.15`)
         return
       }
 
@@ -179,11 +169,16 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
                   type="text"
                   value={priceInput}
                   onChange={(event) => setPriceInput(event.target.value)}
-                  placeholder={currency === 'VND' ? '2.500' : '0,12'}
+                  placeholder={currency === 'VND' ? '2 500' : '5.15'}
                   className="w-full rounded-lg bg-white border border-slate-200 text-slate-900 pl-3 pr-12 py-2 text-sm min-h-[42px] focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">/ phút</span>
               </div>
+              <p className="mt-1.5 text-[11px] font-medium text-slate-500">
+                {currency === 'VND'
+                  ? 'VND: số nguyên, dùng khoảng trắng để tách hàng nghìn (2 500).'
+                  : `${currency}: dùng khoảng trắng để tách hàng nghìn và dấu chấm cho phần thập phân (5.15).`}
+              </p>
             </div>
           </div>
           {subject && (subject.countryPrices || subject.pricePerMinutePH || subject.pricePerMinuteNative || subject.otherCountriesPrices) && (

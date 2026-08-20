@@ -22,21 +22,29 @@ export const TEACHER_STATUS_LABELS: Record<string, string> = {
 }
 
 export function formatVND(amount: number): string {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
+  return formatMoney(amount, 'VND')
+}
+
+function formatCurrencyNumber(amount: number, currency: string): string {
+  const curr = (currency || 'VND').toUpperCase()
+  const maximumFractionDigits = ['VND', 'JPY', 'KRW'].includes(curr) ? 0 : 4
+
+  // Một quy ước duy nhất cho mọi màn hình:
+  // - khoảng trắng phân tách hàng nghìn;
+  // - dấu chấm chỉ phân tách phần thập phân của ngoại tệ;
+  // - VND/JPY/KRW luôn là số nguyên khi hiển thị.
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
-  }).format(amount)
+    maximumFractionDigits,
+    useGrouping: true,
+  })
+    .format(Number.isFinite(amount) ? amount : 0)
+    .replace(/,/g, ' ')
 }
 
 export function formatMoney(amount: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
-  const locale = curr === 'VND' ? 'vi-VN' : 'en-US'
-  const maximumFractionDigits = ['VND', 'JPY', 'KRW'].includes(curr) ? 0 : 4
-  const formatted = new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits,
-  }).format(Number.isFinite(amount) ? amount : 0)
+  const formatted = formatCurrencyNumber(amount, curr)
 
   // Luôn đặt mã tiền tệ trước số để lương VND/PHP/USD không bị hiểu nhầm.
   return `${curr} ${formatted}`
@@ -65,11 +73,7 @@ export function formatMoneyTotals(
 
 export function formatPricePerMinute(price: number, currency: string = 'VND'): string {
   const curr = (currency || 'VND').toUpperCase()
-  const locale = curr === 'VND' ? 'vi-VN' : 'en-US'
-  const formatted = new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-  }).format(Number.isFinite(price) ? price : 0)
+  const formatted = formatCurrencyNumber(price, curr)
 
   // Luôn hiện mã tiền tệ để 1.75 PHP không bị hiểu nhầm thành 1,75 VND.
   return `${curr} ${formatted}/phút`

@@ -31,7 +31,7 @@ import {
 } from 'recharts'
 import { getHeldBookingMinutes, getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
-import { rewardMonthKey } from '@/lib/rewards'
+import { selectTopRewardStudents } from '@/lib/rewards'
 import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
@@ -907,24 +907,6 @@ const STUDENT_AVATARS = [
   { id: '2', gender: 'female', labelVi: 'Nhân vật nữ', labelEn: 'Girl character' },
 ] as const
 
-function getCurrentLeaderboardMonth() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    timeZone: 'Asia/Ho_Chi_Minh',
-  }).formatToParts(new Date())
-  const year = Number(parts.find((part) => part.type === 'year')?.value)
-  const month = Number(parts.find((part) => part.type === 'month')?.value)
-  const nextYear = month === 12 ? year + 1 : year
-  const nextMonth = month === 12 ? 1 : month + 1
-
-  return {
-    month,
-    startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-    nextStartDate: `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`,
-  }
-}
-
 // Ưu tiên ảnh học viên tự tải; dữ liệu cũ vẫn tiếp tục dùng nhân vật đã chọn.
 function studentAvatarUrl(avatarId?: Student['profileAvatarId'], profilePhotoURL?: Student['profilePhotoURL']) {
   if (profilePhotoURL?.trim()) return profilePhotoURL
@@ -986,9 +968,11 @@ function ProgressRing({ percent, size = 104, children }: { percent: number; size
   )
 }
 
-function StudentLeaderboardCard({ student, leaderboard, lang }: {
+function StudentLeaderboardCard({ student, leaderboard, loading, error, lang }: {
   student: Student
   leaderboard: StudentLeaderboardEntry[]
+  loading: boolean
+  error: boolean
   lang: string
 }) {
   const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
@@ -996,10 +980,7 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
   const restBoard = leaderboard.slice(3)
   // Thứ tự hiển thị bục: hạng 2 - hạng 1 - hạng 3.
   const podiumOrder = [podium[1], podium[0], podium[2]].filter(Boolean) as StudentLeaderboardEntry[]
-  const { month: leaderboardMonth } = getCurrentLeaderboardMonth()
-  const leaderboardTitle = lang === 'vi'
-    ? `Bảng thi đua tháng ${leaderboardMonth}`
-    : `${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())} leaderboard`
+  const leaderboardTitle = lang === 'vi' ? 'Bảng thi đua' : 'Leaderboard'
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6" aria-labelledby="student-leaderboard-title">
@@ -1008,7 +989,7 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
           <Trophy className="h-5 w-5 shrink-0 text-brand-600" />
           <h3 id="student-leaderboard-title" className="text-base font-black text-slate-950">{leaderboardTitle}</h3>
         </div>
-        <span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-extrabold text-brand-700 ring-1 ring-brand-200">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
+        <span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-extrabold text-brand-700 ring-1 ring-brand-200">{lang === 'vi' ? 'Top 3 nhiều sao nhất' : 'Top 3 by stars'}</span>
       </div>
 
       {podium.length > 0 && (
@@ -1029,7 +1010,7 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
                   <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-14 w-14 sm:h-16 sm:w-16' : 'h-11 w-11 sm:h-12 sm:w-12'}`} />
                   <span className={`absolute -bottom-1 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-black ring-2 ring-white ${badgeColor}`}>{rank}</span>
                 </div>
-                <p className={`mt-2.5 line-clamp-2 max-w-full text-center text-[10px] font-extrabold leading-tight text-slate-800 sm:text-[11px] ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name}</p>
+                <p className={`mt-2.5 line-clamp-2 max-w-full text-center text-[10px] font-extrabold leading-tight text-slate-800 sm:text-[11px] ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name || (lang === 'vi' ? 'Học viên' : 'Student')}</p>
                 <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-black tabular-nums text-brand-700">
                   <Star className="h-3 w-3 fill-brand-500 text-brand-500" />{entry.rewardPoints}
                 </span>
@@ -1049,7 +1030,7 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 ring-1 ring-slate-200">{rank}</span>
                 <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>
+                  <p className="truncate text-sm font-extrabold text-slate-900">{entry.name || (lang === 'vi' ? 'Học viên' : 'Student')}</p>
                   {isCurrent && <p className="text-[10px] font-bold text-brand-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}
                 </div>
                 <span className="inline-flex shrink-0 items-center gap-1 text-sm font-black tabular-nums text-brand-700"><Star className="h-4 w-4 fill-brand-500 text-brand-500" />{entry.rewardPoints}</span>
@@ -1058,7 +1039,16 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
           })}
         </div>
       )}
-      {currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tiếp tục tích lũy sao để xuất hiện trong bảng thi đua.' : 'Keep earning stars to enter the leaderboard.'}</p>}
+      {leaderboard.length === 0 && (
+        <p className="mt-3 rounded-xl bg-slate-50 px-3 py-3 text-center text-xs font-semibold text-slate-500">
+          {loading
+            ? (lang === 'vi' ? 'Đang tải bảng thi đua...' : 'Loading leaderboard...')
+            : error
+              ? (lang === 'vi' ? 'Chưa thể tải bảng thi đua. Vui lòng thử lại sau.' : 'Leaderboard is temporarily unavailable.')
+              : (lang === 'vi' ? 'Chưa có học viên nào tích lũy sao.' : 'No students have earned stars yet.')}
+        </p>
+      )}
+      {leaderboard.length > 0 && currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tích lũy thêm sao để vươn vào Top 3.' : 'Keep earning stars to reach the Top 3.'}</p>}
     </section>
   )
 }
@@ -1276,6 +1266,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const [profilePhotoURL, setProfilePhotoURL] = useState<Student['profilePhotoURL']>(student.profilePhotoURL)
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [leaderboard, setLeaderboard] = useState<StudentLeaderboardEntry[]>([])
+  const [leaderboardEnabled, setLeaderboardEnabled] = useState(false)
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true)
+  const [leaderboardError, setLeaderboardError] = useState(false)
   // Trang Đặt lịch luôn là danh sách gia sư đề xuất; toàn bộ lịch đã chuyển về
   // trang Tiến độ. Dùng trạng thái tab làm nguồn duy nhất để tránh hai màn hình lệch nhau.
   const showTeacherSuggestions = tab === 'booking'
@@ -1301,32 +1294,44 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     setProfilePhotoURL(student.profilePhotoURL)
   }, [student.profileAvatarId, student.profilePhotoURL])
 
+  const openRewards = () => {
+    if (!leaderboardEnabled) {
+      setLeaderboardLoading(true)
+      setLeaderboardError(false)
+      setLeaderboardEnabled(true)
+    }
+    setTab('rewards')
+  }
+
   useEffect(() => {
+    if (!leaderboardEnabled) return
     const leaderboardQuery = query(
       collection(db, 'students'),
-      where('monthlyRewardMonth', '==', rewardMonthKey()),
+      orderBy('rewardPoints', 'desc'),
+      limit(10),
     )
     return onSnapshot(leaderboardQuery, (snap) => {
-      const topStudents = snap.docs
-        .map((item) => ({ id: item.id, data: item.data() as Student }))
-        .filter(({ data }) => data.status !== 'reserved')
-        .sort((left, right) => Number(right.data.monthlyRewardPoints || 0) - Number(left.data.monthlyRewardPoints || 0) || left.id.localeCompare(right.id))
-        .slice(0, 7)
-      setLeaderboard(topStudents.map(({ id, data }) => {
+      const topStudents = selectTopRewardStudents(
+        snap.docs.map((item) => ({ id: item.id, ...item.data() } as Student & { id: string })),
+      )
+      setLeaderboard(topStudents.map((data) => {
         return {
-          id,
-          name: data.name || data.code || (lang === 'vi' ? 'Học viên' : 'Student'),
+          id: data.id,
+          name: data.name || data.code || '',
           code: data.code || '',
-          rewardPoints: Number(data.monthlyRewardPoints || 0),
+          rewardPoints: Number(data.rewardPoints || 0),
           profileAvatarId: data.profileAvatarId,
           profilePhotoURL: data.profilePhotoURL,
         }
       }))
+      setLeaderboardLoading(false)
     }, (error) => {
       console.error('Load student leaderboard failed:', error)
       setLeaderboard([])
+      setLeaderboardLoading(false)
+      setLeaderboardError(true)
     })
-  }, [lang])
+  }, [leaderboardEnabled])
 
   const chooseProfileAvatar = async (avatarId: Student['profileAvatarId']) => {
     if (!avatarId || savingAvatar || (avatarId === profileAvatarId && !profilePhotoURL)) return
@@ -2231,7 +2236,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               <div className="flex h-8 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
                 <button
                   type="button"
-                  onClick={() => setTab('rewards')}
+                  onClick={openRewards}
                   className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-amber-50"
                   aria-label={lang === 'vi' ? 'Xem số Sao' : 'View stars'}
                 >
@@ -2240,7 +2245,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTab('rewards')}
+                  onClick={openRewards}
                   className="grid h-8 w-6 place-items-center border-l border-amber-100 font-bold text-amber-600 transition hover:bg-amber-50"
                   aria-label={lang === 'vi' ? 'Đi đến trang đổi quà' : 'Open rewards'}
                 >
@@ -2304,7 +2309,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           <RewardsTab
             student={student}
             lang={lang}
-            beforeCatalog={<StudentLeaderboardCard student={student} leaderboard={leaderboard} lang={lang} />}
+            beforeCatalog={<StudentLeaderboardCard student={student} leaderboard={leaderboard} loading={leaderboardLoading} error={leaderboardError} lang={lang} />}
           />
         )}
         {tab === 'booking' && (
@@ -2337,7 +2342,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             onTeacherProfile={setProfileTeacherId}
             onRateTeacher={submitTeacherRating}
             onRebook={() => setTab('booking')}
-            onRewards={() => setTab('rewards')}
+            onRewards={openRewards}
             lang={lang}
           />
         )}
@@ -2355,7 +2360,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setTab(key)}
+                    onClick={() => key === 'rewards' ? openRewards() : setTab(key)}
                     className="relative flex flex-col items-center justify-end gap-1 py-1.5 group"
                     aria-label={lang === 'vi' ? label : labelEn}
                   >

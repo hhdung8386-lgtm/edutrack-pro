@@ -9,15 +9,24 @@ function visiblePaths(role: string, accessScope?: string) {
   return getVisibleAdminNavigation(role, accessScope).flatMap((group) => group.items.map((item) => item.to))
 }
 
-test('admin navigation preserves both legacy one-to-one student pages and group classes', () => {
+test('group classes is a direct top-level item beside the student group', () => {
   const groups = getVisibleAdminNavigation('admin')
   const studentGroup = groups.find((group) => group.id === 'students')
+  const groupClasses = groups.find((group) => group.id === 'group-classes')
   const paths = visiblePaths('admin')
 
   assert.equal(studentGroup?.label, 'Học viên')
+  assert.deepEqual(studentGroup?.items.map((item) => item.to), [
+    '/admin/students/fixed',
+    '/admin/students/flexible',
+  ])
+  assert.equal(groupClasses?.label, 'Lớp nhóm')
+  assert.equal(groupClasses?.directTo, '/admin/students/group')
+  assert.equal(groups.indexOf(groupClasses!), groups.indexOf(studentGroup!) + 1)
   assert.ok(paths.includes('/admin/students/fixed'))
   assert.ok(paths.includes('/admin/students/flexible'))
   assert.ok(paths.includes('/admin/students/group'))
+  assert.equal(paths.filter((path) => path === '/admin/students/group').length, 1)
 })
 
 test('student manager can access all student class types', () => {
@@ -34,14 +43,19 @@ test('teacher manager cannot access individual or group student management', () 
   assert.equal(paths.some((path) => path.startsWith('/admin/students')), false)
 })
 
-test('fixed, flexible and group routes remain inside the original student menu', () => {
+test('student and group-class routes activate only their own top-level item', () => {
   const groups = getVisibleAdminNavigation('admin')
   const studentGroup = groups.find((group) => group.id === 'students')
+  const groupClasses = groups.find((group) => group.id === 'group-classes')
 
   assert.ok(studentGroup)
+  assert.ok(groupClasses)
+  assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/fixed'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/flexible'), true)
-  assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/group'), true)
+  assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/group'), false)
+  assert.equal(isAdminNavGroupActive(groupClasses, '/admin/students/group'), true)
+  assert.equal(isAdminNavGroupActive(groupClasses, '/admin/students/fixed'), false)
 })
 
 test('evaluation and alert routes move from students to accounting exactly once', () => {

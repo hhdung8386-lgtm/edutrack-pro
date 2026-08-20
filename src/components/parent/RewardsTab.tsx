@@ -68,14 +68,14 @@ export function RewardsTab({ student, lang, beforeCatalog }: { student: Student;
 
   return (
     <div className="space-y-5 pb-4">
+      {beforeCatalog}
+
       <div className="flex min-h-9 items-center justify-between gap-4">
         <h2 className="text-lg font-black leading-none tracking-tight text-slate-900">{lang === 'vi' ? 'Đổi quà' : 'Rewards'}</h2>
         <button onClick={() => setShowHistory(true)} className="flex shrink-0 items-center gap-1.5 text-xs font-bold leading-none text-slate-500 transition hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-2">
           <History className="h-4 w-4" /> {lang === 'vi' ? 'Lịch sử đổi quà' : 'History'}
         </button>
       </div>
-
-      {beforeCatalog}
 
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng đổi quà đang chờ Admin hoàn tất quyền dữ liệu.' : 'Rewards are waiting for Admin to finish data permissions.'}</div>}
 

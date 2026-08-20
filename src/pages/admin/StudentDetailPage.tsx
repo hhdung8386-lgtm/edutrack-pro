@@ -549,7 +549,7 @@ export function StudentDetailPage() {
         },
         createdAt: serverTimestamp(),
       })
-      toast.success(`Đã tính lại: ${recalcLesson.lesson.salary?.toLocaleString('vi-VN')}đ → ${recalcLesson.newSalary.toLocaleString('vi-VN')}đ`)
+      toast.success(`Đã tính lại: ${formatMoney(recalcLesson.lesson.salary || 0, recalcLesson.lesson.currency)} → ${formatMoney(recalcLesson.newSalary, recalcLesson.newCurrency)}`)
       setRecalcLesson(null)
     } catch (err) {
       console.error(err)
@@ -1333,7 +1333,7 @@ export function StudentDetailPage() {
         createdAt: serverTimestamp(),
       })
 
-      if (!silent) toast.success(`Đã đổi sang ${nextSubject.subjectName} và cập nhật lương ${salary.toLocaleString('vi-VN')}đ`)
+      if (!silent) toast.success(`Đã đổi sang ${nextSubject.subjectName} và cập nhật lương ${formatMoney(salary, nextSubject.currency)}`)
       return true
     } catch (error) {
       console.error(error)

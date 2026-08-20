@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { getCanonicalSubjectRate, getCountryRate } from '../src/lib/countryPricing.ts'
-import { formatMoney, formatMoneyTotals, formatPricePerMinute } from '../src/lib/constants.ts'
+import { formatMoney, formatMoneyTotals, formatPricePerMinute, formatVND } from '../src/lib/constants.ts'
 
 test('one canonical subject rate applies to every teacher country', () => {
   const legacySubject = {
@@ -35,13 +35,18 @@ test('legacy data without canonical price selects one fixed default for every co
 
 test('price label always includes the canonical currency code', () => {
   assert.equal(formatPricePerMinute(1.75, 'PHP'), 'PHP 1.75/phút')
-  assert.equal(formatPricePerMinute(2000, 'VND'), 'VND 2.000/phút')
+  assert.equal(formatPricePerMinute(2000, 'VND'), 'VND 2 000/phút')
+  assert.equal(formatPricePerMinute(833.33, 'VND'), 'VND 833/phút')
+  assert.equal(formatPricePerMinute(2416, 'PHP'), 'PHP 2 416/phút')
   assert.equal(formatPricePerMinute(0.12, 'USD'), 'USD 0.12/phút')
-  assert.equal(formatMoney(525000, 'VND'), 'VND 525.000')
+  assert.equal(formatMoney(525000, 'VND'), 'VND 525 000')
+  assert.equal(formatMoney(2_500_000, 'VND'), 'VND 2 500 000')
+  assert.equal(formatVND(2_500_000), 'VND 2 500 000')
   assert.equal(formatMoney(1.75, 'PHP'), 'PHP 1.75')
-  assert.equal(formatMoney(0.12, 'USD'), 'USD 0.12')
+  assert.equal(formatMoney(2416, 'PHP'), 'PHP 2 416')
+  assert.equal(formatMoney(5.15, 'USD'), 'USD 5.15')
   assert.equal(formatMoneyTotals([
     { amount: 525000, currency: 'VND' },
     { amount: 1.75, currency: 'PHP' },
-  ]), 'VND 525.000 + PHP 1.75')
+  ]), 'VND 525 000 + PHP 1.75')
 })

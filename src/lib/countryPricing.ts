@@ -12,7 +12,7 @@ export const COUNTRY_CURRENCY_MAP: Record<string, string> = {
 export function formatVietnameseNumberInput(val: string): string {
   const clean = val.replace(/\D/g, '')
   if (!clean) return ''
-  return Number(clean).toLocaleString('vi-VN')
+  return Number(clean).toLocaleString('en-US').replace(/,/g, ' ')
 }
 
 export function getCountryRate(

@@ -41,6 +41,8 @@ export interface AdminNavGroup {
   label: string
   icon: LucideIcon
   activePrefixes: string[]
+  activePaths?: string[]
+  directTo?: string
   items: AdminNavItem[]
 }
 
@@ -49,10 +51,20 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     id: 'students',
     label: 'Học viên',
     icon: Users,
-    activePrefixes: ['/admin/students'],
+    activePrefixes: ['/admin/students/fixed', '/admin/students/flexible', '/admin/students/one-to-one'],
+    activePaths: ['/admin/students'],
     items: [
       { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
       { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
+    ],
+  },
+  {
+    id: 'group-classes',
+    label: 'Lớp nhóm',
+    icon: UsersRound,
+    activePrefixes: ['/admin/students/group'],
+    directTo: '/admin/students/group',
+    items: [
       { to: '/admin/students/group', icon: UsersRound, label: 'Lớp nhóm' },
     ],
   },
@@ -155,7 +167,8 @@ export function getVisibleAdminNavigation(role: string | null | undefined, acces
 }
 
 export function isAdminNavGroupActive(group: AdminNavGroup, pathname: string) {
-  return group.activePrefixes.some((prefix) => pathname.startsWith(prefix))
+  return group.activePaths?.includes(pathname) === true
+    || group.activePrefixes.some((prefix) => pathname.startsWith(prefix))
 }
 
 /** Chỉ cho phép một nhóm mở; bấm lại đúng nhóm đang mở sẽ thu gọn nhóm đó. */

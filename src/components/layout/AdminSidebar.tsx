@@ -94,6 +94,29 @@ export function AdminSidebar({
             const isActive = isAdminNavGroupActive(group, location.pathname)
             const groupBadgeCount = group.items.reduce((total, item) => total + badgeCount(item.badge), 0)
 
+            if (group.directTo) {
+              return (
+                <section key={group.id} className={isCollapsed ? '' : 'rounded-xl'}>
+                  <NavLink
+                    to={group.directTo}
+                    title={isCollapsed ? group.label : undefined}
+                    className={`group relative flex w-full items-center rounded-xl text-sm font-extrabold transition-all duration-150
+                      ${isCollapsed ? 'mx-auto h-11 w-11 justify-center p-2.5' : 'gap-3 px-3 py-2.5'}
+                      ${isActive ? 'bg-brand-50 text-brand-800' : 'text-slate-600 hover:bg-white hover:text-slate-950'}`}
+                  >
+                    <group.icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-brand-700' : 'text-slate-500 group-hover:text-slate-700'}`} />
+                    {!isCollapsed && <span className="flex-1 text-left">{group.label}</span>}
+                    {!isCollapsed && groupBadgeCount > 0 && (
+                      <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+                        {groupBadgeCount > 99 ? '99+' : groupBadgeCount}
+                      </span>
+                    )}
+                    {isCollapsed && groupBadgeCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500" />}
+                  </NavLink>
+                </section>
+              )
+            }
+
             return (
               <section key={group.id} className={isCollapsed ? '' : 'rounded-xl'}>
                 <button

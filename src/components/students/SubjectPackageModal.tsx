@@ -12,6 +12,7 @@ import { toast } from '@/stores/toastStore'
 import { BookOpen, Check, ChevronDown, Globe2, Search } from 'lucide-react'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
+import { formatPricePerMinute } from '@/lib/constants'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -459,9 +460,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             >
               <span className={selectedSubject ? 'font-medium' : 'text-slate-500'}>
                 {selectedSubject
-                  ? selectedSubject.currency === 'USD'
-                    ? `${selectedSubject.name} ($${selectedSubject.pricePerMinute}/phút)`
-                    : `${selectedSubject.name} (${selectedSubject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút)`
+                  ? `${selectedSubject.name} (${formatPricePerMinute(selectedSubject.pricePerMinute || 0, selectedSubject.currency)})`
                   : editingPkg?.subjectName || '-- Chọn môn học --'}
               </span>
               <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${subjectMenuOpen ? 'rotate-180' : ''}`} />
@@ -498,9 +497,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                       <span>
                         <span className="block font-medium text-slate-800">{subject.name}</span>
                         <span className="text-xs text-slate-500">
-                          {subject.currency === 'USD'
-                            ? `$${subject.pricePerMinute}/phút`
-                            : `${subject.pricePerMinute?.toLocaleString('vi-VN')}đ/phút`}
+                          {formatPricePerMinute(subject.pricePerMinute || 0, subject.currency)}
                         </span>
                       </span>
                       {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
