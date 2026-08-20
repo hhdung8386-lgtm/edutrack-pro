@@ -7,6 +7,7 @@ export type TeacherRankingRow = {
   sortName: string
   code: string
   photoURL?: string
+  country?: string
   minutes: number
   lessons: number
 }

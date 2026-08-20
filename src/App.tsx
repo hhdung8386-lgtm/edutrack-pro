@@ -74,7 +74,7 @@ const RootRedirect = () => {
   if (accessScope === 'booking_only') return <Navigate to="/admin/booking-schedules" replace />
   if (role === 'admin' || role === 'student_manager') return <Navigate to="/admin/students/fixed" replace />
   if (role === 'teacher_manager') return <Navigate to="/admin/teachers/online" replace />
-  if (role === 'teacher') return <Navigate to="/teacher/attendance" replace />
+  if (role === 'teacher') return <Navigate to="/teacher/ranking" replace />
   if (role === 'guest') return <Navigate to="/waiting" replace />
   
   // If user is logged in but has no valid role yet
@@ -198,7 +198,7 @@ function App() {
             <Route path="evaluations" element={<TeacherEvaluationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="availability" element={<TeacherAvailabilityEditPage />} />
-            <Route index element={<Navigate to="attendance" replace />} />
+            <Route index element={<Navigate to="ranking" replace />} />
           </Route>
 
           {/* Catch all */}

@@ -289,7 +289,7 @@ export function ProfilePage() {
         bankName, bankAccountNo, bankAccountName,
       } : prev)
       toast.success(lang === 'vi' ? 'Hồ sơ đã hoàn thiện! Bạn có thể sử dụng đầy đủ chức năng.' : 'Profile completed! All features unlocked.')
-      if (setupRequired) navigate('/teacher/attendance')
+      if (setupRequired) navigate('/teacher/ranking')
     } catch (err) {
       console.error(err)
       toast.error(lang === 'vi' ? 'Không thể lưu hồ sơ, vui lòng thử lại' : 'Failed to save profile')

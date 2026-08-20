@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useLanguageStore } from '@/stores/languageStore'
 import {
   HOMEWORK_TYPES, HomeworkItem, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
-  MAX_HOMEWORK_TYPES, lessonReportCharCount, MIN_REPORT_CHARS,
+  MAX_HOMEWORK_TYPES, lessonReportCharCount, MIN_LESSON_RATING, MIN_REPORT_CHARS,
 } from './lessonReport'
 
 /**
@@ -319,7 +319,7 @@ export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
         <span className="block text-sm font-bold text-slate-700">{t('report.rating_label')}</span>
         <div className="flex items-center gap-1.5">
           {[1, 2, 3, 4, 5].map((star) => {
-            const selectable = star >= 4
+            const selectable = star >= MIN_LESSON_RATING
             const active = star <= value.rating
             return (
               <button
@@ -327,7 +327,7 @@ export function LessonReportForm({ value, onChange }: LessonReportFormProps) {
                 type="button"
                 disabled={!selectable}
                 onClick={() => selectable && set({ rating: star })}
-                aria-label={`${star} sao`}
+                aria-label={lang === 'vi' ? `${star} sao` : `${star} stars`}
                 className={`p-0.5 transition-transform ${selectable ? 'cursor-pointer hover:scale-110' : 'cursor-not-allowed opacity-40'}`}
               >
                 <Star

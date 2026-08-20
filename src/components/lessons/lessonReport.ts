@@ -78,6 +78,9 @@ const wordCount = (val: string) => val.trim().split(/\s+/).filter(Boolean).lengt
 /** Số ký tự tối thiểu cho phần nhận xét (gộp 3 mục) — chống nhận xét hời hợt. */
 export const MIN_REPORT_CHARS = 360
 
+/** Gia sư chỉ đánh giá buổi học trong khoảng 3–5 sao theo chính sách hiện hành. */
+export const MIN_LESSON_RATING = 3
+
 /** Tổng số ký tự thực (đã bỏ khoảng trắng thừa) của 3 mục nhận xét. */
 export function lessonReportCharCount(d: Pick<LessonReportDraft, 'knowledgeComment' | 'gamesComment' | 'exercisesComment'>): number {
   return [d.knowledgeComment, d.gamesComment, d.exercisesComment]
@@ -101,7 +104,7 @@ export function validateLessonReport(d: LessonReportDraft): string | null {
   if (homework.length === 0) return 'report.err_homework'
   if (homework.length > MAX_HOMEWORK_TYPES) return 'report.err_homework_max'
   if (homework.some((item) => item.content.length > MAX_HOMEWORK_CONTENT_CHARS)) return 'report.err_homework_long'
-  if (d.rating !== 4 && d.rating !== 5) return 'report.err_rating'
+  if (!Number.isInteger(d.rating) || d.rating < MIN_LESSON_RATING || d.rating > 5) return 'report.err_rating'
   return null
 }
 

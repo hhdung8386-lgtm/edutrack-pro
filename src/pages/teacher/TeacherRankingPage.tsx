@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { AlertTriangle, Clock3, RefreshCw, Trophy } from 'lucide-react'
 import { db } from '@/lib/firebase'
@@ -11,6 +11,9 @@ import { getCurrentMonth } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { loadTeacherRanking, type TeacherRankingRow as RankingRow } from '@/lib/teacherRanking'
+import { getTeacherCountryOption } from '@/lib/teacherCountries'
+
+const AUTO_REFRESH_MS = 5 * 60 * 1000
 
 type PublishedLesson = {
   teacherId?: string
@@ -24,6 +27,13 @@ type PublishedLesson = {
 function monthLabel(month: string, lang: 'vi' | 'en') {
   const date = new Date(`${month}-01T00:00:00`)
   return new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'long', year: 'numeric' }).format(date)
+}
+
+function rankingCountryLabel(country: string | undefined, lang: 'vi' | 'en') {
+  const raw = String(country || '').trim()
+  if (!raw) return lang === 'vi' ? 'Chưa cập nhật quốc gia' : 'Country not updated'
+  const option = getTeacherCountryOption(raw)
+  return option ? (lang === 'vi' ? option.nameVi : option.nameEn) : raw
 }
 
 async function loadRankingFallback(month: string): Promise<RankingRow[]> {
@@ -61,6 +71,7 @@ async function loadRankingFallback(month: string): Promise<RankingRow[]> {
         sortName: teacherName,
         code: teacherCode,
         photoURL: teacher?.photoURL,
+        country: teacher?.country,
         minutes: 0,
         lessons: 0,
       }
@@ -82,14 +93,18 @@ export function TeacherRankingPage() {
   const [month] = useState(getCurrentMonth())
   const [rows, setRows] = useState<RankingRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(false)
-  const [reloadVersion, setReloadVersion] = useState(0)
+  const [reloadRequest, setReloadRequest] = useState({ version: 0, force: false })
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const rowsRef = useRef<RankingRow[]>([])
 
   useEffect(() => {
     let active = true
     queueMicrotask(() => {
       if (!active) return
-      setLoading(true)
+      if (rowsRef.current.length === 0) setLoading(true)
+      else setRefreshing(true)
       setError(false)
     })
 
@@ -97,23 +112,48 @@ export function TeacherRankingPage() {
       try {
         let ranked: RankingRow[]
         try {
-          ranked = await loadTeacherRanking(month, reloadVersion > 0)
+          ranked = await loadTeacherRanking(month, reloadRequest.force)
         } catch (callableError) {
           console.warn('[teacher-ranking] bounded loader unavailable, using compatibility fallback', callableError)
           ranked = await loadRankingFallback(month)
         }
-        if (active) setRows(ranked)
+        if (active) {
+          rowsRef.current = ranked
+          setRows(ranked)
+          setLastUpdated(new Date())
+        }
       } catch (loadError) {
         console.error('[teacher-ranking]', loadError)
-        if (active) setError(true)
+        if (active && rowsRef.current.length === 0) setError(true)
       } finally {
-        if (active) setLoading(false)
+        if (active) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
     }
 
     void loadRanking()
     return () => { active = false }
-  }, [month, reloadVersion])
+  }, [month, reloadRequest])
+
+  useEffect(() => {
+    const requestAutomaticRefresh = () => {
+      if (document.visibilityState !== 'visible') return
+      setReloadRequest((current) => ({ version: current.version + 1, force: false }))
+    }
+    const intervalId = window.setInterval(requestAutomaticRefresh, AUTO_REFRESH_MS)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && (!lastUpdated || Date.now() - lastUpdated.getTime() >= AUTO_REFRESH_MS)) {
+        requestAutomaticRefresh()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [lastUpdated])
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pt-2 lg:pt-6">
@@ -128,17 +168,22 @@ export function TeacherRankingPage() {
               <p className="mt-1 text-sm text-amber-50">
                 {lang === 'vi' ? `Top 10 gia sư dạy nhiều phút nhất trong ${monthLabel(month, lang)}.` : `Top 10 teachers by taught minutes in ${monthLabel(month, lang)}.`}
               </p>
+              <p className="mt-2 text-[11px] font-semibold text-white/80">
+                {lang === 'vi' ? 'Tự động cập nhật mỗi 5 phút' : 'Automatically updates every 5 minutes'}
+                {lastUpdated ? ` · ${lastUpdated.toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })}` : ''}
+              </p>
             </div>
           </div>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setReloadVersion((current) => current + 1)}
+            disabled={refreshing}
+            onClick={() => setReloadRequest((current) => ({ version: current.version + 1, force: true }))}
             className="bg-white/15 text-white hover:bg-white/25 hover:text-white"
             title={lang === 'vi' ? 'Tải lại bảng xếp hạng' : 'Reload ranking'}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
@@ -150,7 +195,7 @@ export function TeacherRankingPage() {
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center">
             <AlertTriangle className="h-8 w-8 text-rose-500" />
             <p className="text-sm font-semibold text-slate-600">{lang === 'vi' ? 'Không tải được bảng xếp hạng.' : 'Unable to load the ranking.'}</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setReloadVersion((current) => current + 1)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setReloadRequest((current) => ({ version: current.version + 1, force: true }))}>
               {lang === 'vi' ? 'Thử lại' : 'Try again'}
             </Button>
           </div>
@@ -175,9 +220,7 @@ export function TeacherRankingPage() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-black text-slate-900">{row.displayName}{row.teacherId === teacherId && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">{lang === 'vi' ? 'Bạn' : 'You'}</span>}</p>
-                  {row.code && row.code.trim() !== row.displayName.trim() && (
-                    <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{row.code}</p>
-                  )}
+                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{rankingCountryLabel(row.country, lang)}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5 text-right">
                   <Clock3 className="h-4 w-4 text-amber-500" />

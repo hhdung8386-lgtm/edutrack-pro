@@ -49,13 +49,11 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     id: 'students',
     label: 'Học viên',
     icon: Users,
-    activePrefixes: ['/admin/students', '/admin/student-alerts', '/admin/evaluations'],
+    activePrefixes: ['/admin/students'],
     items: [
       { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
       { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
       { to: '/admin/students/group', icon: UsersRound, label: 'Lớp nhóm' },
-      { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
-      { to: '/admin/student-alerts', icon: AlertTriangle, label: 'Cảnh báo học viên', badge: 'studentAlerts' },
     ],
   },
   {
@@ -102,6 +100,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     label: 'Kế toán',
     icon: Calculator,
     activePrefixes: [
+      '/admin/evaluations',
+      '/admin/student-alerts',
       '/admin/quota-reconcile',
       '/admin/student-experience',
       '/admin/payroll',
@@ -110,6 +110,8 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/approvals',
     ],
     items: [
+      { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
+      { to: '/admin/student-alerts', icon: AlertTriangle, label: 'Cảnh báo học viên', badge: 'studentAlerts' },
       { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
       { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', badge: 'approvals' },
       { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },

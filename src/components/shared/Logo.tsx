@@ -11,7 +11,7 @@ export function Logo({ className = '', clickable = true }: { className?: string;
     if (accessScope === 'booking_only') return '/admin/booking-schedules'
     if (role === 'admin' || role === 'student_manager') return '/admin/students/fixed'
     if (role === 'teacher_manager') return '/admin/teachers/online'
-    if (role === 'teacher') return '/teacher/attendance'
+    if (role === 'teacher') return '/teacher/ranking'
     if (role === 'guest') return '/waiting'
     return '/parent'
   }

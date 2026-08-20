@@ -8,9 +8,10 @@ import {
   Star, Video, BookOpen, CalendarCheck2, Lightbulb, ChevronRight as ChevronRightIcon,
   FileText, Sparkles, ArrowLeft, ArrowUpRight, Award, MapPin, MessageSquareText,
   PlayCircle, UserRound, CheckCircle2, RotateCcw, ClipboardCheck, CalendarDays,
-  Trophy, Copy, Camera, Flame, Crown, Upload,
+  Trophy, Copy, Camera, Flame, Crown, Upload, Eye,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { Logo } from '@/components/shared/Logo'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { WaveDivider } from '@/components/shared/WaveDivider'
@@ -38,6 +39,7 @@ import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
+import { ImageLightbox } from '@/components/shared/ImageLightbox'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -428,6 +430,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
   const approvedCertificates = (teacher?.certificates || []).filter((item) => item.status === 'approved' && !item.voided)
   const pedagogicalCertificates = approvedCertificates.filter((item) => item.category === 'pedagogical' || (item.category === 'other' && /tefl|tesol|celta|delta|teaching|pedagog|sư phạm/i.test(item.title)))
   const foreignLanguageCertificates = approvedCertificates.filter((item) => !pedagogicalCertificates.includes(item))
+  const [certificateImage, setCertificateImage] = useState<{ src: string; alt: string } | null>(null)
   const [weekOffset, setWeekOffset] = useState(0)
   const weekDates = useMemo(() => getProfileWeekDates(weekOffset), [weekOffset])
   const weekStartISO = weekDates[0].weekStartISO
@@ -510,14 +513,48 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
             <div className="rounded-xl bg-sky-50/70 p-3 ring-1 ring-sky-100">
               <p className="text-[11px] font-black uppercase tracking-wide text-sky-700">{lang === 'vi' ? 'Năng lực chuyên môn' : 'Professional qualifications'}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {foreignLanguageCertificates.map((certificate, index) => <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-sky-800 ring-1 ring-sky-100">{certificate.title}</span>)}
+                {foreignLanguageCertificates.map((certificate, index) => {
+                  const imageURL = typeof certificate.fileURL === 'string' ? certificate.fileURL.trim() : ''
+                  const certificateName = certificate.title || (lang === 'vi' ? 'Chứng chỉ chuyên môn' : 'Professional certificate')
+                  return imageURL ? (
+                    <button
+                      key={`${certificate.title}-${index}`}
+                      type="button"
+                      onClick={() => setCertificateImage({ src: imageURL, alt: certificateName })}
+                      className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-left text-xs font-bold text-sky-800 ring-1 ring-sky-100 transition hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-1 active:scale-[0.98]"
+                      aria-label={lang === 'vi' ? `Xem ảnh ${certificateName}` : `View ${certificateName} image`}
+                    >
+                      <span className="truncate">{certificateName}</span>
+                      <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-sky-800 ring-1 ring-sky-100">{certificateName}</span>
+                  )
+                })}
                 {foreignLanguageCertificates.length === 0 && <span className="text-xs font-medium text-slate-500">{lang === 'vi' ? 'Đang cập nhật' : 'Updating'}</span>}
               </div>
             </div>
             <div className="rounded-xl bg-emerald-50/70 p-3 ring-1 ring-emerald-100">
               <p className="text-[11px] font-black uppercase tracking-wide text-emerald-700">{lang === 'vi' ? 'Sư phạm' : 'Teaching certificates'}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {pedagogicalCertificates.map((certificate, index) => <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-800 ring-1 ring-emerald-100">{certificate.title}</span>)}
+                {pedagogicalCertificates.map((certificate, index) => {
+                  const imageURL = typeof certificate.fileURL === 'string' ? certificate.fileURL.trim() : ''
+                  const certificateName = certificate.title || (lang === 'vi' ? 'Chứng chỉ sư phạm' : 'Teaching certificate')
+                  return imageURL ? (
+                    <button
+                      key={`${certificate.title}-${index}`}
+                      type="button"
+                      onClick={() => setCertificateImage({ src: imageURL, alt: certificateName })}
+                      className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-left text-xs font-bold text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 active:scale-[0.98]"
+                      aria-label={lang === 'vi' ? `Xem ảnh ${certificateName}` : `View ${certificateName} image`}
+                    >
+                      <span className="truncate">{certificateName}</span>
+                      <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <span key={`${certificate.title}-${index}`} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-emerald-800 ring-1 ring-emerald-100">{certificateName}</span>
+                  )
+                })}
                 {pedagogicalCertificates.length === 0 && <span className="text-xs font-medium text-slate-500">{lang === 'vi' ? 'Đang cập nhật' : 'Updating'}</span>}
               </div>
             </div>
@@ -649,6 +686,15 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
           {lang === 'vi' ? 'Xem video giới thiệu' : 'Watch introduction video'}
           <ArrowUpRight className="h-4 w-4" />
         </a>
+      )}
+
+      {certificateImage && createPortal(
+        <ImageLightbox
+          src={certificateImage.src}
+          alt={certificateImage.alt}
+          onClose={() => setCertificateImage(null)}
+        />,
+        document.body,
       )}
     </div>
   )
@@ -940,12 +986,90 @@ function ProgressRing({ percent, size = 104, children }: { percent: number; size
   )
 }
 
-function StudentProfileOverview({ student, completedMinutes, avatarId, profilePhotoURL, leaderboard, savingAvatar, onChooseAvatar, onUploadPhoto, stats, usedPct, lessons, onGoTab, lang }: {
+function StudentLeaderboardCard({ student, leaderboard, lang }: {
+  student: Student
+  leaderboard: StudentLeaderboardEntry[]
+  lang: string
+}) {
+  if (leaderboard.length === 0) return null
+
+  const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
+  const podium = leaderboard.slice(0, 3)
+  const restBoard = leaderboard.slice(3)
+  // Thứ tự hiển thị bục: hạng 2 - hạng 1 - hạng 3.
+  const podiumOrder = [podium[1], podium[0], podium[2]].filter(Boolean) as StudentLeaderboardEntry[]
+  const { month: leaderboardMonth } = getCurrentLeaderboardMonth()
+  const leaderboardTitle = lang === 'vi'
+    ? `Bảng thi đua tháng ${leaderboardMonth}`
+    : `${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())} leaderboard`
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6" aria-labelledby="student-leaderboard-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Trophy className="h-5 w-5 shrink-0 text-brand-600" />
+          <h3 id="student-leaderboard-title" className="text-base font-black text-slate-950">{leaderboardTitle}</h3>
+        </div>
+        <span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-extrabold text-brand-700 ring-1 ring-brand-200">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
+      </div>
+
+      {podium.length > 0 && (
+        <div className="mt-5 grid grid-cols-3 items-end gap-2 sm:gap-2.5">
+          {podiumOrder.map((entry) => {
+            const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
+            const isFirst = rank === 1
+            const isCurrent = entry.id === student.id
+            const ringColor = isFirst ? 'ring-brand-400' : rank === 2 ? 'ring-slate-300' : 'ring-orange-300'
+            const badgeColor = isFirst ? 'bg-brand-500 text-brand-900' : rank === 2 ? 'bg-slate-400 text-white' : 'bg-orange-400 text-white'
+            return (
+              <div
+                key={entry.id}
+                className={`relative flex min-w-0 flex-col items-center rounded-2xl px-1.5 pb-3 pt-6 sm:px-2 ${isFirst ? 'bg-brand-50 ring-1 ring-brand-200' : 'bg-slate-50'} ${isCurrent ? 'ring-2 ring-brand-400' : ''}`}
+              >
+                {isFirst && <Crown className="absolute -top-1 left-1/2 h-6 w-6 -translate-x-1/2 fill-brand-400 text-brand-500" />}
+                <div className="relative">
+                  <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-14 w-14 sm:h-16 sm:w-16' : 'h-11 w-11 sm:h-12 sm:w-12'}`} />
+                  <span className={`absolute -bottom-1 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-black ring-2 ring-white ${badgeColor}`}>{rank}</span>
+                </div>
+                <p className={`mt-2.5 line-clamp-2 max-w-full text-center text-[10px] font-extrabold leading-tight text-slate-800 sm:text-[11px] ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name}</p>
+                <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-black tabular-nums text-brand-700">
+                  <Star className="h-3 w-3 fill-brand-500 text-brand-500" />{entry.rewardPoints}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {restBoard.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {restBoard.map((entry) => {
+            const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
+            const isCurrent = entry.id === student.id
+            return (
+              <div key={entry.id} className={`flex min-w-0 items-center gap-2.5 rounded-2xl px-3 py-2.5 sm:gap-3 ${isCurrent ? 'bg-brand-50 ring-1 ring-brand-300' : 'bg-slate-50/80'}`}>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 ring-1 ring-slate-200">{rank}</span>
+                <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>
+                  {isCurrent && <p className="text-[10px] font-bold text-brand-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 text-sm font-black tabular-nums text-brand-700"><Star className="h-4 w-4 fill-brand-500 text-brand-500" />{entry.rewardPoints}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tiếp tục tích lũy sao để xuất hiện trong bảng thi đua.' : 'Keep earning stars to enter the leaderboard.'}</p>}
+    </section>
+  )
+}
+
+function StudentProfileOverview({ student, completedMinutes, avatarId, profilePhotoURL, savingAvatar, onChooseAvatar, onUploadPhoto, stats, usedPct, lessons, onGoTab, lang }: {
   student: Student
   completedMinutes: number
   avatarId?: Student['profileAvatarId']
   profilePhotoURL?: Student['profilePhotoURL']
-  leaderboard: StudentLeaderboardEntry[]
   savingAvatar: boolean
   onChooseAvatar: (avatarId: Student['profileAvatarId']) => void
   onUploadPhoto: (file: File) => Promise<void>
@@ -958,7 +1082,6 @@ function StudentProfileOverview({ student, completedMinutes, avatarId, profilePh
   const [pickerOpen, setPickerOpen] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const points = Number(student.rewardPoints || 0)
-  const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
   // Quy đổi theo buổi 25 phút để hai vế cùng đơn vị, không lệch số
   const doneSessions = Math.round(stats.used / 25)
   const totalSessions = Math.round(stats.total / 25)
@@ -968,15 +1091,6 @@ function StudentProfileOverview({ student, completedMinutes, avatarId, profilePh
     : usedPct >= 40
       ? (lang === 'vi' ? 'Cố lên! Bạn đang học rất tốt' : 'Keep going! You are doing great')
       : (lang === 'vi' ? 'Bắt đầu thôi! Mỗi buổi học đều đáng giá' : 'Let’s go! Every lesson counts')
-  const podium = leaderboard.slice(0, 3)
-  const restBoard = leaderboard.slice(3)
-  // Thứ tự hiển thị bục: hạng 2 - hạng 1 - hạng 3
-  const podiumOrder = [podium[1], podium[0], podium[2]].filter(Boolean) as StudentLeaderboardEntry[]
-  const { month: leaderboardMonth } = getCurrentLeaderboardMonth()
-  const leaderboardTitle = lang === 'vi'
-    ? `Bảng thi đua tháng ${leaderboardMonth}`
-    : `${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())} leaderboard`
-
   const copyCode = async () => {
     try {
       await navigator.clipboard.writeText(student.code)
@@ -1068,61 +1182,6 @@ function StudentProfileOverview({ student, completedMinutes, avatarId, profilePh
           <ChevronRightIcon className="h-5 w-5 shrink-0 text-brand-900/70 transition-transform group-hover:translate-x-0.5" />
         </button>
 
-        {leaderboard.length > 0 && (
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5"><Trophy className="h-5 w-5 text-brand-600" /><h3 className="text-base font-black text-slate-950">{leaderboardTitle}</h3></div>
-              <span className="rounded-full bg-brand-50 px-3 py-1 text-[10px] font-extrabold text-brand-700 ring-1 ring-brand-200">{lang === 'vi' ? 'Sao trong tháng' : 'Monthly stars'}</span>
-            </div>
-
-            {/* Bục vinh danh top 3: hạng 2 - hạng 1 - hạng 3 */}
-            {podium.length > 0 && (
-              <div className="mt-5 grid grid-cols-3 items-end gap-2.5">
-                {podiumOrder.map((entry) => {
-                  const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
-                  const isFirst = rank === 1
-                  const isCurrent = entry.id === student.id
-                  const ringColor = isFirst ? 'ring-brand-400' : rank === 2 ? 'ring-slate-300' : 'ring-orange-300'
-                  const badgeColor = isFirst ? 'bg-brand-500 text-brand-900' : rank === 2 ? 'bg-slate-400 text-white' : 'bg-orange-400 text-white'
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`relative flex flex-col items-center rounded-2xl px-2 pb-3 pt-6 ${isFirst ? 'bg-brand-50 ring-1 ring-brand-200' : 'bg-slate-50'} ${isCurrent ? 'ring-2 ring-brand-400' : ''}`}
-                    >
-                      {isFirst && <Crown className="absolute -top-1 left-1/2 h-6 w-6 -translate-x-1/2 fill-brand-400 text-brand-500" />}
-                      <div className="relative">
-                        <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className={`rounded-full object-cover ring-[3px] ${ringColor} ${isFirst ? 'h-16 w-16' : 'h-12 w-12'}`} />
-                        <span className={`absolute -bottom-1 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-black ring-2 ring-white ${badgeColor}`}>{rank}</span>
-                      </div>
-                      <p className={`mt-2.5 line-clamp-2 text-center text-[11px] font-extrabold leading-tight text-slate-800 ${isFirst ? 'sm:text-xs' : ''}`}>{entry.name}</p>
-                      <span className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-black tabular-nums text-brand-700">
-                        <Star className="h-3 w-3 fill-brand-500 text-brand-500" />{entry.rewardPoints}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {restBoard.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {restBoard.map((entry) => {
-                  const rank = leaderboard.findIndex((item) => item.id === entry.id) + 1
-                  const isCurrent = entry.id === student.id
-                  return (
-                    <div key={entry.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${isCurrent ? 'bg-brand-50 ring-1 ring-brand-300' : 'bg-slate-50/80'}`}>
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-500 ring-1 ring-slate-200">{rank}</span>
-                      <img src={studentAvatarUrl(entry.profileAvatarId, entry.profilePhotoURL)} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white" />
-                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{entry.name}</p>{isCurrent && <p className="text-[10px] font-bold text-brand-700">{lang === 'vi' ? 'Vị trí của bạn' : 'Your position'}</p>}</div>
-                      <span className="inline-flex items-center gap-1 text-sm font-black tabular-nums text-brand-700"><Star className="h-4 w-4 fill-brand-500 text-brand-500" />{entry.rewardPoints}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            {currentRank === 0 && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Tiếp tục tích lũy sao để xuất hiện trong bảng thi đua.' : 'Keep earning stars to enter the leaderboard.'}</p>}
-          </div>
-        )}
       </section>
 
       <BottomSheet open={pickerOpen} onClose={() => !savingAvatar && setPickerOpen(false)} title={lang === 'vi' ? 'Ảnh đại diện của bạn' : 'Your profile picture'} size="sm" footer={<Button fullWidth variant="outline" disabled={savingAvatar} onClick={() => setPickerOpen(false)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>}>
@@ -1219,11 +1278,25 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const [profilePhotoURL, setProfilePhotoURL] = useState<Student['profilePhotoURL']>(student.profilePhotoURL)
   const [savingAvatar, setSavingAvatar] = useState(false)
   const [leaderboard, setLeaderboard] = useState<StudentLeaderboardEntry[]>([])
-  const [showTeacherSuggestions, setShowTeacherSuggestions] = useState(false)
+  // Trang Đặt lịch luôn là danh sách gia sư đề xuất; toàn bộ lịch đã chuyển về
+  // trang Tiến độ. Dùng trạng thái tab làm nguồn duy nhất để tránh hai màn hình lệch nhau.
+  const showTeacherSuggestions = tab === 'booking'
   const [recommendedTeachers, setRecommendedTeachers] = useState<TeacherRecommendation[]>([])
   const [recommendationsLoading, setRecommendationsLoading] = useState(false)
   const [recommendationsError, setRecommendationsError] = useState(false)
   const [recommendationReload, setRecommendationReload] = useState(0)
+  const recommendationCacheKeyRef = useRef('')
+  const recommendationRequestIdRef = useRef(0)
+  const parentViewMountedRef = useRef(true)
+
+  useEffect(() => {
+    parentViewMountedRef.current = true
+    return () => {
+      parentViewMountedRef.current = false
+      recommendationRequestIdRef.current += 1
+      recommendationCacheKeyRef.current = ''
+    }
+  }, [])
 
   useEffect(() => {
     setProfileAvatarId(student.profileAvatarId)
@@ -1515,6 +1588,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             teacherGrade: t.teacherGrade,
             bookingPriority: t.bookingPriority,
             level: t.level,
+            pointsPer25Minutes: getTeacherPointsPer25Minutes(t),
           }, availabilitySnap?.exists()
             ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
             : null] as const
@@ -1528,8 +1602,10 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         map[e[0]] = e[1]
         availabilityMap[e[0]] = e[2]
       }
-      setTeacherMap(map)
-      setTeacherAvailabilityMap(availabilityMap)
+      // Giữ dữ liệu của danh sách gia sư đề xuất đã được nạp song song.
+      // Luồng lịch sử chỉ bổ sung/cập nhật các ID liên quan, không được thay cả map.
+      setTeacherMap((current) => ({ ...current, ...map }))
+      setTeacherAvailabilityMap((current) => ({ ...current, ...availabilityMap }))
     })
   }, [lessons, bookings])
 
@@ -1673,7 +1749,17 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   useEffect(() => {
     if (!showTeacherSuggestions) return
-    let active = true
+    const requestKey = `${recommendationSubjectSignature}|${lang}|${recommendationReload}`
+    // Chuyển tab không được tạo lại toàn bộ lượt đọc teachers/availability/bookings.
+    // Đổi môn, đổi ngôn ngữ hoặc bấm thử lại sẽ sinh key mới và tải có chủ đích.
+    if (recommendationCacheKeyRef.current === requestKey) return
+    recommendationCacheKeyRef.current = requestKey
+    const requestId = recommendationRequestIdRef.current + 1
+    recommendationRequestIdRef.current = requestId
+    const canCommit = () => (
+      parentViewMountedRef.current
+      && recommendationRequestIdRef.current === requestId
+    )
 
     const loadRecommendations = async () => {
       setRecommendationsLoading(true)
@@ -1738,7 +1824,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
           return { teacher, availability, activeBookings, ...availabilitySummary }
         })
 
-        if (!active) return
+        if (!canCommit()) return
 
         const teacherUpdates: Record<string, TeacherLite> = {}
         const availabilityUpdates: Record<string, TeacherAvailability | null> = {}
@@ -1754,6 +1840,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             gender: teacher.gender,
             degreeType: teacher.degreeType || undefined,
             university: teacher.university || undefined,
+            trainedAt123English: teacher.trainedAt123English,
             teachingYears: teacher.teachingYears,
             studentsTaughtCount: teacher.studentsTaughtCount,
             subjectNames: teacher.subjectNames || [],
@@ -1818,17 +1905,16 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         setRecommendedTeachers(suggestions)
       } catch (error) {
         console.error('Load teacher recommendations failed:', error)
-        if (active) {
+        if (canCommit()) {
           setRecommendationsError(true)
         }
       } finally {
-        if (active) setRecommendationsLoading(false)
+        if (canCommit()) setRecommendationsLoading(false)
       }
     }
 
     void loadRecommendations()
-    return () => { active = false }
-  }, [showTeacherSuggestions, recommendationReload, recommendationSubjects, lang, genericTeacherLabel])
+  }, [showTeacherSuggestions, recommendationReload, recommendationSubjectSignature, recommendationSubjects, lang, genericTeacherLabel])
 
   const profileSubjectPackage = subjectPackages.find(
     (item) => item.subjectId === profileBookingSubjectId,
@@ -2094,6 +2180,29 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     { key: 'history', label: 'Lịch sử', labelEn: 'History', icon: History },
   ]
 
+  const bookingExperienceSharedProps = {
+    subjectPackages,
+    bookings,
+    upcomingBookings,
+    teacherMap,
+    roomLinkOf,
+    onSelectBooking: (booking: BookingRequest) => {
+      setCancelReason('')
+      setSelectedParentBooking(booking)
+    },
+    onOpenTeacherProfile: setProfileTeacherId,
+    onCancelBooking: openCancellationDialog,
+    canManageBooking: (booking: BookingRequest) => canStudentManageBooking(booking, student.id),
+    cancellationRequests,
+    rebookRequired: Boolean(student.pendingRebookBookingId),
+    onOpenHistory: () => setTab('history'),
+    lang,
+    recommendedTeachers,
+    recommendationsLoading,
+    recommendationsError,
+    onRetryRecommendations: () => setRecommendationReload((value) => value + 1),
+  }
+
   return (
     <div className="min-h-screen bg-white font-quicksand">
       {/* Header vàng brand + dải lượn sóng ngăn cách với nội dung bên dưới */}
@@ -2176,7 +2285,6 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               completedMinutes={completedLearningMinutes}
               avatarId={profileAvatarId}
               profilePhotoURL={profilePhotoURL}
-              leaderboard={leaderboard}
               savingAvatar={savingAvatar}
               onChooseAvatar={chooseProfileAvatar}
               onUploadPhoto={uploadProfilePhoto}
@@ -2186,34 +2294,27 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               onGoTab={setTab}
               lang={lang}
             />
+            <BookingExperienceTab
+              {...bookingExperienceSharedProps}
+              onPickTeacher={() => setTab('booking')}
+              showRecommendations={false}
+              onCloseRecommendations={() => setTab('profile')}
+            />
           </div>
         )}
-        {tab === 'rewards' && <RewardsTab student={student} lang={lang} />}
+        {tab === 'rewards' && (
+          <RewardsTab
+            student={student}
+            lang={lang}
+            beforeCatalog={<StudentLeaderboardCard student={student} leaderboard={leaderboard} lang={lang} />}
+          />
+        )}
         {tab === 'booking' && (
           <BookingExperienceTab
-            subjectPackages={subjectPackages}
-            bookings={bookings}
-            upcomingBookings={upcomingBookings}
-            teacherMap={teacherMap}
-            roomLinkOf={roomLinkOf}
-            onSelectBooking={(booking) => {
-              setCancelReason('')
-              setSelectedParentBooking(booking)
-            }}
-            onOpenTeacherProfile={setProfileTeacherId}
-            onCancelBooking={openCancellationDialog}
-            canManageBooking={(booking) => canStudentManageBooking(booking, student.id)}
-            cancellationRequests={cancellationRequests}
-            rebookRequired={Boolean(student.pendingRebookBookingId)}
-            onOpenHistory={() => setTab('history')}
-            lang={lang}
-            onPickTeacher={() => setShowTeacherSuggestions(true)}
-            showRecommendations={showTeacherSuggestions}
-            onCloseRecommendations={() => setShowTeacherSuggestions(false)}
-            recommendedTeachers={recommendedTeachers}
-            recommendationsLoading={recommendationsLoading}
-            recommendationsError={recommendationsError}
-            onRetryRecommendations={() => setRecommendationReload((value) => value + 1)}
+            {...bookingExperienceSharedProps}
+            onPickTeacher={() => setTab('booking')}
+            showRecommendations
+            onCloseRecommendations={() => setTab('profile')}
           />
         )}
         {tab === 'topup' && (
@@ -2237,10 +2338,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             onDetail={setDetailLesson}
             onTeacherProfile={setProfileTeacherId}
             onRateTeacher={submitTeacherRating}
-            onRebook={() => {
-              setTab('booking')
-              setShowTeacherSuggestions(true)
-            }}
+            onRebook={() => setTab('booking')}
             onRewards={() => setTab('rewards')}
             lang={lang}
           />
@@ -2576,7 +2674,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Button variant="outline" onClick={() => setCancellationDialog(null)}>{lang === 'vi' ? 'Đóng' : 'Close'}</Button>
-                  <Button className="bg-red-500 text-white hover:bg-red-600 focus:ring-red-300" onClick={() => { setCancellationDialog(null); setTab('booking'); setShowTeacherSuggestions(true) }}>{lang === 'vi' ? 'Đặt lại ngay' : 'Rebook now'}</Button>
+                  <Button className="bg-red-500 text-white hover:bg-red-600 focus:ring-red-300" onClick={() => { setCancellationDialog(null); setTab('booking') }}>{lang === 'vi' ? 'Đặt lại ngay' : 'Rebook now'}</Button>
                 </div>
               </div>
             </Modal>

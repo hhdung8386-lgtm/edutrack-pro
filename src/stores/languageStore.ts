@@ -96,7 +96,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'report.hw_vocabulary': { vi: 'Ôn tập từ vựng / Workbook', en: 'Vocabulary / Workbook review' },
   'report.hw_vocabulary_placeholder': { vi: 'Ví dụ: Hoàn thành Workbook trang 12–13 (bài 1–3) và ôn lại 8 từ vựng đã học.', en: 'E.g., Complete Workbook pages 12–13 (ex. 1–3) and review the 8 vocabulary words.' },
   'report.rating_label': { vi: 'Chấm điểm buổi học', en: 'Rate the lesson' },
-  'report.rating_hint': { vi: '(Chọn 4 hoặc 5 sao)', en: '(Choose 4 or 5 stars)' },
+  'report.rating_hint': { vi: '(Chọn từ 3 đến 5 sao)', en: '(Choose 3 to 5 stars)' },
   'report.err_pages_required': { vi: 'Vui lòng nhập trang học', en: 'Please enter the pages covered' },
   'report.err_pages_words': { vi: 'Trang học không được quá 20 từ', en: 'Pages covered must not exceed 20 words' },
   'report.err_pages_link': { vi: 'Chỉ nhập trang học, không gửi link/liên kết', en: 'Enter only the pages covered, do not send links' },
@@ -107,7 +107,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'report.err_homework': { vi: 'Vui lòng chọn ít nhất 1 loại Bài tập về nhà và nhập nội dung giao', en: 'Please choose at least 1 homework type and enter its content' },
   'report.err_homework_max': { vi: 'Chỉ được chọn tối đa 2 loại bài tập về nhà', en: 'You can choose at most 2 homework types' },
   'report.err_homework_long': { vi: 'Nội dung mỗi loại bài tập không được quá 500 ký tự', en: 'Each homework type must not exceed 500 characters' },
-  'report.err_rating': { vi: 'Vui lòng chấm điểm buổi học (4 hoặc 5 sao)', en: 'Please rate the lesson (4 or 5 stars)' },
+  'report.err_rating': { vi: 'Vui lòng chấm điểm buổi học từ 3 đến 5 sao', en: 'Please rate the lesson from 3 to 5 stars' },
 
   // Buổi VẮNG KHÔNG PHÉP: bắt buộc dặn dò + giao bài tập + ảnh minh chứng
   'absence.title': { vi: 'Bắt buộc trước khi gửi buổi vắng không phép', en: 'Required before submitting an unexcused absence' },

@@ -11,6 +11,8 @@ export interface CourseOption {
   levelOptions?: readonly CourseLevelOption[]
 }
 
+export type EvaluationDisplayLanguage = 'vi' | 'en'
+
 const numericLevels = (from: number, to: number): CourseLevelOption[] => (
   Array.from({ length: to - from + 1 }, (_, index) => {
     const value = from + index
@@ -24,6 +26,22 @@ export const EVALUATION_FORM_LABELS: Record<EvaluationFormType, string> = {
   kids_a: 'Tiếng Anh 1 Kỹ Năng Thiếu Niên',
   kids_b: 'Tiếng Anh 1 Kỹ Năng Trẻ Em',
   academic: 'Tiếng Anh 4 Kỹ Năng Luyện Thi',
+}
+
+/**
+ * Display-only English labels. The Vietnamese labels above remain the canonical
+ * values used by existing admin/public screens and persisted evaluation data.
+ */
+export const EVALUATION_FORM_LABELS_EN: Record<EvaluationFormType, string> = {
+  adult_comm: 'Adult One-Skill English',
+  tutor: 'Academic Tutoring',
+  kids_a: 'Teen One-Skill English',
+  kids_b: 'Kids One-Skill English',
+  academic: 'Four-Skill Exam Preparation',
+}
+
+export function getEvaluationFormLabel(formType: EvaluationFormType, lang: EvaluationDisplayLanguage = 'vi'): string {
+  return lang === 'en' ? EVALUATION_FORM_LABELS_EN[formType] : EVALUATION_FORM_LABELS[formType]
 }
 
 export const EVALUATION_ROUTE_TITLES: Record<EvaluationFormType, string> = {
@@ -161,6 +179,52 @@ export const TUTOR_SKILL_OPTIONS = [
   'Đọc hiểu – Kỹ năng Đọc',
   'Ngữ pháp – Kỹ năng Viết',
 ] as const
+
+export type TutorSkillOption = typeof TUTOR_SKILL_OPTIONS[number]
+
+const TUTOR_SKILL_LABELS_EN: Record<TutorSkillOption, string> = {
+  'Giao tiếp – Kỹ năng Nói': 'Communication – Speaking',
+  'Nắm bắt – Kỹ năng Nghe': 'Comprehension – Listening',
+  'Đọc hiểu – Kỹ năng Đọc': 'Reading comprehension – Reading',
+  'Ngữ pháp – Kỹ năng Viết': 'Grammar – Writing',
+}
+
+export function getTutorSkillLabel(skill: TutorSkillOption, lang: EvaluationDisplayLanguage = 'vi'): string {
+  return lang === 'en' ? TUTOR_SKILL_LABELS_EN[skill] : skill
+}
+
+/** English descriptions are display-only; course labels stay canonical. */
+const COURSE_DESCRIPTIONS_EN: Record<string, string> = {
+  'Basic English (Level 1–5)': 'For beginners or learners rebuilding their foundation. Develops pronunciation, vocabulary, grammar and everyday communication skills.',
+  'Daily English (Level 3–5)': 'For learners with a basic foundation. Builds practical communication for introductions, shopping, travel, work and daily life.',
+  'Topic Conversation (Level 1–6)': 'For learners who want stronger speaking skills. Uses practical topics to expand vocabulary, fluency, response speed and self-expression.',
+  'Business English (Level 4–6)': 'For university students and working adults. Develops communication for meetings, presentations, email and international workplaces.',
+  'Free Talk': 'For intermediate learners and above. Natural conversation practice improves pronunciation, grammar, vocabulary and confidence in real situations.',
+  'IPA Pronunciation (Level 1–3)': 'A foundation course in the International Phonetic Alphabet, individual sounds, stress, linking and intonation for clearer listening and speaking.',
+  '123English Official Curriculum (Level 4–7)': '123English’s integrated curriculum combining communication, vocabulary, grammar and response practice for confident English use.',
+  'Time to Talk (Level 3–5)': 'Develops topic discussion, presenting ideas, critical thinking and confidence for learners who already have an English foundation.',
+  'Writing Source (Level 2–4)': 'Guides learners from sentences to paragraphs and longer writing while reinforcing vocabulary and grammar at each level.',
+  'Reading (Level 3–4)': 'Expands vocabulary, content-analysis skills and comprehension across a range of English texts.',
+  'We Sing We Learn (Kindergarten)': 'English for preschool children through songs, games and interactive activities that build vocabulary, pronunciation and natural responses.',
+  'Magic Phonics (Level 1–6)': 'Introduces letters, phonics, blending and word reading while building a strong listening and speaking foundation.',
+  'Smart Kids (Starter – Level 9)': 'For learners who have completed phonics or have basic English. Develops themed vocabulary, sentence patterns, listening and speaking responses.',
+  'Good English - Storytelling (Level 1–9)': 'Builds English storytelling, vocabulary, language thinking, expression and natural communication for learners with a basic speaking foundation.',
+  'Starlight (Level 1–5)': 'A communication-led primary course that develops listening, speaking, reading and writing for school and everyday use.',
+  'Cambridge Starters': 'Preparation for Cambridge Starters (Pre A1), covering all four skills, test familiarity and an international English foundation.',
+  'Cambridge Movers': 'Preparation for Cambridge Movers (A1), strengthening communication, vocabulary and Cambridge-format test skills.',
+  'Cambridge Flyers': 'Preparation for Cambridge Flyers (A2), developing all four skills and readiness for the next stage of English learning.',
+  'Cambridge KET (A2 Key)': 'For lower-secondary or A2 learners. Reinforces grammar and vocabulary while developing four skills and Cambridge test strategies.',
+  'Cambridge PET (B1 Preliminary)': 'For intermediate learners. Develops practical academic and everyday English while preparing for Cambridge B1 Preliminary.',
+  IELTS: 'For study, graduation or migration goals. Develops all four skills together with strategies for the learner’s target IELTS band.',
+  TOEIC: 'For students and working adults. Focuses on Listening and Reading, with Speaking and Writing added where needed for study and work.',
+  'Business English (4 Skills)': 'Professional English integrating communication with listening, speaking, reading and writing for international workplaces.',
+}
+
+export function getCourseDescriptionForLanguage(label: string, lang: EvaluationDisplayLanguage = 'vi'): string | undefined {
+  const option = getCourseOption(label)
+  if (!option) return undefined
+  return lang === 'en' ? COURSE_DESCRIPTIONS_EN[option.label] || option.description : option.description
+}
 
 const LEGACY_COURSE_LABELS: Record<string, string> = {
   'Topic Conversation (Level 2–6)': 'Topic Conversation (Level 1–6)',

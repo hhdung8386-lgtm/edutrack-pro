@@ -11,6 +11,7 @@ export type TeacherRankingProfile = {
   code?: unknown
   name?: unknown
   photoURL?: unknown
+  country?: unknown
 }
 
 export type TeacherRankingRow = {
@@ -19,6 +20,7 @@ export type TeacherRankingRow = {
   sortName: string
   code: string
   photoURL?: string
+  country?: string
   minutes: number
   lessons: number
 }
@@ -28,10 +30,8 @@ function text(value: unknown): string {
 }
 
 function displayName(code: string, name: string): string {
-  if (code && name && code.toLocaleLowerCase('vi') !== name.toLocaleLowerCase('vi')) {
-    return `${code} - ${name}`
-  }
-  return code || name || 'Gia sư'
+  const releasedNickname = code && !/^GV[A-Z0-9]{4,}$/i.test(code)
+  return releasedNickname ? code : name || code || 'Gia sư'
 }
 
 export function aggregateTeacherRanking(
@@ -61,6 +61,7 @@ export function aggregateTeacherRanking(
       sortName: name,
       code,
       photoURL: text(profile?.photoURL) || undefined,
+      country: text(profile?.country) || undefined,
       minutes: 0,
       lessons: 0,
     }

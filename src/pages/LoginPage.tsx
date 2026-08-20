@@ -78,7 +78,7 @@ export function LoginPage() {
       if (accessScope === 'booking_only') navigate('/admin/booking-schedules', { replace: true })
       else if (role === 'admin' || role === 'student_manager') navigate('/admin/students/fixed', { replace: true })
       else if (role === 'teacher_manager') navigate('/admin/teachers/online', { replace: true })
-      else if (role === 'teacher') navigate('/teacher/attendance', { replace: true })
+      else if (role === 'teacher') navigate('/teacher/ranking', { replace: true })
       else if (role === 'guest') navigate('/waiting', { replace: true })
       else setErrorMsg('Tài khoản không có quyền truy cập')
     } catch (err: unknown) {

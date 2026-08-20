@@ -17,17 +17,27 @@ test('chỉ cộng buổi đã duyệt trong đúng tháng và xếp hạng theo
   ])
 })
 
-test('hồ sơ gia sư chỉ bổ sung tên và ảnh, không làm thay đổi tổng phút', () => {
+test('hồ sơ gia sư bổ sung nickname, ảnh và quốc gia mà không đổi tổng phút', () => {
   const profiles = new Map([
-    ['a', { code: 'LOLA', name: 'Lola Nguyễn', photoURL: 'https://example.com/lola.jpg' }],
+    ['a', { code: 'LOLA', name: 'Lola Nguyễn', photoURL: 'https://example.com/lola.jpg', country: 'VN' }],
   ])
   const [row] = aggregateTeacherRanking([
     { teacherId: 'a', teacherCode: 'OLD', teacherName: 'Tên cũ', date: '2026-08-10', minutes: 25, status: 'approved' },
   ], '2026-08', profiles)
 
-  assert.equal(row.displayName, 'LOLA - Lola Nguyễn')
+  assert.equal(row.displayName, 'LOLA')
   assert.equal(row.photoURL, 'https://example.com/lola.jpg')
+  assert.equal(row.country, 'VN')
   assert.equal(row.minutes, 25)
+})
+
+test('mã tự sinh không thay thế tên hiển thị và quốc gia thiếu không bị tự gán', () => {
+  const [row] = aggregateTeacherRanking([
+    { teacherId: 'a', teacherCode: 'GV9NKGXX', teacherName: 'Trần Mai Anh', date: '2026-08-10', minutes: 25, status: 'approved' },
+  ], '2026-08')
+
+  assert.equal(row.displayName, 'Trần Mai Anh')
+  assert.equal(row.country, undefined)
 })
 
 test('giới hạn số dòng sau khi đã sắp xếp', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
 import { Gift, History, ImageOff, Star, X } from 'lucide-react'
 import { db } from '@/lib/firebase'
@@ -6,7 +6,7 @@ import { RewardGift, RewardRedemption, Student } from '@/types'
 import { toast } from '@/stores/toastStore'
 import { Button } from '@/components/ui/Button'
 
-export function RewardsTab({ student, lang }: { student: Student; lang: string }) {
+export function RewardsTab({ student, lang, beforeCatalog }: { student: Student; lang: string; beforeCatalog?: ReactNode }) {
   const [gifts, setGifts] = useState<RewardGift[]>([])
   const [redemptions, setRedemptions] = useState<RewardRedemption[]>([])
   const [showHistory, setShowHistory] = useState(false)
@@ -74,6 +74,8 @@ export function RewardsTab({ student, lang }: { student: Student; lang: string }
           <History className="h-4 w-4" /> {lang === 'vi' ? 'Lịch sử đổi quà' : 'History'}
         </button>
       </div>
+
+      {beforeCatalog}
 
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng đổi quà đang chờ Admin hoàn tất quyền dữ liệu.' : 'Rewards are waiting for Admin to finish data permissions.'}</div>}
 

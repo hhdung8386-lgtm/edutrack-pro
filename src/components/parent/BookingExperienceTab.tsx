@@ -349,7 +349,7 @@ export function BookingExperienceTab({
             type="button"
             onClick={onCloseRecommendations}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
-            aria-label={lang === 'vi' ? 'Quay lại lịch học' : 'Back to schedule'}
+            aria-label={lang === 'vi' ? 'Quay lại tiến độ học tập' : 'Back to learning progress'}
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
