@@ -436,14 +436,27 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
   const weekStartISO = weekDates[0].weekStartISO
   const todayISO = getDateISOAtOffset(new Date(), 7)
   const effectiveSlots = availability?.weekOverrides?.[weekStartISO]?.slots || availability?.slots
-  const hasAnySchedule = weekDates.some(({ weekDay }) => {
+  const availableDays = weekDates.filter(({ weekDay }) => {
     const slot = effectiveSlots?.[weekDay]
     return Boolean(slot?.available && slot.timeRanges?.length)
   })
-  const visibleStarts = Array.from({ length: 48 }, (_, index) => profileMinutesToTime(index * 30))
-  const availableSlotCount = weekDates.reduce((total, { weekDay, dateISO }) => (
-    total + visibleStarts.filter((start) => getProfileSlotStatus(availability, bookings, weekStartISO, weekDay, dateISO, start) === 'available').length
-  ), 0)
+  const firstAvailableDay = availableDays.find(({ dateISO }) => dateISO === todayISO)?.weekDay || availableDays[0]?.weekDay || 'mon'
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek | null>(null)
+  const effectiveSelectedDay = selectedDay && weekDates.some(({ weekDay }) => weekDay === selectedDay) ? selectedDay : firstAvailableDay
+  const selectedDate = weekDates.find(({ weekDay }) => weekDay === effectiveSelectedDay)
+  const selectedDateISO = selectedDate?.dateISO || ''
+  const selectedTimeSlots = Array.from({ length: 48 }, (_, index): ProfileTimeSlot => {
+    const start = profileMinutesToTime(index * 30)
+    return {
+      weekDay: effectiveSelectedDay,
+      dateISO: selectedDateISO,
+      weekStartISO,
+      start,
+      end: profileMinutesToTime(index * 30 + 25),
+      status: getProfileSlotStatus(availability, bookings, weekStartISO, effectiveSelectedDay, selectedDateISO, start),
+    }
+  })
+  const availableSlotCount = selectedTimeSlots.filter((slot) => slot.status === 'available').length
   const weekNote = availability?.weekOverrides?.[weekStartISO]?.note || availability?.note
   const dayLabels = lang === 'vi'
     ? { mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ Nhật' }
@@ -578,7 +591,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setWeekOffset((value) => value - 1)}
+              onClick={() => { setWeekOffset((value) => value - 1); setSelectedDay(null) }}
               className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
               aria-label={lang === 'vi' ? 'Xem tuần trước' : 'View previous week'}
             >
@@ -587,7 +600,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
             </button>
             <button
               type="button"
-              onClick={() => setWeekOffset((value) => value + 1)}
+              onClick={() => { setWeekOffset((value) => value + 1); setSelectedDay(null) }}
               className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
               aria-label={lang === 'vi' ? 'Xem tuần sau' : 'View next week'}
             >
@@ -601,73 +614,87 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
           <div className="mt-4 space-y-2" aria-label={lang === 'vi' ? 'Đang tải lịch rảnh' : 'Loading availability'}>
             {[1, 2, 3].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
           </div>
-        ) : hasAnySchedule ? (
+        ) : availableDays.length > 0 ? (
           <div className="mt-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">
-              <span>{lang === 'vi' ? 'Phụ huynh xem theo giờ Việt Nam (UTC+07:00).' : 'Parents see Vietnam time (UTC+07:00).'}</span>
-              <span>{lang === 'vi' ? 'Múi giờ gia sư' : 'Teacher timezone'}: {formatUtcOffset(teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country))}</span>
+            <div className="grid grid-cols-7 gap-1.5 rounded-2xl bg-slate-50 p-2 ring-1 ring-slate-100">
+              {weekDates.map(({ weekDay, date, dateISO }) => {
+                const available = availableDays.some((item) => item.weekDay === weekDay)
+                const active = effectiveSelectedDay === weekDay
+                const isToday = dateISO === todayISO
+                return (
+                  <button
+                    key={weekDay}
+                    type="button"
+                    onClick={() => setSelectedDay(weekDay)}
+                    aria-pressed={active}
+                    className={`flex min-h-[58px] min-w-0 flex-col items-center justify-center rounded-xl text-center transition focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.96] ${active ? 'bg-gradient-to-b from-brand-400 to-brand-500 text-brand-900 shadow-md shadow-brand-200' : available ? 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-700' : 'bg-white/60 text-slate-400 hover:bg-white hover:text-slate-600'} ${isToday && !active ? 'ring-1 ring-brand-300' : ''}`}
+                  >
+                    <span className="text-[9px] font-black uppercase">{shortDayLabels[weekDay]}</span>
+                    <span className="mt-1 text-sm font-black tabular-nums">{date.getUTCDate()}</span>
+                    {available && <span className={`mt-1 h-1 w-1 rounded-full ${active ? 'bg-white' : 'bg-sky-500'}`} />}
+                  </button>
+                )
+              })}
             </div>
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-[0_14px_34px_-28px_rgba(2,132,199,0.55)]">
-              <table className="min-w-[760px] w-full border-collapse text-[10px]" aria-label={lang === 'vi' ? 'Lịch dạy Open và Reserved theo giờ Việt Nam' : 'Open and Reserved teaching timetable in Vietnam time'}>
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="sticky left-0 z-10 w-20 border-r border-slate-200 px-2 py-3 text-center font-black text-slate-600">{lang === 'vi' ? 'Giờ VN' : 'VN time'}</th>
-                    {weekDates.map(({ weekDay, date, dateISO }) => (
-                      <th key={weekDay} className={`min-w-[94px] border-r border-slate-200 px-2 py-3 text-center font-black ${dateISO === todayISO ? 'bg-brand-50 text-brand-800' : 'text-slate-700'}`}>
-                        <span className="block text-[10px] uppercase">{shortDayLabels[weekDay]}</span>
-                        <span className="mt-1 block text-xs tabular-nums">{formatProfileDate(date)}</span>
-                        <span className="mt-1 block text-[9px] font-semibold text-slate-400">{dayLabels[weekDay]}</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {visibleStarts.map((start) => (
-                    <tr key={start} className="hover:bg-slate-50/60">
-                      <td className="sticky left-0 z-[1] border-r border-slate-200 bg-white px-2 py-2 text-center font-black tabular-nums text-slate-600">{start}</td>
-                      {weekDates.map(({ weekDay, dateISO }) => {
-                        const slot: ProfileTimeSlot = {
-                          weekDay,
-                          dateISO,
-                          weekStartISO,
-                          start,
-                          end: profileMinutesToTime(profileTimeToMinutes(start) + 25),
-                          status: getProfileSlotStatus(availability, bookings, weekStartISO, weekDay, dateISO, start),
-                        }
-                        const available = slot.status === 'available'
-                        const booked = slot.status === 'booked'
-                        return (
-                          <td key={`${dateISO}-${start}`} className="border-r border-slate-200 px-1 py-1.5 text-center">
-                            {available ? (
-                              <button
-                                type="button"
-                                disabled={bookingsLoading}
-                                onClick={() => onBookSlot(slot)}
-                                className="w-full rounded-lg bg-[#3BB8EB] px-1 py-2 text-[9px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#2da8db] disabled:cursor-wait disabled:opacity-60"
-                                aria-label={lang === 'vi' ? `Đặt lịch ${dateISO} lúc ${start}` : `Book ${dateISO} at ${start}`}
-                              >
-                                OPEN
-                              </button>
-                            ) : booked ? (
-                              <span className="block py-2 text-[9px] font-black uppercase tracking-wide text-slate-400" aria-label={lang === 'vi' ? `${dateISO} ${start} đã được giữ` : `${dateISO} ${start} reserved`}>RESERVED</span>
-                            ) : (
-                              <span className="block py-2 text-sm font-black text-slate-200" aria-label={lang === 'vi' ? `${dateISO} ${start} không mở` : `${dateISO} ${start} unavailable`}>×</span>
-                            )}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold text-slate-500">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-[#3BB8EB]" />OPEN</span>
-                <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-slate-200" />RESERVED</span>
-                <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-slate-100" />{lang === 'vi' ? 'Không mở / đã qua' : 'Unavailable / passed'}</span>
+
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_14px_34px_-28px_rgba(2,132,199,0.55)]">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 pb-3">
+                <div>
+                  <p className="text-xs font-black text-slate-900">
+                    {dayLabels[effectiveSelectedDay]}
+                    <span className="ml-1.5 font-semibold text-slate-500">- {selectedDate ? formatProfileDate(selectedDate.date) : ''}</span>
+                  </p>
+                  <p className="mt-1 text-[9px] font-semibold text-sky-700">
+                    {lang === 'vi' ? 'Giờ Việt Nam (UTC+07:00)' : 'Vietnam time (UTC+07:00)'} · {lang === 'vi' ? 'Múi giờ gia sư' : 'Teacher timezone'} {formatUtcOffset(teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country))}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-[9px] font-bold text-slate-500">
+                  <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded border border-sky-400 bg-white" />{lang === 'vi' ? 'Có thể đặt' : 'Available'}</span>
+                  <span className="inline-flex items-center gap-1 line-through"><i className="h-2.5 w-2.5 rounded border border-sky-200 bg-[repeating-linear-gradient(-45deg,#f0f9ff_0,#f0f9ff_2px,#dbeafe_2px,#dbeafe_4px)]" />{lang === 'vi' ? 'Đã có lớp' : 'Booked'}</span>
+                  <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-slate-100 ring-1 ring-slate-200" />{lang === 'vi' ? 'Không mở' : 'Unavailable'}</span>
+                </div>
               </div>
-              <span className="font-black tabular-nums text-sky-700">{availableSlotCount} {lang === 'vi' ? 'ca trống' : 'open slots'}</span>
+              <div className="mt-3 grid grid-cols-6 gap-1.5" aria-label={lang === 'vi' ? 'Bảng lịch từng 30 phút' : '30-minute timetable'}>
+                {selectedTimeSlots.map((slot) => {
+                  const available = slot.status === 'available'
+                  const booked = slot.status === 'booked'
+                  const past = slot.status === 'past'
+                  return (
+                    <button
+                      key={`${slot.dateISO}-${slot.start}`}
+                      type="button"
+                      disabled={!available || bookingsLoading}
+                      onClick={() => onBookSlot(slot)}
+                      aria-label={
+                        available
+                          ? (lang === 'vi' ? `Đặt lịch lúc ${slot.start}` : `Book ${slot.start}`)
+                          : booked
+                            ? (lang === 'vi' ? `${slot.start} đã được đặt` : `${slot.start} booked`)
+                            : past
+                              ? (lang === 'vi' ? `${slot.start} đã qua` : `${slot.start} passed`)
+                              : (lang === 'vi' ? `${slot.start} không nằm trong lịch rảnh` : `${slot.start} unavailable`)
+                      }
+                      className={`flex min-h-9 min-w-0 items-center justify-center rounded-lg px-1 text-[10px] font-extrabold tabular-nums transition focus:outline-none focus:ring-2 focus:ring-brand-300 ${
+                        available
+                          ? 'border border-brand-300 bg-white text-brand-800 shadow-sm hover:-translate-y-0.5 hover:border-brand-500 hover:bg-brand-400 hover:text-brand-900 active:scale-[0.96]'
+                          : booked
+                            ? 'cursor-not-allowed border border-sky-100 bg-[repeating-linear-gradient(-45deg,#f8fbff_0,#f8fbff_3px,#e0f2fe_3px,#e0f2fe_5px)] text-sky-400 line-through decoration-2'
+                            : past
+                              ? 'cursor-not-allowed border border-slate-100 bg-slate-50 text-slate-300'
+                              : 'cursor-not-allowed border border-transparent bg-slate-50/70 text-slate-300'
+                      }`}
+                    >
+                      {slot.start}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                <p className="text-[10px] font-semibold leading-4 text-slate-500">
+                  {lang === 'vi' ? 'Chọn giờ viền xanh để gửi yêu cầu đặt lịch.' : 'Choose a blue outlined time to request a class.'}
+                </p>
+                <span className="shrink-0 text-[10px] font-black tabular-nums text-sky-700">{availableSlotCount} {lang === 'vi' ? 'giờ trống' : 'open'}</span>
+              </div>
             </div>
           </div>
         ) : (
@@ -702,7 +729,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab-based mobile-app style parent view
-// Tabs: Hồ sơ · Đổi quà · Đặt lịch · Nạp tiền · Lịch sử (bottom navigation)
+// Tabs: Đặt lịch · Đổi quà · Trang chủ · Nạp tiền · Lịch sử (bottom navigation)
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ParentTab = 'profile' | 'rewards' | 'booking' | 'topup' | 'history'
@@ -2176,9 +2203,9 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   }, [tab])
 
   const NAV_ITEMS: { key: ParentTab; label: string; labelEn: string; icon: typeof UserIcon }[] = [
-    { key: 'profile', label: 'Hồ sơ', labelEn: 'Profile', icon: UserIcon },
-    { key: 'rewards', label: 'Đổi quà', labelEn: 'Rewards', icon: Gift },
     { key: 'booking', label: 'Đặt lịch', labelEn: 'Reserve', icon: CalendarPlus },
+    { key: 'rewards', label: 'Đổi quà', labelEn: 'Rewards', icon: Gift },
+    { key: 'profile', label: 'Trang chủ', labelEn: 'Home', icon: UserIcon },
     { key: 'topup', label: 'Ví học', labelEn: 'Learning wallet', icon: CreditCard },
     { key: 'history', label: 'Lịch sử', labelEn: 'History', icon: History },
   ]
@@ -2355,7 +2382,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             <div className="grid grid-cols-5">
               {NAV_ITEMS.map(({ key, label, labelEn, icon: Icon }) => {
                 const active = tab === key
-                const isCenter = key === 'booking'
+                const isCenter = key === 'profile'
                 return (
                   <button
                     key={key}
