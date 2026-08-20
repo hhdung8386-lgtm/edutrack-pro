@@ -991,8 +991,6 @@ function StudentLeaderboardCard({ student, leaderboard, lang }: {
   leaderboard: StudentLeaderboardEntry[]
   lang: string
 }) {
-  if (leaderboard.length === 0) return null
-
   const currentRank = leaderboard.findIndex((entry) => entry.id === student.id) + 1
   const podium = leaderboard.slice(0, 3)
   const restBoard = leaderboard.slice(3)
