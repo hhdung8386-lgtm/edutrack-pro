@@ -1,16 +1,19 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
-  updateDoc,
+  serverTimestamp,
+  setDoc,
   where,
   writeBatch,
   type DocumentReference,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { buildStudentSubjectNamePatch, buildTeacherSubjectNamesPatch } from '@/lib/subjectNameSyncCore'
+import { buildPublicTeacherProfile, publicProfileAsTeacher, type PublicTeacherProfile } from '@/lib/publicTeacherProfile'
 
 const BATCH_SIZE = 400
 const TRANSACTION_CONCURRENCY = 8
@@ -98,14 +101,32 @@ async function updateTeachers(subjectId: string, subjectName: string) {
 
       let publicProfile = false
       try {
-        // Ghi trực tiếp theo id gia sư: Rules chỉ cho đọc profile đang publish,
-        // nhưng admin vẫn có quyền update profile ẩn. Không query collection để
-        // tránh permission-denied và không cần composite index.
-        await updateDoc(doc(db, 'publicTeacherProfiles', teacherDocument.id), { subjectNames: teacherResult.nextNames })
+        // Chỉ profile đang publish mới đọc được theo Rules. Đọc đúng document
+        // theo id để không cần query/list, sau đó round-trip qua whitelist nhằm
+        // loại field legacy có thể làm Rules từ chối cả một update nhỏ.
+        const publicProfileRef = doc(db, 'publicTeacherProfiles', teacherDocument.id)
+        const existingPublicProfile = await getDoc(publicProfileRef)
+        if (!existingPublicProfile.exists() || existingPublicProfile.data().isPublished !== true) {
+          return { teacher: teacherResult.changed, publicProfile: false }
+        }
+
+        const publicTeacher = publicProfileAsTeacher(
+          teacherDocument.id,
+          existingPublicProfile.data() as PublicTeacherProfile,
+        )
+        publicTeacher.subjectNames = teacherResult.nextNames
+        const sanitizedProfile = buildPublicTeacherProfile(publicTeacher)
+        await setDoc(publicProfileRef, {
+          ...sanitizedProfile,
+          publishedAt: existingPublicProfile.data().publishedAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
         publicProfile = true
       } catch (error: unknown) {
         const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
-        if (!code.includes('not-found')) throw error
+        // Profile ẩn hoặc chưa tồn tại không được Rules cho đọc. Đây không phải
+        // lỗi đồng bộ dữ liệu vận hành và không được chặn booking/lesson phía sau.
+        if (!code.includes('not-found') && !code.includes('permission-denied')) throw error
       }
       return { teacher: teacherResult.changed, publicProfile }
     }))
