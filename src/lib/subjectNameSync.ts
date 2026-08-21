@@ -18,7 +18,7 @@ import { buildPublicTeacherProfile, publicProfileAsTeacher, type PublicTeacherPr
 const BATCH_SIZE = 400
 const TRANSACTION_CONCURRENCY = 8
 
-type ScalarCollectionName = 'topUpPackages' | 'topUpRequests' | 'bookingRequests' | 'lessons' | 'publicLessons'
+type ScalarCollectionName = 'topUpPackages' | 'topUpRequests' | 'bookingRequests' | 'lessons'
 
 export interface SubjectNameSyncSummary {
   students: number
@@ -77,6 +77,37 @@ async function updateStudents(subjectId: string, subjectName: string) {
     .filter((document) => buildStudentSubjectNamePatch(document.data(), subjectId, subjectName))
     .map((document) => document.ref)
   return updateTransactionalReferences(references, (data) => buildStudentSubjectNamePatch(data, subjectId, subjectName))
+}
+
+async function updatePublicLessonReferences(subjectId: string, subjectName: string) {
+  // Rules chỉ cho đọc publicLessons đã duyệt, vì vậy không được list/query cả
+  // collection theo subjectId. Dùng danh sách lesson nội bộ cùng môn để đọc
+  // trực tiếp public document tương ứng; document ẩn/chưa tồn tại được bỏ qua.
+  const lessonsSnapshot = await getDocs(query(collection(db, 'lessons'), where('subjectId', '==', subjectId)))
+  const references: DocumentReference[] = []
+
+  for (let offset = 0; offset < lessonsSnapshot.docs.length; offset += TRANSACTION_CONCURRENCY) {
+    const results = await Promise.all(lessonsSnapshot.docs.slice(offset, offset + TRANSACTION_CONCURRENCY).map(async (lessonDocument) => {
+      const publicReference = doc(db, 'publicLessons', lessonDocument.id)
+      try {
+        const publicSnapshot = await getDoc(publicReference)
+        if (!publicSnapshot.exists() || publicSnapshot.data().subjectName === subjectName) return null
+        return publicReference
+      } catch (error: unknown) {
+        const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+        if (code.includes('not-found') || code.includes('permission-denied')) return null
+        throw error
+      }
+    }))
+    references.push(...results.filter((reference): reference is DocumentReference => reference !== null))
+  }
+
+  for (let offset = 0; offset < references.length; offset += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    references.slice(offset, offset + BATCH_SIZE).forEach((reference) => batch.update(reference, { subjectName }))
+    await batch.commit()
+  }
+  return references.length
 }
 
 async function updateTeachers(subjectId: string, subjectName: string) {
@@ -145,7 +176,7 @@ export async function syncSubjectNameReferences(subjectId: string, subjectName: 
   const { teachers, publicTeacherProfiles } = await updateTeachers(subjectId, subjectName)
   const bookingRequests = await updateScalarReferences('bookingRequests', subjectId, subjectName)
   const lessons = await updateScalarReferences('lessons', subjectId, subjectName)
-  const publicLessons = await updateScalarReferences('publicLessons', subjectId, subjectName)
+  const publicLessons = await updatePublicLessonReferences(subjectId, subjectName)
 
   const summary = {
     students,
