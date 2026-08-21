@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { BookingRequest, Lesson, StudentSubject, TopUpBatch } from '@/types'
 import { getBookingPoints } from '@/lib/points'
+import { allocateApprovedLearningMinutes } from '@/lib/courseProgress'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -258,32 +259,43 @@ export function StudentCourseOverview({
 }: StudentCourseOverviewProps) {
   const [detailSubjectId, setDetailSubjectId] = useState<string | null>(null)
 
-  const rows = useMemo<CourseRow[]>(() => subjects.map((subject) => {
-    const subjectLessons = lessons.filter((lesson) => lesson.status === 'approved' && lesson.subjectId === subject.subjectId)
-    const subjectBookings = heldBookings.filter((booking) => booking.subjectId === subject.subjectId || (subjects.length === 1 && unmatchedHeldBookingIds.has(booking.id)))
-    const payments = normalizePayments(subject, studentCreatedAtLabel)
-    const registeredMinutes = payments.reduce((sum, payment) => sum + payment.learningMinutes, 0) || Number(subject.totalMinutes || 0)
-    const learnedMinutes = subjectLessons.reduce((sum, lesson) => sum + Math.max(0, Number(lesson.minutes || 0)), 0)
-    const bookedMinutes = subjectBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
-    const bookedDiamonds = subjectBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
-    const remainingDiamonds = Math.max(0, Number(subject.remainingMinutes || 0) - bookedDiamonds)
-    return {
-      subject,
-      registeredMinutes,
-      registeredDiamonds: Number(subject.totalMinutes || 0),
-      learnedMinutes,
-      learnedDiamonds: Number(subject.usedMinutes || 0),
-      bookedMinutes,
-      bookedDiamonds,
-      remainingMinutes: Math.max(0, registeredMinutes - learnedMinutes - bookedMinutes),
-      remainingDiamonds,
-      payments: payments.filter((payment) => payment.kind === 'payment'),
-      gifts: payments.filter((payment) => payment.kind === 'gift'),
-      hasLessonHistory: lessons.some((lesson) => lesson.subjectId === subject.subjectId),
-      completedAt: subjectLessons[0]?.date || '—',
-      isCompleted: Number(subject.remainingMinutes || 0) <= 0 && bookedDiamonds <= 0,
-    }
-  }), [heldBookings, lessons, studentCreatedAtLabel, subjects, unmatchedHeldBookingIds])
+  const rows = useMemo<CourseRow[]>(() => {
+    const paymentsBySubject = subjects.map((subject) => normalizePayments(subject, studentCreatedAtLabel))
+    const registeredMinutesBySubject = subjects.map((subject, index) => (
+      paymentsBySubject[index].reduce((sum, payment) => sum + payment.learningMinutes, 0) || Number(subject.totalMinutes || 0)
+    ))
+    const learnedMinutesBySubject = allocateApprovedLearningMinutes(
+      subjects.map((subject, index) => ({ subjectId: subject.subjectId, registeredMinutes: registeredMinutesBySubject[index] })),
+      lessons,
+    )
+
+    return subjects.map((subject, index) => {
+      const subjectLessons = lessons.filter((lesson) => lesson.status === 'approved' && lesson.subjectId === subject.subjectId)
+      const subjectBookings = heldBookings.filter((booking) => booking.subjectId === subject.subjectId || (subjects.length === 1 && unmatchedHeldBookingIds.has(booking.id)))
+      const payments = paymentsBySubject[index]
+      const registeredMinutes = registeredMinutesBySubject[index]
+      const learnedMinutes = learnedMinutesBySubject[index]
+      const bookedMinutes = subjectBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
+      const bookedDiamonds = subjectBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const remainingDiamonds = Math.max(0, Number(subject.remainingMinutes || 0) - bookedDiamonds)
+      return {
+        subject,
+        registeredMinutes,
+        registeredDiamonds: Number(subject.totalMinutes || 0),
+        learnedMinutes,
+        learnedDiamonds: Number(subject.usedMinutes || 0),
+        bookedMinutes,
+        bookedDiamonds,
+        remainingMinutes: Math.max(0, registeredMinutes - learnedMinutes - bookedMinutes),
+        remainingDiamonds,
+        payments: payments.filter((payment) => payment.kind === 'payment'),
+        gifts: payments.filter((payment) => payment.kind === 'gift'),
+        hasLessonHistory: lessons.some((lesson) => lesson.subjectId === subject.subjectId),
+        completedAt: subjectLessons[0]?.date || '—',
+        isCompleted: Number(subject.remainingMinutes || 0) <= 0 && bookedDiamonds <= 0,
+      }
+    })
+  }, [heldBookings, lessons, studentCreatedAtLabel, subjects, unmatchedHeldBookingIds])
 
   const activeRows = rows.filter((row) => !row.isCompleted)
   const completedRows = rows.filter((row) => row.isCompleted)

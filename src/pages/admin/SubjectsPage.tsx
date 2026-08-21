@@ -19,6 +19,7 @@ import { formatPricePerMinute } from '@/lib/constants'
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isDeletedSubject, isVisibleSubject } from '@/lib/subjectLifecycle'
 import { sortSubjectsByName, SubjectSortDirection } from '@/lib/subjectSorting'
+import { syncSubjectNameReferences } from '@/lib/subjectNameSync'
 
 function parseCurrencyInput(str: string, currency: string): number {
   if (!str.trim()) return 0
@@ -74,6 +75,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
   })
 
   const onSubmit = async (data: FormData) => {
+    let sourceWasUpdated = false
     try {
       const pricePerMinute = parseCurrencyInput(priceInput, currency)
       if (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0) {
@@ -84,8 +86,13 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
       }
 
       if (isEdit && subject) {
+        const normalizedName = data.name.trim()
+        const shouldSyncName = normalizedName !== subject.name.trim()
+          || subject.nameSyncPending === true
+          || subject.nameSyncedValue !== normalizedName
         const updatePayload = {
           ...data,
+          name: normalizedName,
           pricePerMinute,
           currency,
           // Khi Admin chủ động lưu môn học theo quy tắc mới, xóa cấu hình giá
@@ -96,15 +103,44 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           pricePerMinuteNative: deleteField(),
           otherCountriesPrices: deleteField(),
           countryPrices: deleteField(),
+          ...(shouldSyncName ? { nameSyncPending: true } : {}),
           updatedAt: serverTimestamp()
         }
         await updateDoc(doc(db, 'subjects', subject.id), updatePayload)
+        sourceWasUpdated = true
+
+        let syncedReferences = 0
+        if (shouldSyncName) {
+          const syncSummary = await syncSubjectNameReferences(subject.id, normalizedName)
+          syncedReferences = syncSummary.total
+          await updateDoc(doc(db, 'subjects', subject.id), {
+            nameSyncPending: false,
+            nameSyncedValue: normalizedName,
+            nameSyncedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+          await addDoc(collection(db, 'adminLogs'), {
+            adminId: useAuthStore.getState().user?.uid || '',
+            action: 'SYNC_SUBJECT_NAME',
+            targetType: 'subject',
+            targetId: subject.id,
+            changes: {
+              previousName: subject.name,
+              nextName: normalizedName,
+              updatedReferences: syncSummary,
+              financialSnapshotsChanged: false,
+            },
+            createdAt: serverTimestamp(),
+          })
+        }
         
         // Giá môn là dữ liệu danh mục cho các giao dịch mới. Không quét toàn bộ
         // học viên/lịch sử và không hồi tố bảng lương khi chỉ sửa danh mục:
         // các gói đã mua, buổi đã duyệt và bảng lương phải giữ nguyên snapshot.
         
-        toast.success('Đã cập nhật môn học; gói đã mua và lịch sử tài chính được giữ nguyên')
+        toast.success(shouldSyncName
+          ? `Đã đổi tên môn và đồng bộ ${syncedReferences.toLocaleString('vi-VN')} nơi liên quan; số dư và lịch sử tài chính được giữ nguyên`
+          : 'Đã cập nhật môn học; gói đã mua và lịch sử tài chính được giữ nguyên')
       } else {
         const addPayload = {
           ...data,
@@ -118,7 +154,11 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
       onClose()
     } catch (err) {
       console.error(err)
-      toast.error('Có lỗi xảy ra khi cập nhật và đồng bộ dữ liệu')
+      toast.error(isEdit
+        ? sourceWasUpdated
+          ? 'Tên môn đã được lưu nhưng đồng bộ chưa hoàn tất. Giữ cửa sổ này và bấm Lưu thay đổi lần nữa để tiếp tục an toàn.'
+          : 'Không thể lưu thay đổi; dữ liệu hiện tại chưa bị thay đổi.'
+        : 'Có lỗi xảy ra khi cập nhật môn học')
     }
   }
 

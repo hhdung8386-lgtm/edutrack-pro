@@ -205,6 +205,10 @@ export interface Subject {
   isDeleted?: boolean
   deletedAt?: Timestamp
   deletedBy?: string
+  /** Trạng thái đồng bộ tên sang các snapshot; optional để tương thích môn cũ. */
+  nameSyncPending?: boolean
+  nameSyncedValue?: string
+  nameSyncedAt?: Timestamp
 }
 
 // Báo cáo buổi học có cấu trúc (form điểm danh mẫu mới).
