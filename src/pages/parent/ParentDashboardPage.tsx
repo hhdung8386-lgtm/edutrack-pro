@@ -1271,7 +1271,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const { lang, setLang } = useLanguageStore()
   const genericTeacherLabel = lang === 'vi' ? 'Gia sư' : 'Teacher'
   const navigate = useNavigate()
-  const [tab, setTab] = useState<ParentTab>('booking')
+  const [tab, setTab] = useState<ParentTab>('profile')
   const [viewImage, setViewImage] = useState<string | null>(null)
   const [selectedParentBooking, setSelectedParentBooking] = useState<BookingRequest | null>(null)
   const [detailLesson, setDetailLesson] = useState<Lesson | null>(null)
@@ -2328,7 +2328,6 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               {...bookingExperienceSharedProps}
               onPickTeacher={() => setTab('booking')}
               showRecommendations={false}
-              onCloseRecommendations={() => setTab('profile')}
             />
           </div>
         )}
@@ -2344,7 +2343,6 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             {...bookingExperienceSharedProps}
             onPickTeacher={() => setTab('booking')}
             showRecommendations
-            onCloseRecommendations={() => setTab('profile')}
           />
         )}
         {tab === 'topup' && (

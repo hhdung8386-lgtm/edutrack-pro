@@ -261,7 +261,18 @@ export function StudentExperiencePage() {
         const index = subjectsList.findIndex(s => s.subjectId === item.subjectId)
         const existing = index >= 0 ? subjectsList[index] : undefined
         const minutesPerSession = pack.minutesPerSession || Math.max(1, Math.round(pack.totalMinutes / pack.sessions))
-        const addedBatch = { id: item.id, createdAt: new Date().toLocaleDateString('vi-VN'), totalSessions: pack.sessions }
+        const approvedDate = new Date().toLocaleDateString('vi-VN')
+        const addedBatch = {
+          id: item.id,
+          createdAt: approvedDate,
+          totalSessions: pack.sessions,
+          kind: 'payment' as const,
+          learningMinutes: pack.sessions * minutesPerSession,
+          diamonds: pack.totalMinutes,
+          content: `Nạp gói ${pack.name}`,
+          paymentDate: approvedDate,
+          note: `Xác nhận yêu cầu ${item.id}`,
+        }
         const nextSubject: StudentSubject = existing ? {
           ...existing,
           totalSessions: existing.totalSessions + pack.sessions,

@@ -4,6 +4,14 @@ export interface TopUpBatch {
   id: string
   createdAt: string // format DD/MM/YYYY
   totalSessions: number
+  /** Metadata mới; dữ liệu cũ không có vẫn suy ra từ totalSessions. */
+  kind?: 'payment' | 'gift'
+  learningMinutes?: number
+  diamonds?: number
+  content?: string
+  paymentDate?: string
+  reason?: string
+  note?: string
 }
 
 export interface CountryPriceInfo {

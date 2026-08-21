@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   BookOpen,
   CalendarCheck2,
   CalendarPlus,
@@ -49,7 +48,6 @@ interface BookingExperienceTabProps {
   canManageBooking: (booking: BookingRequest) => boolean
   onPickTeacher: () => void
   showRecommendations: boolean
-  onCloseRecommendations: () => void
   recommendedTeachers: TeacherRecommendation[]
   recommendationsLoading: boolean
   recommendationsError: boolean
@@ -220,7 +218,6 @@ export function BookingExperienceTab({
   canManageBooking,
   onPickTeacher,
   showRecommendations,
-  onCloseRecommendations,
   recommendedTeachers,
   recommendationsLoading,
   recommendationsError,
@@ -344,20 +341,10 @@ export function BookingExperienceTab({
   if (showRecommendations) {
     return (
       <div className="space-y-5">
-        <div className="flex items-center gap-3 px-1">
-          <button
-            type="button"
-            onClick={onCloseRecommendations}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 active:scale-[0.97]"
-            aria-label={lang === 'vi' ? 'Quay lại tiến độ học tập' : 'Back to learning progress'}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-black tracking-tight text-slate-950">
-              {lang === 'vi' ? 'Đề xuất gia sư phù hợp với bạn' : 'Recommended teachers for you'}
-            </h2>
-          </div>
+        <div className="px-1">
+          <h2 className="text-xl font-black tracking-tight text-slate-950">
+            {lang === 'vi' ? 'Đề xuất gia sư phù hợp với bạn' : 'Recommended teachers for you'}
+          </h2>
         </div>
 
         {recommendationsLoading && recommendedTeachers.length === 0 ? (
@@ -382,7 +369,7 @@ export function BookingExperienceTab({
           <div className="space-y-3">
             {recommendedTeachers.slice(0, 6).map((teacher) => (
               <article key={teacher.id} className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.5)] sm:p-4">
-                <div className="grid grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[64px_minmax(0,1fr)_auto]">
+                <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-4">
                   <button
                     type="button"
                     onClick={() => onOpenTeacherProfile(teacher.id)}

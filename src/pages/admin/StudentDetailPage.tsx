@@ -10,6 +10,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
+import { StudentCourseOverview } from '@/components/students/StudentCourseOverview'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar, Star, CheckSquare } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
@@ -30,6 +31,7 @@ import { isGroupClass } from '@/lib/groupClasses'
  */
 const MINUTES_PER_SESSION_UNIT = 25
 const sessionsToMinutes = (sessions25: number) => Math.max(0, Math.round(sessions25 * MINUTES_PER_SESSION_UNIT))
+const COURSE_TABLE_V2 = true
 
 function withUsedMinutes(pkg: StudentSubject, usedMinutes: number): StudentSubject {
   const safeUsedMinutes = Math.max(0, usedMinutes)
@@ -103,7 +105,7 @@ export function StudentDetailPage() {
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
-  const [showAddSessions, setShowAddSessions] = useState(false)
+  const [addSessionsContext, setAddSessionsContext] = useState<{ mode: 'payment' | 'gift'; subjectId?: string } | null>(null)
   const [reconciling, setReconciling] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
@@ -1501,7 +1503,7 @@ export function StudentDetailPage() {
             ) : (
               <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
             )}
-            <Button size="sm" variant="primary" onClick={() => setShowAddSessions(true)}>+ Thêm buổi</Button>
+            <Button size="sm" variant="primary" onClick={() => setAddSessionsContext({ mode: 'gift' })}>+ Thêm buổi</Button>
             {student.status === 'reserved' ? (
               <Button
                 size="sm"
@@ -1554,7 +1556,28 @@ export function StudentDetailPage() {
         </Card>
       )}
 
-      {/* Môn học đang học */}
+      {/* Quản lý quyền học — bảng mới bám dữ liệu quỹ hiện hữu; nhánh cũ giữ làm rollback an toàn. */}
+      {COURSE_TABLE_V2 ? (
+        <StudentCourseOverview
+          subjects={activeSubjects}
+          lessons={lessons}
+          heldBookings={heldBookings}
+          unmatchedHeldBookingIds={new Set(unmatchedHeldBookings.map((booking) => booking.id))}
+          studentCreatedAtLabel={student.createdAt
+            ? student.createdAt.toDate().toLocaleDateString('vi-VN')
+            : new Date().toLocaleDateString('vi-VN')}
+          onAddSubject={() => {
+            setEditingSubjectId(undefined)
+            setShowSubjectPkg(true)
+          }}
+          onAddRights={(subjectId) => setAddSessionsContext({ mode: 'payment', subjectId })}
+          onEditSubject={(subjectId) => {
+            setEditingSubjectId(subjectId)
+            setShowSubjectPkg(true)
+          }}
+          onDeleteSubject={handleDeleteSubject}
+        />
+      ) : (
       <div className="space-y-4">
         <h3 className="text-base font-bold text-slate-900">Môn học đang học</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1816,6 +1839,7 @@ export function StudentDetailPage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Lịch học đã đặt Link Card */}
       <Card className="bg-slate-50 border border-slate-200/60 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2114,7 +2138,14 @@ export function StudentDetailPage() {
       </Card>
 
       {showEdit && <StudentFormModal student={reconciledStudent} onClose={() => setShowEdit(false)} />}
-      {showAddSessions && <AddSessionsModal student={reconciledStudent} onClose={() => setShowAddSessions(false)} />}
+      {addSessionsContext && (
+        <AddSessionsModal
+          student={reconciledStudent}
+          mode={addSessionsContext.mode}
+          initialSubjectId={addSessionsContext.subjectId}
+          onClose={() => setAddSessionsContext(null)}
+        />
+      )}
       {showSubjectPkg && (
         <SubjectPackageModal
           student={reconciledStudent}
