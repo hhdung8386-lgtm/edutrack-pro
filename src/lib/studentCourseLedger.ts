@@ -78,12 +78,14 @@ export function getCourseEntry(
         totalSessions: subject.totalSessions,
         kind: 'payment' as const,
       }]
-  const batch = batches.find((item) => item.id === batchId)
-  if (!batch) return null
+  const batchIndex = batches.findIndex((item) => item.id === batchId)
+  if (batchIndex === -1) return null
+  const batch = batches[batchIndex]
 
   return {
     subject,
     batch,
+    ordinal: batchIndex + 1,
     learningMinutes: getBatchLearningMinutes(batch, subject),
     diamonds: getBatchDiamonds(batch, subject),
   }

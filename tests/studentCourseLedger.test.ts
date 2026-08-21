@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Student } from '../src/types/index.ts'
-import { editCourseEntry } from '../src/lib/studentCourseLedger.ts'
+import { editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
 
 function studentFixture(): Student {
   return {
@@ -162,4 +162,16 @@ test('legacy course data is materialized without dropping quota fields', () => {
   assert.equal(result.subjects[0].batches?.[0].id, 'legacy')
   assert.equal(result.totals.totalMinutes, 750)
   assert.equal(result.totals.remainingMinutes, 550)
+})
+
+test('course entry exposes a stable ordinal for legacy display fallbacks', () => {
+  const student = studentFixture()
+  student.subjects = [{
+    ...student.subjects![0],
+    batches: student.subjects![0].batches?.map((batch) => ({ ...batch, content: undefined })),
+  }]
+
+  const entry = getCourseEntry(student, 'english', 'batch-2', '01/08/2026')
+  assert.equal(entry?.ordinal, 2)
+  assert.equal(entry?.batch.content, undefined)
 })

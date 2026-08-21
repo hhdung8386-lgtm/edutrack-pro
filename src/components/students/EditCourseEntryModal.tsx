@@ -67,7 +67,7 @@ export function EditCourseEntryModal({ student, subjectId, batchId, onClose }: E
     defaultValues: {
       learningMinutes: entry?.learningMinutes || 1,
       diamonds: entry?.diamonds || 1,
-      content: entry?.batch.content?.trim() || (isGift ? 'Buổi tặng' : 'Thanh toán đợt'),
+      content: entry?.batch.content?.trim() || (isGift ? `Buổi tặng #${String(entry?.ordinal || 1).padStart(2, '0')}` : `Thanh toán đợt ${entry?.ordinal || 1}`),
       paymentDate: inputDate(entry?.batch.paymentDate || entry?.batch.createdAt || fallbackDate),
       note: entry?.batch.note?.trim() || entry?.batch.reason?.trim() || '',
     },
