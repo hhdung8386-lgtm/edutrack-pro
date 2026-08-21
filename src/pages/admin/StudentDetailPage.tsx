@@ -9,10 +9,11 @@ import { StatusBadge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
+import { EditCourseEntryModal } from '@/components/students/EditCourseEntryModal'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { StudentCourseOverview } from '@/components/students/StudentCourseOverview'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar, Star, CheckSquare } from 'lucide-react'
+import { ArrowLeft, BookOpen, Copy, ExternalLink, AlertTriangle, RefreshCw, Undo2, RotateCcw, Calculator, Edit, Trash2, Plus, ChevronDown, Calendar, Star, CheckSquare, Gift } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
@@ -106,6 +107,7 @@ export function StudentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
   const [addSessionsContext, setAddSessionsContext] = useState<{ mode: 'payment' | 'gift'; subjectId?: string } | null>(null)
+  const [editCourseEntryContext, setEditCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
   const [reconciling, setReconciling] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
@@ -1503,7 +1505,14 @@ export function StudentDetailPage() {
             ) : (
               <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>Sửa</Button>
             )}
-            <Button size="sm" variant="primary" onClick={() => setAddSessionsContext({ mode: 'gift' })}>+ Thêm buổi</Button>
+            {!groupClass && (
+              <Button size="sm" variant="outline" onClick={() => { setEditingSubjectId(undefined); setShowSubjectPkg(true) }}>
+                <BookOpen className="h-4 w-4" />Thêm khóa học
+              </Button>
+            )}
+            <Button size="sm" variant="primary" onClick={() => setAddSessionsContext({ mode: 'gift' })}>
+              <Gift className="h-4 w-4" />Thêm buổi tặng
+            </Button>
             {student.status === 'reserved' ? (
               <Button
                 size="sm"
@@ -1571,6 +1580,7 @@ export function StudentDetailPage() {
             setShowSubjectPkg(true)
           }}
           onAddRights={(subjectId) => setAddSessionsContext({ mode: 'payment', subjectId })}
+          onEditEntry={(subjectId, batchId) => setEditCourseEntryContext({ subjectId, batchId })}
           onEditSubject={(subjectId) => {
             setEditingSubjectId(subjectId)
             setShowSubjectPkg(true)
@@ -2144,6 +2154,14 @@ export function StudentDetailPage() {
           mode={addSessionsContext.mode}
           initialSubjectId={addSessionsContext.subjectId}
           onClose={() => setAddSessionsContext(null)}
+        />
+      )}
+      {editCourseEntryContext && (
+        <EditCourseEntryModal
+          student={reconciledStudent}
+          subjectId={editCourseEntryContext.subjectId}
+          batchId={editCourseEntryContext.batchId}
+          onClose={() => setEditCourseEntryContext(null)}
         />
       )}
       {showSubjectPkg && (

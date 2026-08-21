@@ -423,7 +423,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
 
       await batch.commit()
 
-      toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật gói môn học' : 'Đã thêm môn học mới')
+      toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật khóa học' : 'Đã thêm khóa học mới')
       onClose()
     } catch (err) {
       console.error(err)
@@ -437,12 +437,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? 'Chỉnh sửa gói môn học' : 'Thêm môn học mới'}
+      title={isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
       footer={
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={onClose} disabled={loading}>Hủy</Button>
           <Button form="subject-pkg-form" type="submit" loading={loading}>
-            {isEdit ? 'Lưu thay đổi' : 'Thêm môn học'}
+            {isEdit ? 'Lưu thay đổi' : 'Thêm khóa học'}
           </Button>
         </div>
       }
@@ -587,8 +587,14 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
             type="number"
             placeholder="500"
             error={errors.totalMinutes?.message}
+            disabled={isEdit && !isTransferringSubject}
             {...register('totalMinutes')}
           />
+        )}
+        {isEdit && !isTransferringSubject && (
+          <p className="-mt-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
+            Sửa số phút hoặc kim cương tại từng đợt trong “Chi tiết khóa học” để lịch sử và quỹ còn lại được đồng bộ an toàn.
+          </p>
         )}
 
         <Input
