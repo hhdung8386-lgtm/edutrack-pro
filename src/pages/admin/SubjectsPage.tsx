@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { ArrowDownAZ, ArrowUpZA, BookOpen, CircleDollarSign, Plus, Pencil, Search, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowDownAZ, ArrowUpZA, BookOpen, CircleDollarSign, Plus, Pencil, RefreshCw, Search, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { formatPricePerMinute } from '@/lib/constants'
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isDeletedSubject, isVisibleSubject } from '@/lib/subjectLifecycle'
@@ -65,6 +65,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
   const initialRate = subject ? getCanonicalSubjectRate(subject) : { price: 2500, currency: 'VND' }
   const [currency, setCurrency] = useState(initialRate.currency)
   const [priceInput, setPriceInput] = useState(() => formatVietnameseNumberInput(initialRate.price))
+  const [isSyncingName, setIsSyncingName] = useState(false)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -162,6 +163,55 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     }
   }
 
+  const handleRepairNameSync = async () => {
+    if (!subject) return
+
+    const normalizedName = subject.name.trim()
+    setIsSyncingName(true)
+    try {
+      // Đường sửa dữ liệu riêng: không ghi lại giá, trạng thái hay cấu hình
+      // quốc gia cũ chỉ để đồng bộ các snapshot tên môn.
+      await updateDoc(doc(db, 'subjects', subject.id), {
+        nameSyncPending: true,
+        updatedAt: serverTimestamp(),
+      })
+
+      const syncSummary = await syncSubjectNameReferences(subject.id, normalizedName)
+
+      await updateDoc(doc(db, 'subjects', subject.id), {
+        nameSyncPending: false,
+        nameSyncedValue: normalizedName,
+        nameSyncedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+      await addDoc(collection(db, 'adminLogs'), {
+        adminId: useAuthStore.getState().user?.uid || '',
+        action: 'REPAIR_SUBJECT_NAME_SYNC',
+        targetType: 'subject',
+        targetId: subject.id,
+        changes: {
+          subjectName: normalizedName,
+          updatedReferences: syncSummary,
+          financialSnapshotsChanged: false,
+        },
+        createdAt: serverTimestamp(),
+      })
+
+      toast.success(`Đã đồng bộ lại tên môn tại ${syncSummary.total.toLocaleString('vi-VN')} nơi; giá, phút, kim cương và lương không thay đổi`)
+      onClose()
+    } catch (err) {
+      console.error(err)
+      toast.error('Đồng bộ tên chưa hoàn tất. Có thể bấm “Đồng bộ lại tên” để chạy tiếp an toàn; dữ liệu tài chính không bị thay đổi.')
+    } finally {
+      setIsSyncingName(false)
+    }
+  }
+
+  const needsNameSyncRepair = !!subject && (
+    subject.nameSyncPending === true
+    || subject.nameSyncedValue !== subject.name.trim()
+  )
+
   return (
     <Modal
       open
@@ -169,9 +219,21 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
       size="lg"
       title={isEdit ? 'Chỉnh sửa môn học' : 'Thêm môn học'}
       footer={
-        <div className="flex gap-3 justify-end">
+        <div className="flex flex-wrap gap-3 justify-end">
+          {needsNameSyncRepair && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleRepairNameSync}
+              loading={isSyncingName}
+              disabled={isSubmitting}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Đồng bộ lại tên
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose}>Hủy</Button>
-          <Button form="subject-form" type="submit" loading={isSubmitting}>
+          <Button form="subject-form" type="submit" loading={isSubmitting} disabled={isSyncingName}>
             {isEdit ? 'Lưu thay đổi' : 'Thêm môn học'}
           </Button>
         </div>
