@@ -22,12 +22,17 @@ test('online classes contain individual students and group classes, with offline
     '/admin/students/group',
   ])
   assert.equal(offlineClasses?.label, 'Lớp offline')
-  assert.equal(offlineClasses?.directTo, '/admin/offline-classes')
+  assert.equal(offlineClasses?.directTo, undefined)
+  assert.deepEqual(offlineClasses?.items.map((item) => item.to), [
+    '/admin/offline-classes',
+    '/admin/offline-classes/groups',
+  ])
   assert.equal(groups.indexOf(offlineClasses!), groups.indexOf(studentGroup!) + 1)
   assert.ok(paths.includes('/admin/students/fixed'))
   assert.ok(paths.includes('/admin/students/flexible'))
   assert.ok(paths.includes('/admin/students/group'))
   assert.ok(paths.includes('/admin/offline-classes'))
+  assert.ok(paths.includes('/admin/offline-classes/groups'))
   assert.equal(paths.filter((path) => path === '/admin/students/group').length, 1)
 })
 
@@ -38,6 +43,7 @@ test('student manager can access all student class types', () => {
   assert.ok(paths.includes('/admin/students/flexible'))
   assert.ok(paths.includes('/admin/students/group'))
   assert.ok(paths.includes('/admin/offline-classes'))
+  assert.ok(paths.includes('/admin/offline-classes/groups'))
 })
 
 test('teacher manager cannot access online or offline student class management', () => {
@@ -45,6 +51,7 @@ test('teacher manager cannot access online or offline student class management',
 
   assert.equal(paths.some((path) => path.startsWith('/admin/students')), false)
   assert.equal(paths.includes('/admin/offline-classes'), false)
+  assert.equal(paths.includes('/admin/offline-classes/groups'), false)
 })
 
 test('online and offline class routes activate only their own top-level item', () => {
@@ -60,6 +67,7 @@ test('online and offline class routes activate only their own top-level item', (
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/group'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/offline-classes'), false)
   assert.equal(isAdminNavGroupActive(offlineClasses, '/admin/offline-classes'), true)
+  assert.equal(isAdminNavGroupActive(offlineClasses, '/admin/offline-classes/groups'), true)
   assert.equal(isAdminNavGroupActive(offlineClasses, '/admin/students/group'), false)
 })
 

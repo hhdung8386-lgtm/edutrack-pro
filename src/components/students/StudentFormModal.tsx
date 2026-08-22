@@ -9,6 +9,11 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
+import {
+  getStudentClassification,
+  STUDENT_CLASSIFICATION_OPTIONS,
+  type StudentClassification,
+} from '@/lib/studentClassification'
 
 interface Branch {
   id: string
@@ -30,8 +35,8 @@ const makeSchema = (requireContact: boolean) => z.object({
     ? z.string().min(1, 'Vui lòng nhập email phụ huynh').email('Email không hợp lệ (VD: phuhuynh@gmail.com)')
     : z.string().email('Email không hợp lệ (VD: phuhuynh@gmail.com)').optional().or(z.literal('')),
   branchId: z.string().optional(),
-  // Chỉ còn 2 nhóm: cố định (mặc định) hoặc linh hoạt. Hồ sơ cũ chưa phân loại được hiểu là cố định.
-  learningScheduleType: z.enum(['fixed', 'flexible']).default('fixed'),
+  // Hồ sơ cũ chưa phân loại được hiểu là cố định.
+  learningScheduleType: z.enum(['fixed', 'flexible', 'offline']).default('fixed'),
   gender: z.enum(['male', 'female']).default('male'),
   classroomURL: z.string().optional().or(z.literal('')),
 })
@@ -56,10 +61,11 @@ const normalizeBranchName = (name: string) =>
 
 interface Props {
   student?: Student
+  defaultLearningScheduleType?: StudentClassification
   onClose: () => void
 }
 
-export function StudentFormModal({ student, onClose }: Props) {
+export function StudentFormModal({ student, defaultLearningScheduleType = 'fixed', onClose }: Props) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [generatedCode, setGeneratedCode] = useState('')
   const isEdit = !!student
@@ -74,11 +80,11 @@ export function StudentFormModal({ student, onClose }: Props) {
           email: student.email || '',
           branchId: student.branchId || '',
           // Chưa phân loại được hiểu là cố định
-          learningScheduleType: student.learningScheduleType === 'flexible' ? 'flexible' : 'fixed',
+          learningScheduleType: getStudentClassification(student),
           gender: inferStudentGender(student),
           classroomURL: student.classroomURL || '',
         }
-      : { code: '', branchId: '', learningScheduleType: 'fixed', gender: 'male', classroomURL: '', email: '' },
+      : { code: '', branchId: '', learningScheduleType: defaultLearningScheduleType, gender: 'male', classroomURL: '', email: '' },
   })
   const scheduleType = watch('learningScheduleType')
   const gender = watch('gender')
@@ -185,12 +191,10 @@ export function StudentFormModal({ student, onClose }: Props) {
       }
     >
       <form id="student-form" onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
-        {/* Phân loại học viên: 2 nút tick giống form gia sư */}
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-          {([
-            { value: 'fixed', label: 'Học viên cố định' },
-            { value: 'flexible', label: 'Học viên linh hoạt' },
-          ] as const).map((option) => {
+        <fieldset>
+          <legend className="mb-2 block text-sm font-medium text-slate-600">Phân loại học viên</legend>
+          <div className="grid grid-cols-1 gap-1 rounded-xl bg-slate-100 p-1 sm:grid-cols-3">
+          {STUDENT_CLASSIFICATION_OPTIONS.map((option) => {
             const checked = scheduleType === option.value
             return (
               <label
@@ -198,16 +202,18 @@ export function StudentFormModal({ student, onClose }: Props) {
                 className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition active:scale-[0.98] ${checked ? 'bg-brand-400 text-slate-950 shadow-sm' : 'text-slate-600 hover:bg-white'}`}
               >
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name="learningScheduleTypePicker"
                   checked={checked}
-                  onChange={() => setValue('learningScheduleType', option.value, { shouldDirty: true })}
+                  onChange={() => setValue('learningScheduleType', option.value, { shouldDirty: true, shouldValidate: true })}
                   className="h-4 w-4 rounded border-slate-400 text-amber-500 focus:ring-amber-400"
                 />
                 <span className="whitespace-nowrap">{option.label}</span>
               </label>
             )
           })}
-        </div>
+          </div>
+        </fieldset>
         <fieldset>
           <legend className="mb-2 block text-sm font-medium text-slate-600">Giới tính và nhân vật mặc định</legend>
           <div className="grid grid-cols-2 gap-3">

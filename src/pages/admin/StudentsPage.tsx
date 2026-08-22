@@ -19,6 +19,13 @@ import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
 import { parseStoredStudentListLimit, studentListLimitStorageKey } from '@/lib/studentList'
+import {
+  getDefaultBulkClassification,
+  getStudentClassification,
+  STUDENT_CLASSIFICATION_OPTIONS,
+  type StudentClassification,
+  type StudentGroupView,
+} from '@/lib/studentClassification'
 
 /**
  * Tổng số buổi (quy đổi 25 phút) CÒN LẠI trong gói, TÍNH CẢ buổi đã đặt lịch.
@@ -38,11 +45,9 @@ function isRunningLow(s: Student): boolean {
 
 interface Branch { id: string; name: string; status: string }
 
-// Trang có 3 chế độ: 'all' (tất cả học viên), 'fixed', 'flexible'.
+// Trang có 4 chế độ: 'all' (tất cả học viên), 'fixed', 'flexible', 'offline'.
 // QUY ƯỚC QUAN TRỌNG: học viên CHƯA phân loại (field trống hoặc 'unclassified')
 // được tính là HỌC VIÊN CỐ ĐỊNH mặc định — không cần ghi đè dữ liệu hàng loạt.
-type StudentGroupView = 'all' | 'fixed' | 'flexible'
-
 const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: string; emptyDescription: string }> = {
   all: {
     title: 'Tất cả học viên',
@@ -58,6 +63,11 @@ const STUDENT_GROUP_META: Record<StudentGroupView, { title: string; emptyTitle: 
     title: 'Học viên linh hoạt',
     emptyTitle: 'Chưa có học viên linh hoạt',
     emptyDescription: 'Chọn “Học viên linh hoạt” trong hồ sơ để đưa học viên vào danh sách này.',
+  },
+  offline: {
+    title: 'Lớp offline',
+    emptyTitle: 'Chưa có học viên offline',
+    emptyDescription: 'Chọn học viên ở danh sách cố định hoặc linh hoạt rồi chuyển sang “Lớp offline”.',
   },
 }
 
@@ -82,7 +92,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
-  const [bulkScheduleType, setBulkScheduleType] = useState<'fixed' | 'flexible'>('fixed')
+  const [bulkScheduleType, setBulkScheduleType] = useState<StudentClassification>(() => getDefaultBulkClassification(learningScheduleType))
   const [bulkUpdating, setBulkUpdating] = useState(false)
   // Mặc định tải TẤT CẢ hồ sơ để không ai tưởng "mất" học viên; admin có thể giảm để nhẹ máy.
   const [limitVal, setLimitVal] = useState<number>(() => {
@@ -124,13 +134,22 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   useEffect(() => {
     setLoading(true)
     const effectiveLimit = limitVal
-    const q = effectiveLimit > 0
-      ? query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(effectiveLimit))
-      : query(collection(db, 'students'), orderBy('createdAt', 'desc'))
+    // Hai nhóm có field tường minh được lọc ngay trên server để không đọc toàn
+    // bộ collection. Nhóm cố định vẫn phải đọc chung để chứa hồ sơ legacy thiếu
+    // field; tránh backfill tốn write và tránh làm người dùng tưởng mất hồ sơ.
+    const canFilterOnServer = learningScheduleType === 'flexible' || learningScheduleType === 'offline'
+    const q = canFilterOnServer
+      ? query(collection(db, 'students'), where('learningScheduleType', '==', learningScheduleType))
+      : effectiveLimit > 0
+        ? query(collection(db, 'students'), orderBy('createdAt', 'desc'), limit(effectiveLimit))
+        : query(collection(db, 'students'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Student)))
+        const nextStudents = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Student))
+          .sort((left, right) => Number(right.createdAt?.seconds || 0) - Number(left.createdAt?.seconds || 0))
+        setStudents(canFilterOnServer && effectiveLimit > 0 ? nextStudents.slice(0, effectiveLimit) : nextStudents)
         setLoading(false)
       },
       (err) => {
@@ -176,7 +195,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     // tuyệt đối không được lẫn vào danh sách tài khoản học viên 1 kèm 1.
     if (isGroupClass(s)) return false
     // Chưa phân loại (field trống/'unclassified') được tính là CỐ ĐỊNH.
-    const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
+    const normalizedGroup = getStudentClassification(s)
     const matchScheduleType = learningScheduleType === 'all' || normalizedGroup === learningScheduleType
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -204,7 +223,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   // với Dashboard — giúp thấy rõ tổng hồ sơ tách theo từng trạng thái.
   const groupStudents = students.filter((s) => {
     if (isGroupClass(s)) return false
-    const normalizedGroup: 'fixed' | 'flexible' = s.learningScheduleType === 'flexible' ? 'flexible' : 'fixed'
+    const normalizedGroup = getStudentClassification(s)
     return learningScheduleType === 'all' || normalizedGroup === learningScheduleType
   })
   const groupBreakdown = {
@@ -284,7 +303,16 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     if (selectedStudentIds.size === 0) return
     setBulkUpdating(true)
     try {
-      const ids = Array.from(selectedStudentIds)
+      const ids = students
+        .filter((student) => selectedStudentIds.has(student.id))
+        .filter((student) => !isGroupClass(student))
+        .filter((student) => getStudentClassification(student) !== bulkScheduleType)
+        .map((student) => student.id)
+      if (ids.length === 0) {
+        toast.success('Các học viên đã thuộc đúng nhóm; không phát sinh cập nhật')
+        setSelectedStudentIds(new Set())
+        return
+      }
       for (let offset = 0; offset < ids.length; offset += 450) {
         const batch = writeBatch(db)
         ids.slice(offset, offset + 450).forEach((studentId) => {
@@ -295,7 +323,8 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
         })
         await batch.commit()
       }
-      toast.success(`Đã phân loại ${ids.length} học viên`)
+      const targetLabel = STUDENT_CLASSIFICATION_OPTIONS.find((option) => option.value === bulkScheduleType)?.label
+      toast.success(`Đã chuyển ${ids.length} học viên sang ${targetLabel || 'nhóm đã chọn'}`)
       setSelectedStudentIds(new Set())
     } catch (error) {
       console.error('Error bulk classifying students:', error)
@@ -348,7 +377,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
           <p className="text-sm text-slate-500 mt-0.5">
             Đang hiển thị <span className="font-semibold text-slate-700">{filtered.length}</span>
             {filtered.length !== groupBreakdown.total && <> / {groupBreakdown.total}</>} học viên
-            {limitVal > 0 && <span className="text-amber-600"> · chỉ tải {limitVal} hồ sơ mới nhất</span>}
+            {limitVal > 0 && <span className="text-amber-600"> · chỉ hiển thị {limitVal} hồ sơ mới nhất</span>}
           </p>
           {!loading && groupBreakdown.total > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -375,18 +404,20 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
             <CheckSquare className="h-5 w-5 text-brand-700" />
             Đã chọn {selectedStudentIds.size} học viên
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+            <span className="text-xs font-semibold text-slate-600 sm:whitespace-nowrap">Chuyển sang</span>
             <select
               value={bulkScheduleType}
-              onChange={(event) => setBulkScheduleType(event.target.value as 'fixed' | 'flexible')}
-              className="min-h-[40px] rounded-xl border border-brand-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-300"
+              onChange={(event) => setBulkScheduleType(event.target.value as StudentClassification)}
+              className="min-h-[40px] min-w-0 flex-1 rounded-xl border border-brand-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-300 sm:flex-none"
               aria-label="Chọn phân loại học viên"
             >
-              <option value="fixed">Học viên cố định</option>
-              <option value="flexible">Học viên linh hoạt</option>
+              {STUDENT_CLASSIFICATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
             <Button onClick={handleBulkClassification} loading={bulkUpdating} className="min-h-[40px]">
-              Phân loại đã chọn
+              Chuyển đã chọn
             </Button>
             <button
               type="button"
@@ -737,7 +768,12 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
         </>
       )}
 
-      {showAdd && <StudentFormModal onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+        <StudentFormModal
+          defaultLearningScheduleType={learningScheduleType === 'all' ? 'fixed' : learningScheduleType}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
       {editStudent && <StudentFormModal student={editStudent} onClose={() => setEditStudent(null)} />}
       {addSessions && <AddSessionsModal student={addSessions} onClose={() => setAddSessions(null)} />}
       {deleteStudent && (

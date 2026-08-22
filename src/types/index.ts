@@ -67,7 +67,7 @@ export interface Student {
   branchId?: string
   branchName?: string
   /** Nhóm vận hành do admin phân loại thủ công; hồ sơ cũ không có field này được hiểu là chưa phân loại. */
-  learningScheduleType?: 'unclassified' | 'fixed' | 'flexible'
+  learningScheduleType?: 'unclassified' | 'fixed' | 'flexible' | 'offline'
   totalSessions: number
   usedSessions: number
   remainingSessions: number

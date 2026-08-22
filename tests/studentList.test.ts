@@ -20,4 +20,5 @@ test('an explicit safe display limit remains supported', () => {
 test('versioned key does not inherit the withdrawn aggregate-page limit', () => {
   assert.equal(studentListLimitStorageKey('students_fixed'), 'students_fixed_limitVal_full-list-v1')
   assert.equal(studentListLimitStorageKey('students_flexible'), 'students_flexible_limitVal_full-list-v1')
+  assert.equal(studentListLimitStorageKey('students_offline'), 'students_offline_limitVal_full-list-v1')
 })

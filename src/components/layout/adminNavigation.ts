@@ -64,9 +64,9 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     label: 'Lớp offline',
     icon: MapPin,
     activePrefixes: ['/admin/offline-classes'],
-    directTo: '/admin/offline-classes',
     items: [
-      { to: '/admin/offline-classes', icon: MapPin, label: 'Lớp offline' },
+      { to: '/admin/offline-classes', icon: MapPin, label: 'Học viên offline', end: true },
+      { to: '/admin/offline-classes/groups', icon: UsersRound, label: 'Lớp nhóm offline' },
     ],
   },
   {
