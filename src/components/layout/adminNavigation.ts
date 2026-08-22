@@ -49,23 +49,24 @@ export interface AdminNavGroup {
 export const adminNavigationGroups: AdminNavGroup[] = [
   {
     id: 'students',
-    label: 'Học viên',
+    label: 'Lớp online',
     icon: Users,
-    activePrefixes: ['/admin/students/fixed', '/admin/students/flexible', '/admin/students/one-to-one'],
+    activePrefixes: ['/admin/students/fixed', '/admin/students/flexible', '/admin/students/one-to-one', '/admin/students/group'],
     activePaths: ['/admin/students'],
     items: [
       { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
       { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
+      { to: '/admin/students/group', icon: UsersRound, label: 'Lớp nhóm' },
     ],
   },
   {
-    id: 'group-classes',
-    label: 'Lớp nhóm',
-    icon: UsersRound,
-    activePrefixes: ['/admin/students/group'],
-    directTo: '/admin/students/group',
+    id: 'offline-classes',
+    label: 'Lớp offline',
+    icon: MapPin,
+    activePrefixes: ['/admin/offline-classes'],
+    directTo: '/admin/offline-classes',
     items: [
-      { to: '/admin/students/group', icon: UsersRound, label: 'Lớp nhóm' },
+      { to: '/admin/offline-classes', icon: MapPin, label: 'Lớp offline' },
     ],
   },
   {
@@ -153,7 +154,7 @@ export function canAccessAdminNavItem(
   if (accessScope === 'booking_only') return item.to === '/admin/booking-schedules'
   if (item.to === '/admin/notifications' && role !== 'admin') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
-  if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/student-alerts'))) return false
+  if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/offline-classes') || item.to.startsWith('/admin/student-alerts'))) return false
   return true
 }
 

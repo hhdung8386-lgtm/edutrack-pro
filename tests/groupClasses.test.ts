@@ -5,14 +5,35 @@ import {
   bookingParticipantStudentIds,
   bookingParticipantsOverlap,
   canStudentManageBooking,
+  getGroupClassDeliveryMode,
   isGroupClass,
+  isGroupClassInMode,
   normalizeGroupClassIds,
+  teacherSupportsGroupClassDeliveryMode,
 } from '../src/lib/groupClasses.ts'
 
 test('legacy students remain one-to-one without a migration', () => {
   assert.equal(isGroupClass({}), false)
   assert.equal(isGroupClass({ recordType: 'individual' }), false)
   assert.equal(isGroupClass({ recordType: 'group_class' }), true)
+})
+
+test('legacy group classes remain online while offline classes are separated explicitly', () => {
+  assert.equal(getGroupClassDeliveryMode({}), 'online')
+  assert.equal(getGroupClassDeliveryMode({ classDeliveryMode: 'online' }), 'online')
+  assert.equal(getGroupClassDeliveryMode({ classDeliveryMode: 'offline' }), 'offline')
+  assert.equal(isGroupClassInMode({}, 'online'), true)
+  assert.equal(isGroupClassInMode({}, 'offline'), false)
+  assert.equal(isGroupClassInMode({ classDeliveryMode: 'offline' }, 'offline'), true)
+})
+
+test('group-class scheduling matches online and offline teacher capabilities safely', () => {
+  assert.equal(teacherSupportsGroupClassDeliveryMode({}, {}), true)
+  assert.equal(teacherSupportsGroupClassDeliveryMode({ teachingFormats: ['online'] }, {}), true)
+  assert.equal(teacherSupportsGroupClassDeliveryMode({ teachingFormats: ['offline'] }, {}), false)
+  assert.equal(teacherSupportsGroupClassDeliveryMode({}, { classDeliveryMode: 'offline' }), false)
+  assert.equal(teacherSupportsGroupClassDeliveryMode({ teachingFormats: ['offline'] }, { classDeliveryMode: 'offline' }), true)
+  assert.equal(teacherSupportsGroupClassDeliveryMode({ teachingFormats: ['online', 'offline'] }, { classDeliveryMode: 'offline' }), true)
 })
 
 test('group booking participants include the class record and every unique member', () => {

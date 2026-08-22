@@ -1,6 +1,31 @@
-import type { BookingRequest, Student } from '@/types'
+import type { BookingRequest, Student, Teacher } from '@/types'
 
 export const GROUP_CLASS_MAX_MEMBERS = 100
+
+export type GroupClassDeliveryMode = 'online' | 'offline'
+
+export function getGroupClassDeliveryMode(groupClass: Pick<Student, 'classDeliveryMode'>): GroupClassDeliveryMode {
+  return groupClass.classDeliveryMode === 'offline' ? 'offline' : 'online'
+}
+
+export function isGroupClassInMode(
+  groupClass: Pick<Student, 'classDeliveryMode'>,
+  mode: GroupClassDeliveryMode,
+) {
+  return getGroupClassDeliveryMode(groupClass) === mode
+}
+
+export function teacherSupportsGroupClassDeliveryMode(
+  teacher: Pick<Teacher, 'teachingFormats'>,
+  groupClass: Pick<Student, 'classDeliveryMode'>,
+) {
+  const mode = getGroupClassDeliveryMode(groupClass)
+  const formats = teacher.teachingFormats || []
+  // Hồ sơ gia sư cũ chưa có phân loại luôn thuộc luồng online hiện hữu.
+  return mode === 'offline'
+    ? formats.includes('offline')
+    : formats.length === 0 || formats.includes('online')
+}
 
 export function isGroupClass(student: Pick<Student, 'recordType'> | null | undefined) {
   return student?.recordType === 'group_class'

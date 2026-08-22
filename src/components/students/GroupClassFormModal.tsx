@@ -17,7 +17,7 @@ import {
 import { Search, UsersRound } from 'lucide-react'
 import { db, generateUniqueCode } from '@/lib/firebase'
 import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
-import { GROUP_CLASS_MAX_MEMBERS, isGroupClass } from '@/lib/groupClasses'
+import { GROUP_CLASS_MAX_MEMBERS, getGroupClassDeliveryMode, isGroupClass, type GroupClassDeliveryMode } from '@/lib/groupClasses'
 import type { BookingRequest, GroupClassMember, Student } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -26,12 +26,15 @@ import { toast } from '@/stores/toastStore'
 
 interface GroupClassFormModalProps {
   groupClass?: Student | null
+  defaultDeliveryMode?: GroupClassDeliveryMode
   onClose: () => void
 }
 
-export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModalProps) {
+export function GroupClassFormModal({ groupClass, defaultDeliveryMode = 'online', onClose }: GroupClassFormModalProps) {
+  const deliveryMode = groupClass ? getGroupClassDeliveryMode(groupClass) : defaultDeliveryMode
   const [name, setName] = useState(groupClass?.name || '')
   const [classroomURL, setClassroomURL] = useState(groupClass?.classroomURL || '')
+  const [offlineLocation, setOfflineLocation] = useState(groupClass?.offlineLocation || '')
   const [code, setCode] = useState(groupClass?.code || '')
   const [saving, setSaving] = useState(false)
 
@@ -56,20 +59,27 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
       toast.error('Mã lớp chưa sẵn sàng, vui lòng thử lại')
       return
     }
+    if (deliveryMode === 'offline' && offlineLocation.trim().length < 3) {
+      toast.error('Vui lòng nhập địa điểm học offline')
+      return
+    }
 
     setSaving(true)
     try {
       if (groupClass) {
         await updateDoc(doc(db, 'students', groupClass.id), {
           name: cleanName,
-          classroomURL: classroomURL.trim(),
+          classDeliveryMode: deliveryMode,
+          classroomURL: deliveryMode === 'online' ? classroomURL.trim() : '',
+          offlineLocation: deliveryMode === 'offline' ? offlineLocation.trim() : '',
           updatedAt: serverTimestamp(),
         })
-        toast.success('Đã cập nhật lớp nhóm')
+        toast.success(deliveryMode === 'offline' ? 'Đã cập nhật lớp offline' : 'Đã cập nhật lớp nhóm')
       } else {
         const classRef = doc(collection(db, 'students'))
         await setDoc(classRef, {
           recordType: 'group_class',
+          classDeliveryMode: deliveryMode,
           code,
           name: cleanName,
           parentPhone: '',
@@ -90,7 +100,8 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
           heldMinutes: 0,
           status: 'inactive',
           subjects: [],
-          classroomURL: classroomURL.trim(),
+          classroomURL: deliveryMode === 'online' ? classroomURL.trim() : '',
+          offlineLocation: deliveryMode === 'offline' ? offlineLocation.trim() : '',
           enrolledStudentIds: [],
           enrolledStudents: [],
           bookingScheduleRevision: 0,
@@ -98,7 +109,7 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
-        toast.success(`Đã tạo lớp nhóm ${code}`)
+        toast.success(`Đã tạo ${deliveryMode === 'offline' ? 'lớp offline' : 'lớp nhóm'} ${code}`)
       }
       onClose()
     } catch (error) {
@@ -113,7 +124,9 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
     <Modal
       open
       onClose={onClose}
-      title={groupClass ? 'Chỉnh sửa lớp nhóm' : 'Tạo lớp nhóm'}
+      title={groupClass
+        ? `Chỉnh sửa ${deliveryMode === 'offline' ? 'lớp offline' : 'lớp nhóm'}`
+        : `Tạo ${deliveryMode === 'offline' ? 'lớp offline' : 'lớp nhóm'}`}
       footer={(
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Hủy</Button>
@@ -125,7 +138,9 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
     >
       <form id="group-class-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm leading-6 text-slate-700">
-          Mã lớp dùng để xếp lịch giống mã học viên 1 kèm 1. Sau khi tạo, thêm gói môn và enrol các tài khoản học viên vào lớp.
+          {deliveryMode === 'offline'
+            ? 'Lớp offline dùng chung luồng mã lớp, enrol học viên, gói môn và xếp lịch; địa điểm được lưu riêng để giáo vụ đối chiếu.'
+            : 'Mã lớp dùng để xếp lịch giống mã học viên 1 kèm 1. Sau khi tạo, thêm gói môn và enrol các tài khoản học viên vào lớp.'}
         </div>
         <Input label="Mã lớp nhóm" value={code} readOnly placeholder="Đang tạo mã lớp..." />
         <Input
@@ -135,12 +150,21 @@ export function GroupClassFormModal({ groupClass, onClose }: GroupClassFormModal
           placeholder="Ví dụ: Kids A - Tối thứ 3"
           autoFocus
         />
-        <Input
-          label="Link phòng học"
-          value={classroomURL}
-          onChange={(event) => setClassroomURL(event.target.value)}
-          placeholder="https://zoom.us/j/... hoặc link Meet, Teams"
-        />
+        {deliveryMode === 'online' ? (
+          <Input
+            label="Link phòng học"
+            value={classroomURL}
+            onChange={(event) => setClassroomURL(event.target.value)}
+            placeholder="https://zoom.us/j/... hoặc link Meet, Teams"
+          />
+        ) : (
+          <Input
+            label="Địa điểm học offline *"
+            value={offlineLocation}
+            onChange={(event) => setOfflineLocation(event.target.value)}
+            placeholder="Ví dụ: 123English, Quận 3, TP.HCM"
+          />
+        )}
       </form>
     </Modal>
   )

@@ -26,7 +26,26 @@ export interface CourseEntryEditResult {
   status: Student['status']
 }
 
+export interface CourseEntryDeleteResult {
+  subjects: StudentSubject[]
+  totals: CourseLedgerTotals
+  primarySubject: StudentSubject | null
+  deletedBatch: TopUpBatch
+  status: Student['status']
+}
+
 const roundSessions = (value: number) => Math.round(value * 100) / 100
+
+function totalCourseLedger(subjects: StudentSubject[]): CourseLedgerTotals {
+  return subjects.reduce<CourseLedgerTotals>((summary, subject) => ({
+    totalSessions: summary.totalSessions + Number(subject.totalSessions || 0),
+    usedSessions: summary.usedSessions + Number(subject.usedSessions || 0),
+    remainingSessions: summary.remainingSessions + Number(subject.remainingSessions || 0),
+    totalMinutes: summary.totalMinutes + Number(subject.totalMinutes || 0),
+    usedMinutes: summary.usedMinutes + Number(subject.usedMinutes || 0),
+    remainingMinutes: summary.remainingMinutes + Number(subject.remainingMinutes || 0),
+  }), { totalSessions: 0, usedSessions: 0, remainingSessions: 0, totalMinutes: 0, usedMinutes: 0, remainingMinutes: 0 })
+}
 
 export function getStudentSubjects(student: Student): StudentSubject[] {
   if (student.subjects?.length) return student.subjects.map((subject) => ({ ...subject }))
@@ -177,14 +196,7 @@ export function editCourseEntry({
   }
   subjects[subjectIndex] = updatedSubject
 
-  const totals = subjects.reduce<CourseLedgerTotals>((summary, subject) => ({
-    totalSessions: summary.totalSessions + Number(subject.totalSessions || 0),
-    usedSessions: summary.usedSessions + Number(subject.usedSessions || 0),
-    remainingSessions: summary.remainingSessions + Number(subject.remainingSessions || 0),
-    totalMinutes: summary.totalMinutes + Number(subject.totalMinutes || 0),
-    usedMinutes: summary.usedMinutes + Number(subject.usedMinutes || 0),
-    remainingMinutes: summary.remainingMinutes + Number(subject.remainingMinutes || 0),
-  }), { totalSessions: 0, usedSessions: 0, remainingSessions: 0, totalMinutes: 0, usedMinutes: 0, remainingMinutes: 0 })
+  const totals = totalCourseLedger(subjects)
 
   if (totals.remainingMinutes < totalHeldPoints) {
     throw new Error(`Học viên đang giữ tổng cộng ${totalHeldPoints.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể giảm quỹ xuống thấp hơn mức này.`)
@@ -196,4 +208,82 @@ export function editCourseEntry({
     : totals.remainingMinutes > 0 ? 'active' : 'expired'
 
   return { subjects, totals, primarySubject, previousBatch, updatedBatch, status }
+}
+
+export function deleteCourseEntry({
+  student,
+  subjectId,
+  batchId,
+  heldPointsForSubject,
+  totalHeldPoints,
+  linkedTopUpTransaction,
+}: {
+  student: Student
+  subjectId: string
+  batchId: string
+  heldPointsForSubject: number
+  totalHeldPoints: number
+  linkedTopUpTransaction: boolean
+}): CourseEntryDeleteResult {
+  const subjects = getStudentSubjects(student)
+  const subjectIndex = subjects.findIndex((item) => item.subjectId === subjectId)
+  if (subjectIndex === -1) throw new Error('Khóa học không còn tồn tại; hãy tải lại trang')
+
+  const previousSubject = subjects[subjectIndex]
+  if (!previousSubject.batches?.length || batchId === 'legacy') {
+    throw new Error('Dữ liệu khóa học cũ chưa tách riêng từng đợt. Hãy dùng “Xóa khóa học” nếu khóa học chưa phát sinh lịch sử.')
+  }
+  if (previousSubject.batches.length === 1) {
+    throw new Error('Đây là đợt cộng quyền duy nhất. Hãy dùng “Xóa khóa học” để tránh tạo khóa học rỗng.')
+  }
+
+  const batchIndex = previousSubject.batches.findIndex((batch) => batch.id === batchId)
+  if (batchIndex === -1) throw new Error('Đợt cộng quyền đã thay đổi hoặc không còn tồn tại; hãy tải lại trang')
+  if (linkedTopUpTransaction) {
+    throw new Error('Đợt này được tạo từ giao dịch nạp tự động nên không thể xóa. Lịch sử giao dịch phải được giữ nguyên để đối soát.')
+  }
+
+  const expectedRemaining = Number(previousSubject.totalMinutes || 0) - Number(previousSubject.usedMinutes || 0)
+  if (Math.abs(expectedRemaining - Number(previousSubject.remainingMinutes || 0)) > 0.01) {
+    throw new Error('Quỹ khóa học đang lệch giữa tổng, đã dùng và còn lại. Hãy đối soát dữ liệu trước khi xóa đợt.')
+  }
+
+  const deletedBatch = { ...previousSubject.batches[batchIndex] }
+  const deletedDiamonds = getBatchDiamonds(deletedBatch, previousSubject)
+  const nextTotalMinutes = Number(previousSubject.totalMinutes || 0) - deletedDiamonds
+  const nextRemainingMinutes = Number(previousSubject.remainingMinutes || 0) - deletedDiamonds
+  const usedMinutes = Number(previousSubject.usedMinutes || 0)
+
+  if (nextTotalMinutes < usedMinutes || nextRemainingMinutes < 0) {
+    throw new Error(`Không thể xóa vì ${deletedDiamonds.toLocaleString('vi-VN')} kim cương của đợt đã được sử dụng một phần hoặc toàn bộ.`)
+  }
+  if (nextRemainingMinutes < heldPointsForSubject) {
+    throw new Error(`Khóa học đang giữ ${heldPointsForSubject.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể xóa đợt này.`)
+  }
+
+  const minutesPerSession = Number(previousSubject.minutesPerSession || 25)
+  const batches = previousSubject.batches
+    .filter((_, index) => index !== batchIndex)
+    .map((batch) => ({ ...batch }))
+  const updatedSubject: StudentSubject = {
+    ...previousSubject,
+    totalSessions: roundSessions(nextTotalMinutes / minutesPerSession),
+    remainingSessions: roundSessions(nextRemainingMinutes / minutesPerSession),
+    totalMinutes: nextTotalMinutes,
+    remainingMinutes: nextRemainingMinutes,
+    batches,
+  }
+  subjects[subjectIndex] = updatedSubject
+
+  const totals = totalCourseLedger(subjects)
+  if (totals.remainingMinutes < totalHeldPoints) {
+    throw new Error(`Học viên đang giữ tổng cộng ${totalHeldPoints.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể xóa đợt này.`)
+  }
+
+  const primarySubject = subjects.find((subject) => subject.remainingMinutes > 0) || subjects[0] || null
+  const status = student.status === 'reserved'
+    ? 'reserved'
+    : totals.remainingMinutes > 0 ? 'active' : 'expired'
+
+  return { subjects, totals, primarySubject, deletedBatch, status }
 }

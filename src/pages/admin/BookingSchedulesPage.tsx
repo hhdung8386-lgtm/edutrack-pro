@@ -44,7 +44,7 @@ import {
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable } from '@/lib/bookingLogic'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
-import { isGroupClass } from '@/lib/groupClasses'
+import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
   buildFutureRecurringSlots,
   estimateRecurringWeeks,
@@ -836,6 +836,11 @@ export function BookingSchedulesPage() {
 
   const handleStudentSelect = (student: Student) => {
     setScheduleConflictMessage('')
+    if (isGroupClass(student) && selectedTeacher && !teacherSupportsGroupClassDeliveryMode(selectedTeacher, student)) {
+      const modeLabel = getGroupClassDeliveryMode(student) === 'offline' ? 'offline' : 'online'
+      toast.error(`Gia sư đã chọn không nhận lớp ${modeLabel}. Vui lòng chọn gia sư phù hợp trước khi xếp lịch.`)
+      return
+    }
     setSelectedStudent(student)
     // Pre-select the first subject package that still has remaining minutes,
     // so an exhausted/negative package (e.g. old tutor package) is not selected by default
@@ -853,6 +858,11 @@ export function BookingSchedulesPage() {
   const executeScheduling = async () => {
     if (!selectedStudent || !selectedTeacher || selectedSlots.length === 0) return
     setScheduleConflictMessage('')
+    if (selectedIsGroupClass && !teacherSupportsGroupClassDeliveryMode(selectedTeacher, selectedStudent)) {
+      const modeLabel = getGroupClassDeliveryMode(selectedStudent) === 'offline' ? 'offline' : 'online'
+      toast.error(`Gia sư đã chọn không nhận lớp ${modeLabel}. Vui lòng chọn lại gia sư.`)
+      return
+    }
     if (!selectedSubjectId) {
       toast.warning('Vui lòng chọn môn học')
       return
@@ -1049,6 +1059,10 @@ export function BookingSchedulesPage() {
         }
 
         const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const currentTeacher = { id: teacherSnap.id, ...teacherSnap.data() } as Teacher
+        if (isGroupClass(currentStudent) && !teacherSupportsGroupClassDeliveryMode(currentTeacher, currentStudent)) {
+          throw new Error('TEACHING_FORMAT_MISMATCH')
+        }
         const fund = getStudentMinuteFund(currentStudent, latestHeldPoints)
 
         const subInDb = currentStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
@@ -1259,6 +1273,10 @@ export function BookingSchedulesPage() {
       }
       if (errorMessage === 'GROUP_MEMBER_NOT_FOUND') {
         toast.error('Danh sách enrol của lớp nhóm vừa thay đổi. Vui lòng mở lại lớp và thử lần nữa.')
+        return
+      }
+      if (errorMessage === 'TEACHING_FORMAT_MISMATCH') {
+        toast.error('Hình thức dạy của gia sư hoặc loại lớp vừa thay đổi. Hệ thống chưa tạo ca nào; vui lòng chọn lại gia sư phù hợp.')
         return
       }
       if (errorMessage === 'NOT_ENOUGH_MINUTES') {

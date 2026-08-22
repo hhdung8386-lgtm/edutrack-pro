@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
@@ -29,6 +29,7 @@ interface StudentCourseOverviewProps {
   onAddSubject: () => void
   onAddRights: (subjectId: string) => void
   onEditEntry: (subjectId: string, batchId: string) => void
+  onDeleteEntry: (subjectId: string, batchId: string) => void
   onEditSubject: (subjectId: string) => void
   onDeleteSubject: (subjectId: string) => Promise<void>
 }
@@ -129,11 +130,12 @@ function CourseIdentity({ subject, paymentCount }: { subject: StudentSubject; pa
   )
 }
 
-function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDelete }: {
+function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, onDelete }: {
   row: CourseRow
   onClose: () => void
   onEdit: () => void
   onEditEntry: (batchId: string) => void
+  onDeleteEntry: (batchId: string) => void
   onDelete: () => Promise<void>
 }) {
   const summaryCards: Array<{ label: string; minutes: number; diamonds: number; icon: LucideIcon; tone: string }> = [
@@ -204,25 +206,36 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDelete }: {
           {row.payments.length > 0 ? (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[880px] text-left text-sm">
+                <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                    <tr><th className="px-4 py-3">Đợt</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Phút</th><th className="px-4 py-3">Kim cương</th><th className="px-4 py-3">Ngày thanh toán</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-center">Thao tác</th></tr>
+                    <tr><th className="px-4 py-3">Đợt</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Phút</th><th className="px-4 py-3">Kim cương</th><th className="px-4 py-3">Ngày thanh toán</th><th className="px-4 py-3 text-center">Thao tác</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody>
                     {row.payments.map((payment) => (
-                      <tr key={payment.id} className="transition-colors hover:bg-indigo-50/35">
-                        <td className="px-4 py-3"><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-extrabold text-indigo-700">Đợt {payment.ordinal}</span></td>
-                        <td className="px-4 py-3 font-bold text-slate-800">{payment.content}</td>
-                        <td className="px-4 py-3 font-bold tabular-nums text-indigo-700">{number(payment.learningMinutes)} phút</td>
-                        <td className="px-4 py-3"><span className="inline-flex items-center gap-1 font-bold tabular-nums text-sky-700"><DiamondPointsIcon className="h-3.5 w-3.5" />{number(payment.diamonds)}</span></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-slate-600">{payment.paymentDate}</td>
-                        <td className="px-4 py-3 text-slate-500">{payment.note || '—'}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button type="button" onClick={() => onEditEntry(payment.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label={`Sửa ${payment.content}`}>
-                            <Pencil className="h-3.5 w-3.5" />Sửa
-                          </button>
-                        </td>
-                      </tr>
+                      <Fragment key={payment.id}>
+                        <tr className="border-t border-slate-100 transition-colors hover:bg-indigo-50/35">
+                          <td className="px-4 py-3"><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-extrabold text-indigo-700">Đợt {payment.ordinal}</span></td>
+                          <td className="px-4 py-3 font-bold text-slate-800">{payment.content}</td>
+                          <td className="px-4 py-3 font-bold tabular-nums text-indigo-700">{number(payment.learningMinutes)} phút</td>
+                          <td className="px-4 py-3"><span className="inline-flex items-center gap-1 font-bold tabular-nums text-sky-700"><DiamondPointsIcon className="h-3.5 w-3.5" />{number(payment.diamonds)}</span></td>
+                          <td className="px-4 py-3 whitespace-nowrap text-slate-600">{payment.paymentDate}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-center gap-1.5">
+                              <button type="button" onClick={() => onEditEntry(payment.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label={`Sửa ${payment.content}`}>
+                                <Pencil className="h-3.5 w-3.5" />Sửa
+                              </button>
+                              <button type="button" onClick={() => onDeleteEntry(payment.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-rose-100 bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300" aria-label={`Xóa ${payment.content}`}>
+                                <Trash2 className="h-3.5 w-3.5" />Xóa
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={6} className="px-4 py-2.5 text-xs leading-5 text-slate-500">
+                            <span className="mr-2 font-bold text-slate-600">Ghi chú:</span>{payment.note || 'Không có ghi chú'}
+                          </td>
+                        </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -232,8 +245,11 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDelete }: {
                   <article key={payment.id} className="space-y-3 p-4">
                     <div className="flex items-center justify-between gap-3"><strong className="text-sm text-slate-900">{payment.content}</strong><span className="shrink-0 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-extrabold text-indigo-700">Đợt {payment.ordinal}</span></div>
                     <div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-slate-400">Quyền học</p><p className="mt-1 font-bold text-slate-700">{number(payment.learningMinutes)} phút · <span className="text-sky-700">{number(payment.diamonds)} KC</span></p></div><div><p className="text-slate-400">Ngày thanh toán</p><p className="mt-1 font-bold text-slate-700">{payment.paymentDate}</p></div></div>
-                    {payment.note && <p className="text-xs leading-5 text-slate-500">{payment.note}</p>}
-                    <button type="button" onClick={() => onEditEntry(payment.id)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 text-sm font-bold text-indigo-700"><Pencil className="h-4 w-4" />Sửa đợt này</button>
+                    <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500"><span className="font-bold text-slate-600">Ghi chú: </span>{payment.note || 'Không có ghi chú'}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => onEditEntry(payment.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 text-sm font-bold text-indigo-700"><Pencil className="h-4 w-4" />Sửa</button>
+                      <button type="button" onClick={() => onDeleteEntry(payment.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-100 bg-rose-50 text-sm font-bold text-rose-700"><Trash2 className="h-4 w-4" />Xóa</button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -254,6 +270,7 @@ export function StudentCourseOverview({
   onAddSubject,
   onAddRights,
   onEditEntry,
+  onDeleteEntry,
   onEditSubject,
   onDeleteSubject,
 }: StudentCourseOverviewProps) {
@@ -328,7 +345,10 @@ export function StudentCourseOverview({
                 <div><p className="text-xs font-semibold text-slate-700">{gift.note || 'Không có ghi chú'}</p><p className="mt-1 text-[11px] text-slate-400">Ngày tặng: {gift.paymentDate}</p></div>
                 <div className="flex items-center gap-2 sm:flex-col sm:items-end">
                   <span className={`w-fit rounded-lg px-2.5 py-1 text-xs font-bold ${remaining > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{remaining > 0 ? 'Chưa dùng' : 'Đã dùng'}</span>
-                  <button type="button" onClick={() => onEditEntry(gift.subjectId, gift.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-violet-100 bg-violet-50 px-3 text-xs font-bold text-violet-700 transition hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-300" aria-label={`Sửa ${gift.content}`}><Pencil className="h-3.5 w-3.5" />Sửa</button>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => onEditEntry(gift.subjectId, gift.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-violet-100 bg-violet-50 px-3 text-xs font-bold text-violet-700 transition hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-300" aria-label={`Sửa ${gift.content}`}><Pencil className="h-3.5 w-3.5" />Sửa</button>
+                    <button type="button" onClick={() => onDeleteEntry(gift.subjectId, gift.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-rose-100 bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300" aria-label={`Xóa ${gift.content}`}><Trash2 className="h-3.5 w-3.5" />Xóa</button>
+                  </div>
                 </div>
               </article>
             })}
@@ -375,7 +395,7 @@ export function StudentCourseOverview({
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-[11px] font-medium text-slate-500"><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-indigo-500" />Phút = thời lượng học thực tế</span><span className="inline-flex items-center gap-1.5"><DiamondPointsIcon className="h-3.5 w-3.5" />Kim cương = quỹ dùng để đặt và duyệt buổi</span></div>
 
-      {detailRow && <CourseDetailModal row={detailRow} onClose={() => setDetailSubjectId(null)} onEdit={() => { setDetailSubjectId(null); onEditSubject(detailRow.subject.subjectId) }} onEditEntry={(batchId) => { setDetailSubjectId(null); onEditEntry(detailRow.subject.subjectId, batchId) }} onDelete={async () => { await onDeleteSubject(detailRow.subject.subjectId) }} />}
+      {detailRow && <CourseDetailModal row={detailRow} onClose={() => setDetailSubjectId(null)} onEdit={() => { setDetailSubjectId(null); onEditSubject(detailRow.subject.subjectId) }} onEditEntry={(batchId) => { setDetailSubjectId(null); onEditEntry(detailRow.subject.subjectId, batchId) }} onDeleteEntry={(batchId) => { setDetailSubjectId(null); onDeleteEntry(detailRow.subject.subjectId, batchId) }} onDelete={async () => { await onDeleteSubject(detailRow.subject.subjectId) }} />}
     </section>
   )
 }

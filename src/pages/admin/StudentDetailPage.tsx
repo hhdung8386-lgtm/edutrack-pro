@@ -10,6 +10,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
 import { EditCourseEntryModal } from '@/components/students/EditCourseEntryModal'
+import { DeleteCourseEntryDialog } from '@/components/students/DeleteCourseEntryDialog'
 import { SubjectPackageModal } from '@/components/students/SubjectPackageModal'
 import { StudentCourseOverview } from '@/components/students/StudentCourseOverview'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -108,6 +109,7 @@ export function StudentDetailPage() {
   const [showEdit, setShowEdit] = useState(false)
   const [addSessionsContext, setAddSessionsContext] = useState<{ mode: 'payment' | 'gift'; subjectId?: string } | null>(null)
   const [editCourseEntryContext, setEditCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
+  const [deleteCourseEntryContext, setDeleteCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
   const [reconciling, setReconciling] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
@@ -1581,6 +1583,7 @@ export function StudentDetailPage() {
           }}
           onAddRights={(subjectId) => setAddSessionsContext({ mode: 'payment', subjectId })}
           onEditEntry={(subjectId, batchId) => setEditCourseEntryContext({ subjectId, batchId })}
+          onDeleteEntry={(subjectId, batchId) => setDeleteCourseEntryContext({ subjectId, batchId })}
           onEditSubject={(subjectId) => {
             setEditingSubjectId(subjectId)
             setShowSubjectPkg(true)
@@ -2162,6 +2165,14 @@ export function StudentDetailPage() {
           subjectId={editCourseEntryContext.subjectId}
           batchId={editCourseEntryContext.batchId}
           onClose={() => setEditCourseEntryContext(null)}
+        />
+      )}
+      {deleteCourseEntryContext && (
+        <DeleteCourseEntryDialog
+          student={reconciledStudent}
+          subjectId={deleteCourseEntryContext.subjectId}
+          batchId={deleteCourseEntryContext.batchId}
+          onClose={() => setDeleteCourseEntryContext(null)}
         />
       )}
       {showSubjectPkg && (

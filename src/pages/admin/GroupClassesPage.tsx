@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
-import { BookOpen, ExternalLink, Pencil, Plus, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { BookOpen, ExternalLink, MapPin, Pencil, Plus, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '@/lib/firebase'
 import type { Student } from '@/types'
@@ -10,8 +10,9 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { GroupClassFormModal, GroupClassMembersModal } from '@/components/students/GroupClassFormModal'
 import { toast } from '@/stores/toastStore'
+import { isGroupClassInMode, type GroupClassDeliveryMode } from '@/lib/groupClasses'
 
-export function GroupClassesPage() {
+export function GroupClassesPage({ deliveryMode = 'online' }: { deliveryMode?: GroupClassDeliveryMode }) {
   const navigate = useNavigate()
   const [classes, setClasses] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,6 +26,7 @@ export function GroupClassesPage() {
     return onSnapshot(classesQuery, (snapshot) => {
       const list = snapshot.docs
         .map((item) => ({ id: item.id, ...item.data() } as Student))
+        .filter((item) => isGroupClassInMode(item, deliveryMode))
         .sort((left, right) => {
           const leftSeconds = Number(left.createdAt?.seconds || 0)
           const rightSeconds = Number(right.createdAt?.seconds || 0)
@@ -39,7 +41,11 @@ export function GroupClassesPage() {
       setLoading(false)
       toast.error('Không tải được danh sách lớp nhóm')
     })
-  }, [])
+  }, [deliveryMode])
+
+  const isOffline = deliveryMode === 'offline'
+  const pageTitle = isOffline ? 'Lớp offline' : 'Lớp nhóm'
+  const createLabel = isOffline ? 'Tạo lớp offline' : 'Tạo lớp nhóm'
 
   const filtered = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase('vi')
@@ -47,6 +53,7 @@ export function GroupClassesPage() {
     return classes.filter((groupClass) => [
       groupClass.code,
       groupClass.name,
+      groupClass.offlineLocation || '',
       ...(groupClass.enrolledStudents || []).flatMap((member) => [member.studentCode, member.studentName]),
     ].join(' ').toLocaleLowerCase('vi').includes(keyword))
   }, [classes, search])
@@ -55,25 +62,27 @@ export function GroupClassesPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Lớp nhóm</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{pageTitle}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Tạo mã lớp, enrol nhiều tài khoản học viên và dùng mã lớp để xếp lịch như lớp 1 kèm 1.
+            {isOffline
+              ? 'Quản lý lớp học trực tiếp, địa điểm, học viên enrol, gói môn và quỹ lớp trên cùng một luồng.'
+              : 'Tạo mã lớp, enrol nhiều tài khoản học viên và dùng mã lớp để xếp lịch như lớp 1 kèm 1.'}
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>
           <Plus className="h-4 w-4" />
-          Tạo lớp nhóm
+          {createLabel}
         </Button>
       </div>
 
       <Card className="p-4">
         <label className="relative block max-w-md">
-          <span className="sr-only">Tìm lớp nhóm</span>
+          <span className="sr-only">Tìm {pageTitle.toLocaleLowerCase('vi')}</span>
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Tìm mã lớp, tên lớp hoặc học viên..."
+            placeholder={`Tìm mã lớp, tên lớp${isOffline ? ', địa điểm' : ''} hoặc học viên...`}
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
           />
         </label>
@@ -84,9 +93,9 @@ export function GroupClassesPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<UsersRound className="h-8 w-8" />}
-          title={search ? 'Không tìm thấy lớp nhóm' : 'Chưa có lớp nhóm'}
-          description={search ? 'Thử tìm bằng mã lớp hoặc tên học viên khác.' : 'Tạo mã lớp đầu tiên rồi enrol các tài khoản học viên.'}
-          action={!search ? { label: 'Tạo lớp nhóm', onClick: () => setShowCreate(true) } : undefined}
+          title={search ? `Không tìm thấy ${pageTitle.toLocaleLowerCase('vi')}` : `Chưa có ${pageTitle.toLocaleLowerCase('vi')}`}
+          description={search ? 'Thử tìm bằng mã lớp, tên lớp, địa điểm hoặc học viên khác.' : 'Tạo mã lớp đầu tiên rồi enrol các tài khoản học viên.'}
+          action={!search ? { label: createLabel, onClick: () => setShowCreate(true) } : undefined}
         />
       ) : (
         <>
@@ -111,10 +120,16 @@ export function GroupClassesPage() {
                       </td>
                       <td className="px-4 py-4">
                         <p className="font-bold text-slate-900">{groupClass.name}</p>
-                        {groupClass.classroomURL && (
+                        {!isOffline && groupClass.classroomURL && (
                           <a href={groupClass.classroomURL} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline">
                             Mở phòng học <ExternalLink className="h-3 w-3" />
                           </a>
+                        )}
+                        {isOffline && (
+                          <p className="mt-1 inline-flex max-w-[260px] items-start gap-1 text-xs font-semibold text-amber-700">
+                            <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span className="line-clamp-2">{groupClass.offlineLocation || 'Chưa cập nhật địa điểm'}</span>
+                          </p>
                         )}
                       </td>
                       <td className="px-4 py-4">
@@ -162,6 +177,7 @@ export function GroupClassesPage() {
                     <span className="rounded-lg bg-brand-50 px-2 py-1 font-mono text-xs font-bold text-brand-800">{groupClass.code}</span>
                     <h2 className="mt-2 truncate font-bold text-slate-900">{groupClass.name}</h2>
                     <p className="mt-1 text-xs font-semibold text-slate-500">{groupClass.enrolledStudentIds?.length || 0} học viên - {groupClass.subjects?.length || 0} gói môn</p>
+                    {isOffline && <p className="mt-2 line-clamp-2 text-xs text-amber-700">{groupClass.offlineLocation || 'Chưa cập nhật địa điểm'}</p>}
                   </div>
                   <UsersRound className="h-6 w-6 shrink-0 text-brand-600" />
                 </div>
@@ -176,8 +192,8 @@ export function GroupClassesPage() {
         </>
       )}
 
-      {showCreate && <GroupClassFormModal onClose={() => setShowCreate(false)} />}
-      {editingClass && <GroupClassFormModal groupClass={editingClass} onClose={() => setEditingClass(null)} />}
+      {showCreate && <GroupClassFormModal defaultDeliveryMode={deliveryMode} onClose={() => setShowCreate(false)} />}
+      {editingClass && <GroupClassFormModal groupClass={editingClass} defaultDeliveryMode={deliveryMode} onClose={() => setEditingClass(null)} />}
       {managingMembers && <GroupClassMembersModal groupClass={managingMembers} onClose={() => setManagingMembers(null)} />}
     </div>
   )

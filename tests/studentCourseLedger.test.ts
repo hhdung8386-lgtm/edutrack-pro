@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Student } from '../src/types/index.ts'
-import { editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
+import { deleteCourseEntry, editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
 
 function studentFixture(): Student {
   return {
@@ -174,4 +174,98 @@ test('course entry exposes a stable ordinal for legacy display fallbacks', () =>
   const entry = getCourseEntry(student, 'english', 'batch-2', '01/08/2026')
   assert.equal(entry?.ordinal, 2)
   assert.equal(entry?.batch.content, undefined)
+})
+
+test('deleting a manual entry removes only its quota and preserves ledger invariants', () => {
+  const result = deleteCourseEntry({
+    student: studentFixture(),
+    subjectId: 'english',
+    batchId: 'batch-2',
+    heldPointsForSubject: 100,
+    totalHeldPoints: 100,
+    linkedTopUpTransaction: false,
+  })
+
+  assert.deepEqual(result.subjects[0].batches?.map((batch) => batch.id), ['batch-1'])
+  assert.equal(result.deletedBatch.id, 'batch-2')
+  assert.equal(result.subjects[0].totalMinutes, 500)
+  assert.equal(result.subjects[0].usedMinutes, 200)
+  assert.equal(result.subjects[0].remainingMinutes, 300)
+  assert.equal(result.totals.totalMinutes, 500)
+  assert.equal(result.totals.remainingMinutes, 300)
+  assert.equal(result.subjects[0].totalMinutes, result.subjects[0].usedMinutes + result.subjects[0].remainingMinutes)
+})
+
+test('deleting rejects immutable automatic top-ups and legacy synthetic entries', () => {
+  assert.throws(() => deleteCourseEntry({
+    student: studentFixture(),
+    subjectId: 'english',
+    batchId: 'batch-2',
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: true,
+  }), /giao dịch nạp tự động/)
+
+  const legacy = studentFixture()
+  legacy.subjects = [{ ...legacy.subjects![0], batches: undefined }]
+  assert.throws(() => deleteCourseEntry({
+    student: legacy,
+    subjectId: 'english',
+    batchId: 'legacy',
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  }), /Dữ liệu khóa học cũ/)
+})
+
+test('deleting the only entry is blocked so an empty synthetic course is not created', () => {
+  const student = studentFixture()
+  student.subjects = [{ ...student.subjects![0], batches: [student.subjects![0].batches![0]] }]
+
+  assert.throws(() => deleteCourseEntry({
+    student,
+    subjectId: 'english',
+    batchId: 'batch-1',
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  }), /đợt cộng quyền duy nhất/)
+})
+
+test('deleting cannot consume used quota or active booking holds', () => {
+  const usedStudent = studentFixture()
+  usedStudent.usedMinutes = 400
+  usedStudent.remainingMinutes = 350
+  usedStudent.subjects = [{ ...usedStudent.subjects![0], usedMinutes: 400, remainingMinutes: 350 }]
+  assert.throws(() => deleteCourseEntry({
+    student: usedStudent,
+    subjectId: 'english',
+    batchId: 'batch-1',
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  }), /đã được sử dụng/)
+
+  assert.throws(() => deleteCourseEntry({
+    student: studentFixture(),
+    subjectId: 'english',
+    batchId: 'batch-2',
+    heldPointsForSubject: 400,
+    totalHeldPoints: 400,
+    linkedTopUpTransaction: false,
+  }), /đang giữ/)
+})
+
+test('deleting a safe entry preserves a reserved student status', () => {
+  const student = studentFixture()
+  student.status = 'reserved'
+  const result = deleteCourseEntry({
+    student,
+    subjectId: 'english',
+    batchId: 'batch-2',
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  })
+  assert.equal(result.status, 'reserved')
 })

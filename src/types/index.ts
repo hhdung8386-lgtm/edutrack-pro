@@ -56,6 +56,10 @@ export interface Student {
   /** Chỉ dùng trên hồ sơ lớp nhóm được lưu tương thích trong collection students. */
   enrolledStudentIds?: string[]
   enrolledStudents?: GroupClassMember[]
+  /** Lớp nhóm cũ không có field này luôn được hiểu là lớp online. */
+  classDeliveryMode?: 'online' | 'offline'
+  /** Địa điểm học trực tiếp; chỉ dùng cho lớp offline. */
+  offlineLocation?: string
   parentPhone: string
   email?: string
   subjectId: string

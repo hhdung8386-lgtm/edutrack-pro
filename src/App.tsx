@@ -140,7 +140,8 @@ function App() {
             <Route path="dashboard" element={<Navigate to="/admin/students/fixed" replace />} />
             <Route path="students" element={<StudentsPage key="all" learningScheduleType="all" />} />
             <Route path="students/one-to-one" element={<Navigate to="/admin/students/fixed" replace />} />
-            <Route path="students/group" element={<GroupClassesPage />} />
+            <Route path="students/group" element={<GroupClassesPage deliveryMode="online" />} />
+            <Route path="offline-classes" element={<GroupClassesPage deliveryMode="offline" />} />
             <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
             <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
             <Route path="student-alerts" element={<StudentAlertsPage />} />
