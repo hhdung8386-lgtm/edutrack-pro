@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
@@ -22,6 +22,7 @@ const db = new Firestore()
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const PROCESSING_LEASE_MS = 10 * 60 * 1000
 const resendApiKey = defineSecret('RESEND_API_KEY')
+const studentDeletePassword = defineSecret('STUDENT_DELETE_PASSWORD')
 const TEACHER_RANKING_CACHE_MS = 5 * 60 * 1000
 const teacherRankingCache = new Map<string, { expiresAt: number; rows: TeacherRankingRow[] }>()
 const TEACHER_FIXED_PASSWORD = '1234560'
@@ -398,6 +399,110 @@ async function requireSystemAdmin(uid: string | undefined): Promise<string> {
   }
   return uid
 }
+
+function matchesProtectedPassword(candidate: string, expected: string): boolean {
+  const candidateHash = createHash('sha256').update(candidate, 'utf8').digest()
+  const expectedHash = createHash('sha256').update(expected, 'utf8').digest()
+  return timingSafeEqual(candidateHash, expectedHash)
+}
+
+export const deleteStudentSafely = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+  secrets: [studentDeletePassword],
+}, async (request) => {
+  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  const studentId = typeof request.data?.studentId === 'string' ? request.data.studentId.trim() : ''
+  const expectedCode = typeof request.data?.expectedCode === 'string' ? request.data.expectedCode.trim().toUpperCase() : ''
+  const password = typeof request.data?.password === 'string' ? request.data.password : ''
+
+  if (!studentId || studentId.includes('/') || studentId.length > 160 || !expectedCode || !password) {
+    throw new HttpsError('invalid-argument', 'Thiếu thông tin xác nhận xóa học viên.')
+  }
+
+  const configuredPassword = studentDeletePassword.value()
+  if (!configuredPassword) {
+    throw new HttpsError('failed-precondition', 'Mật khẩu xóa học viên chưa được cấu hình trên máy chủ.')
+  }
+  if (!matchesProtectedPassword(password, configuredPassword)) {
+    logger.warn('Protected student deletion rejected', { actorUid, studentId, expectedCode })
+    throw new HttpsError('permission-denied', 'Mật khẩu xóa học viên không đúng.')
+  }
+
+  const studentRef = db.collection('students').doc(studentId)
+  const bookingQuery = db.collection('bookingRequests')
+    .where('studentId', '==', studentId)
+    .where('status', 'in', ['pending', 'confirmed'])
+  const backupRef = db.collection('studentDeletionBackups').doc()
+  const logRef = db.collection('adminLogs').doc()
+
+  const result = await db.runTransaction(async (transaction) => {
+    const studentSnapshot = await transaction.get(studentRef)
+    if (!studentSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ học viên cần xóa.')
+
+    const studentData = studentSnapshot.data() || {}
+    const currentCode = typeof studentData.code === 'string' ? studentData.code.trim().toUpperCase() : ''
+    if (currentCode !== expectedCode) {
+      throw new HttpsError('failed-precondition', 'Mã học viên đã thay đổi. Hãy tải lại danh sách rồi thử lại.')
+    }
+
+    const bookingSnapshot = await transaction.get(bookingQuery)
+    const activeBookings = bookingSnapshot.docs
+    if (activeBookings.length > 450) {
+      throw new HttpsError('resource-exhausted', 'Học viên có quá nhiều lịch đang giữ chỗ; vui lòng liên hệ kỹ thuật để xử lý an toàn.')
+    }
+
+    transaction.create(backupRef, {
+      originalStudentId: studentId,
+      studentCode: currentCode,
+      studentName: typeof studentData.name === 'string' ? studentData.name : '',
+      studentData,
+      releasedBookingIds: activeBookings.map((snapshot) => snapshot.id),
+      releasedBookingCount: activeBookings.length,
+      deletedAt: FieldValue.serverTimestamp(),
+      deletedBy: actorUid,
+      deletedByEmail: request.auth?.token.email || '',
+      recoveryStatus: 'available',
+      source: 'deleteStudentSafely-v1',
+    })
+
+    activeBookings.forEach((snapshot) => {
+      transaction.update(snapshot.ref, {
+        status: 'released',
+        releasedAt: FieldValue.serverTimestamp(),
+        releasedBy: `admin:${actorUid}`,
+        deletionBackupId: backupRef.id,
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    })
+
+    transaction.create(logRef, {
+      action: 'DELETE_STUDENT_PROTECTED',
+      actorUid,
+      actorEmail: request.auth?.token.email || '',
+      targetType: 'student',
+      targetId: studentId,
+      targetCode: currentCode,
+      targetName: typeof studentData.name === 'string' ? studentData.name : '',
+      backupId: backupRef.id,
+      releasedBookingCount: activeBookings.length,
+      createdAt: FieldValue.serverTimestamp(),
+    })
+    transaction.delete(studentRef)
+
+    return { releasedBookingCount: activeBookings.length }
+  })
+
+  logger.info('Student deleted with protected backup', {
+    actorUid,
+    studentId,
+    expectedCode,
+    backupId: backupRef.id,
+    releasedBookingCount: result.releasedBookingCount,
+  })
+  return { backupId: backupRef.id, ...result }
+})
 
 export const listStaffAccounts = onCall({
   region: 'asia-southeast1',

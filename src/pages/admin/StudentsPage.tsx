@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, query, where, onSnapshot, orderBy, getDocs, deleteDoc, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, getDocs, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -10,15 +10,16 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { StudentFormModal } from '@/components/students/StudentFormModal'
 import { AddSessionsModal } from '@/components/students/AddSessionsModal'
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DeleteStudentDialog } from '@/components/students/DeleteStudentDialog'
 import { toast } from '@/stores/toastStore'
-import { Users, Plus, Search, Eye, UserX, MoreVertical, Trash2, CheckSquare, Copy, Mail } from 'lucide-react'
+import { Users, Plus, Search, Eye, MoreVertical, Trash2, CheckSquare, Copy, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { LOW_SESSION_THRESHOLD, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
+import { getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
 import { parseStoredStudentListLimit, studentListLimitStorageKey } from '@/lib/studentList'
+import { deleteStudentSafely } from '@/lib/studentDeletion'
 import {
   getDefaultBulkClassification,
   getStudentClassification,
@@ -44,6 +45,8 @@ function isRunningLow(s: Student): boolean {
 }
 
 interface Branch { id: string; name: string; status: string }
+
+const STUDENT_CODE_PATTERN = /^HS[A-Z0-9]{6}$/
 
 // Trang có 4 chế độ: 'all' (tất cả học viên), 'fixed', 'flexible', 'offline'.
 // QUY ƯỚC QUAN TRỌNG: học viên CHƯA phân loại (field trống hoặc 'unclassified')
@@ -89,8 +92,9 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   const [showAdd, setShowAdd] = useState(false)
   const [editStudent, setEditStudent] = useState<Student | null>(null)
   const [addSessions, setAddSessions] = useState<Student | null>(null)
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
+  const [deletingStudent, setDeletingStudent] = useState(false)
+  const [exactSearchStudent, setExactSearchStudent] = useState<Student | null>(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
   const [bulkScheduleType, setBulkScheduleType] = useState<StudentClassification>(() => getDefaultBulkClassification(learningScheduleType))
   const [bulkUpdating, setBulkUpdating] = useState(false)
@@ -162,6 +166,32 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   }, [limitVal, learningScheduleType])
 
   useEffect(() => {
+    const normalizedCode = search.trim().toUpperCase()
+    if (!STUDENT_CODE_PATTERN.test(normalizedCode)) return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      getDocs(query(collection(db, 'students'), where('code', '==', normalizedCode)))
+        .then((snapshot) => {
+          if (cancelled) return
+          const match = snapshot.docs[0]
+          setExactSearchStudent(match ? ({ id: match.id, ...match.data() } as Student) : null)
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            console.error('Error finding student by exact code:', error)
+            setExactSearchStudent(null)
+          }
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [search])
+
+  useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))
       .then((snap) => {
         setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() } as Branch)))
@@ -190,7 +220,16 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
       })
   }, [])
 
-  const filtered = students.filter((s) => {
+  const normalizedSearch = search.trim().toUpperCase()
+  const exactCodeSearch = STUDENT_CODE_PATTERN.test(normalizedSearch)
+  const currentExactSearchStudent = exactCodeSearch && exactSearchStudent?.code.toUpperCase() === normalizedSearch
+    ? exactSearchStudent
+    : null
+  const searchableStudents = currentExactSearchStudent && !students.some((student) => student.id === currentExactSearchStudent.id)
+    ? [currentExactSearchStudent, ...students]
+    : students
+
+  const filtered = searchableStudents.filter((s) => {
     // Hồ sơ lớp nhóm dùng chung collection để tương thích Rules hiện tại nhưng
     // tuyệt đối không được lẫn vào danh sách tài khoản học viên 1 kèm 1.
     if (isGroupClass(s)) return false
@@ -206,14 +245,15 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     // tổng số lệch với Dashboard và gây hiểu nhầm là mất dữ liệu.
     // Tab "Hết buổi" gộp luôn học viên SẮP hết buổi (còn <= LOW_SESSION_THRESHOLD)
     // để admin chủ động nhắc phụ huynh nạp thêm trước khi đứt buổi.
-    const matchStatus = statusFilter === 'all'
+    const isExactCodeMatch = exactCodeSearch && s.code.toUpperCase() === normalizedSearch
+    const matchStatus = isExactCodeMatch || statusFilter === 'all'
       ? true
       : statusFilter === 'expired'
         ? (s.status === 'expired' || isRunningLow(s))
         : s.status === statusFilter
-    const matchBranch = branchFilter === 'all' || s.branchId === branchFilter
+    const matchBranch = isExactCodeMatch || branchFilter === 'all' || s.branchId === branchFilter
     // Học viên có thể học nhiều gói môn -> khớp gói chính hoặc bất kỳ gói nào
-    const matchSubject = subjectFilter === 'all'
+    const matchSubject = isExactCodeMatch || subjectFilter === 'all'
       || s.subjectId === subjectFilter
       || (s.subjects || []).some(sub => sub.subjectId === subjectFilter)
     return matchScheduleType && matchSearch && matchStatus && matchBranch && matchSubject
@@ -334,37 +374,25 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     }
   }
 
-  const handleDelete = async () => {
+  const handleDelete = async (password: string) => {
     if (!deleteStudent) return
+    setDeletingStudent(true)
     try {
-      // Release the student's active bookings first so teacher schedules are freed
-      // and no orphaned confirmed bookings are left behind
-      const bookingsSnap = await getDocs(query(
-        collection(db, 'bookingRequests'),
-        where('studentId', '==', deleteStudent.id),
-        where('status', 'in', ['pending', 'confirmed'])
-      ))
-      const bookingDocs = bookingsSnap.docs
-      for (let i = 0; i < bookingDocs.length; i += 450) {
-        const batch = writeBatch(db)
-        bookingDocs.slice(i, i + 450).forEach((bDoc) => {
-          batch.update(bDoc.ref, {
-            status: 'released',
-            releasedAt: serverTimestamp(),
-            releasedBy: 'system:student-deleted',
-          })
-        })
-        await batch.commit()
-      }
-
-      await deleteDoc(doc(db, 'students', deleteStudent.id))
-      if (bookingDocs.length > 0) {
-        toast.success(`Đã xoá học viên và nhả ${bookingDocs.length} ca học đang giữ chỗ`)
-      }
+      const result = await deleteStudentSafely({
+        studentId: deleteStudent.id,
+        expectedCode: deleteStudent.code,
+        password,
+      })
+      toast.success(result.releasedBookingCount > 0
+        ? `Đã sao lưu, xóa học viên và nhả ${result.releasedBookingCount} ca học đang giữ chỗ`
+        : 'Đã sao lưu và xóa học viên')
       setDeleteStudent(null)
     } catch (error) {
       console.error('Error deleting student:', error)
-      toast.error('Lỗi khi xoá học viên')
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : ''
+      toast.error(code.includes('permission-denied') ? 'Mật khẩu xóa học viên không đúng hoặc tài khoản không có quyền' : 'Không thể xóa học viên an toàn')
+    } finally {
+      setDeletingStudent(false)
     }
   }
 
@@ -777,14 +805,11 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
       {editStudent && <StudentFormModal student={editStudent} onClose={() => setEditStudent(null)} />}
       {addSessions && <AddSessionsModal student={addSessions} onClose={() => setAddSessions(null)} />}
       {deleteStudent && (
-        <ConfirmDialog
-          open={true}
+        <DeleteStudentDialog
+          student={deleteStudent}
+          loading={deletingStudent}
           onClose={() => setDeleteStudent(null)}
           onConfirm={handleDelete}
-          title="Xoá học viên"
-          description={`Bạn có chắc chắn muốn xoá học viên "${deleteStudent.name}"? Hành động này không thể hoàn tác. Các buổi học đã phê duyệt sẽ được giữ lại.`}
-          confirmLabel="Xoá"
-          confirmVariant="danger"
         />
       )}
     </div>

@@ -2,16 +2,21 @@ import { Fragment, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
+  BookMarked,
   CalendarDays,
   ChevronRight,
   CirclePlus,
   Clock3,
   Gift,
+  ExternalLink,
+  MessageSquareText,
+  NotebookPen,
   Pencil,
   Plus,
   ReceiptText,
   Trash2,
   Trophy,
+  Target,
 } from 'lucide-react'
 import type { BookingRequest, Lesson, StudentSubject, TopUpBatch } from '@/types'
 import { getBookingPoints } from '@/lib/points'
@@ -125,6 +130,17 @@ function CourseIdentity({ subject, paymentCount }: { subject: StudentSubject; pa
       <div className="min-w-0">
         <p className="truncate text-sm font-extrabold text-slate-950">{subject.subjectName}</p>
         <p className="mt-1 text-[11px] font-medium text-slate-500">{paymentCount} đợt thanh toán</p>
+        {subject.curriculumLink?.trim() && (
+          <a
+            href={subject.curriculumLink.trim()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1.5 inline-flex min-h-7 items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <BookMarked className="h-3.5 w-3.5" />Giáo trình<ExternalLink className="h-3 w-3" />
+          </a>
+        )}
       </div>
     </div>
   )
@@ -196,6 +212,48 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, o
               <p className="mt-1 inline-flex items-center gap-1 text-xs font-bold tabular-nums text-slate-500"><DiamondPointsIcon className="h-3.5 w-3.5" />{number(diamonds)}</p>
             </article>
           ))}
+        </section>
+
+        <section className="grid gap-3 lg:grid-cols-2">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <BookMarked className="h-5 w-5 text-indigo-600" />
+              <h3 className="text-sm font-extrabold text-slate-950">Giáo trình</h3>
+            </div>
+            <div className="space-y-2 text-sm">
+              {row.subject.curriculumLink?.trim() ? (
+                <a href={row.subject.curriculumLink.trim()} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-indigo-50 px-3 font-bold text-indigo-700 hover:bg-indigo-100">
+                  <span>Giáo trình chính</span><ExternalLink className="h-4 w-4 shrink-0" />
+                </a>
+              ) : <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-slate-500">Chưa có link giáo trình chính.</p>}
+              {row.subject.supplementaryCurriculumLink?.trim() ? (
+                <a href={row.subject.supplementaryCurriculumLink.trim()} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-sky-50 px-3 font-bold text-sky-700 hover:bg-sky-100">
+                  <span>Giáo trình bổ trợ</span><ExternalLink className="h-4 w-4 shrink-0" />
+                </a>
+              ) : <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-slate-500">Chưa có link giáo trình bổ trợ.</p>}
+            </div>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <MessageSquareText className="h-5 w-5 text-indigo-600" />
+              <h3 className="text-sm font-extrabold text-slate-950">Yêu cầu và ghi chú</h3>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-500"><MessageSquareText className="h-3.5 w-3.5" />Yêu cầu từ học viên</p>
+                {row.subject.studentRequests?.length ? <ul className="space-y-1.5">{row.subject.studentRequests.map((request) => <li key={request} className="rounded-lg bg-indigo-50 px-3 py-2 text-slate-700">{request}</li>)}</ul> : <p className="text-slate-500">Chưa có yêu cầu.</p>}
+              </div>
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-500"><Target className="h-3.5 w-3.5" />Kỹ năng trọng tâm</p>
+                {row.subject.focusSkills?.length ? <div className="flex flex-wrap gap-1.5">{row.subject.focusSkills.map((skill) => <span key={skill} className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700">{skill}</span>)}</div> : <p className="text-slate-500">Chưa chọn kỹ năng.</p>}
+              </div>
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-500"><NotebookPen className="h-3.5 w-3.5" />Note chung trên timetable</p>
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-700">{row.subject.timetableNote?.trim() || 'Chưa có ghi chú.'}</p>
+              </div>
+            </div>
+          </article>
         </section>
 
         <section>

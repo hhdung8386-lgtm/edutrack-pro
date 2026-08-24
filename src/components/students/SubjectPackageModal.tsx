@@ -20,11 +20,25 @@ const schema = z.object({
   curriculumLink: z.string().optional(),
   supplementaryCurriculumLink: z.string().optional(),
   timetableNote: z.string().optional(),
+  paymentContent: z.string().optional(),
+  paymentDate: z.string().optional(),
+  paymentNote: z.string().optional(),
   studentRequests: z.array(z.string()).default([]),
   focusSkills: z.array(z.string()).default([]),
 })
 
 type FormData = z.infer<typeof schema>
+
+function todayInputDate() {
+  const today = new Date()
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+}
+
+function inputDateToDisplay(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
+  const [year, month, day] = value.split('-')
+  return `${day}/${month}/${year}`
+}
 
 const STUDENT_REQUESTS_OPTIONS = [
   'Nói chậm hơn, to, rõ.',
@@ -92,7 +106,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
   const [subjectMenuOpen, setSubjectMenuOpen] = useState(false)
   const [selectedRequests, setSelectedRequests] = useState<string[]>([])
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
-  const soccerRequests = selectedRequests // Alias for cleanliness
   const isEdit = !!editingSubjectId
 
   // Extract current subjects already set up
@@ -119,6 +132,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           curriculumLink: editingPkg.curriculumLink || '',
           supplementaryCurriculumLink: editingPkg.supplementaryCurriculumLink || '',
           timetableNote: editingPkg.timetableNote || '',
+          paymentContent: '',
+          paymentDate: todayInputDate(),
+          paymentNote: '',
           studentRequests: editingPkg.studentRequests || [],
           focusSkills: editingPkg.focusSkills || [],
         }
@@ -128,19 +144,19 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           curriculumLink: '',
           supplementaryCurriculumLink: '',
           timetableNote: '',
+          paymentContent: 'Thanh toán đợt 1',
+          paymentDate: todayInputDate(),
+          paymentNote: '',
           studentRequests: [],
           focusSkills: [],
         },
   })
 
-  const watchedTotalMinutes = watch('totalMinutes') || 0
-  const watchedMinutesPerSession = 25
   const watchedSubjectId = watch('subjectId')
-  const calculatedSessions = Math.round((watchedTotalMinutes / watchedMinutesPerSession) * 100) / 100
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
   const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== editingSubjectId)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
-  const transferredSessions = Math.round((transferableMinutes / watchedMinutesPerSession) * 100) / 100
+  const transferredSessions = Math.round((transferableMinutes / 25) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
@@ -161,13 +177,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
         console.error(err)
         toast.error('Không thể tải danh sách môn học')
       })
-  }, [isEdit, editingSubjectId, student.id, subjectIdsKey])
+  }, [isEdit, editingSubjectId, student.id, subjectIdsKey, currentSubjects])
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     try {
       const minutesPerSession = 25
-      let updatedSubjects: StudentSubject[] = [...currentSubjects]
+      const updatedSubjects: StudentSubject[] = [...currentSubjects]
       let bookingSubjectTransfer: {
         refs: DocumentReference[]
         subjectId: string
@@ -285,11 +301,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                 minutesPerSession: minutesPerSession,
                 totalMinutes: newTotalMinutes,
                 remainingMinutes: newTotalMinutes,
-                batches: [{
-                   id: '1',
-                   createdAt: dateString,
-                   totalSessions: calculatedTotalSessions
-                 }],
+                batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
                 curriculumLink: data.curriculumLink || '',
                 supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
                 timetableNote: data.timetableNote || '',
@@ -371,7 +383,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           batches: [{
             id: '1',
             createdAt: dateString,
-            totalSessions: calculatedTotalSessions
+            totalSessions: calculatedTotalSessions,
+            kind: 'payment',
+            learningMinutes: data.totalMinutes,
+            diamonds: data.totalMinutes,
+            content: data.paymentContent?.trim() || 'Thanh toán đợt 1',
+            paymentDate: inputDateToDisplay(data.paymentDate) || dateString,
+            note: data.paymentNote?.trim() || '',
           }],
           curriculumLink: data.curriculumLink || '',
           supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
@@ -595,6 +613,27 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
           <p className="-mt-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
             Sửa số phút hoặc kim cương tại từng đợt trong “Chi tiết khóa học” để lịch sử và quỹ còn lại được đồng bộ an toàn.
           </p>
+        )}
+
+        {!isEdit && (
+          <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <p className="text-sm font-bold text-slate-800">Thông tin thanh toán đợt đầu</p>
+            <Input
+              label="Nội dung"
+              placeholder="Thanh toán đợt 1"
+              {...register('paymentContent')}
+            />
+            <Input
+              label="Ngày thanh toán"
+              type="date"
+              {...register('paymentDate')}
+            />
+            <Input
+              label="Ghi chú thanh toán"
+              placeholder="Nhập ghi chú cần lưu (không bắt buộc)"
+              {...register('paymentNote')}
+            />
+          </div>
         )}
 
         <Input
