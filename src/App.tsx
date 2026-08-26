@@ -58,6 +58,7 @@ const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPag
 const TrackingPage = lazy(() => import('@/pages/tracking/TrackingPage').then(m => ({ default: m.TrackingPage })))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })))
 const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
+const CurriculumLevelPage = lazy(() => import('@/pages/CurriculumLevelPage').then(m => ({ default: m.CurriculumLevelPage })))
 const ChuongTrinhCaNhanHoaPage = lazy(() => import('@/pages/ChuongTrinhCaNhanHoaPage').then(m => ({ default: m.ChuongTrinhCaNhanHoaPage })))
 const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default: m.LienHePage })))
 const PublicTeacherProfilePage = lazy(() => import('@/pages/PublicTeacherProfilePage').then(m => ({ default: m.PublicTeacherProfilePage })))
@@ -111,6 +112,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/chuong-trinh-hoc" element={<ChuongTrinhHocPage />} />
+          <Route path="/chuong-trinh-hoc/:curriculumId/level/:level" element={<CurriculumLevelPage />} />
           <Route path="/chuong-trinh-ca-nhan-hoa" element={<ChuongTrinhCaNhanHoaPage />} />
           <Route path="/lien-he" element={<LienHePage />} />
           <Route path="/bai-viet" element={<BaiVietPage />} />

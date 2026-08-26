@@ -131,6 +131,48 @@ export async function uploadTeacherPhoto(teacherId: string, file: File): Promise
   }
 }
 
+const MAX_TEACHER_INTRO_AUDIO_SIZE = 5 * 1024 * 1024
+
+export function validateTeacherIntroductionAudio(file: File): void {
+  const isMp3 = file.type === 'audio/mpeg' || file.name.toLowerCase().endsWith('.mp3')
+  if (!isMp3) throw new Error('UNSUPPORTED_AUDIO')
+  if (file.size <= 0 || file.size >= MAX_TEACHER_INTRO_AUDIO_SIZE) throw new Error('AUDIO_TOO_LARGE')
+}
+
+/**
+ * File giới thiệu dùng đường dẫn cố định để hồ sơ public có thể đọc trực tiếp
+ * mà không phải mở rộng DTO Firestore hoặc thay đổi Security Rules.
+ */
+export async function uploadTeacherIntroductionAudio(teacherId: string, file: File): Promise<string> {
+  validateTeacherIntroductionAudio(file)
+  const fileRef = ref(storage, `teacher-photos/${teacherId}/introduction.mp3`)
+  const uploadResult = await withTimeout(
+    uploadBytes(fileRef, file, { contentType: 'audio/mpeg' }),
+    UPLOAD_TIMEOUT_MS,
+  )
+  return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
+}
+
+export async function getTeacherIntroductionAudioURL(teacherId: string): Promise<string> {
+  if (!teacherId) return ''
+  try {
+    return await withTimeout(
+      getDownloadURL(ref(storage, `teacher-photos/${teacherId}/introduction.mp3`)),
+      30 * 1000,
+    )
+  } catch {
+    return ''
+  }
+}
+
+export function teacherIntroductionAudioErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'UNSUPPORTED_AUDIO') return 'Chỉ hỗ trợ file ghi âm định dạng MP3.'
+  if (message === 'AUDIO_TOO_LARGE') return 'File MP3 phải nhỏ hơn 5 MB.'
+  if (message === 'UPLOAD_TIMEOUT') return 'Mạng chậm, tải file ghi âm quá lâu. Vui lòng thử lại.'
+  return 'Không thể tải file ghi âm. Vui lòng kiểm tra quyền truy cập và thử lại.'
+}
+
 /**
  * Ảnh đại diện học viên được nén trước khi tải để giao diện phụ huynh tải nhanh.
  * Tên tệp ngẫu nhiên giúp mỗi lần tải là một object mới, không ghi đè ảnh cũ.

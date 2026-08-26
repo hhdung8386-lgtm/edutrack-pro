@@ -113,6 +113,41 @@ function LevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudie
   )
 }
 
+function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudience }) {
+  const style = GROUP_STYLES[tone]
+
+  return (
+    <div>
+      <div className="grid grid-cols-9 gap-1.5" aria-label={`Chọn level của ${item.name}`}>
+        {Array.from({ length: 9 }, (_, index) => {
+          const level = index + 1
+          const active = level >= item.startLevel && level <= item.endLevel
+          const available = Boolean(item.studyPlanSlug && level <= (item.studyPlanEndLevel || 0))
+          const className = `flex h-9 items-center justify-center rounded-lg text-xs font-extrabold transition ${
+            active ? `${style.rail} text-white` : 'bg-slate-100 text-slate-400'
+          } ${available ? 'hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300' : ''}`
+
+          return available ? (
+            <Link
+              key={level}
+              to={`/chuong-trinh-hoc/${item.id}/level/${level}`}
+              className={className}
+              aria-label={`Xem lộ trình ${item.name}, Level ${level}`}
+            >
+              {level}
+            </Link>
+          ) : (
+            <span key={level} className={className} aria-disabled="true">{level}</span>
+          )
+        })}
+      </div>
+      <p className="mt-2 text-xs font-semibold text-slate-500">
+        Chọn Level 1–{item.studyPlanEndLevel} để xem đầy đủ nội dung từng buổi học.
+      </p>
+    </div>
+  )
+}
+
 function DesktopMatrix() {
   return (
     <div className="hidden overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_22px_64px_rgba(35,55,80,0.08)] md:block">
@@ -348,7 +383,9 @@ export function ChuongTrinhHocPage() {
                           </div>
                           <p className="mt-4 text-sm font-medium leading-6 text-slate-600">{item.description}</p>
                           <div className="mt-5">
-                            <LevelRail item={item} tone={group.id} />
+                            {item.studyPlanSlug
+                              ? <StudyPlanLevelRail item={item} tone={group.id} />
+                              : <LevelRail item={item} tone={group.id} />}
                           </div>
                         </article>
                       ))}

@@ -14,9 +14,16 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { AlertTriangle, Download, Eye, GraduationCap, Info, MapPin, MonitorUp, RefreshCw, TestTube2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Download, Eye, GraduationCap, Info, MapPin, MonitorUp, Music2, RefreshCw, TestTube2, Upload, X } from 'lucide-react'
 import { formatVietnameseNumberInput } from '@/lib/countryPricing'
-import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
+import {
+  getTeacherIntroductionAudioURL,
+  teacherIntroductionAudioErrorMessage,
+  uploadLessonImage,
+  uploadErrorMessage,
+  uploadTeacherIntroductionAudio,
+  validateTeacherIntroductionAudio,
+} from '@/lib/imageUploader'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
@@ -61,6 +68,11 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
   const [photoPreview, setPhotoPreview] = useState<string>(teacher?.photoURL || '')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [photoDownloading, setPhotoDownloading] = useState(false)
+  const [introAudioFile, setIntroAudioFile] = useState<File | null>(null)
+  const [introAudioURL, setIntroAudioURL] = useState('')
+  const [introAudioPreviewURL, setIntroAudioPreviewURL] = useState('')
+  const introAudioPreviewRef = useRef('')
+  const [introAudioLoading, setIntroAudioLoading] = useState(Boolean(teacher?.id))
 
   // Auth fields for creating new teacher account
   const [newUsername, setNewUsername] = useState('')
@@ -167,6 +179,39 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       country: teacher.country || 'VN',
     } : { level: 1.0, country: 'VN' },
   })
+
+  useEffect(() => {
+    let active = true
+    if (!teacher?.id) {
+      return () => { active = false }
+    }
+
+    getTeacherIntroductionAudioURL(teacher.id).then((url) => {
+      if (active) setIntroAudioURL(url)
+    }).finally(() => {
+      if (active) setIntroAudioLoading(false)
+    })
+
+    return () => { active = false }
+  }, [teacher?.id])
+
+  useEffect(() => () => {
+    if (introAudioPreviewRef.current) URL.revokeObjectURL(introAudioPreviewRef.current)
+  }, [])
+
+  const handleIntroAudioSelect = (file?: File) => {
+    if (!file) return
+    try {
+      validateTeacherIntroductionAudio(file)
+      if (introAudioPreviewRef.current) URL.revokeObjectURL(introAudioPreviewRef.current)
+      const previewURL = URL.createObjectURL(file)
+      introAudioPreviewRef.current = previewURL
+      setIntroAudioPreviewURL(previewURL)
+      setIntroAudioFile(file)
+    } catch (error) {
+      toast.error(teacherIntroductionAudioErrorMessage(error))
+    }
+  }
 
   useEffect(() => {
     getDocs(query(collection(db, 'subjects'), where('status', '==', 'active'))).then((snap) => {
@@ -371,6 +416,14 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       if (isEdit && teacher) {
         let photoURL = teacher.photoURL
         if (photoFile) photoURL = await uploadPhoto(teacher.id, photoFile)
+        if (introAudioFile) {
+          try {
+            await uploadTeacherIntroductionAudio(teacher.id, introAudioFile)
+          } catch (error) {
+            toast.error(teacherIntroductionAudioErrorMessage(error))
+            return
+          }
+        }
         const teacherRef = doc(db, 'teachers', teacher.id)
         const teacherUpdateData = {
           code: newUsername || teacher.code,
@@ -1028,6 +1081,44 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           rows={3}
           {...register('bio')}
         />
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 ring-1 ring-slate-200">
+              <Music2 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-slate-800">Ghi âm giới thiệu của gia sư</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">File MP3 dưới 5 MB. Phụ huynh sẽ nghe được trên hồ sơ công khai sau khi lưu.</p>
+              {teacher ? (
+                <>
+                  <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-indigo-50 px-3 text-xs font-bold text-indigo-700 ring-1 ring-indigo-100 transition hover:bg-indigo-100 focus-within:ring-2 focus-within:ring-indigo-300">
+                    <Upload className="h-4 w-4" />
+                    {introAudioFile ? 'Đổi file MP3' : introAudioURL ? 'Thay file MP3' : 'Chọn file MP3'}
+                    <input
+                      type="file"
+                      accept="audio/mpeg,.mp3"
+                      className="sr-only"
+                      onChange={(event) => handleIntroAudioSelect(event.target.files?.[0])}
+                    />
+                  </label>
+                  {introAudioFile && <p className="mt-2 truncate text-xs font-semibold text-slate-600">Đã chọn: {introAudioFile.name}</p>}
+                  {introAudioLoading ? (
+                    <div className="mt-3 h-11 animate-pulse rounded-xl bg-slate-200" aria-label="Đang tải file giới thiệu" />
+                  ) : introAudioPreviewURL || introAudioURL ? (
+                    <audio className="mt-3 w-full" controls preload="metadata" src={introAudioPreviewURL || introAudioURL}>
+                      Trình duyệt của bạn không hỗ trợ phát audio.
+                    </audio>
+                  ) : (
+                    <p className="mt-2 text-xs font-semibold text-slate-400">Chưa có file ghi âm.</p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-2 text-xs font-semibold text-amber-700">Lưu hồ sơ gia sư trước, sau đó mở lại để tải file MP3.</p>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Interview Profile Fields */}
         <div className="border-t border-slate-200 pt-4 space-y-4">

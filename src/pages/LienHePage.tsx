@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Clock3,
   Globe2,
+  MapPin,
   MessageCircle,
   Phone,
   ShieldCheck,
@@ -14,7 +15,12 @@ import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
 
 const ZALO_URL = 'https://zalo.me/0906966691'
-const PHONE_URL = 'tel:0906966691'
+const CONSULTING_PHONE = { label: '0933.964.683', href: 'tel:0933964683' }
+const ACADEMIC_PHONE = { label: '039.399.8733', href: 'tel:0393998733' }
+const OFFICES = [
+  'Văn phòng Bình Tân: 104A đường 32B, phường Bình Trị Đông B, quận Bình Tân',
+  'Văn phòng Quận 2: 12 đường số 5, phường An Lạc, quận 2',
+]
 
 export function LienHePage() {
   const [form, setForm] = useState({ name: '', phone: '', subject: '', message: '' })
@@ -64,11 +70,11 @@ export function LienHePage() {
                   <ArrowUpRight className="h-4 w-4" />
                 </a>
                 <a
-                  href={PHONE_URL}
+                  href={CONSULTING_PHONE.href}
                   className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black transition hover:-translate-y-0.5 hover:border-[#20B3E5]"
                 >
                   <Phone className="h-4 w-4 text-[#0D8FC7]" />
-                  090.696.6691
+                  {CONSULTING_PHONE.label}
                 </a>
               </div>
             </div>
@@ -95,8 +101,11 @@ export function LienHePage() {
                     <Phone className="h-5 w-5" />
                   </span>
                   <div>
-                    <p className="text-sm font-black">Hotline tư vấn</p>
-                    <a href={PHONE_URL} className="mt-1 block text-lg font-black text-[#FFD344]">090.696.6691</a>
+                    <p className="text-sm font-black">Hotline hỗ trợ</p>
+                    <a href={ACADEMIC_PHONE.href} className="mt-1 block text-lg font-black text-[#FFD344]">{ACADEMIC_PHONE.label}</a>
+                    <p className="text-xs font-semibold text-slate-300">Giáo vụ</p>
+                    <a href={CONSULTING_PHONE.href} className="mt-3 block text-lg font-black text-[#FFD344]">{CONSULTING_PHONE.label}</a>
+                    <p className="text-xs font-semibold text-slate-300">Tư vấn khóa học</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -106,6 +115,17 @@ export function LienHePage() {
                   <div>
                     <p className="text-sm font-black">Thời gian hỗ trợ</p>
                     <p className="mt-1 text-sm font-semibold leading-6 text-slate-300">Thứ 2 đến Chủ nhật<br />08:00 - 21:00</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#FFD344]">
+                    <MapPin className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-black">Địa chỉ trung tâm</p>
+                    <div className="mt-2 space-y-2">
+                      {OFFICES.map((office) => <p key={office} className="text-sm font-semibold leading-6 text-slate-300">{office}</p>)}
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-4">

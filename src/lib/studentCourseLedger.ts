@@ -1,5 +1,10 @@
 import type { Student, StudentSubject, TopUpBatch } from '../types'
 
+/** Ghi thêm lịch sử theo kiểu append; không giới hạn số đợt và không ghi đè dữ liệu cũ. */
+export function appendCourseBatch(existing: TopUpBatch[] | undefined, batch: TopUpBatch): TopUpBatch[] {
+  return [...(existing || []).map((item) => ({ ...item })), { ...batch }]
+}
+
 export interface CourseEntryEditInput {
   learningMinutes: number
   diamonds: number

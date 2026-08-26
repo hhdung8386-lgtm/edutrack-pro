@@ -8,6 +8,9 @@ export type CurriculumItem = {
   startLevel: number
   endLevel: number
   description: string
+  /** Slug của bộ study plan tĩnh nếu giáo trình có trang chi tiết từng level. */
+  studyPlanSlug?: 'basic-english'
+  studyPlanEndLevel?: number
 }
 
 export type CurriculumGroup = {
@@ -146,6 +149,8 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         endLevel: 5,
         description:
           'Dành cho người mới bắt đầu hoặc mất gốc. Xây dựng nền tảng phát âm, từ vựng, ngữ pháp và giao tiếp cơ bản, giúp học viên tự tin sử dụng tiếng Anh trong cuộc sống hằng ngày.',
+        studyPlanSlug: 'basic-english',
+        studyPlanEndLevel: 4,
       },
       {
         id: 'tieng-anh-hang-ngay',

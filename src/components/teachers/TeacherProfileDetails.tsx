@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   BookOpen,
   BriefcaseBusiness,
@@ -7,12 +7,14 @@ import {
   ExternalLink,
   Globe2,
   GraduationCap,
+  Volume2,
 } from 'lucide-react'
 import { Subject, Teacher } from '@/types'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
+import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 
 const STRENGTH_LABELS: Record<string, string> = {
   pronunciation: 'Phát âm chuẩn',
@@ -46,6 +48,7 @@ interface TeacherProfileDetailsProps {
 
 export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes, publicView = false }: TeacherProfileDetailsProps) {
   const [certificateImage, setCertificateImage] = useState<{ src: string; alt: string } | null>(null)
+  const [introAudioURL, setIntroAudioURL] = useState('')
   const nickname = teacher.code || teacher.releasedNickname || 'Chưa cấp nickname'
   const subjectLabels = teacherSubjectLabels(teacher, subjects)
   const approvedMinutes = Math.max(0, Number(totalApprovedMinutes ?? teacher.totalApprovedMinutes) || 0)
@@ -61,6 +64,14 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
     teacher.pedagogicalCert && { label: 'Chứng chỉ sư phạm', value: teacher.pedagogicalCert },
     teacher.otherCerts && { label: 'Chứng chỉ khác', value: teacher.otherCerts },
   ].filter((certificate): certificate is { label: string; value: string } => Boolean(certificate))
+
+  useEffect(() => {
+    let active = true
+    getTeacherIntroductionAudioURL(teacher.id).then((url) => {
+      if (active) setIntroAudioURL(url)
+    })
+    return () => { active = false }
+  }, [teacher.id])
 
   return (
     <div className="space-y-5">
@@ -97,6 +108,17 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
               )}
             </div>
             {teacher.bio && <p className="mt-3 text-sm italic leading-6 text-slate-600">“{teacher.bio}”</p>}
+            {introAudioURL && (
+              <div className={`mt-4 rounded-xl border p-3 ${publicView ? 'border-amber-100 bg-amber-50/70' : 'border-indigo-100 bg-indigo-50/60'}`}>
+                <p className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                  <Volume2 className={`h-4 w-4 ${publicView ? 'text-amber-700' : 'text-indigo-600'}`} />
+                  Nghe gia sư giới thiệu
+                </p>
+                <audio className="mt-2 w-full" controls preload="none" src={introAudioURL}>
+                  Trình duyệt của bạn không hỗ trợ phát audio.
+                </audio>
+              </div>
+            )}
           </div>
         </div>
       </section>

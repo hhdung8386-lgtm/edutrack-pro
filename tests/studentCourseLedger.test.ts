@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Student } from '../src/types/index.ts'
-import { deleteCourseEntry, editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
+import { appendCourseBatch, deleteCourseEntry, editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
 
 function studentFixture(): Student {
   return {
@@ -64,6 +64,31 @@ test('editing metadata preserves every course quota total', () => {
   assert.equal(result.totals.usedMinutes, 200)
   assert.equal(result.totals.remainingMinutes, 550)
   assert.equal(result.updatedBatch.note, 'Đã kiểm tra')
+})
+
+test('adding a fourth payment appends history without a three-installment limit', () => {
+  const existing = [1, 2, 3].map((ordinal) => ({
+    id: `batch-${ordinal}`,
+    createdAt: `0${ordinal}/08/2026`,
+    totalSessions: 10,
+    kind: 'payment' as const,
+    learningMinutes: 250,
+    diamonds: 250,
+    content: `Thanh toán đợt ${ordinal}`,
+  }))
+  const fourth = {
+    id: 'batch-4',
+    createdAt: '04/08/2026',
+    totalSessions: 10,
+    kind: 'payment' as const,
+    learningMinutes: 250,
+    diamonds: 250,
+    content: 'Thanh toán đợt 4',
+  }
+
+  const result = appendCourseBatch(existing, fourth)
+  assert.deepEqual(result.map((batch) => batch.id), ['batch-1', 'batch-2', 'batch-3', 'batch-4'])
+  assert.equal(existing.length, 3)
 })
 
 test('editing diamonds updates subject and student aggregates by the same delta', () => {

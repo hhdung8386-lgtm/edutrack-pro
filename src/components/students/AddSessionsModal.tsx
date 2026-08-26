@@ -12,6 +12,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
+import { appendCourseBatch } from '@/lib/studentCourseLedger'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -127,7 +128,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
           totalMinutes: Number(previous.totalMinutes || 0) + data.diamonds,
           remainingMinutes: Number(previous.remainingMinutes || 0) + data.diamonds,
           pricePerMinute: Number(previous.pricePerMinute || globalSubjectSnap.data().pricePerMinute || 0),
-          batches: [...(previous.batches || []), batch],
+          batches: appendCourseBatch(previous.batches, batch),
         }
 
         const totals = updatedSubjects.reduce((summary, subject) => ({
