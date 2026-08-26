@@ -86,3 +86,14 @@ test('không gộp lịch khác học viên hoặc khác ngày vào email chung'
 
   assert.equal(days.length, 3)
 })
+
+test('không làm mất ca dùng đồng hồ mở rộng 24:xx đến 25:00', () => {
+  const sessions = groupReminderSessions([
+    { ...base, id: 'late-a', requestedStart: '24:30', requestedEnd: '24:55' },
+    { ...base, id: 'late-b', requestedStart: '25:00', requestedEnd: '25:25' },
+  ])
+
+  assert.equal(sessions.length, 1)
+  assert.equal(sessions[0].sessionStart, '24:30')
+  assert.equal(sessions[0].sessionEnd, '25:25')
+})

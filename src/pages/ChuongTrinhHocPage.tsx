@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import {
   ArrowDown,
+  ArrowRight,
   BookOpenCheck,
   GraduationCap,
   Headphones,
@@ -85,6 +86,13 @@ const LEVEL_STAGES = [
     text: 'text-[#08795A]',
   },
 ]
+
+const BASIC_ENGLISH_ENTRY_POINTS = [
+  { level: 1, lessons: 50, focus: 'Xây nền tảng giao tiếp' },
+  { level: 2, lessons: 30, focus: 'Mở rộng mẫu câu thực tế' },
+  { level: 3, lessons: 30, focus: 'Tăng phản xạ hội thoại' },
+  { level: 4, lessons: 40, focus: 'Ứng dụng trong công việc' },
+] as const
 
 function scrollToCurriculum(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -317,6 +325,43 @@ export function ChuongTrinhHocPage() {
               </a>
             </div>
 
+          </div>
+        </section>
+
+        <section id="basic-english-150-bai" className="program-scroll-reveal scroll-mt-20 px-5 pb-6 sm:px-8 lg:px-12">
+          <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-amber-200 bg-[#FFFBEB] shadow-[0_22px_60px_rgba(138,88,0,0.1)]">
+            <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-end lg:p-10">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#A76500]">Lộ trình học từng buổi</p>
+                <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] text-[#10213A] sm:text-4xl">
+                  150 bài học Basic English 1–4
+                </h2>
+                <p className="mt-4 max-w-xl text-sm font-medium leading-6 text-slate-600 sm:text-base sm:leading-7">
+                  Xem mục tiêu và hoạt động chi tiết của từng buổi. Chọn đúng cấp độ để mở toàn bộ lộ trình.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {BASIC_ENGLISH_ENTRY_POINTS.map((entry) => (
+                  <Link
+                    key={entry.level}
+                    to={`/chuong-trinh-hoc/tieng-anh-nen-tang-nguoi-lon/level/${entry.level}`}
+                    className="group flex min-h-24 items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-white px-5 py-4 shadow-[0_10px_24px_rgba(35,55,80,0.06)] transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-[0_14px_30px_rgba(35,55,80,0.1)] focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                    aria-label={`Mở lộ trình Basic English ${entry.level}, ${entry.lessons} bài học`}
+                  >
+                    <span>
+                      <span className="block text-base font-black text-[#10213A]">Basic English {entry.level}</span>
+                      <span className="mt-1 block text-xs font-bold text-slate-500">
+                        {entry.lessons} bài · {entry.focus}
+                      </span>
+                    </span>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFC107] text-[#10213A] transition-transform group-hover:translate-x-0.5">
+                      <ArrowRight className="h-5 w-5" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 

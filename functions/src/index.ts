@@ -15,6 +15,22 @@ import {
   normalizedAccountEmail,
   PROTECTED_ACCOUNT_EMAILS,
 } from './staffAccountManagement'
+import { createOnlineClassroomEmailInvite } from './onlineClassroomFunctions'
+import {
+  ONLINE_CLASSROOM_ACCESS_COLLECTION,
+  onlineClassroomAccessId,
+  onlineClassroomPilotReminderDeliveryId,
+  parseVietnamBookingTime,
+  partitionOnlineClassroomReminderBookings,
+} from './onlineClassroom'
+
+export {
+  getOnlineClassroomAccess,
+  getOnlineClassroomPilotStatus,
+  issueOnlineClassroomInvite,
+  saveOnlineClassroomBoard,
+  setOnlineClassroomPilotAccess,
+} from './onlineClassroomFunctions'
 
 initializeApp()
 
@@ -58,9 +74,11 @@ type Booking = ReminderEmailBooking & ReminderSessionBooking & {
 type Student = ReminderEmailStudent & {
   name?: string
   email?: string
+  onlineClassroomPilotEnabled?: boolean
 }
 
 type ReminderCandidate = {
+  pilot: boolean
   booking: Booking
   bookings: Booking[]
   bookingIds: string[]
@@ -85,17 +103,7 @@ function tomorrowISO(now: Date): string {
 }
 
 function parseVietnamSchedule(dateISO?: string, time?: string): Date | null {
-  if (!dateISO || !time || !/^\d{4}-\d{2}-\d{2}$/.test(dateISO) || !/^\d{1,2}:\d{2}$/.test(time)) return null
-
-  const [year, month, day] = dateISO.split('-').map(Number)
-  const [rawHour, minute] = time.split(':').map(Number)
-  if (!year || !month || !day || !Number.isInteger(rawHour) || !Number.isInteger(minute) || minute < 0 || minute > 59 || rawHour < 0 || rawHour > 24) {
-    return null
-  }
-
-  const normalizedHour = rawHour === 24 ? 0 : rawHour
-  const utcMillis = Date.UTC(year, month - 1, day + (rawHour === 24 ? 1 : 0), normalizedHour - 7, minute)
-  return new Date(utcMillis)
+  return parseVietnamBookingTime(dateISO, time)
 }
 
 function isEmail(value: string | undefined): value is string {
@@ -212,7 +220,22 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Booking))
     .filter((booking) => !booking.lessonId && booking.studentId)
 
-  const dueReminders = groupReminderDays(activeBookings)
+  // The scheduled backend reads the private allowlist directly. Public mirror
+  // fields remain UI hints only and can never decide whether a legacy link is
+  // emailed for a pilot booking.
+  const accessIds = [...new Set(activeBookings.flatMap((booking) => [
+    booking.studentId ? onlineClassroomAccessId('student', booking.studentId) : '',
+    booking.teacherId ? onlineClassroomAccessId('teacher', booking.teacherId) : '',
+  ]).filter(Boolean))]
+  const accessSnapshots = accessIds.length > 0
+    ? await db.getAll(...accessIds.map((id) => db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION).doc(id)))
+    : []
+  const enabledAccessIds = new Set(accessSnapshots
+    .filter((snapshot) => snapshot.data()?.enabled === true)
+    .map((snapshot) => snapshot.id))
+  const partitioned = partitionOnlineClassroomReminderBookings(activeBookings, enabledAccessIds)
+
+  const legacyGroups = groupReminderDays(partitioned.legacy)
     .map((day) => {
       const firstBooking = day.bookings[0]
       const booking: Booking = {
@@ -223,6 +246,7 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
       const previousSessionDeliveryIds = groupReminderSessions(day.bookings).flatMap((session) => REMINDER_SPECS.map((reminder) =>
         sessionReminderDeliveryId(session.bookings[0], session.sessionStart, reminder)))
       return {
+        pilot: false,
         booking,
         bookings: day.bookings,
         bookingIds: day.bookings.map((item) => item.id).sort(),
@@ -232,13 +256,37 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
         scheduledAt: parseVietnamSchedule(booking.requestedDate, day.dayStart),
       }
     })
+
+  const pilotGroups = groupReminderSessions(partitioned.pilot).map((session) => {
+    const firstBooking = session.bookings[0]
+    const booking: Booking = {
+      ...firstBooking,
+      requestedStart: session.sessionStart,
+      requestedEnd: session.sessionEnd,
+    }
+    return {
+      pilot: true,
+      booking,
+      // One adjacent reservation block is one class reminder and one room
+      // entry point. Keep all booking ids for audit/deduplication, but send the
+      // first booking's private link so a 50/75/100-minute block is not spammed.
+      bookings: [booking],
+      bookingIds: session.bookings.map((item) => item.id).sort(),
+      legacyBookings: session.bookings,
+      previousSessionDeliveryIds: [] as string[],
+      sessionEnd: session.sessionEnd,
+      scheduledAt: parseVietnamSchedule(booking.requestedDate, session.sessionStart),
+    }
+  })
+
+  const dueReminders = [...legacyGroups, ...pilotGroups]
     .filter((item): item is typeof item & { scheduledAt: Date } => Boolean(item.scheduledAt))
-    .flatMap(({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt }) => REMINDER_SPECS
+    .flatMap(({ pilot, booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt }) => REMINDER_SPECS
       .filter((reminder) => {
         const diff = scheduledAt.getTime() - now.getTime()
         return diff >= reminder.offsetMs - reminder.earlyWindowMs && diff <= reminder.offsetMs + reminder.lateWindowMs
       })
-      .map((reminder) => ({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder })))
+      .map((reminder) => ({ pilot, booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder })))
 
   const studentRefs = [...new Set(dueReminders.map(({ booking }) => booking.studentId!))]
     .map((studentId) => db.collection('students').doc(studentId))
@@ -246,7 +294,7 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
   const studentsById = new Map(studentSnapshots.map((snapshot) => [snapshot.id, snapshot.data() as Student]))
   let invalidRecipientCount = 0
 
-  const candidates = dueReminders.flatMap(({ booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder }) => {
+  const candidates = dueReminders.flatMap(({ pilot, booking, bookings, bookingIds, legacyBookings, previousSessionDeliveryIds, sessionEnd, scheduledAt, reminder }) => {
     const student = studentsById.get(booking.studentId!)
     const recipient = student?.email?.trim().toLowerCase()
     if (!student || !isEmail(recipient)) {
@@ -257,6 +305,7 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
     return [{
       student,
       candidate: {
+        pilot,
         booking,
         bookings,
         recipient,
@@ -264,10 +313,16 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
         reminder,
         bookingIds,
         sessionEnd,
-        deliveryId: reminderDeliveryId(booking, reminder),
+        deliveryId: pilot
+          ? onlineClassroomPilotReminderDeliveryId(booking, reminder.type)
+          : reminderDeliveryId(booking, reminder),
         legacyDeliveryIds: [
           ...legacyBookings.map((legacyBooking) => legacyReminderDeliveryId(legacyBooking, reminder)),
           ...previousSessionDeliveryIds.filter((deliveryId) => deliveryId.endsWith(`_${reminder.type}`)),
+          ...(pilot ? [
+            sessionReminderDeliveryId(booking, booking.requestedStart || '', reminder),
+            reminderDeliveryId(booking, reminder),
+          ] : []),
         ],
       },
     }]
@@ -278,6 +333,30 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
   }
 
   return candidates
+}
+
+async function attachOnlineClassroomEmailInvites(
+  candidate: ReminderCandidate,
+  _student: Student,
+): Promise<ReminderCandidate> {
+  if (!candidate.pilot) return candidate
+
+  // Tạo token chỉ SAU KHI acquireDelivery đã giữ lease. Nếu làm trong
+  // collectCandidates, mỗi lần worker quét lại một email đã gửi sẽ sinh thêm
+  // token còn hiệu lực dù email bị bỏ qua.
+  const bookings = await Promise.all(candidate.bookings.map(async (booking) => {
+    try {
+      const onlineClassroomURL = await createOnlineClassroomEmailInvite(booking)
+      return { ...booking, onlineClassroomPilot: true, onlineClassroomURL }
+    } catch (error) {
+      logger.error('Failed to issue online classroom email invite', {
+        bookingId: booking.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
+  }))
+  return { ...candidate, bookings }
 }
 
 export const sendClassReminders = onSchedule({
@@ -308,7 +387,8 @@ export const sendClassReminders = onSchedule({
     }
 
     try {
-      const messageId = await sendWithResend(candidate, student, apiKey)
+      const emailCandidate = await attachOnlineClassroomEmailInvites(candidate, student)
+      const messageId = await sendWithResend(emailCandidate, student, apiKey)
       await db.collection('emailReminderDeliveries').doc(candidate.deliveryId).set({
         status: 'sent',
         messageId,

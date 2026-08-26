@@ -64,6 +64,7 @@ const LienHePage = lazy(() => import('@/pages/LienHePage').then(m => ({ default:
 const PublicTeacherProfilePage = lazy(() => import('@/pages/PublicTeacherProfilePage').then(m => ({ default: m.PublicTeacherProfilePage })))
 const PublicTeachersPage = lazy(() => import('@/pages/PublicTeachersPage').then(m => ({ default: m.PublicTeachersPage })))
 const PublicEvaluationPage = lazy(() => import('@/pages/PublicEvaluationPage'))
+const OnlineClassroomPage = lazy(() => import('@/pages/OnlineClassroomPage').then(m => ({ default: m.OnlineClassroomPage })))
 
 const RootRedirect = () => {
   const { user, role, accessScope, loading, initialized } = useAuthStore()
@@ -124,6 +125,7 @@ function App() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/waiting" element={<WaitingApprovalPage />} />
           <Route path="/evaluation/:id" element={<PublicEvaluationPage />} />
+          <Route path="/lop-hoc/:bookingId" element={<OnlineClassroomPage />} />
 
           {/* Parent Routes - public auth via student code + phone */}
           <Route path="/parent" element={<ParentDashboardPage />} />

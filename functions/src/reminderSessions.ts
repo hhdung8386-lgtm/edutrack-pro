@@ -24,8 +24,7 @@ export type ReminderDay<T extends ReminderSessionBooking> = {
 function timeToMinutes(value?: string): number | null {
   if (!value || !/^\d{1,2}:\d{2}$/.test(value)) return null
   const [hour, minute] = value.split(':').map(Number)
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 24 || minute < 0 || minute > 59) return null
-  if (hour === 24 && minute !== 0) return null
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 25 || minute < 0 || minute > 59) return null
   return hour * 60 + minute
 }
 

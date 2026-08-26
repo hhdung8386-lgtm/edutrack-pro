@@ -77,6 +77,38 @@ test('loại bản ghi trùng cùng slot khỏi nội dung nhưng vẫn giữ sl
   assert.doesNotMatch(email.html, /Ca 2/)
 })
 
+test('pilot dùng magic link riêng theo từng ca và không lặp một link chung ở cuối email', () => {
+  const email = buildReminderEmail([
+    {
+      id: 'pilot-a', studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
+      requestedStart: '14:00', requestedEnd: '14:25', teacherName: 'Gia sư A', subjectId: 'english', subjectName: 'Tiếng Anh',
+      onlineClassroomPilot: true,
+      onlineClassroomURL: 'https://www.123english.edu.vn/lop-hoc/pilot-a#token=token-a',
+    },
+    {
+      id: 'pilot-b', studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
+      requestedStart: '15:00', requestedEnd: '15:25', teacherName: 'Gia sư B', subjectId: 'ielts', subjectName: 'IELTS',
+      onlineClassroomPilot: true,
+      onlineClassroomURL: 'https://www.123english.edu.vn/lop-hoc/pilot-b#token=token-b',
+    },
+  ], student, 'trước khoảng 12 giờ')
+
+  assert.match(email.text, /Vào lớp: https:\/\/www\.123english\.edu\.vn\/lop-hoc\/pilot-a#token=token-a/)
+  assert.match(email.text, /Vào lớp: https:\/\/www\.123english\.edu\.vn\/lop-hoc\/pilot-b#token=token-b/)
+  assert.match(email.html, /Vào lớp ca 1/)
+  assert.match(email.html, /Vào lớp ca 2/)
+  assert.doesNotMatch(email.html, />Vào phòng học<\/a>/)
+  assert.equal((email.html.match(/class="email-action"/g) || []).length, 4)
+})
+
+test('pilot thiếu magic link phải fail closed thay vì dùng link legacy', () => {
+  assert.throws(() => buildReminderEmail([{
+    id: 'pilot-missing', studentId: 'student-1', studentCode: 'HSABC123', requestedDate: '2026-08-14',
+    requestedStart: '14:00', requestedEnd: '14:25', teacherName: 'Gia sư A', subjectId: 'english', subjectName: 'Tiếng Anh',
+    onlineClassroomPilot: true,
+  }], student, 'trước khoảng 30 phút'), /missing its private classroom invite/)
+})
+
 test('không tạo email rỗng', () => {
   assert.throws(() => buildReminderEmail([], student, 'trước khoảng 30 phút'), /without bookings/)
 })

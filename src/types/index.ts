@@ -94,6 +94,10 @@ export interface Student {
   profileAvatarId?: string
   /** Ảnh đại diện do học viên tự tải; nếu trống sẽ dùng profileAvatarId. */
   profilePhotoURL?: string
+  /** Hint giao diện của pilot; quyền thật được giữ trong backend-only allowlist. */
+  onlineClassroomPilotEnabled?: boolean
+  onlineClassroomPilotUpdatedAt?: Timestamp
+  onlineClassroomPilotUpdatedBy?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -135,6 +139,10 @@ export interface Teacher {
   attendancePageEnabled?: boolean
   attendancePageUpdatedAt?: Timestamp
   attendancePageUpdatedBy?: string
+  /** Hint giao diện của pilot; quyền thật được giữ trong backend-only allowlist. */
+  onlineClassroomPilotEnabled?: boolean
+  onlineClassroomPilotUpdatedAt?: Timestamp
+  onlineClassroomPilotUpdatedBy?: string
   pointsPer25Minutes?: number
   bookingPriority?: number
   totalApprovedMinutes?: number

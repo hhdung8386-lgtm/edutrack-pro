@@ -24,6 +24,7 @@ import { getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
+import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -1537,6 +1538,17 @@ export function StudentDetailPage() {
           </div>
         </div>
       </Card>
+
+      {!groupClass && (
+        <OnlineClassroomPilotCard
+          targetType="student"
+          targetId={student.id}
+          targetName={student.name}
+          mirroredEnabled={student.onlineClassroomPilotEnabled}
+          bookings={bookingRequests}
+          onUpdated={(enabled) => setStudent((current) => current ? { ...current, onlineClassroomPilotEnabled: enabled } : current)}
+        />
+      )}
 
       {/* Data mismatch warning */}
       {isMismatch && (

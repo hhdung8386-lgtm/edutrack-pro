@@ -17,6 +17,7 @@ import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset,
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { buildTeacherScheduleBookingIndex, teacherScheduleCellKey } from '@/lib/teacherScheduleGrid'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
+import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
 import { useLanguageStore } from '@/stores/languageStore'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
 import {
@@ -165,6 +166,56 @@ type TeacherBookingView = BookingRequest & {
   displayStart: string
   displayEnd: string
   displayDay: DayOfWeek
+}
+
+function pilotClassroomConfigured(booking: BookingRequest, teacher: Teacher, student: Student) {
+  return Boolean(
+    booking.status === 'confirmed'
+    && teacher.onlineClassroomPilotEnabled
+    && student.onlineClassroomPilotEnabled
+    && !booking.lessonId
+    && !booking.groupClassId,
+  )
+}
+
+function classroomLinkForBooking(
+  booking: BookingRequest,
+  teacher: Teacher | null,
+  student: Student | undefined,
+  nowMs: number,
+) {
+  // While either profile is unresolved, fail closed instead of briefly exposing
+  // a legacy room that may belong to an enabled pilot booking.
+  if (!teacher || !student) return ''
+  const pilotEnabled = Boolean(
+    pilotClassroomConfigured(booking, teacher, student),
+  )
+  if (pilotEnabled) {
+    return onlineClassroomJoinWindow(booking, nowMs).isOpen ? classroomRoute(booking.id) : ''
+  }
+  return student.classroomURL || booking.classroomURL || ''
+}
+
+function classroomWindowMessage(
+  windowState: ReturnType<typeof onlineClassroomJoinWindow>,
+  nowMs: number,
+  lang: string,
+) {
+  if (windowState.opensAt === null || windowState.closesAt === null) {
+    return lang === 'vi' ? 'Lịch học chưa đủ ngày giờ hợp lệ để mở phòng.' : 'This class has no valid date and time yet.'
+  }
+  if (nowMs < windowState.opensAt) {
+    const opensAt = new Date(windowState.opensAt).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    return lang === 'vi'
+      ? `Phòng 123English mở từ ${opensAt} theo giờ thiết bị (trước buổi học 12 giờ).`
+      : `The 123English room opens at ${opensAt} in your device timezone (12 hours before class).`
+  }
+  return lang === 'vi' ? 'Cửa sổ vào phòng 123English đã đóng.' : 'The 123English room join window has closed.'
 }
 
 export function BookingSchedulesPage() {
@@ -1180,8 +1231,10 @@ export function BookingSchedulesPage() {
 
               {/* Classroom URL & Curriculum Link display */}
               {(() => {
-                const roomLink = students[selectedBooking.studentId]?.classroomURL || selectedBooking.note
                 const student = students[selectedBooking.studentId]
+                const pilotConfigured = Boolean(teacher && student && pilotClassroomConfigured(selectedBooking, teacher, student))
+                const pilotWindow = pilotConfigured ? onlineClassroomJoinWindow(selectedBooking, attendanceNow) : null
+                const roomLink = classroomLinkForBooking(selectedBooking, teacher, student, attendanceNow)
                 const subjectPkg = student?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
                 const curriculumLink = subjectPkg?.curriculumLink
 
@@ -1199,10 +1252,15 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          {t('sched.open_class')}
+                          {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
+                    )}
+                    {pilotWindow && !pilotWindow.isOpen && (
+                      <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
+                        {classroomWindowMessage(pilotWindow, attendanceNow, lang)}
+                      </p>
                     )}
                     {curriculumLink && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
@@ -1355,8 +1413,10 @@ export function BookingSchedulesPage() {
 
             {/* Links and materials display inside Attendance Modal */}
             {(() => {
-              const roomLink = students[selectedBooking.studentId]?.classroomURL || selectedBooking.note
               const student = students[selectedBooking.studentId]
+              const pilotConfigured = Boolean(teacher && student && pilotClassroomConfigured(selectedBooking, teacher, student))
+              const pilotWindow = pilotConfigured ? onlineClassroomJoinWindow(selectedBooking, attendanceNow) : null
+              const roomLink = classroomLinkForBooking(selectedBooking, teacher, student, attendanceNow)
               const subjectPkg = student?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
               const curriculumLink = subjectPkg?.curriculumLink
 
@@ -1375,10 +1435,15 @@ export function BookingSchedulesPage() {
                         rel="noopener noreferrer"
                         className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
-                        {t('sched.open_class')}
+                        {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
+                  )}
+                  {pilotWindow && !pilotWindow.isOpen && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
+                      {classroomWindowMessage(pilotWindow, attendanceNow, lang)}
+                    </p>
                   )}
                   {curriculumLink && (
                     <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">

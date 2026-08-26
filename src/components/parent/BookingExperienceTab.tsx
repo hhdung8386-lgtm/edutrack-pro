@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   History,
+  Mail,
   Phone,
   RefreshCw,
   Star,
@@ -42,6 +43,7 @@ interface BookingExperienceTabProps {
   teacherMap: Record<string, TeacherSummary>
   cancellationRequests: BookingCancellationRequest[]
   roomLinkOf: (booking: BookingRequest | null) => string
+  isPilotBooking: (booking: BookingRequest | null) => boolean
   onSelectBooking: (booking: BookingRequest) => void
   onOpenTeacherProfile: (teacherId: string) => void
   onCancelBooking: (booking: BookingRequest) => void
@@ -97,6 +99,7 @@ function ScheduleCard({
   teacher,
   subjectPackage,
   roomLink,
+  pilotClassroom,
   cancellationPending,
   rebookRequired,
   canCancel,
@@ -109,6 +112,7 @@ function ScheduleCard({
   teacher?: TeacherSummary
   subjectPackage?: StudentSubject
   roomLink: string
+  pilotClassroom: boolean
   cancellationPending: boolean
   rebookRequired?: boolean
   canCancel: boolean
@@ -182,8 +186,12 @@ function ScheduleCard({
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {confirmed && classroomLink ? (
               <a href={classroomLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-brand-400 to-brand-500 px-3 text-xs font-black text-brand-900 transition hover:brightness-105 active:scale-[0.98]">
-                <Video className="h-4 w-4" />{lang === 'vi' ? 'Vào lớp' : 'Join class'}
+                <Video className="h-4 w-4" />{pilotClassroom ? (lang === 'vi' ? 'Vào lớp riêng tư' : 'Join private class') : (lang === 'vi' ? 'Vào lớp' : 'Join class')}
               </a>
+            ) : confirmed && pilotClassroom ? (
+              <span className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-center text-xs font-bold leading-4 text-sky-800">
+                <Mail className="h-4 w-4 shrink-0" />{lang === 'vi' ? 'Mở link riêng tư trong email nhắc lịch' : 'Open the private link in your reminder email'}
+              </span>
             ) : (
               <span className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 text-center text-xs font-bold text-slate-400">
                 <Video className="h-4 w-4" />{lang === 'vi' ? 'Chưa có link lớp' : 'Class link pending'}
@@ -212,6 +220,7 @@ export function BookingExperienceTab({
   teacherMap,
   cancellationRequests,
   roomLinkOf,
+  isPilotBooking,
   onSelectBooking,
   onOpenTeacherProfile,
   onCancelBooking,
@@ -305,6 +314,7 @@ export function BookingExperienceTab({
       teacher={teacherMap[booking.teacherId]}
       subjectPackage={subjectPackages.find((item) => item.subjectId === booking.subjectId)}
       roomLink={roomLinkOf(booking)}
+      pilotClassroom={isPilotBooking(booking)}
       cancellationPending={pendingCancellationIds.has(booking.id)}
       rebookRequired={rebookRequired}
       canCancel={canManageBooking(booking)}

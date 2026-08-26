@@ -30,6 +30,7 @@ import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
 import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -1412,6 +1413,14 @@ export function TeacherDetailPage() {
           </div>
         </div>
       </Card>
+
+      <OnlineClassroomPilotCard
+        targetType="teacher"
+        targetId={teacher.id}
+        targetName={teacher.name}
+        mirroredEnabled={teacher.onlineClassroomPilotEnabled}
+        onUpdated={(enabled) => setTeacher((current) => current ? { ...current, onlineClassroomPilotEnabled: enabled } : current)}
+      />
 
       {/* Interview Profile Card */}
       {teacher && (teacher.yob || teacher.livingArea || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (

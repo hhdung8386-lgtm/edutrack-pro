@@ -18,6 +18,7 @@
     "test:group-classes": "node --experimental-strip-types --test tests/groupClasses.test.ts",
     "test:admin-navigation": "node --experimental-strip-types --test tests/adminNavigation.test.ts",
     "test:student-list": "node --experimental-strip-types --test tests/studentList.test.ts",
+    "test:online-classroom": "node --experimental-strip-types --test tests/classroomBoard.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

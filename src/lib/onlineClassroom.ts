@@ -1,0 +1,176 @@
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app from '@/lib/firebase'
+import {
+  bookingIntervalEndInMinutes,
+  bookingIntervalStartInMinutes,
+  type BookingIntervalLike,
+} from '@/lib/bookingTime'
+
+export type OnlineClassroomRole = 'admin' | 'teacher' | 'student'
+export type OnlineClassroomTargetType = 'teacher' | 'student'
+
+export type ClassroomBoardSnapshot = {
+  version: number
+  studentCanWrite: boolean
+  operations: unknown[]
+}
+
+export type ClassroomBoardDraft = Omit<ClassroomBoardSnapshot, 'version'>
+
+export type OnlineClassroomAccess = {
+  bookingId: string
+  roomName: string
+  meetingDomain: string
+  publicPilotProvider: boolean
+  role: OnlineClassroomRole
+  displayName: string
+  studentName: string
+  teacherName: string
+  subjectName: string
+  requestedDate: string
+  requestedStart: string
+  requestedEnd: string
+  curriculumLink: string
+  boardSnapshot: ClassroomBoardSnapshot
+}
+
+const functions = getFunctions(app, 'asia-southeast1')
+
+const getPilotStatusCallable = httpsCallable<
+  { targetType: OnlineClassroomTargetType; targetId: string },
+  { enabled: boolean; updatedAt: string | null }
+>(functions, 'getOnlineClassroomPilotStatus')
+
+const setPilotAccessCallable = httpsCallable<
+  { targetType: OnlineClassroomTargetType; targetId: string; enabled: boolean },
+  { success: boolean; enabled: boolean }
+>(functions, 'setOnlineClassroomPilotAccess')
+
+const issueInviteCallable = httpsCallable<
+  { bookingId: string },
+  { joinUrl: string }
+>(functions, 'issueOnlineClassroomInvite')
+
+const getAccessCallable = httpsCallable<
+  { bookingId: string; token?: string },
+  OnlineClassroomAccess
+>(functions, 'getOnlineClassroomAccess')
+
+const saveBoardCallable = httpsCallable<
+  { bookingId: string; token?: string; expectedVersion: number; boardSnapshot: ClassroomBoardDraft },
+  { success: boolean; version: number; unchanged: boolean }
+>(functions, 'saveOnlineClassroomBoard')
+
+export async function getOnlineClassroomPilotStatus(targetType: OnlineClassroomTargetType, targetId: string) {
+  return (await getPilotStatusCallable({ targetType, targetId })).data
+}
+
+export async function setOnlineClassroomPilotAccess(
+  targetType: OnlineClassroomTargetType,
+  targetId: string,
+  enabled: boolean,
+) {
+  return (await setPilotAccessCallable({ targetType, targetId, enabled })).data
+}
+
+export async function issueOnlineClassroomInvite(bookingId: string): Promise<string> {
+  return (await issueInviteCallable({ bookingId })).data.joinUrl
+}
+
+export async function requestOnlineClassroomAccess(bookingId: string, token?: string): Promise<OnlineClassroomAccess> {
+  return (await getAccessCallable({ bookingId, ...(token ? { token } : {}) })).data
+}
+
+export async function saveOnlineClassroomBoard(
+  bookingId: string,
+  expectedVersion: number,
+  boardSnapshot: ClassroomBoardDraft,
+  token?: string,
+) {
+  return (await saveBoardCallable({ bookingId, expectedVersion, boardSnapshot, ...(token ? { token } : {}) })).data
+}
+
+const tokenStorageKey = (bookingId: string) => `123english_classroom_token_${bookingId}`
+
+export function classroomRoute(bookingId: string): string {
+  return `/lop-hoc/${encodeURIComponent(bookingId)}`
+}
+
+const VIETNAM_OFFSET_MINUTES = 7 * 60
+const CLASSROOM_OPEN_BEFORE_MINUTES = 12 * 60
+const CLASSROOM_CLOSE_AFTER_MINUTES = 6 * 60
+
+export type OnlineClassroomJoinWindow = {
+  isOpen: boolean
+  opensAt: number | null
+  closesAt: number | null
+}
+
+/**
+ * Convert the repository's Vietnam wall-clock booking convention (including
+ * 24:xx/25:00) to the same access window enforced by the callable backend.
+ */
+export function onlineClassroomJoinWindow(
+  booking: BookingIntervalLike,
+  nowMs: number,
+): OnlineClassroomJoinWindow {
+  const vietnamWallClockMinutes = bookingIntervalStartInMinutes(booking)
+  const vietnamWallClockEndMinutes = bookingIntervalEndInMinutes(booking)
+  if (!Number.isFinite(vietnamWallClockMinutes) || !Number.isFinite(vietnamWallClockEndMinutes)) {
+    return { isOpen: false, opensAt: null, closesAt: null }
+  }
+
+  const startsAt = (vietnamWallClockMinutes - VIETNAM_OFFSET_MINUTES) * 60_000
+  const opensAt = startsAt - CLASSROOM_OPEN_BEFORE_MINUTES * 60_000
+  const endsAt = (vietnamWallClockEndMinutes - VIETNAM_OFFSET_MINUTES) * 60_000
+  const closesAt = endsAt + CLASSROOM_CLOSE_AFTER_MINUTES * 60_000
+  return { isOpen: nowMs >= opensAt && nowMs <= closesAt, opensAt, closesAt }
+}
+
+export function readClassroomToken(bookingId: string): string {
+  if (typeof window === 'undefined') return ''
+  const fragmentToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token')?.trim()
+  if (fragmentToken) return fragmentToken
+  try {
+    return window.sessionStorage.getItem(tokenStorageKey(bookingId)) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function rememberClassroomToken(bookingId: string, token: string) {
+  if (typeof window === 'undefined' || !token) return
+  try {
+    window.sessionStorage.setItem(tokenStorageKey(bookingId), token)
+  } catch {
+    // Phiên riêng tư có thể chặn sessionStorage; token vẫn sống trong state của trang hiện tại.
+  }
+}
+
+export function forgetClassroomToken(bookingId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(tokenStorageKey(bookingId))
+  } catch {
+    // Không có gì cần làm nếu trình duyệt chặn sessionStorage.
+  }
+}
+
+export function removeClassroomTokenFromAddressBar() {
+  if (typeof window === 'undefined' || !window.location.hash) return
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
+}
+
+export function cachedClassroomJoinLink(bookingId: string): string {
+  if (typeof window === 'undefined') return ''
+  const token = readClassroomToken(bookingId)
+  return token ? `${window.location.origin}${classroomRoute(bookingId)}#token=${encodeURIComponent(token)}` : ''
+}
+
+export function onlineClassroomErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '')
+  return raw
+    .replace(/^FirebaseError:\s*/i, '')
+    .replace(/^functions\/[a-z-]+:\s*/i, '')
+    .trim() || 'Chưa thể mở phòng học. Vui lòng thử lại.'
+}

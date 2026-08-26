@@ -40,6 +40,7 @@ import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
+import { cachedClassroomJoinLink } from '@/lib/onlineClassroom'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -783,6 +784,7 @@ interface TeacherLite {
   bookingPriority?: number
   level?: number
   pointsPer25Minutes?: number
+  onlineClassroomPilotEnabled?: boolean
 }
 
 const RECOMMENDATION_GRADE_WEIGHT: Record<string, number> = {
@@ -1619,6 +1621,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             bookingPriority: t.bookingPriority,
             level: t.level,
             pointsPer25Minutes: getTeacherPointsPer25Minutes(t),
+            onlineClassroomPilotEnabled: t.onlineClassroomPilotEnabled,
           }, availabilitySnap?.exists()
             ? ({ id: availabilitySnap.id, ...availabilitySnap.data() } as TeacherAvailability)
             : null] as const
@@ -1884,6 +1887,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             bookingPriority: teacher.bookingPriority,
             level: teacher.level,
             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
+            onlineClassroomPilotEnabled: teacher.onlineClassroomPilotEnabled,
           }
           availabilityUpdates[teacher.id] = availability
           bookingUpdates[teacher.id] = activeBookings
@@ -2195,7 +2199,22 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const PIE_COLORS = ['#3BB8EB', '#FFD600', '#10B981', '#F59E0B']
 
   const dayFull = lang === 'vi' ? DAY_FULL_VI : DAY_FULL_EN
-  const roomLinkOf = (b: BookingRequest | null) => (b?.classroomURL || student.classroomURL || '')
+  const isPilotBooking = (booking: BookingRequest | null) => Boolean(
+    booking
+    && booking.status === 'confirmed'
+    && !booking.lessonId
+    && !booking.groupClassId
+    && student.onlineClassroomPilotEnabled
+    && teacherMap[booking.teacherId]?.onlineClassroomPilotEnabled,
+  )
+  const roomLinkOf = (booking: BookingRequest | null) => {
+    if (!booking) return ''
+    // Teacher mirrors load asynchronously. Until the referenced profile is
+    // resolved, do not leak a legacy room for what may be a pilot booking.
+    if (!teacherMap[booking.teacherId]) return ''
+    if (isPilotBooking(booking)) return cachedClassroomJoinLink(booking.id)
+    return student.classroomURL || booking.classroomURL || ''
+  }
   const studentGivenName = student.name.trim().split(/\s+/).slice(-1)[0] || student.name
 
   useEffect(() => {
@@ -2216,6 +2235,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     upcomingBookings,
     teacherMap,
     roomLinkOf,
+    isPilotBooking,
     onSelectBooking: (booking: BookingRequest) => {
       setCancelReason('')
       setSelectedParentBooking(booking)
@@ -2592,6 +2612,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
               {(() => {
                 const roomLink = roomLinkOf(selectedParentBooking)
+                const pilotBooking = isPilotBooking(selectedParentBooking)
                 const subjectPkg = student.subjects?.find((s) => s.subjectId === selectedParentBooking.subjectId)
                 const curriculumLink = selectedParentBooking.curriculumLink || subjectPkg?.curriculumLink
                 return (
@@ -2600,9 +2621,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                       <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                            {lang === 'vi' ? 'Phòng học trực tuyến' : 'Online Classroom'}
+                            {pilotBooking ? (lang === 'vi' ? 'Phòng học riêng tư' : 'Private classroom') : (lang === 'vi' ? 'Phòng học trực tuyến' : 'Online Classroom')}
                           </span>
-                          <p className="text-[11px] text-slate-400 truncate mt-0.5">{roomLink}</p>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {pilotBooking
+                              ? (lang === 'vi' ? 'Link riêng tư đã được xác minh trên thiết bị này.' : 'Private link verified on this device.')
+                              : roomLink}
+                          </p>
                         </div>
                         <a
                           href={roomLink}
@@ -2611,8 +2636,17 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                           className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 flex-shrink-0"
                         >
                           <Video className="w-3.5 h-3.5" />
-                          {lang === 'vi' ? 'Vào lớp' : 'Join Class'}
+                          {pilotBooking ? (lang === 'vi' ? 'Vào lớp riêng tư' : 'Join private class') : (lang === 'vi' ? 'Vào lớp' : 'Join Class')}
                         </a>
+                      </div>
+                    )}
+                    {pilotBooking && selectedParentBooking.status === 'confirmed' && !roomLink && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs font-semibold leading-5 text-sky-900">
+                          {lang === 'vi'
+                            ? 'Buổi học này dùng link riêng tư theo từng học viên. Hãy mở link trong email nhắc lịch; hệ thống không hiển thị link công khai tại đây.'
+                            : 'This class uses a student-specific private link. Open it from your reminder email; the link is not shown publicly here.'}
+                        </div>
                       </div>
                     )}
                     {curriculumLink && (
@@ -3019,7 +3053,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
       )}
 
       {/* Classroom link */}
-      {student.classroomURL && (
+      {student.classroomURL && !student.onlineClassroomPilotEnabled && (
         <section className="animate-slide-up [animation-delay:90ms]">
           <div className="bg-sky-50 border border-sky-200/70 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-sky-100">
             <div className="space-y-1">

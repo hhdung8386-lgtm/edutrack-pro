@@ -10,6 +10,10 @@ export type ReminderEmailBooking = {
   requestedStart?: string
   requestedEnd?: string
   classroomURL?: string
+  /** Booking được xác định là pilot và bắt buộc phải có magic link riêng. */
+  onlineClassroomPilot?: boolean
+  /** Magic link riêng của pilot; không được ghi ngược vào booking public. */
+  onlineClassroomURL?: string
   note?: string
 }
 
@@ -32,6 +36,7 @@ type EmailSlot = {
   teacherName: string
   subjectName: string
   classroomURL?: string
+  privateClassroom: boolean
   curriculumURL?: string
 }
 
@@ -131,32 +136,42 @@ function buildSlots(bookings: ReminderEmailBooking[], student: ReminderEmailStud
   // học viên; link lưu ở booking chỉ là fallback tương thích dữ liệu cũ.
   const canonicalClassroomURL = safeHttpUrl(student.classroomURL)
     || sortedBookings.map((booking) => safeHttpUrl(booking.classroomURL) || safeHttpUrl(booking.note)).find(Boolean)
-  return sortedBookings.map((booking) => ({
-    booking,
-    time: slotTime(booking),
-    teacherName: reminderTeacherName(booking) || FALLBACK_VALUE,
-    subjectName: booking.subjectName?.trim() || FALLBACK_VALUE,
-    classroomURL: canonicalClassroomURL,
-    curriculumURL: findCurriculumURL(booking, student),
-  }))
+  return sortedBookings.map((booking) => {
+    const privateClassroomURL = safeHttpUrl(booking.onlineClassroomURL)
+    if (booking.onlineClassroomPilot === true && !privateClassroomURL) {
+      throw new Error(`Pilot booking ${booking.id || 'unknown'} is missing its private classroom invite`)
+    }
+    return {
+      booking,
+      time: slotTime(booking),
+      teacherName: reminderTeacherName(booking) || FALLBACK_VALUE,
+      subjectName: booking.subjectName?.trim() || FALLBACK_VALUE,
+      classroomURL: privateClassroomURL || canonicalClassroomURL,
+      privateClassroom: Boolean(privateClassroomURL),
+      curriculumURL: findCurriculumURL(booking, student),
+    }
+  })
 }
 
-function textSlotDetails(slots: EmailSlot[], showPerSlotCurriculum: boolean): string {
+function textSlotDetails(slots: EmailSlot[], showPerSlotCurriculum: boolean, showPerSlotClassroom: boolean): string {
   return slots.map((slot, index) => {
     const links = [
+      showPerSlotClassroom && slot.classroomURL ? `Vào lớp: ${slot.classroomURL}` : undefined,
       showPerSlotCurriculum && slot.curriculumURL ? `Giáo trình: ${slot.curriculumURL}` : undefined,
     ].filter((value): value is string => Boolean(value))
     return [`Ca ${index + 1}: ${slot.time}`, `Gia sư: ${slot.teacherName}`, `Môn học: ${slot.subjectName}`, ...links].join('\n')
   }).join('\n\n')
 }
 
-function htmlSlotRows(slots: EmailSlot[], showPerSlotCurriculum: boolean): string {
+function htmlSlotRows(slots: EmailSlot[], showPerSlotCurriculum: boolean, showPerSlotClassroom: boolean): string {
   return slots.map((slot, index) => {
-    const links = showPerSlotCurriculum
-      ? [
-        slot.curriculumURL ? `<a href="${escapeHtml(slot.curriculumURL)}" style="color:#8a7600;font-weight:700;text-decoration:underline">Giáo trình ca ${index + 1}</a>` : undefined,
+    const links = [
+        showPerSlotClassroom && slot.classroomURL
+          ? `<a class="email-action" href="${escapeHtml(slot.classroomURL)}" style="color:#087da8;font-weight:700;text-decoration:underline">Vào lớp ca ${index + 1}</a>`
+          : undefined,
+        showPerSlotCurriculum
+          && slot.curriculumURL ? `<a href="${escapeHtml(slot.curriculumURL)}" style="color:#8a7600;font-weight:700;text-decoration:underline">Giáo trình ca ${index + 1}</a>` : undefined,
       ].filter((value): value is string => Boolean(value)).join(' · ')
-      : ''
     return `<tr>
       <td class="email-slot-time" style="padding:12px 14px;border-top:${index === 0 ? '0' : '1px solid #e4edf3'};color:#14213d;font-size:14px;font-weight:700;white-space:nowrap">${escapeHtml(slot.time)}</td>
       <td style="padding:12px 14px;border-top:${index === 0 ? '0' : '1px solid #e4edf3'};color:#26384a;font-size:13px;line-height:1.55"><strong>${escapeHtml(slot.teacherName)}</strong><br>${escapeHtml(slot.subjectName)}${links ? `<br><span style="display:inline-block;margin-top:4px">${links}</span>` : ''}</td>
@@ -187,7 +202,8 @@ export function buildReminderEmail(
     : `${PARENT_PORTAL_URL}?code=${encodeURIComponent(rawStudentCode)}`
   const classroomURLs = uniqueValues(slots.map((slot) => slot.classroomURL))
   const curriculumURLs = uniqueValues(slots.map((slot) => slot.curriculumURL))
-  const primaryClassroomURL = classroomURLs[0]
+  const hasPerSlotClassrooms = slots.some((slot) => slot.privateClassroom) || classroomURLs.length > 1
+  const primaryClassroomURL = hasPerSlotClassrooms ? undefined : classroomURLs[0]
   const primaryCurriculumURL = curriculumURLs[0]
   const hasDifferentCurricula = curriculumURLs.length > 1
   const classroomButton = primaryClassroomURL
@@ -196,8 +212,16 @@ export function buildReminderEmail(
   const curriculumButton = primaryCurriculumURL
     ? `<a class="email-action" href="${escapeHtml(primaryCurriculumURL)}" style="display:inline-block;margin:0 8px 10px 0;padding:13px 20px;border-radius:10px;background:#fff315;color:#14213d;font-size:14px;font-weight:700;text-decoration:none">Xem giáo trình</a>`
     : ''
-  const resourceNote = hasDifferentCurricula
-    ? '<p style="margin:12px 0 0;color:#637689;font-size:12px;line-height:1.6">Học viên có nhiều môn trong ngày. Vui lòng chọn đúng giáo trình được ghi ngay dưới từng khung giờ.</p>'
+  const resourceNotes = [
+    hasPerSlotClassrooms
+      ? 'Mỗi ca pilot có một magic link riêng. Vui lòng mở đúng link ngay dưới khung giờ và không chuyển tiếp cho người khác.'
+      : '',
+    hasDifferentCurricula
+      ? 'Học viên có nhiều môn trong ngày. Vui lòng chọn đúng giáo trình được ghi ngay dưới từng khung giờ.'
+      : '',
+  ].filter(Boolean)
+  const resourceNote = resourceNotes.length > 0
+    ? `<p style="margin:12px 0 0;color:#637689;font-size:12px;line-height:1.6">${resourceNotes.map(escapeHtml).join('<br>')}</p>`
     : ''
 
   const text = `[AUTO REMINDER]
@@ -212,7 +236,7 @@ Ngày học: ${rawDate}
 Thời gian: ${rawTimes || FALLBACK_VALUE}
 
 Chi tiết lịch học:
-${textSlotDetails(slots, hasDifferentCurricula)}
+${textSlotDetails(slots, hasDifferentCurricula, hasPerSlotClassrooms)}
 
 ${primaryClassroomURL ? `Phòng học: ${primaryClassroomURL}\n` : ''}${primaryCurriculumURL ? `Giáo trình: ${primaryCurriculumURL}\n` : ''}Quản lý lịch học: ${manageURL}
 
@@ -273,7 +297,7 @@ Lưu ý: Trường hợp không thể tham gia buổi học, Quý Học viên vu
                 </table>
 
                 <h2 style="margin:24px 0 10px;font-size:16px;color:#14213d">Chi tiết từng ca học</h2>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #dce8ef;border-radius:12px;background:#ffffff">${htmlSlotRows(slots, hasDifferentCurricula)}</table>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #dce8ef;border-radius:12px;background:#ffffff">${htmlSlotRows(slots, hasDifferentCurricula, hasPerSlotClassrooms)}</table>
                 ${resourceNote}
 
                 <p style="margin:24px 0 16px;color:#26384a;font-size:15px;line-height:1.75">Quý Học viên vui lòng xem trước nội dung bài học và hoàn thành các bài tập được giao (nếu có) trước khi tham gia lớp để đảm bảo hiệu quả học tập.</p>
