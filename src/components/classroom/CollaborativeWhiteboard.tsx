@@ -407,6 +407,27 @@ export function CollaborativeWhiteboard({
         : saveStatus === 'dirty'
           ? 'Chưa lưu thay đổi mới'
           : `Đã lưu phiên bản ${snapshot.version}`
+  const textEditorPosition = pendingText
+    ? (() => {
+        const inset = 12
+        const editorWidth = Math.min(256, Math.max(1, canvasSize.width - inset * 2))
+        const editorHeightEstimate = 190
+        const desiredLeft = pendingText.x * canvasSize.width - editorWidth / 2
+        const left = Math.min(
+          Math.max(inset, canvasSize.width - editorWidth - inset),
+          Math.max(inset, desiredLeft),
+        )
+        const pointY = pendingText.y * canvasSize.height
+        const preferredTop = pointY + inset + editorHeightEstimate <= canvasSize.height
+          ? pointY + inset
+          : pointY - editorHeightEstimate - inset
+        const top = Math.min(
+          Math.max(inset, canvasSize.height - editorHeightEstimate - inset),
+          Math.max(inset, preferredTop),
+        )
+        return { left, top }
+      })()
+    : null
 
   return (
     <section
@@ -585,9 +606,9 @@ export function CollaborativeWhiteboard({
             }}
             className="absolute z-10 w-64 rounded-2xl border border-amber-200 bg-white p-3 shadow-2xl"
             style={{
-              left: '50%',
-              top: `${Math.min(74, Math.max(2, pendingText.y * 100))}%`,
-              transform: 'translateX(-50%)',
+              width: 'min(16rem, calc(100% - 1.5rem))',
+              left: `${textEditorPosition?.left ?? 12}px`,
+              top: `${textEditorPosition?.top ?? 12}px`,
             }}
           >
             <label htmlFor="classroom-board-text" className="text-xs font-extrabold text-slate-700">Nội dung cần thêm</label>

@@ -9,6 +9,10 @@ export const ONLINE_CLASSROOM_RECORDING_RETENTION_HOURS = 72
 export const ONLINE_CLASSROOM_RECORDING_RETENTION_MS = ONLINE_CLASSROOM_RECORDING_RETENTION_HOURS * 60 * 60 * 1000
 export const ONLINE_CLASSROOM_RECORDING_MAX_BYTES = 1_342_177_280 // 1.25 GiB
 export const ONLINE_CLASSROOM_RECORDING_TOKEN_BYTES = 32
+// The longest caller is the 9-minute cleanup function. A 12-minute lease
+// guarantees that an invocation killed at its platform timeout cannot overlap
+// a successor while mutating the same Storage object metadata.
+export const ONLINE_CLASSROOM_RECORDING_MEDIA_MUTATION_LEASE_MS = 12 * 60 * 1000
 
 export const ONLINE_CLASSROOM_RECORDING_STATUSES = [
   'preparing',
@@ -21,6 +25,7 @@ export const ONLINE_CLASSROOM_RECORDING_STATUSES = [
 ] as const
 
 export type OnlineClassroomRecordingStatus = typeof ONLINE_CLASSROOM_RECORDING_STATUSES[number]
+export type OnlineClassroomRecordingMediaMutationOperation = 'finalize' | 'share' | 'delete' | 'abandon'
 export type OnlineClassroomRecordingDeleteReason =
   | 'expired'
   | 'download_confirmed'
@@ -28,6 +33,25 @@ export type OnlineClassroomRecordingDeleteReason =
   | 'upload_abandoned'
 
 export type OnlineClassroomRecordingTimeLike = number | Date | { toMillis: () => number }
+
+export type OnlineClassroomRecordingConsentLike = {
+  requestId?: unknown
+  bookingId?: unknown
+  sessionKey?: unknown
+  status?: unknown
+  respondedByStudentId?: unknown
+  acceptedAt?: unknown
+  expiresAt?: unknown
+  termsVersion?: unknown
+}
+
+export type OnlineClassroomRecordingMediaMutationExpected = {
+  id: string
+  fence: number
+  operation: OnlineClassroomRecordingMediaMutationOperation
+}
+
+export type OnlineClassroomRecordingIdentityRole = 'admin' | 'teacher'
 
 const SAFE_RESOURCE_ID = /^[A-Za-z0-9_-]{16,160}$/
 const SAFE_BEARER_TOKEN = /^[A-Za-z0-9_-]{32,256}$/
@@ -52,6 +76,118 @@ function assertFiniteMillis(value: OnlineClassroomRecordingTimeLike, label: stri
   const millis = timeToMillis(value)
   if (!Number.isSafeInteger(millis) || millis < 0) throw new RangeError(`${label} không phải timestamp hợp lệ.`)
   return millis
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Resolves only identity-backed recording access. Student replay remains a
+ * separate recording-scoped bearer-token path so disabling a teacher does not
+ * invalidate the student's 72-hour download link.
+ *
+ * Older recordings did not persist teacherPilotGeneration. They still require
+ * every current teacher invariant below; recordings created after this field
+ * was introduced additionally fail closed after a disable/re-enable rotation.
+ */
+export function resolveOnlineClassroomRecordingIdentityRole(
+  uid: string,
+  user: unknown,
+  teacher: unknown,
+  access: unknown,
+  recording: unknown,
+): OnlineClassroomRecordingIdentityRole | null {
+  if (!uid || !isRecord(user)) return null
+  if (user.role === 'admin') return 'admin'
+  if (user.role !== 'teacher'
+    || !isRecord(teacher)
+    || !isRecord(access)
+    || !isRecord(recording)
+    || typeof recording.teacherId !== 'string'
+    || user.teacherId !== recording.teacherId
+    || teacher.status !== 'active'
+    || teacher.loginAccountUid !== uid
+    || access.enabled !== true
+    || access.credentialHardenedUid !== uid) return null
+
+  if (Object.prototype.hasOwnProperty.call(recording, 'teacherPilotGeneration')) {
+    const recordingGeneration = recording.teacherPilotGeneration
+    const currentGeneration = access.generation
+    if (!Number.isSafeInteger(recordingGeneration)
+      || Number(recordingGeneration) < 0
+      || !Number.isSafeInteger(currentGeneration)
+      || Number(currentGeneration) < 0
+      || recordingGeneration !== currentGeneration) return null
+  }
+
+  return 'teacher'
+}
+
+function optionalTimeToMillis(value: unknown): number | null {
+  try {
+    if (typeof value === 'number') return assertFiniteMillis(value, 'Thời điểm lease')
+    if (value instanceof Date) return assertFiniteMillis(value, 'Thời điểm lease')
+    if (isRecord(value) && typeof value.toMillis === 'function') {
+      return assertFiniteMillis(value as { toMillis: () => number }, 'Thời điểm lease')
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+export function onlineClassroomRecordingMediaMutationFence(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0
+}
+
+/** Malformed mutation state is fail-closed instead of being silently stolen. */
+export function canAcquireOnlineClassroomRecordingMediaMutation(
+  recording: unknown,
+  now: OnlineClassroomRecordingTimeLike = Date.now(),
+): boolean {
+  if (!isRecord(recording) || recording.mediaMutation == null) return true
+  if (!isRecord(recording.mediaMutation)) return false
+  const mutation = recording.mediaMutation
+  const expiresAt = optionalTimeToMillis(mutation.expiresAt)
+  if (!isSafeOnlineClassroomRecordingId(mutation.id)
+    || onlineClassroomRecordingMediaMutationFence(mutation.fence) < 1
+    || !['finalize', 'share', 'delete', 'abandon'].includes(String(mutation.operation))
+    || !['applying', 'cooldown'].includes(String(mutation.phase))
+    || expiresAt === null) return false
+  return expiresAt <= assertFiniteMillis(now, 'Thời điểm hiện tại')
+}
+
+export function onlineClassroomRecordingMediaMutationMatches(
+  recording: unknown,
+  expected: OnlineClassroomRecordingMediaMutationExpected,
+  now: OnlineClassroomRecordingTimeLike = Date.now(),
+): boolean {
+  if (!isRecord(recording)
+    || !isRecord(recording.mediaMutation)
+    || !isSafeOnlineClassroomRecordingId(expected.id)
+    || !Number.isSafeInteger(expected.fence)
+    || expected.fence < 1) return false
+  const mutation = recording.mediaMutation
+  const expiresAt = optionalTimeToMillis(mutation.expiresAt)
+  return mutation.id === expected.id
+    && mutation.fence === expected.fence
+    && mutation.operation === expected.operation
+    && mutation.phase === 'applying'
+    && expiresAt !== null
+    && expiresAt > assertFiniteMillis(now, 'Thời điểm hiện tại')
+}
+
+/**
+ * A committed cooldown keeps concurrent token rotations out of the response
+ * tail, while playback remains safe because both persisted token values agree.
+ */
+export function isOnlineClassroomRecordingMediaMutationSettled(recording: unknown): boolean {
+  if (!isRecord(recording) || !isRecord(recording.mediaMutation)) return false
+  const mutation = recording.mediaMutation
+  return mutation.phase === 'cooldown'
+    && isSafeOnlineClassroomRecordingToken(mutation.desiredStorageDownloadToken)
+    && recording.storageDownloadToken === mutation.desiredStorageDownloadToken
 }
 
 export function isSafeOnlineClassroomRecordingId(value: unknown): value is string {
@@ -110,6 +246,32 @@ export function isOnlineClassroomRecordingExpired(
   // timestamp, playback is denied instead of becoming permanent.
   if (expiresAt == null) return true
   return assertFiniteMillis(now, 'Thời điểm hiện tại') >= assertFiniteMillis(expiresAt, 'Thời điểm hết hạn')
+}
+
+export function canStartOnlineClassroomRecordingWithConsent(
+  consent: OnlineClassroomRecordingConsentLike | null | undefined,
+  expected: { requestId: string; bookingId: string; sessionKey: string; studentId: string },
+  now: OnlineClassroomRecordingTimeLike = Date.now(),
+): boolean {
+  if (!consent
+    || !isSafeOnlineClassroomRecordingId(expected.requestId)
+    || consent.requestId !== expected.requestId
+    || consent.bookingId !== expected.bookingId
+    || consent.sessionKey !== expected.sessionKey
+    || consent.status !== 'accepted'
+    || consent.respondedByStudentId !== expected.studentId
+    || consent.termsVersion !== 'recording-consent-v1') return false
+  try {
+    const acceptedAt = consent.acceptedAt as OnlineClassroomRecordingTimeLike | null | undefined
+    const expiresAt = consent.expiresAt as OnlineClassroomRecordingTimeLike | null | undefined
+    if (acceptedAt == null || expiresAt == null) return false
+    const nowMs = assertFiniteMillis(now, 'Thời điểm hiện tại')
+    const acceptedAtMs = assertFiniteMillis(acceptedAt, 'Thời điểm đồng ý')
+    const expiresAtMs = assertFiniteMillis(expiresAt, 'Thời điểm hết hạn đồng ý')
+    return acceptedAtMs <= nowMs && nowMs < expiresAtMs
+  } catch {
+    return false
+  }
 }
 
 export function onlineClassroomRecordingObjectPath(recordingId: string, uploadNonce: string): string {

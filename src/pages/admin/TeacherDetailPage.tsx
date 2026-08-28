@@ -74,6 +74,7 @@ export function TeacherDetailPage() {
   const [introAudioURL, setIntroAudioURL] = useState('')
   const [introAudioLoading, setIntroAudioLoading] = useState(false)
   const [introAudioPlaying, setIntroAudioPlaying] = useState(false)
+  const [introAudioRevision, setIntroAudioRevision] = useState(0)
   const introAudioRef = useRef<HTMLAudioElement>(null)
   const [lessonsLoaded, setLessonsLoaded] = useState(false)
   const [lessonLoadFailed, setLessonLoadFailed] = useState(false)
@@ -86,28 +87,37 @@ export function TeacherDetailPage() {
   }), [])
 
   useEffect(() => {
-    if (!teacher?.id) {
-      setIntroAudioURL('')
-      setIntroAudioLoading(false)
-      return
-    }
-
     let active = true
-    setIntroAudioLoading(true)
-    setIntroAudioPlaying(false)
-    getTeacherIntroductionAudioURL(teacher.id)
-      .then((url) => {
-        if (active) setIntroAudioURL(url)
-      })
-      .finally(() => {
+    const audio = introAudioRef.current
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      if (!teacher?.id) {
+        setIntroAudioURL('')
+        setIntroAudioLoading(false)
+        return
+      }
+
+      audio?.pause()
+      if (audio) audio.currentTime = 0
+      setIntroAudioURL('')
+      setIntroAudioLoading(true)
+      setIntroAudioPlaying(false)
+      try {
+        const url = await getTeacherIntroductionAudioURL(teacher.id)
+        if (active) {
+          const separator = url.includes('?') ? '&' : '?'
+          setIntroAudioURL(url ? `${url}${separator}v=${introAudioRevision}` : '')
+        }
+      } finally {
         if (active) setIntroAudioLoading(false)
-      })
+      }
+    })
 
     return () => {
       active = false
-      introAudioRef.current?.pause()
+      audio?.pause()
     }
-  }, [teacher?.id])
+  }, [introAudioRevision, teacher?.id])
 
   const handleToggleIntroAudio = async () => {
     const audio = introAudioRef.current
@@ -138,8 +148,8 @@ export function TeacherDetailPage() {
     try {
       const result = await recoverTeacherLoginAccount(teacher.id)
       toast.success(result.reclaimedOrphan
-        ? 'Đã sửa liên kết tài khoản cũ và khôi phục đăng nhập thành công.'
-        : 'Đã khôi phục tài khoản đăng nhập. Gia sư có thể đăng nhập lại ngay bằng mã hiện tại.')
+        ? 'Đã sửa liên kết tài khoản cũ và khôi phục đăng nhập. Pilot đã tự tắt; hãy tạo lại mật khẩu pilot trước khi mở lớp.'
+        : 'Đã khôi phục đăng nhập. Pilot đã tự tắt; hãy tạo lại mật khẩu pilot trước khi mở lớp.')
     } catch (err) {
       console.error('Restore login role failed:', err)
       const message = err instanceof Error ? err.message.replace(/^FirebaseError:\s*/i, '') : ''
@@ -2742,7 +2752,17 @@ export function TeacherDetailPage() {
         />
       )}
 
-      {showEdit && <TeacherFormModal teacher={teacher} onClose={() => setShowEdit(false)} />}
+      {showEdit && (
+        <TeacherFormModal
+          teacher={teacher}
+          onClose={() => {
+            setShowEdit(false)
+            // The modal may overwrite the fixed MP3 object path, so force a
+            // fresh Storage lookup and browser URL after every close.
+            setIntroAudioRevision((current) => current + 1)
+          }}
+        />
+      )}
       {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
     </div>
   )

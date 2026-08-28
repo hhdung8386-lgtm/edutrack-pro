@@ -385,7 +385,7 @@ export function LoginPage() {
               <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder={loginRole === 'teacher' ? 'Mật khẩu cố định' : 'Nhập mật khẩu'}
+                placeholder={loginRole === 'teacher' ? 'Nhập mật khẩu gia sư' : 'Nhập mật khẩu'}
                 autoComplete="current-password"
                 className="w-full pl-11 pr-12 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2196F3] focus:bg-white transition-all text-sm font-medium"
                 {...registerLogin('password')}

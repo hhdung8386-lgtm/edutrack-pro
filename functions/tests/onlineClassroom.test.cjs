@@ -2,6 +2,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
+  ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS,
+  canAcquireOnlineClassroomCredentialMutation,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
   isInsideOnlineClassroomJoinWindow,
@@ -9,6 +11,8 @@ const {
   onlineClassroomAccessGeneration,
   onlineClassroomAccessId,
   onlineClassroomBookingBlockReason,
+  onlineClassroomCredentialMutationMatches,
+  onlineClassroomCredentialRotationFence,
   onlineClassroomJoinWindow,
   onlineClassroomInviteMatches,
   onlineClassroomInvitePredatesGeneration,
@@ -18,6 +22,7 @@ const {
   onlineClassroomTokenHash,
   parseVietnamBookingTime,
   partitionOnlineClassroomReminderBookings,
+  resolveOnlineClassroomTrustedActor,
   sanitizeOnlineClassroomDomain,
   validateOnlineClassroomBoardDraft,
   validateOnlineClassroomBoardOperation,
@@ -90,6 +95,37 @@ test('token chỉ xuất hiện trong fragment của magic link', () => {
   assert.equal(onlineClassroomTokenHash('secret-token').length, 64)
 })
 
+test('quyền gia sư chỉ hợp lệ khi UID khớp liên kết chuẩn trên hồ sơ gia sư', () => {
+  assert.deepEqual(
+    resolveOnlineClassroomTrustedActor('admin-uid', { role: 'admin' }, null),
+    { role: 'admin' },
+  )
+  assert.deepEqual(
+    resolveOnlineClassroomTrustedActor(
+      'teacher-uid',
+      { role: 'teacher', teacherId: 'teacher-a' },
+      { loginAccountUid: 'teacher-uid' },
+    ),
+    { role: 'teacher', teacherId: 'teacher-a' },
+  )
+  assert.equal(
+    resolveOnlineClassroomTrustedActor(
+      'attacker-uid',
+      { role: 'teacher', teacherId: 'teacher-a' },
+      { loginAccountUid: 'teacher-uid' },
+    ),
+    null,
+  )
+  assert.equal(
+    resolveOnlineClassroomTrustedActor(
+      'teacher-uid',
+      { role: 'teacher', teacherId: 'teacher-a' },
+      {},
+    ),
+    null,
+  )
+})
+
 test('token cũ bị vô hiệu khi booking đổi ngày, môn hoặc gia sư', () => {
   const invite = {
     bookingId: 'booking-a',
@@ -115,6 +151,51 @@ test('tắt rồi bật pilot xoay generation nên link cũ không sống lại'
   assert.equal(onlineClassroomInvitePredatesGeneration(oldInvite, 'student', 2), true)
   assert.equal(onlineClassroomInvitePredatesGeneration(oldInvite, 'teacher', 4), false)
   assert.equal(onlineClassroomInvitePredatesGeneration({}, 'student', 1), true)
+})
+
+test('lease/fence mật khẩu chỉ cho một Auth writer và giữ cooldown qua response tail', () => {
+  const now = Date.parse('2026-08-28T08:00:00.000Z')
+  const nonce = 'credential-rotation-nonce-00000001'
+  const active = {
+    credentialRotationState: 'rotating',
+    credentialRotationNonce: nonce,
+    credentialRotationFence: 7,
+    credentialRotationLeaseExpiresAt: { toMillis: () => now + ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS },
+  }
+  assert.equal(canAcquireOnlineClassroomCredentialMutation({}, now), true)
+  assert.equal(canAcquireOnlineClassroomCredentialMutation(active, now), false)
+  assert.equal(canAcquireOnlineClassroomCredentialMutation({
+    ...active,
+    credentialRotationState: 'rotation_cooldown',
+  }, now), false)
+  assert.equal(canAcquireOnlineClassroomCredentialMutation({
+    ...active,
+    credentialRotationLeaseExpiresAt: { toMillis: () => now },
+  }, now), true)
+  assert.equal(canAcquireOnlineClassroomCredentialMutation({
+    credentialRotationState: 'rotating',
+    credentialRotationNonce: nonce,
+  }, now), false)
+  assert.equal(onlineClassroomCredentialMutationMatches(active, {
+    state: 'rotating',
+    nonce,
+    fence: 7,
+  }, now), true)
+  assert.equal(onlineClassroomCredentialMutationMatches(active, {
+    state: 'rotating',
+    nonce,
+    fence: 8,
+  }, now), false)
+  assert.equal(onlineClassroomCredentialMutationMatches({
+    ...active,
+    credentialRotationState: 'rotation_cooldown',
+  }, {
+    state: 'rotating',
+    nonce,
+    fence: 7,
+  }, now), false)
+  assert.equal(onlineClassroomCredentialRotationFence(undefined), 0)
+  assert.equal(onlineClassroomCredentialRotationFence(7), 7)
 })
 
 test('chỉ booking 1 kèm 1 đã xác nhận và chưa điểm danh được mở', () => {

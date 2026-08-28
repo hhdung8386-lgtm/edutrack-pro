@@ -105,10 +105,7 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signInTeacher(teacherCode: string, password: string) {
-  // Validate fixed password
-  if (password !== TEACHER_FIXED_PASSWORD) {
-    throw new Error('Mật khẩu không đúng')
-  }
+  if (password.length < 6) throw new Error('Mật khẩu không đúng')
 
   const exact = teacherCode.trim()
   const capitalized = exact.charAt(0).toUpperCase() + exact.slice(1).toLowerCase()
@@ -183,7 +180,7 @@ export async function signInTeacher(teacherCode: string, password: string) {
   for (const email of candidateEmails) {
     let credential: UserCredential
     try {
-      credential = await signInWithEmailAndPassword(auth, email, TEACHER_FIXED_PASSWORD)
+      credential = await signInWithEmailAndPassword(auth, email, password)
     } catch (error: unknown) {
       const firebaseErr = toFirebaseError(error)
       const code = firebaseErr.code

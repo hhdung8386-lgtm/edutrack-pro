@@ -9,9 +9,18 @@ export const ONLINE_CLASSROOM_JOIN_LATE_MS = 6 * 60 * 60 * 1000
 export const ONLINE_CLASSROOM_BOARD_OPERATION_MAX_BYTES = 48_000
 export const ONLINE_CLASSROOM_BOARD_MAX_BYTES = 500_000
 export const ONLINE_CLASSROOM_BOARD_MAX_OPERATIONS = 1_500
+// Callable timeout is currently 30 seconds. Keeping the credential lease well
+// beyond that timeout prevents an expired owner from resuming while a newer
+// invocation is changing the same Firebase Auth account.
+export const ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS = 2 * 60 * 1000
 
 export type OnlineClassroomTargetType = 'teacher' | 'student'
 export type OnlineClassroomBoardAuthorRole = 'admin' | 'teacher' | 'student'
+export type OnlineClassroomCredentialMutationState = 'rotating' | 'recovering'
+
+export type OnlineClassroomTrustedActor =
+  | { role: 'admin' }
+  | { role: 'teacher'; teacherId: string }
 
 export type OnlineClassroomBoardPoint = {
   x: number
@@ -113,6 +122,67 @@ export function onlineClassroomAccessGeneration(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0
 }
 
+export function onlineClassroomCredentialRotationFence(value: unknown): number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0
+}
+
+function optionalTimeToMillis(value: unknown): number | null {
+  if (Number.isSafeInteger(value) && Number(value) >= 0) return Number(value)
+  if (!value || typeof value !== 'object' || typeof (value as { toMillis?: unknown }).toMillis !== 'function') {
+    return null
+  }
+  try {
+    const millis = (value as { toMillis: () => number }).toMillis()
+    return Number.isSafeInteger(millis) && millis >= 0 ? millis : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A malformed active marker is intentionally not stealable. This preserves a
+ * fail-closed boundary during rolling deploys from the older nonce-only
+ * implementation; a stale malformed marker requires explicit operational
+ * repair instead of guessing that no Auth writer is still alive.
+ */
+export function canAcquireOnlineClassroomCredentialMutation(
+  access: unknown,
+  now: number = Date.now(),
+): boolean {
+  if (!isRecord(access)) return true
+  if (!['rotating', 'recovering', 'rotation_cooldown', 'recovery_cooldown']
+    .includes(String(access.credentialRotationState))) return true
+  if (!isSafeClassroomId(access.credentialRotationNonce)
+    || onlineClassroomCredentialRotationFence(access.credentialRotationFence) < 1) {
+    const legacyUpdatedAt = optionalTimeToMillis(access.updatedAt)
+    return access.credentialRotationState === 'rotating'
+      && legacyUpdatedAt !== null
+      && legacyUpdatedAt + ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS <= now
+  }
+  const expiresAt = optionalTimeToMillis(access.credentialRotationLeaseExpiresAt)
+  return expiresAt !== null && expiresAt <= now
+}
+
+export function onlineClassroomCredentialMutationMatches(
+  access: unknown,
+  expected: {
+    state: OnlineClassroomCredentialMutationState
+    nonce: string
+    fence: number
+  },
+  now: number = Date.now(),
+): boolean {
+  if (!isRecord(access)
+    || !isSafeClassroomId(expected.nonce)
+    || !Number.isSafeInteger(expected.fence)
+    || expected.fence < 1
+    || access.credentialRotationState !== expected.state
+    || access.credentialRotationNonce !== expected.nonce
+    || access.credentialRotationFence !== expected.fence) return false
+  const expiresAt = optionalTimeToMillis(access.credentialRotationLeaseExpiresAt)
+  return expiresAt !== null && expiresAt > now
+}
+
 export function nextOnlineClassroomAccessGeneration(
   currentValue: unknown,
   currentEnabled: boolean,
@@ -143,6 +213,27 @@ export function isSafeClassroomId(value: unknown): value is string {
     && value.length > 0
     && value.length <= 160
     && !value.includes('/')
+}
+
+/**
+ * A teacher link stored only on users/{uid} is not an authorization boundary:
+ * legacy Firestore rules allow a teacher to update that document. The teacher
+ * profile owns the canonical login UID and its rules do not allow teachers to
+ * edit that field, so privileged classroom actions must require both sides to
+ * match. Legacy profiles without a canonical UID fail closed and can be fixed
+ * with the existing Admin "Khôi phục đăng nhập" flow.
+ */
+export function resolveOnlineClassroomTrustedActor(
+  uid: string,
+  user: unknown,
+  teacher: unknown,
+): OnlineClassroomTrustedActor | null {
+  if (!uid || !isRecord(user)) return null
+  if (user.role === 'admin') return { role: 'admin' }
+  if (user.role !== 'teacher' || !isSafeClassroomId(user.teacherId) || !isRecord(teacher)) return null
+  return teacher.loginAccountUid === uid
+    ? { role: 'teacher', teacherId: user.teacherId }
+    : null
 }
 
 export function onlineClassroomSessionKey(
@@ -185,6 +276,8 @@ export function partitionOnlineClassroomReminderBookings<T extends OnlineClassro
 export function onlineClassroomPilotReminderDeliveryId(
   booking: OnlineClassroomReminderBookingLike,
   reminderType: string,
+  studentPilotGeneration?: number,
+  teacherPilotGeneration?: number,
 ): string {
   const businessKey = [
     booking.id,
@@ -193,6 +286,15 @@ export function onlineClassroomPilotReminderDeliveryId(
     booking.requestedDate || '',
     booking.requestedStart || '',
     reminderType,
+    // Keep the legacy value byte-for-byte stable until the reminder worker is
+    // upgraded to pass generations. Once supplied, rotating either pilot
+    // access reissues the email with the new private room link.
+    ...(studentPilotGeneration === undefined && teacherPilotGeneration === undefined
+      ? []
+      : [
+        String(onlineClassroomAccessGeneration(studentPilotGeneration)),
+        String(onlineClassroomAccessGeneration(teacherPilotGeneration)),
+      ]),
   ].join('|')
   const digest = createHash('sha256').update(businessKey, 'utf8').digest('hex').slice(0, 32)
   return `pilot_${digest}_${reminderType}`

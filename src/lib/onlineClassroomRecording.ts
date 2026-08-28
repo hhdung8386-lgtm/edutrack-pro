@@ -30,7 +30,7 @@ export type OnlineClassroomRecordingSummary = OnlineClassroomRecordingMetadata &
 const functions = getFunctions(app, 'asia-southeast1')
 
 const startRecordingCallable = httpsCallable<
-  { bookingId: string; mimeType: string },
+  { bookingId: string; mimeType: string; consentRequestId: string },
   {
     recordingId: string
     uploadSessionUrl: string
@@ -50,6 +50,11 @@ const abandonRecordingCallable = httpsCallable<
   { recordingId: string },
   { success: boolean }
 >(functions, 'abandonOnlineClassroomRecording')
+
+const touchRecordingUploadCallable = httpsCallable<
+  { recordingId: string; uploadedBytes: number },
+  { success: boolean }
+>(functions, 'touchOnlineClassroomRecordingUpload')
 
 const getRecordingCallable = httpsCallable<
   { recordingId: string; token?: string },
@@ -71,8 +76,17 @@ const listRecordingsCallable = httpsCallable<
   { recordings: Record<string, OnlineClassroomRecordingSummary> }
 >(functions, 'getOnlineClassroomRecordingsForBookings')
 
-export async function startOnlineClassroomRecording(bookingId: string, mimeType: string) {
-  return (await startRecordingCallable({ bookingId, mimeType })).data
+const getRecordingForBookingCallable = httpsCallable<
+  { bookingId: string },
+  { recording: OnlineClassroomRecordingSummary | null }
+>(functions, 'getOnlineClassroomRecordingForBooking')
+
+export async function startOnlineClassroomRecording(
+  bookingId: string,
+  mimeType: string,
+  consentRequestId: string,
+) {
+  return (await startRecordingCallable({ bookingId, mimeType, consentRequestId })).data
 }
 
 export async function finalizeOnlineClassroomRecording(recordingId: string) {
@@ -81,6 +95,10 @@ export async function finalizeOnlineClassroomRecording(recordingId: string) {
 
 export async function abandonOnlineClassroomRecording(recordingId: string) {
   return (await abandonRecordingCallable({ recordingId })).data
+}
+
+export async function touchOnlineClassroomRecordingUpload(recordingId: string, uploadedBytes: number) {
+  return (await touchRecordingUploadCallable({ recordingId, uploadedBytes })).data
 }
 
 export async function getOnlineClassroomRecording(recordingId: string, token?: string) {
@@ -97,6 +115,10 @@ export async function confirmOnlineClassroomRecordingDownloaded(recordingId: str
 
 export async function getOnlineClassroomRecordingsForBookings(bookingIds: string[]) {
   return (await listRecordingsCallable({ bookingIds })).data.recordings
+}
+
+export async function getOnlineClassroomRecordingForBooking(bookingId: string) {
+  return (await getRecordingForBookingCallable({ bookingId })).data.recording
 }
 
 const recordingTokenStorageKey = (recordingId: string) => `123english_recording_token_${recordingId}`

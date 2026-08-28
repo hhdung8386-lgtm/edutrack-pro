@@ -56,7 +56,6 @@ const ParentDashboardPage = lazy(() => import('@/pages/parent/ParentDashboardPag
 
 // Lazy loaded Public Pages
 const TrackingPage = lazy(() => import('@/pages/tracking/TrackingPage').then(m => ({ default: m.TrackingPage })))
-const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })))
 const ChuongTrinhHocPage = lazy(() => import('@/pages/ChuongTrinhHocPage').then(m => ({ default: m.ChuongTrinhHocPage })))
 const CurriculumLevelPage = lazy(() => import('@/pages/CurriculumLevelPage').then(m => ({ default: m.CurriculumLevelPage })))
 const ChuongTrinhCaNhanHoaPage = lazy(() => import('@/pages/ChuongTrinhCaNhanHoaPage').then(m => ({ default: m.ChuongTrinhCaNhanHoaPage })))
@@ -123,7 +122,6 @@ function App() {
           <Route path="/giao-vien/:id" element={<PublicTeacherProfilePage />} />
           <Route path="/giao-vien/*" element={<Navigate to="/login" replace />} />
           <Route path="/tracking" element={<TrackingPage />} />
-          <Route path="/setup" element={<SetupPage />} />
           <Route path="/waiting" element={<WaitingApprovalPage />} />
           <Route path="/evaluation/:id" element={<PublicEvaluationPage />} />
           <Route path="/lop-hoc/:bookingId" element={<OnlineClassroomPage />} />

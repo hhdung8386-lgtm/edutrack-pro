@@ -17,6 +17,16 @@ export type ClassroomBoardSnapshot = {
 
 export type ClassroomBoardDraft = Omit<ClassroomBoardSnapshot, 'version'>
 
+export type OnlineClassroomRecordingConsent = {
+  requestId: string
+  status: 'pending' | 'accepted' | 'declined' | 'recording'
+  requestedByRole: 'admin' | 'teacher'
+  requestedAt: string | null
+  acceptedAt: string | null
+  declinedAt: string | null
+  expiresAt: string | null
+}
+
 export type OnlineClassroomAccess = {
   bookingId: string
   roomName: string
@@ -38,14 +48,26 @@ export type OnlineClassroomAccess = {
     startedByRole: 'admin' | 'teacher'
     startedAt: string | null
   } | null
+  recordingConsent: OnlineClassroomRecordingConsent | null
 }
 
 const functions = getFunctions(app, 'asia-southeast1')
 
 const getPilotStatusCallable = httpsCallable<
   { targetType: OnlineClassroomTargetType; targetId: string },
-  { enabled: boolean; updatedAt: string | null }
+  { enabled: boolean; credentialHardened: boolean | null; updatedAt: string | null }
 >(functions, 'getOnlineClassroomPilotStatus')
+
+const rotateTeacherPasswordCallable = httpsCallable<
+  { teacherId: string },
+  {
+    success: true
+    temporaryPassword: string
+    credentialHardened: true
+    enabled: false
+    revokedInviteCount: number
+  }
+>(functions, 'rotateOnlineClassroomTeacherPassword')
 
 const setPilotAccessCallable = httpsCallable<
   { targetType: OnlineClassroomTargetType; targetId: string; enabled: boolean },
@@ -78,6 +100,16 @@ const appendBoardOperationCallable = httpsCallable<
   }
 >(functions, 'appendOnlineClassroomBoardOperation')
 
+const requestRecordingConsentCallable = httpsCallable<
+  { bookingId: string },
+  { recordingConsent: OnlineClassroomRecordingConsent }
+>(functions, 'requestOnlineClassroomRecordingConsent')
+
+const respondRecordingConsentCallable = httpsCallable<
+  { bookingId: string; requestId: string; accepted: boolean; token?: string },
+  { recordingConsent: OnlineClassroomRecordingConsent }
+>(functions, 'respondOnlineClassroomRecordingConsent')
+
 export async function getOnlineClassroomPilotStatus(targetType: OnlineClassroomTargetType, targetId: string) {
   return (await getPilotStatusCallable({ targetType, targetId })).data
 }
@@ -88,6 +120,10 @@ export async function setOnlineClassroomPilotAccess(
   enabled: boolean,
 ) {
   return (await setPilotAccessCallable({ targetType, targetId, enabled })).data
+}
+
+export async function rotateOnlineClassroomTeacherPassword(teacherId: string) {
+  return (await rotateTeacherPasswordCallable({ teacherId })).data
 }
 
 export async function issueOnlineClassroomInvite(bookingId: string): Promise<string> {
@@ -113,6 +149,24 @@ export async function appendOnlineClassroomBoardOperation(
   token?: string,
 ) {
   return (await appendBoardOperationCallable({ bookingId, operation, ...(token ? { token } : {}) })).data
+}
+
+export async function requestOnlineClassroomRecordingConsent(bookingId: string) {
+  return (await requestRecordingConsentCallable({ bookingId })).data.recordingConsent
+}
+
+export async function respondOnlineClassroomRecordingConsent(
+  bookingId: string,
+  requestId: string,
+  accepted: boolean,
+  token?: string,
+) {
+  return (await respondRecordingConsentCallable({
+    bookingId,
+    requestId,
+    accepted,
+    ...(token ? { token } : {}),
+  })).data.recordingConsent
 }
 
 const tokenStorageKey = (bookingId: string) => `123english_classroom_token_${bookingId}`

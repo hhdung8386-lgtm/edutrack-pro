@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
@@ -18,7 +18,12 @@ import {
 import { createOnlineClassroomEmailInvite } from './onlineClassroomFunctions'
 import {
   ONLINE_CLASSROOM_ACCESS_COLLECTION,
+  ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS,
+  canAcquireOnlineClassroomCredentialMutation,
+  onlineClassroomAccessGeneration,
   onlineClassroomAccessId,
+  onlineClassroomCredentialMutationMatches,
+  onlineClassroomCredentialRotationFence,
   onlineClassroomPilotReminderDeliveryId,
   parseVietnamBookingTime,
   partitionOnlineClassroomReminderBookings,
@@ -29,6 +34,7 @@ export {
   getOnlineClassroomAccess,
   getOnlineClassroomPilotStatus,
   issueOnlineClassroomInvite,
+  rotateOnlineClassroomTeacherPassword,
   saveOnlineClassroomBoard,
   setOnlineClassroomPilotAccess,
 } from './onlineClassroomFunctions'
@@ -40,14 +46,20 @@ export {
   createOnlineClassroomRecordingShareLink,
   finalizeOnlineClassroomRecording,
   getOnlineClassroomRecording,
+  getOnlineClassroomRecordingForBooking,
   getOnlineClassroomRecordingsForBookings,
+  requestOnlineClassroomRecordingConsent,
+  respondOnlineClassroomRecordingConsent,
   startOnlineClassroomRecording,
+  touchOnlineClassroomRecordingUpload,
 } from './onlineClassroomRecordingFunctions'
 
 export {
   getOnlineClassroomGiftEvents,
   sendOnlineClassroomGift,
 } from './onlineClassroomGiftFunctions'
+
+export { cleanupOnlineClassroomEphemeralData } from './onlineClassroomEphemeralCleanup'
 
 initializeApp()
 
@@ -105,6 +117,10 @@ type ReminderCandidate = {
   legacyDeliveryIds: string[]
   reminder: ReminderSpec
   sessionEnd: string
+  studentPilotGeneration?: number
+  teacherPilotGeneration?: number
+  generationDeliveryIdEnabled?: boolean
+  pilotAccessChangedAtMs?: number
 }
 
 function vietnamDateISO(now: Date): string {
@@ -165,7 +181,14 @@ async function acquireDelivery(candidate: ReminderCandidate, now: Date): Promise
       .filter((deliveryId) => deliveryId !== candidate.deliveryId)
       .map((deliveryId) => db.collection('emailReminderDeliveries').doc(deliveryId))
     const legacySnapshots = await Promise.all(legacyRefs.map((legacyRef) => transaction.get(legacyRef)))
-    if (legacySnapshots.some((snapshot) => snapshot.data()?.status === 'sent')) return false
+    const legacySentAfterCurrentAccess = legacySnapshots.some((snapshot) => {
+      const legacy = snapshot.data()
+      if (legacy?.status !== 'sent') return false
+      if (!candidate.pilot || !candidate.generationDeliveryIdEnabled) return true
+      const sentAtMs = legacy.sentAt instanceof Timestamp ? legacy.sentAt.toMillis() : 0
+      return sentAtMs >= (candidate.pilotAccessChangedAtMs || 0)
+    })
+    if (legacySentAfterCurrentAccess) return false
 
     const update = {
       reminderType: candidate.reminder.type,
@@ -247,6 +270,14 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
   const accessSnapshots = accessIds.length > 0
     ? await db.getAll(...accessIds.map((id) => db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION).doc(id)))
     : []
+  const accessById = new Map(accessSnapshots.map((snapshot) => [snapshot.id, {
+    enabled: snapshot.data()?.enabled === true,
+    generation: onlineClassroomAccessGeneration(snapshot.data()?.generation),
+    reminderGenerationDeliveryEnabled: snapshot.data()?.reminderGenerationDeliveryEnabled === true,
+    updatedAtMs: snapshot.data()?.updatedAt instanceof Timestamp
+      ? snapshot.data()!.updatedAt.toMillis()
+      : 0,
+  }]))
   const enabledAccessIds = new Set(accessSnapshots
     .filter((snapshot) => snapshot.data()?.enabled === true)
     .map((snapshot) => snapshot.id))
@@ -319,6 +350,17 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
       return []
     }
 
+    const studentPilotAccess = booking.studentId
+      ? accessById.get(onlineClassroomAccessId('student', booking.studentId))
+      : undefined
+    const teacherPilotAccess = booking.teacherId
+      ? accessById.get(onlineClassroomAccessId('teacher', booking.teacherId))
+      : undefined
+    const useGenerationDeliveryId = Boolean(
+      studentPilotAccess?.reminderGenerationDeliveryEnabled
+      || teacherPilotAccess?.reminderGenerationDeliveryEnabled,
+    )
+
     return [{
       student,
       candidate: {
@@ -330,8 +372,22 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
         reminder,
         bookingIds,
         sessionEnd,
+        studentPilotGeneration: studentPilotAccess?.generation,
+        teacherPilotGeneration: teacherPilotAccess?.generation,
+        generationDeliveryIdEnabled: useGenerationDeliveryId,
+        pilotAccessChangedAtMs: Math.max(
+          studentPilotAccess?.updatedAtMs || 0,
+          teacherPilotAccess?.updatedAtMs || 0,
+        ),
         deliveryId: pilot
-          ? onlineClassroomPilotReminderDeliveryId(booking, reminder.type)
+          ? useGenerationDeliveryId
+            ? onlineClassroomPilotReminderDeliveryId(
+              booking,
+              reminder.type,
+              studentPilotAccess?.generation,
+              teacherPilotAccess?.generation,
+            )
+            : onlineClassroomPilotReminderDeliveryId(booking, reminder.type)
           : reminderDeliveryId(booking, reminder),
         legacyDeliveryIds: [
           ...legacyBookings.map((legacyBooking) => legacyReminderDeliveryId(legacyBooking, reminder)),
@@ -363,8 +419,12 @@ async function attachOnlineClassroomEmailInvites(
   // token còn hiệu lực dù email bị bỏ qua.
   const bookings = await Promise.all(candidate.bookings.map(async (booking) => {
     try {
-      const onlineClassroomURL = await createOnlineClassroomEmailInvite(booking)
-      return { ...booking, onlineClassroomPilot: true, onlineClassroomURL }
+      const invite = await createOnlineClassroomEmailInvite(booking)
+      if (invite.studentPilotGeneration !== candidate.studentPilotGeneration
+        || invite.teacherPilotGeneration !== candidate.teacherPilotGeneration) {
+        throw new Error('ONLINE_CLASSROOM_REMINDER_ACCESS_SUPERSEDED')
+      }
+      return { ...booking, onlineClassroomPilot: true, onlineClassroomURL: invite.joinUrl }
     } catch (error) {
       logger.error('Failed to issue online classroom email invite', {
         bookingId: booking.id,
@@ -791,8 +851,8 @@ export const recoverTeacherLogin = onCall({
 
   const actorSnapshot = await db.collection('users').doc(actorUid).get()
   const actorRole = actorSnapshot.data()?.role
-  if (!['admin', 'student_manager', 'teacher_manager'].includes(actorRole)) {
-    throw new HttpsError('permission-denied', 'Tài khoản không có quyền khôi phục đăng nhập gia sư.')
+  if (actorRole !== 'admin') {
+    throw new HttpsError('permission-denied', 'Chỉ Admin hệ thống được khôi phục đăng nhập gia sư.')
   }
 
   const teacherId = typeof request.data?.teacherId === 'string' ? request.data.teacherId.trim() : ''
@@ -838,7 +898,8 @@ export const recoverTeacherLogin = onCall({
     authUser = await authService.createUser({
       email: fallbackEmail,
       password: TEACHER_FIXED_PASSWORD,
-      disabled: false,
+      // The account stays unusable until the canonical Firestore link commits.
+      disabled: true,
     })
     createdAuthUser = true
   }
@@ -866,16 +927,76 @@ export const recoverTeacherLogin = onCall({
     throw new HttpsError('failed-precondition', `${message} Đã dừng khôi phục để bảo vệ dữ liệu.`)
   }
 
-  // Reset and enable the real Auth account first. If the Firestore transaction
-  // is interrupted, the strict UID checks still keep this account locked out
-  // until a later retry completes the canonical link.
-  await authService.updateUser(recoveredUid, {
-    password: TEACHER_FIXED_PASSWORD,
-    disabled: false,
-  })
+  const classroomAccessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION)
+    .doc(onlineClassroomAccessId('teacher', teacherId))
+  const recoveryNonce = randomBytes(16).toString('hex')
+  let recovery: { fence: number; generation: number }
+  try {
+    recovery = await db.runTransaction(async (transaction) => {
+      const [currentTeacherSnapshot, classroomAccessSnapshot] = await Promise.all([
+        transaction.get(teacherRef),
+        transaction.get(classroomAccessRef),
+      ])
+      const currentTeacher = currentTeacherSnapshot.data() || {}
+      if (!currentTeacherSnapshot.exists
+        || currentTeacher.status === 'resigned'
+        || currentTeacher.code !== teacherCode) {
+        throw new HttpsError('aborted', 'Hồ sơ gia sư vừa thay đổi; dữ liệu chưa được cập nhật.')
+      }
+      const access = classroomAccessSnapshot.data() || {}
+      const transactionNow = Date.now()
+      if (!canAcquireOnlineClassroomCredentialMutation(access, transactionNow)) {
+        throw new HttpsError(
+          'aborted',
+          'Mật khẩu gia sư đang được xử lý ở một yêu cầu khác. Vui lòng chờ rồi thử lại.',
+          { reason: 'TEACHER_CREDENTIAL_ROTATION_IN_PROGRESS' },
+        )
+      }
+      const fence = onlineClassroomCredentialRotationFence(access.credentialRotationFence) + 1
+      const generation = onlineClassroomAccessGeneration(access.generation) + 1
+      transaction.set(classroomAccessRef, {
+        targetType: 'teacher',
+        targetId: teacherId,
+        enabled: false,
+        generation,
+        reminderGenerationDeliveryEnabled: true,
+        credentialHardenedUid: FieldValue.delete(),
+        credentialHardenedAt: FieldValue.delete(),
+        credentialHardenedBy: FieldValue.delete(),
+        credentialRotationState: 'recovering',
+        credentialRotationNonce: recoveryNonce,
+        credentialRotationFence: fence,
+        credentialRotationLeaseExpiresAt: Timestamp.fromMillis(
+          transactionNow + ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS,
+        ),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: actorUid,
+        ...(classroomAccessSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+      }, { merge: true })
+      transaction.set(teacherRef, {
+        onlineClassroomPilotEnabled: false,
+        onlineClassroomPilotUpdatedAt: FieldValue.delete(),
+        onlineClassroomPilotUpdatedBy: FieldValue.delete(),
+      }, { merge: true })
+      return { fence, generation }
+    })
+  } catch (error) {
+    if (createdAuthUser) await authService.updateUser(recoveredUid, { disabled: true }).catch(() => undefined)
+    throw error
+  }
 
   const auditRef = db.collection('adminLogs').doc()
+  let authPasswordChanged = false
   try {
+    // Every Auth password writer owns the same per-teacher lease. Therefore a
+    // password returned by a successful rotation cannot be overwritten by a
+    // concurrent account-recovery request.
+    await authService.updateUser(recoveredUid, {
+      password: TEACHER_FIXED_PASSWORD,
+      disabled: false,
+    })
+    authPasswordChanged = true
+    await authService.revokeRefreshTokens(recoveredUid)
     await db.runTransaction(async (transaction) => {
       const currentTeacherSnapshot = await transaction.get(teacherRef)
       const currentRecoveredUserSnapshot = await transaction.get(recoveredUserRef)
@@ -894,12 +1015,20 @@ export const recoverTeacherLogin = onCall({
       const currentPreviousOwnerSnapshot = previousOwnerRef
         ? await transaction.get(previousOwnerRef)
         : null
+      const classroomAccessSnapshot = await transaction.get(classroomAccessRef)
 
       const currentTeacher = currentTeacherSnapshot.data() || {}
       if (!currentTeacherSnapshot.exists
         || currentTeacher.status === 'resigned'
         || currentTeacher.code !== teacherCode) {
         throw new HttpsError('aborted', 'Hồ sơ gia sư vừa thay đổi; dữ liệu chưa được cập nhật.')
+      }
+      if (!onlineClassroomCredentialMutationMatches(classroomAccessSnapshot.data(), {
+        state: 'recovering',
+        nonce: recoveryNonce,
+        fence: recovery.fence,
+      })) {
+        throw new HttpsError('aborted', 'Phiên khôi phục mật khẩu đã hết hạn hoặc bị thay thế.')
       }
       const currentDecision = decideTeacherLoginRecovery(
         currentRecoveredUser,
@@ -935,7 +1064,22 @@ export const recoverTeacherLogin = onCall({
       transaction.set(teacherRef, {
         loginAccountUid: recoveredUid,
         loginAccountUpdatedAt: FieldValue.serverTimestamp(),
+        onlineClassroomPilotEnabled: false,
         updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+      transaction.set(classroomAccessRef, {
+        targetType: 'teacher',
+        targetId: teacherId,
+        enabled: false,
+        generation: recovery.generation,
+        reminderGenerationDeliveryEnabled: true,
+        credentialHardenedUid: FieldValue.delete(),
+        credentialHardenedAt: FieldValue.delete(),
+        credentialHardenedBy: FieldValue.delete(),
+        credentialRotationState: 'recovery_cooldown',
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: actorUid,
+        ...(classroomAccessSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       }, { merge: true })
       transaction.set(auditRef, {
         adminId: actorUid,
@@ -948,12 +1092,36 @@ export const recoverTeacherLogin = onCall({
           previousCanonicalUid: canonicalUid,
           previousRecoveredTeacherId: currentPreviousTeacherId,
           reclaimedOrphan: currentDecision.reclaimsOrphan,
+          onlineClassroomPilotDisabled: true,
         },
         createdAt: FieldValue.serverTimestamp(),
       })
     })
   } catch (error) {
-    if (createdAuthUser) await authService.updateUser(recoveredUid, { disabled: true })
+    if (createdAuthUser) await authService.updateUser(recoveredUid, { disabled: true }).catch(() => undefined)
+    await db.runTransaction(async (transaction) => {
+      const accessSnapshot = await transaction.get(classroomAccessRef)
+      const access = accessSnapshot.data() || {}
+      if (access.credentialRotationNonce !== recoveryNonce
+        || access.credentialRotationFence !== recovery.fence
+        || access.credentialRotationState !== 'recovering') return
+      transaction.set(classroomAccessRef, {
+        credentialRotationState: 'recovery_required',
+        credentialRotationNonce: FieldValue.delete(),
+        credentialRotationLeaseExpiresAt: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: actorUid,
+      }, { merge: true })
+    }).catch((cleanupError) => {
+      logger.error('Unable to release failed teacher login recovery lease', {
+        teacherId,
+        recoveredUid,
+        recoveryNonce,
+        recoveryFence: recovery.fence,
+        authPasswordChanged,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      })
+    })
     throw error
   }
 
@@ -968,6 +1136,7 @@ export const recoverTeacherLogin = onCall({
     success: true,
     uid: recoveredUid,
     reclaimedOrphan: initialDecision.reclaimsOrphan,
+    onlineClassroomPilotDisabled: true,
   }
 })
 

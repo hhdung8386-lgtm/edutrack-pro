@@ -155,12 +155,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .classroom-gift-stage,
+  .classroom-gift-stage * {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+
   .classroom-gift-stage {
-    animation: classroom-gift-stage-rise 2.4s ease-out both;
+    opacity: 1;
+    transform: none;
   }
 
   .classroom-gift-icon {
-    animation: none;
+    transform: none;
   }
 
   .classroom-gift-halo,

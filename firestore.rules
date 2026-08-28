@@ -7,11 +7,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSystemAdmin() {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isTeacherManager() {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher_manager';
+    }
+
+    function isStudentManager() {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student_manager';
+    }
+
+    // Kept for existing business flows where both scoped managers are intentionally
+    // treated as back-office operators. Security-sensitive account lifecycle rules
+    // below use isSystemAdmin()/isTeacherManager() explicitly instead.
     function isAdmin() {
       return isAuthenticated() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student_manager' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher_manager'
+        isSystemAdmin() ||
+        isStudentManager() ||
+        isTeacherManager()
       );
     }
 
@@ -23,11 +41,166 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId;
     }
 
+    // Enforce the canonical Auth UID whenever a teacher profile has been migrated.
+    // Legacy active profiles without loginAccountUid retain their old behavior until
+    // Admin runs the account recovery flow, avoiding an unannounced production lockout.
+    function isTeacherFor(teacherId) {
+      let teacher = get(/databases/$(database)/documents/teachers/$(teacherId));
+      let canonicalUid = teacher.data.get('loginAccountUid', '');
+      return isTeacher()
+        && getTeacherId() == teacherId
+        && teacher.data.get('status', 'active') != 'resigned'
+        && (
+          canonicalUid == ''
+          || canonicalUid == request.auth.uid
+        );
+    }
+
     // Users collection - auth metadata
     match /users/{uid} {
+      function isTeacherSelfMetadataUpdate() {
+        return isAuthenticated()
+          && request.auth.uid == uid
+          && resource != null
+          && resource.data.role == 'teacher'
+          && isTeacherFor(resource.data.teacherId)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.teacherId == resource.data.teacherId
+          && request.resource.data.uid == uid
+          && request.resource.data.email is string
+          && request.resource.data.email.size() > 0
+          && request.resource.data.email.size() <= 320
+          && request.resource.data.username is string
+          && request.resource.data.username.size() > 0
+          && request.resource.data.username.size() <= 160
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'uid',
+            'email',
+            'username',
+            'updatedAt'
+          ]);
+      }
+
+      function hasSafeTeacherAccountShape() {
+        let after = request.resource.data;
+        let role = after.get('role', '');
+        let accountUid = after.get('uid', uid);
+        let email = after.get('email', '');
+        let username = after.get('username', '');
+        let teacherId = after.get('teacherId', '');
+        let disabledReason = after.get('loginDisabledReason', '');
+        let releasedUsername = after.get('releasedUsername', '');
+        return after.keys().hasOnly([
+            'uid',
+            'email',
+            'username',
+            'role',
+            'teacherId',
+            'createdAt',
+            'loginDisabledAt',
+            'loginDisabledReason',
+            'updatedAt',
+            'releasedUsername',
+            'recycledAt',
+            'resetPasswordAt',
+            // Immutable compatibility fields present on a small number of
+            // production accounts created by the historical recovery flow.
+            'name',
+            'restoredBy',
+            'restoredAt'
+          ])
+          && role in ['teacher', 'inactive_teacher']
+          && accountUid == uid
+          && email is string
+          && email.size() <= 320
+          && username is string
+          && username.size() <= 160
+          && teacherId is string
+          && teacherId.size() <= 160
+          && disabledReason is string
+          && disabledReason.size() <= 160
+          && releasedUsername is string
+          && releasedUsername.size() <= 160
+          && after.get('createdAt', request.time) is timestamp
+          && after.get('updatedAt', request.time) is timestamp
+          && (after.get('loginDisabledAt', null) == null || after.loginDisabledAt is timestamp)
+          && (after.get('recycledAt', null) == null || after.recycledAt is timestamp)
+          && (after.get('resetPasswordAt', null) == null || after.resetPasswordAt is timestamp)
+          && (
+            role == 'inactive_teacher'
+            || (
+              after.keys().hasAll(['uid', 'email', 'username', 'teacherId'])
+              && email.size() > 0
+              && username.size() > 0
+              && teacherId.size() > 0
+            )
+          );
+      }
+
+      function activeTeacherAccountMatchesCanonicalProfile() {
+        let after = request.resource.data;
+        let teacherId = after.get('teacherId', '');
+        return after.get('role', '') == 'teacher'
+          && teacherId is string
+          && teacherId.size() > 0
+          && existsAfter(/databases/$(database)/documents/teachers/$(teacherId))
+          && getAfter(/databases/$(database)/documents/teachers/$(teacherId)).data.get('status', 'active') != 'resigned'
+          && getAfter(/databases/$(database)/documents/teachers/$(teacherId)).data.get('loginAccountUid', '') == uid;
+      }
+
+      function inactiveTeacherAccountIsUnlinked() {
+        let after = request.resource.data;
+        let teacherId = after.get('teacherId', '');
+        return after.get('role', '') == 'inactive_teacher'
+          && (
+            teacherId == ''
+            || !existsAfter(/databases/$(database)/documents/teachers/$(teacherId))
+            || getAfter(/databases/$(database)/documents/teachers/$(teacherId)).data.get('loginAccountUid', '') != uid
+          );
+      }
+
+      function isTeacherManagerAccountCreate() {
+        return isTeacherManager()
+          && request.auth.uid != uid
+          && hasSafeTeacherAccountShape()
+          && !request.resource.data.keys().hasAny([
+            'name',
+            'restoredBy',
+            'restoredAt'
+          ])
+          && activeTeacherAccountMatchesCanonicalProfile();
+      }
+
+      function isTeacherManagerAccountUpdate() {
+        let oldTeacherId = resource.data.get('teacherId', '');
+        let newTeacherId = request.resource.data.get('teacherId', '');
+        return isTeacherManager()
+          && request.auth.uid != uid
+          && resource.data.get('role', '') in ['teacher', 'inactive_teacher']
+          && hasSafeTeacherAccountShape()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'name',
+            'restoredBy',
+            'restoredAt'
+          ])
+          && (oldTeacherId == '' || newTeacherId == oldTeacherId)
+          && (
+            activeTeacherAccountMatchesCanonicalProfile()
+            || inactiveTeacherAccountIsUnlinked()
+          );
+      }
+
+      function isTeacherManagerAccountDelete() {
+        return isTeacherManager()
+          && request.auth.uid != uid
+          && resource.data.get('role', '') == 'inactive_teacher';
+      }
+
       allow read: if (resource != null && resource.data.role == 'teacher') || (isAuthenticated() && (request.auth.uid == uid || isAdmin()));
-      allow create, update: if isAdmin() || (isAuthenticated() && request.auth.uid == uid && (resource == null || resource.data.role == 'teacher') && request.resource.data.role == 'teacher');
-      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == uid);
+      allow create: if isSystemAdmin() || isTeacherManagerAccountCreate();
+      allow update: if isSystemAdmin() || isTeacherManagerAccountUpdate() || isTeacherSelfMetadataUpdate();
+      allow delete: if isSystemAdmin() || isTeacherManagerAccountDelete();
     }
 
     // Students collection
@@ -175,8 +348,7 @@ service cloud.firestore {
     // Teachers collection
     match /teachers/{teacherId} {
       function isTeacherSelfProfileUpdate() {
-        return isTeacher()
-          && getTeacherId() == teacherId
+        return isTeacherFor(teacherId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name',
             'gender',
@@ -207,8 +379,7 @@ service cloud.firestore {
       function isTeacherFirstPhotoUpload() {
         let oldPhotoUrl = resource.data.get('photoURL', '');
         let newPhotoUrl = request.resource.data.get('photoURL', '');
-        return isTeacher()
-          && getTeacherId() == teacherId
+        return isTeacherFor(teacherId)
           && (oldPhotoUrl == null || (oldPhotoUrl is string && oldPhotoUrl.size() == 0))
           && newPhotoUrl is string
           && newPhotoUrl.size() > 0
@@ -222,10 +393,90 @@ service cloud.firestore {
           ]);
       }
 
+      function teacherManagerCanCreateProfile() {
+        let loginUid = request.resource.data.get('loginAccountUid', '');
+        return isTeacherManager()
+          && request.resource.data.get('status', 'active') != 'resigned'
+          && loginUid is string
+          && loginUid.size() > 0
+          && request.auth.uid != loginUid
+          && existsAfter(/databases/$(database)/documents/users/$(loginUid))
+          && getAfter(/databases/$(database)/documents/users/$(loginUid)).data.get('role', '') == 'teacher'
+          && getAfter(/databases/$(database)/documents/users/$(loginUid)).data.get('teacherId', '') == teacherId;
+      }
+
+      function teacherManagerCanUpdateProfile() {
+        let oldLoginUid = resource.data.get('loginAccountUid', '');
+        let newLoginUid = request.resource.data.get('loginAccountUid', '');
+        let newStatus = request.resource.data.get('status', 'active');
+        return isTeacherManager()
+          && request.auth.uid != newLoginUid
+          && (
+            (newStatus == 'resigned' && newLoginUid == '')
+            || (
+              newStatus != 'resigned'
+              && resource.data.get('status', 'active') != 'resigned'
+              && newLoginUid == ''
+              && oldLoginUid == ''
+            )
+            || (
+              newStatus != 'resigned'
+              && newLoginUid is string
+              && newLoginUid.size() > 0
+              && existsAfter(/databases/$(database)/documents/users/$(newLoginUid))
+              && getAfter(/databases/$(database)/documents/users/$(newLoginUid)).data.get('role', '') == 'teacher'
+              && getAfter(/databases/$(database)/documents/users/$(newLoginUid)).data.get('teacherId', '') == teacherId
+            )
+          );
+      }
+
+      // Student operations update only two denormalized counters on a teacher
+      // profile. Keep those existing approval/scheduling transactions working
+      // without restoring broad profile-edit access to student staff.
+      function studentManagerCanUpdateDerivedTeacherData() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let oldApprovedMinutes = resource.data.get('totalApprovedMinutes', 0);
+        let newApprovedMinutes = request.resource.data.get('totalApprovedMinutes', 0);
+        let oldScheduleRevision = resource.data.get('bookingScheduleRevision', 0);
+        let newScheduleRevision = request.resource.data.get('bookingScheduleRevision', 0);
+        return isStudentManager()
+          && (
+            (
+              changed.hasOnly(['totalApprovedMinutes'])
+              && oldApprovedMinutes is int
+              && newApprovedMinutes is int
+              && newApprovedMinutes >= oldApprovedMinutes
+              && newApprovedMinutes - oldApprovedMinutes <= 600
+            )
+            || (
+              changed.hasOnly([
+                'bookingScheduleRevision',
+                'bookingScheduleUpdatedAt'
+              ])
+              && changed.hasAll([
+                'bookingScheduleRevision',
+                'bookingScheduleUpdatedAt'
+              ])
+              && oldScheduleRevision is int
+              && newScheduleRevision is int
+              && newScheduleRevision == oldScheduleRevision + 1
+              && request.resource.data.bookingScheduleUpdatedAt == request.time
+            )
+          );
+      }
+
       allow read: if true; // Public read for teacher code verification during login
-      allow update: if isAdmin() || isTeacherSelfProfileUpdate() || isTeacherFirstPhotoUpload();
-      allow create: if isAdmin();
-      allow delete: if isAdmin();
+      allow update: if isSystemAdmin()
+        || teacherManagerCanUpdateProfile()
+        || studentManagerCanUpdateDerivedTeacherData()
+        || isTeacherSelfProfileUpdate()
+        || isTeacherFirstPhotoUpload();
+      allow create: if isSystemAdmin() || teacherManagerCanCreateProfile();
+      allow delete: if isSystemAdmin() || (
+        isTeacherManager()
+        && resource.data.get('status', 'active') == 'resigned'
+        && resource.data.get('loginAccountUid', '') == ''
+      );
     }
 
     // Subjects collection
@@ -272,8 +523,7 @@ service cloud.firestore {
       // Huỷ mềm: chỉ đổi trạng thái + ghi dấu vết, không xoá dữ liệu, không đụng
       // buổi đã duyệt (đã trừ kim cương và đã sinh bảng lương).
       function isTeacherSelfCancelLesson() {
-        return isTeacher()
-          && getTeacherId() == resource.data.teacherId
+        return isTeacherFor(resource.data.teacherId)
           && resource.data.status == 'pending'
           && request.resource.data.status == 'cancelled'
           && request.resource.data.cancelledBy == 'teacher:' + resource.data.teacherId
@@ -284,12 +534,11 @@ service cloud.firestore {
           ]);
       }
 
-      allow create: if isTeacher()
-                    && getTeacherId() == request.resource.data.teacherId
+      allow create: if isTeacherFor(request.resource.data.teacherId)
                     && studentCanBeMarked()
                     && (isTimetableLesson() || standaloneAttendanceIsEnabled());
       allow read: if isAdmin()
-                   || (isTeacher() && getTeacherId() == resource.data.teacherId);
+                   || isTeacherFor(resource.data.teacherId);
       allow update: if isAdmin() || isTeacherSelfCancelLesson();
       allow delete: if false;
     }
@@ -302,7 +551,7 @@ service cloud.firestore {
 
     // Payroll collection
     match /payroll/{payrollId} {
-      allow read: if isAdmin() || (isTeacher() && getTeacherId() == resource.data.teacherId);
+      allow read: if isAdmin() || isTeacherFor(resource.data.teacherId);
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if false;
@@ -318,7 +567,7 @@ service cloud.firestore {
     // Teacher Availability collection
     match /teacherAvailability/{teacherId} {
       allow read: if true;
-      allow write: if isAdmin() || (isTeacher() && getTeacherId() == teacherId);
+      allow write: if isAdmin() || isTeacherFor(teacherId);
     }
 
     // Booking requests from public teacher page
@@ -502,7 +751,7 @@ service cloud.firestore {
       allow create: if isAdmin() || isPublicBookingCreate() || isRebookBookingCreate();
       allow read: if true;
       allow update: if isAdmin()
-        || (isTeacher() && resource.data.teacherId == getTeacherId())
+        || isTeacherFor(resource.data.teacherId)
         || isPublicSelfCancellation()
         || isPublicPendingCancellation()
         || isKeepHoldSelfCancel()
@@ -559,22 +808,112 @@ service cloud.firestore {
 
     // Contracts collection
     match /contracts/{contractId} {
-      allow read: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
-      allow create: if isAdmin() || (isTeacher() && request.resource.data.teacherId == getTeacherId());
+      allow read: if isAdmin() || isTeacherFor(resource.data.teacherId);
+      allow create: if isAdmin() || isTeacherFor(request.resource.data.teacherId);
       allow update: if isAdmin();
       allow delete: if false;
     }
 
     // Evaluations collection
     match /evaluations/{evaluationId} {
+      function teacherEvaluationFieldsOnly() {
+        return request.resource.data.keys().hasOnly([
+          'studentName',
+          'teacherId',
+          'teacherName',
+          'type',
+          'skills',
+          'lessonComment',
+          'formType',
+          'selectedLevels',
+          'selectedCourseLevels',
+          'customLevelText',
+          'tutorSubjects',
+          'tutorSkills',
+          'evaluationResult',
+          'sessionsPerWeek',
+          'minutesPerSession',
+          'proposedCurriculum',
+          'postCourseGoals',
+          'imageUrl',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ]);
+      }
+
+      function teacherCanCreateEvaluation() {
+        return isTeacherFor(request.resource.data.teacherId)
+          && teacherEvaluationFieldsOnly()
+          && request.resource.data.keys().hasAll([
+            'studentName',
+            'teacherId',
+            'teacherName',
+            'type',
+            'skills',
+            'formType',
+            'evaluationResult',
+            'status',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      function teacherCanUpdateEvaluation() {
+        return isTeacherFor(resource.data.teacherId)
+          && resource.data.get('status', 'pending') != 'approved'
+          && request.resource.data.teacherId == resource.data.teacherId
+          && request.resource.data.get('teacherName', '') == resource.data.get('teacherName', '')
+          && request.resource.data.get('status', 'pending') == resource.data.get('status', 'pending')
+          && request.resource.data.get('createdAt', request.time) == resource.data.get('createdAt', request.time)
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'studentName',
+            'type',
+            'skills',
+            'lessonComment',
+            'formType',
+            'selectedLevels',
+            'selectedCourseLevels',
+            'customLevelText',
+            'tutorSubjects',
+            'tutorSkills',
+            'evaluationResult',
+            'sessionsPerWeek',
+            'minutesPerSession',
+            'proposedCurriculum',
+            'postCourseGoals',
+            'imageUrl',
+            'updatedAt'
+          ]);
+      }
+
+      function teacherCanDeleteEvaluation() {
+        return isTeacherFor(resource.data.teacherId)
+          && resource.data.get('status', 'pending') != 'approved'
+          && !resource.data.keys().hasAny([
+            'rewardPayrollId',
+            'registrationRewardPayrollId',
+            'rewardAmount',
+            'registrationRewardAmount',
+            'approvedAt',
+            'approvedBy'
+          ]);
+      }
+
       allow read: if true;
-      allow write: if isAdmin() || isTeacher();
+      allow create: if isAdmin() || teacherCanCreateEvaluation();
+      allow update: if isAdmin() || teacherCanUpdateEvaluation();
+      allow delete: if isAdmin() || teacherCanDeleteEvaluation();
     }
 
     // Notifications collection
     match /notifications/{notificationId} {
       allow read: if isAdmin()
-        || (isTeacher() && resource.data.targetType == 'teachers')
+        || (isTeacher() && isTeacherFor(getTeacherId()) && resource.data.targetType == 'teachers')
         || resource.data.targetType == 'students';
       allow write: if isAdmin();
     }

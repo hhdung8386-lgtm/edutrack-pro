@@ -10,9 +10,11 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
+import { useAuthStore } from '@/stores/authStore'
 import { GraduationCap, Search, RefreshCw, AlertCircle } from 'lucide-react'
 
 export function ResetPasswordPage() {
+  const role = useAuthStore((state) => state.role)
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -23,12 +25,24 @@ export function ResetPasswordPage() {
   const [resetCount, setResetCount] = useState(0)
 
   useEffect(() => {
+    if (role !== 'admin') return
     const q = query(collection(db, 'teachers'), orderBy('createdAt', 'desc'))
     return onSnapshot(q, (snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Teacher)))
       setLoading(false)
     })
-  }, [])
+  }, [role])
+
+  if (role !== 'admin') {
+    return (
+      <div className="mx-auto mt-12 max-w-lg rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
+        <h1 className="text-lg font-bold text-slate-900">Chỉ Admin hệ thống được khôi phục mật khẩu</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Quản lý học viên và quản lý gia sư không có quyền thay đổi thông tin xác thực của tài khoản khác.
+        </p>
+      </div>
+    )
+  }
 
   const filtered = teachers.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -81,7 +95,7 @@ export function ResetPasswordPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Reset Mật khẩu Gia sư</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Thiết lập lại mật khẩu thành 1234560 cho tất cả gia sư</p>
+          <p className="text-sm text-slate-500 mt-0.5">Khôi phục tài khoản legacy; quyền pilot sẽ tự tắt để bảo vệ lớp học</p>
         </div>
         <Button
           onClick={() => setResetAll(true)}
@@ -97,7 +111,7 @@ export function ResetPasswordPage() {
         <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
           <p className="font-semibold mb-1">ℹ️ Mục đích của trang này:</p>
-          <p>Gia sư được tạo trước đó có thể chưa được set password = 1234560. Trang này sẽ thiết lập lại mật khẩu cho tất cả gia sư thành <strong>1234560</strong> để họ có thể đăng nhập.</p>
+          <p>Đây là luồng tương thích tài khoản cũ. Mỗi lần khôi phục sẽ thu hồi phiên đăng nhập và tự tắt pilot; Admin phải tạo lại mật khẩu pilot riêng trước khi mở lớp trực tuyến.</p>
         </div>
       </div>
 

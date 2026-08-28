@@ -19,6 +19,7 @@
     "test:admin-navigation": "node --experimental-strip-types --test tests/adminNavigation.test.ts",
     "test:student-list": "node --experimental-strip-types --test tests/studentList.test.ts",
     "test:online-classroom": "node --experimental-strip-types --test tests/classroomBoard.test.ts",
+    "test:firestore-rules": "npx firebase-tools emulators:exec --only firestore --project demo-edutrack-pro-rules \"node --test tests/firestoreRules.security.test.cjs\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.2.4",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",

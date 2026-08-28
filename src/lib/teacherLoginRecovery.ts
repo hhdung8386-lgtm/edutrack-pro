@@ -5,6 +5,7 @@ export type TeacherLoginRecoveryResult = {
   success: true
   uid: string
   reclaimedOrphan: boolean
+  onlineClassroomPilotDisabled: boolean
 }
 
 const functions = getFunctions(app, 'asia-southeast1')

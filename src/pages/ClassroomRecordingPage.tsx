@@ -79,9 +79,31 @@ export function ClassroomRecordingPage() {
   const [deleteConfirmed, setDeleteConfirmed] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [copyingShareLink, setCopyingShareLink] = useState(false)
+  const [latestShareUrl, setLatestShareUrl] = useState('')
   const tokenRef = useRef('')
+  const loadEpochRef = useRef(0)
+  const recordingIdRef = useRef(recordingId)
+  const downloadAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    recordingIdRef.current = recordingId
+  }, [recordingId])
 
   const loadRecording = useCallback(async () => {
+    const loadEpoch = ++loadEpochRef.current
+    const targetRecordingId = recordingId
+    downloadAbortRef.current?.abort()
+    downloadAbortRef.current = null
+    tokenRef.current = ''
+    setRecording(null)
+    setDownloading(false)
+    setDownloadedBytes(0)
+    setDownloadCompleted(false)
+    setShowDeleteConfirm(false)
+    setDeleteConfirmed(false)
+    setDeleting(false)
+    setCopyingShareLink(false)
+    setLatestShareUrl('')
     if (!recordingId) {
       setErrorMessage('Mã bản ghi không hợp lệ.')
       setPageState('error')
@@ -90,15 +112,20 @@ export function ClassroomRecordingPage() {
     setPageState('loading')
     setErrorMessage('')
     try {
-      const token = tokenRef.current || readOnlineClassroomRecordingToken(recordingId)
+      const token = readOnlineClassroomRecordingToken(recordingId)
       tokenRef.current = token
       removeOnlineClassroomRecordingTokenFromAddressBar()
       const result = await getOnlineClassroomRecording(recordingId, token || undefined)
+      if (loadEpoch !== loadEpochRef.current || targetRecordingId !== recordingIdRef.current) return
       if (token) rememberOnlineClassroomRecordingToken(recordingId, token)
       setRecording(result)
+      if (token && (result.viewerRole === 'admin' || result.viewerRole === 'teacher')) {
+        setLatestShareUrl(`${window.location.origin}/xem-lai-buoi-hoc/${encodeURIComponent(recordingId)}#token=${encodeURIComponent(token)}`)
+      }
       setPageState('ready')
       document.title = `Xem lại ${result.subjectName || 'buổi học'} | 123English`
     } catch (error) {
+      if (loadEpoch !== loadEpochRef.current || targetRecordingId !== recordingIdRef.current) return
       setErrorMessage(onlineClassroomRecordingErrorMessage(error))
       setPageState('error')
     }
@@ -106,11 +133,18 @@ export function ClassroomRecordingPage() {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadRecording(), 0)
-    return () => window.clearTimeout(timeout)
+    return () => {
+      window.clearTimeout(timeout)
+      loadEpochRef.current += 1
+      downloadAbortRef.current?.abort()
+      downloadAbortRef.current = null
+    }
   }, [loadRecording])
 
   const handleDownload = async () => {
     if (!recording || downloading) return
+    const targetRecordingId = recording.recordingId
+    const loadEpoch = loadEpochRef.current
     const picker = (window as DownloadPickerWindow).showSaveFilePicker
     if (!picker) {
       window.open(recording.downloadUrl, '_blank', 'noopener,noreferrer')
@@ -120,61 +154,101 @@ export function ClassroomRecordingPage() {
 
     setDownloading(true)
     setDownloadedBytes(0)
+    const abortController = new AbortController()
+    downloadAbortRef.current = abortController
     let writable: DownloadWritable | null = null
     try {
       const handle = await picker({
         suggestedName: recording.fileName || `123english-${recordingId}.webm`,
         types: [{ description: 'Video WebM', accept: { 'video/webm': ['.webm'] } }],
       })
+      if (loadEpoch !== loadEpochRef.current || targetRecordingId !== recordingIdRef.current) {
+        throw new DOMException('Route changed', 'AbortError')
+      }
       writable = await handle.createWritable()
-      const response = await fetch(recording.downloadUrl, { cache: 'no-store' })
+      const response = await fetch(recording.downloadUrl, { cache: 'no-store', signal: abortController.signal })
       if (!response.ok || !response.body) throw new Error(`DOWNLOAD_${response.status}`)
       const reader = response.body.getReader()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         await writable.write(value as Uint8Array<ArrayBuffer>)
-        setDownloadedBytes((current) => current + value.byteLength)
+        if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
+          setDownloadedBytes((current) => current + value.byteLength)
+        }
       }
       await writable.close()
       writable = null
-      setDownloadCompleted(true)
-      toast.success('Đã tải bản ghi về máy. Bạn có thể xác nhận để xóa bản trên hệ thống.')
+      if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
+        setDownloadCompleted(true)
+        toast.success('Đã tải bản ghi về máy. Bạn có thể xác nhận để xóa bản trên hệ thống.')
+      }
     } catch (error) {
       await writable?.abort?.().catch(() => undefined)
       if (error instanceof DOMException && error.name === 'AbortError') return
       toast.error('Chưa tải được video. Hãy kiểm tra mạng rồi thử lại.')
     } finally {
-      setDownloading(false)
+      if (downloadAbortRef.current === abortController) downloadAbortRef.current = null
+      if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
+        setDownloading(false)
+      }
     }
   }
 
   const handleCopyShareLink = async () => {
-    if (!recording || copyingShareLink) return
+    if (!recording || copyingShareLink || downloading) return
+    const targetRecordingId = recording.recordingId
     setCopyingShareLink(true)
+    let createdShareUrl = ''
     try {
       const replayUrl = await createOnlineClassroomRecordingShareLink(recording.recordingId)
+      if (targetRecordingId !== recordingIdRef.current) return
+      createdShareUrl = replayUrl
+      const parsedUrl = new URL(replayUrl)
+      const rotatedToken = new URLSearchParams(parsedUrl.hash.replace(/^#/, '')).get('token')?.trim() || ''
+      if (rotatedToken) {
+        tokenRef.current = rotatedToken
+        rememberOnlineClassroomRecordingToken(recording.recordingId, rotatedToken)
+      }
+      setLatestShareUrl(replayUrl)
+      try {
+        const refreshed = await getOnlineClassroomRecording(recording.recordingId, rotatedToken || undefined)
+        if (recording.recordingId === recordingIdRef.current) setRecording(refreshed)
+      } catch {
+        toast.warning('Link mới đã tạo xong. Hãy tải lại trang nếu video hoặc nút tải đang dùng link media cũ.')
+      }
       await navigator.clipboard.writeText(replayUrl)
       toast.success('Đã tạo và sao chép link xem lại mới cho học viên.')
     } catch (error) {
-      toast.error(onlineClassroomRecordingErrorMessage(error))
+      if (targetRecordingId === recordingIdRef.current) {
+        toast.error(createdShareUrl
+          ? 'Link mới đã tạo và đang hiển thị, nhưng trình duyệt chưa cho phép tự sao chép.'
+          : onlineClassroomRecordingErrorMessage(error))
+      }
     } finally {
       setCopyingShareLink(false)
     }
   }
 
   const handleDeleteAfterDownload = async () => {
-    if (!recording || !deleteConfirmed) return
+    if (!recording || !deleteConfirmed || downloading) return
+    const targetRecordingId = recording.recordingId
+    const loadEpoch = loadEpochRef.current
     setDeleting(true)
     try {
       await confirmOnlineClassroomRecordingDownloaded(recording.recordingId, tokenRef.current || undefined)
+      if (loadEpoch !== loadEpochRef.current || targetRecordingId !== recordingIdRef.current) return
       setShowDeleteConfirm(false)
       setPageState('deleted')
       setRecording(null)
     } catch (error) {
-      toast.error(onlineClassroomRecordingErrorMessage(error))
+      if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
+        toast.error(onlineClassroomRecordingErrorMessage(error))
+      }
     } finally {
-      setDeleting(false)
+      if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
+        setDeleting(false)
+      }
     }
   }
 
@@ -292,12 +366,30 @@ export function ClassroomRecordingPage() {
                   {downloading ? `Đang tải ${progress}%` : downloadCompleted ? 'Tải lại về máy' : 'Tải video về máy'}
                 </Button>
                 {manager && (
-                  <Button variant="outline" className="w-full" loading={copyingShareLink} onClick={() => void handleCopyShareLink()}>
+                  <Button variant="outline" className="w-full" loading={copyingShareLink} disabled={downloading} onClick={() => void handleCopyShareLink()}>
                     <Copy className="h-4 w-4" />
-                    Tạo link cho học viên
+                    Tạo/đổi link cho học viên
                   </Button>
                 )}
-                <Button variant="outline" className="w-full border-rose-200 text-rose-700 hover:bg-rose-50" onClick={() => {
+                {manager && latestShareUrl && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.08em] text-emerald-800">Link mới nhất</p>
+                    <p className="mt-1 break-all text-xs font-semibold leading-5 text-emerald-950">{latestShareUrl}</p>
+                    <button
+                      type="button"
+                      className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(latestShareUrl)
+                          .then(() => toast.success('Đã sao chép link xem lại mới nhất.'))
+                          .catch(() => toast.error('Chưa sao chép được. Bạn có thể chọn và sao chép link đang hiển thị.'))
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Sao chép lại
+                    </button>
+                  </div>
+                )}
+                <Button disabled={downloading} variant="outline" className="w-full border-rose-200 text-rose-700 hover:bg-rose-50" onClick={() => {
+                  if (downloading) return
                   setDeleteConfirmed(false)
                   setShowDeleteConfirm(true)
                 }}>
@@ -317,14 +409,14 @@ export function ClassroomRecordingPage() {
       <Modal
         open={showDeleteConfirm}
         onClose={() => {
-          if (!deleting) setShowDeleteConfirm(false)
+          if (!deleting && !downloading) setShowDeleteConfirm(false)
         }}
         title="Xóa bản ghi khỏi hệ thống?"
         size="sm"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="ghost" disabled={deleting} onClick={() => setShowDeleteConfirm(false)}>Giữ lại</Button>
-            <Button variant="danger" loading={deleting} disabled={!deleteConfirmed} onClick={() => void handleDeleteAfterDownload()}>
+            <Button variant="ghost" disabled={deleting || downloading} onClick={() => setShowDeleteConfirm(false)}>Giữ lại</Button>
+            <Button variant="danger" loading={deleting} disabled={!deleteConfirmed || downloading} onClick={() => void handleDeleteAfterDownload()}>
               <Trash2 className="h-4 w-4" />
               Xóa ngay
             </Button>

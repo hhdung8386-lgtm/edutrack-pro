@@ -114,23 +114,27 @@ export function decideOnlineClassroomGiftRate(
     && Number(current?.windowStartedAtMs) >= 0
     ? Number(current?.windowStartedAtMs)
     : safeNowMs
-  const windowExpired = safeNowMs - currentWindowStartedAtMs >= ONLINE_CLASSROOM_GIFT_RATE_WINDOW_MS
-    || safeNowMs < currentWindowStartedAtMs
-  const windowStartedAtMs = windowExpired ? safeNowMs : currentWindowStartedAtMs
+  const lastSentAtMs = Number.isSafeInteger(current?.lastSentAtMs) && Number(current?.lastSentAtMs) >= 0
+    ? Number(current?.lastSentAtMs)
+    : 0
+  // Server clocks should be monotonic, but a transaction may observe a stored
+  // timestamp slightly ahead after clock correction. Clamp forward so rollback
+  // never resets the bucket or loses counts; requests fail closed until the
+  // minimum interval has genuinely elapsed.
+  const effectiveNowMs = Math.max(safeNowMs, currentWindowStartedAtMs, lastSentAtMs)
+  const windowExpired = effectiveNowMs - currentWindowStartedAtMs >= ONLINE_CLASSROOM_GIFT_RATE_WINDOW_MS
+  const windowStartedAtMs = windowExpired ? effectiveNowMs : currentWindowStartedAtMs
   const sentInWindow = windowExpired
     ? 0
     : Number.isSafeInteger(current?.sentInWindow) && Number(current?.sentInWindow) >= 0
       ? Number(current?.sentInWindow)
       : 0
-  const lastSentAtMs = Number.isSafeInteger(current?.lastSentAtMs) && Number(current?.lastSentAtMs) >= 0
-    ? Number(current?.lastSentAtMs)
-    : 0
 
   const intervalRetryMs = lastSentAtMs > 0
-    ? Math.max(0, ONLINE_CLASSROOM_GIFT_MIN_INTERVAL_MS - (safeNowMs - lastSentAtMs))
+    ? Math.max(0, ONLINE_CLASSROOM_GIFT_MIN_INTERVAL_MS - (effectiveNowMs - lastSentAtMs))
     : 0
   const windowRetryMs = sentInWindow >= ONLINE_CLASSROOM_GIFT_RATE_WINDOW_MAX
-    ? Math.max(1, ONLINE_CLASSROOM_GIFT_RATE_WINDOW_MS - (safeNowMs - windowStartedAtMs))
+    ? Math.max(1, ONLINE_CLASSROOM_GIFT_RATE_WINDOW_MS - (effectiveNowMs - windowStartedAtMs))
     : 0
   const retryAfterMs = Math.max(intervalRetryMs, windowRetryMs)
   if (retryAfterMs > 0) {
@@ -147,7 +151,7 @@ export function decideOnlineClassroomGiftRate(
     nextState: {
       windowStartedAtMs,
       sentInWindow: sentInWindow + 1,
-      lastSentAtMs: safeNowMs,
+      lastSentAtMs: effectiveNowMs,
     },
   }
 }
