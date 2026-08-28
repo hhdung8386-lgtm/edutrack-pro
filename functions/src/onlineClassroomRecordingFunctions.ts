@@ -429,6 +429,10 @@ export const requestOnlineClassroomRecordingConsent = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  // Firebase clients authenticate inside the callable handler. Cloud Run must
+  // accept the HTTP request first; making this explicit also repairs IAM when
+  // an interrupted first deployment leaves the service without an invoker.
+  invoker: 'public',
 }, async (request) => {
   const bookingId = request.data?.bookingId
   if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
