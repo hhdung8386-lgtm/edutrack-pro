@@ -7,6 +7,7 @@ import {
   ONLINE_CLASSROOM_ROOMS_COLLECTION,
   ONLINE_CLASSROOM_TOKENS_COLLECTION,
   ONLINE_CLASSROOM_TOKEN_BYTES,
+  decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
   isInsideOnlineClassroomJoinWindow,
   isSafeClassroomId,
@@ -22,6 +23,7 @@ import {
   onlineClassroomTokenHash,
   sanitizeOnlineClassroomDomain,
   validateOnlineClassroomBoardDraft,
+  validateOnlineClassroomBoardOperation,
   validateOnlineClassroomBoardSnapshot,
   type OnlineClassroomBookingLike,
   type OnlineClassroomTargetType,
@@ -31,6 +33,7 @@ const db = new Firestore()
 const CLASSROOM_ORIGIN = 'https://www.123english.edu.vn'
 const CLASSROOM_DOMAIN = sanitizeOnlineClassroomDomain(process.env.CLASSROOM_JITSI_DOMAIN)
 const ONLINE_CLASSROOM_TOKEN_CLEANUP_LIMIT = 20
+const ONLINE_CLASSROOM_RECORDING_NOTICE_MAX_AGE_MS = 4 * 60 * 60 * 1000
 
 type Booking = OnlineClassroomBookingLike & {
   studentCode?: string
@@ -61,17 +64,43 @@ type Teacher = {
 type PrivateRoom = {
   roomName?: string
   boardSnapshot?: unknown
+  recordingNotice?: unknown
 }
 
-type AccessContext = {
+type ClassroomRecordingNotice = {
+  active: boolean
+  recordingId: string
+  startedByRole: 'admin' | 'teacher'
+  startedAt: string | null
+}
+
+export type AccessContext = {
   booking: Booking
   student: Student
   teacher: Teacher
   sessionKey: string
   roomName: string
   boardSnapshot: ReturnType<typeof validateOnlineClassroomBoardSnapshot>
+  recordingNotice: ClassroomRecordingNotice | null
   studentPilotGeneration: number
   teacherPilotGeneration: number
+}
+
+function validatedRecordingNotice(value: unknown): ClassroomRecordingNotice | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const notice = value as Record<string, unknown>
+  if (notice.active !== true || !isSafeClassroomId(notice.recordingId)) return null
+  if (notice.startedByRole !== 'admin' && notice.startedByRole !== 'teacher') return null
+  const startedAt = notice.startedAt instanceof Timestamp ? notice.startedAt : null
+  if (!startedAt) return null
+  const ageMs = Date.now() - startedAt.toMillis()
+  if (ageMs < -5 * 60 * 1000 || ageMs > ONLINE_CLASSROOM_RECORDING_NOTICE_MAX_AGE_MS) return null
+  return {
+    active: true,
+    recordingId: notice.recordingId,
+    startedByRole: notice.startedByRole,
+    startedAt: startedAt.toDate().toISOString(),
+  }
 }
 
 function classroomError(code: string): HttpsError {
@@ -137,7 +166,7 @@ async function ensurePrivateRoom(
   return { sessionKey, roomName }
 }
 
-async function loadEligibleContext(bookingId: string): Promise<AccessContext> {
+export async function loadEligibleContext(bookingId: string): Promise<AccessContext> {
   const bookingSnapshot = await db.collection('bookingRequests').doc(bookingId).get()
   if (!bookingSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy buổi học.')
   const booking = { id: bookingSnapshot.id, ...bookingSnapshot.data() } as Booking
@@ -171,6 +200,7 @@ async function loadEligibleContext(bookingId: string): Promise<AccessContext> {
   )
   const roomSnapshot = await db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(sessionKey).get()
   const boardSnapshot = validateOnlineClassroomBoardSnapshot(roomSnapshot.data()?.boardSnapshot)
+  const recordingNotice = validatedRecordingNotice(roomSnapshot.data()?.recordingNotice)
   return {
     booking,
     student,
@@ -178,6 +208,7 @@ async function loadEligibleContext(bookingId: string): Promise<AccessContext> {
     sessionKey,
     roomName,
     boardSnapshot,
+    recordingNotice,
     studentPilotGeneration: studentAccess.generation,
     teacherPilotGeneration: teacherAccess.generation,
   }
@@ -407,7 +438,7 @@ export const issueOnlineClassroomInvite = onCall({
   return { joinUrl }
 })
 
-async function resolveViewer(
+export async function resolveViewer(
   request: { auth?: { uid: string } | null; data?: Record<string, unknown> },
   context: AccessContext,
 ): Promise<{ role: 'admin' | 'teacher' | 'student'; displayName: string }> {
@@ -476,6 +507,80 @@ export const getOnlineClassroomAccess = onCall({
     requestedEnd: context.booking.requestedEnd || '',
     curriculumLink: context.booking.curriculumLink || subjectPackage?.curriculumLink || '',
     boardSnapshot: context.boardSnapshot || { version: 0, studentCanWrite: true, operations: [] },
+    recordingNotice: context.recordingNotice,
+  }
+})
+
+export const appendOnlineClassroomBoardOperation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+}, async (request) => {
+  const bookingId = request.data?.bookingId
+  if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
+  const operation = validateOnlineClassroomBoardOperation(request.data?.operation)
+  if (!operation) throw new HttpsError('invalid-argument', 'Thao tác bảng sai định dạng hoặc vượt giới hạn.')
+
+  const context = await loadEligibleContext(bookingId)
+  const viewer = await resolveViewer(request, context)
+  const roomRef = db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(context.sessionKey)
+  const result = await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(roomRef)
+    const rawBoardSnapshot = currentSnapshot.data()?.boardSnapshot
+    const currentBoard = validateOnlineClassroomBoardSnapshot(rawBoardSnapshot)
+    if (rawBoardSnapshot !== undefined && rawBoardSnapshot !== null && !currentBoard) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Bản bảng đang lưu không hợp lệ. Đã dừng thao tác để tránh ghi đè dữ liệu.',
+        { reason: 'BOARD_SNAPSHOT_INVALID' },
+      )
+    }
+
+    const append = decideOnlineClassroomBoardOperationAppend(currentBoard, operation, viewer.role)
+    if (append.decision === 'locked') {
+      throw new HttpsError(
+        'permission-denied',
+        'Gia sư đang khóa quyền viết của học viên.',
+        { reason: 'BOARD_STUDENT_WRITE_LOCKED' },
+      )
+    }
+    if (append.decision === 'max-operations' || append.decision === 'max-bytes') {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Bảng đã đạt giới hạn dữ liệu. Gia sư hãy lưu nội dung cần thiết rồi xóa bảng để tiếp tục.',
+        { reason: append.decision === 'max-operations' ? 'BOARD_OPERATION_LIMIT' : 'BOARD_SIZE_LIMIT' },
+      )
+    }
+    if (append.decision === 'conflict') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Mã thao tác đã tồn tại với nội dung khác. Vui lòng tải lại bảng trước khi tiếp tục.',
+        { reason: 'BOARD_OPERATION_ID_CONFLICT', currentVersion: append.boardSnapshot.version },
+      )
+    }
+    if (append.decision === 'duplicate') {
+      return { appended: false, duplicate: true, boardSnapshot: append.boardSnapshot }
+    }
+
+    transaction.set(roomRef, {
+      boardSnapshot: append.boardSnapshot,
+      boardUpdatedAt: FieldValue.serverTimestamp(),
+      boardUpdatedBy: viewer.role === 'admin'
+        ? `admin:${request.auth?.uid}`
+        : viewer.role === 'teacher'
+          ? `teacher:${context.booking.teacherId}`
+          : `student:${context.booking.studentId}`,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return { appended: true, duplicate: false, boardSnapshot: append.boardSnapshot }
+  })
+
+  return {
+    success: true,
+    appended: result.appended,
+    duplicate: result.duplicate,
+    version: result.boardSnapshot.version,
+    boardSnapshot: result.boardSnapshot,
   }
 })
 
@@ -498,7 +603,15 @@ export const saveOnlineClassroomBoard = onCall({
   const roomRef = db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(context.sessionKey)
   const result = await db.runTransaction(async (transaction) => {
     const currentSnapshot = await transaction.get(roomRef)
-    const currentBoard = validateOnlineClassroomBoardSnapshot(currentSnapshot.data()?.boardSnapshot)
+    const rawBoardSnapshot = currentSnapshot.data()?.boardSnapshot
+    const currentBoard = validateOnlineClassroomBoardSnapshot(rawBoardSnapshot)
+    if (rawBoardSnapshot !== undefined && rawBoardSnapshot !== null && !currentBoard) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Bản bảng đang lưu không hợp lệ. Đã dừng thao tác để tránh ghi đè dữ liệu.',
+        { reason: 'BOARD_SNAPSHOT_INVALID' },
+      )
+    }
     const currentVersion = currentBoard?.version ?? 0
     const decision = decideOnlineClassroomBoardSave(currentBoard, Number(expectedVersion), boardDraft)
     if (decision === 'conflict') {

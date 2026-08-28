@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleStop,
+  Copy,
   ExternalLink,
   FileVideo2,
   Info,
@@ -19,6 +20,10 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { CollaborativeWhiteboard } from '@/components/classroom/CollaborativeWhiteboard'
+import {
+  ClassroomGiftOverlay,
+  ClassroomGiftTray,
+} from '@/components/classroom/ClassroomGiftExperience'
 import {
   JitsiClassroom,
   type JitsiConnectionState,
@@ -41,6 +46,7 @@ import {
 import {
   onlineClassroomErrorMessage,
   forgetClassroomToken,
+  appendOnlineClassroomBoardOperation,
   readClassroomToken,
   rememberClassroomToken,
   removeClassroomTokenFromAddressBar,
@@ -50,11 +56,26 @@ import {
 } from '@/lib/onlineClassroom'
 import { toast } from '@/stores/toastStore'
 import { broadcastJitsiTextMessage, type JitsiExternalApi } from '@/lib/jitsiExternalApi'
+import {
+  ClassroomRecordingUploadError,
+  GcsResumableUploader,
+  createClassroomRecordingCapture,
+  type ClassroomRecordingCapture,
+} from '@/lib/classroomRecordingUploader'
+import {
+  abandonOnlineClassroomRecording,
+  finalizeOnlineClassroomRecording,
+  onlineClassroomRecordingErrorMessage,
+  startOnlineClassroomRecording,
+  type OnlineClassroomRecordingMetadata,
+} from '@/lib/onlineClassroomRecording'
+import { useOnlineClassroomGifts } from '@/hooks/useOnlineClassroomGifts'
 
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error'
 type ActivePanel = 'video' | 'board'
 type RecordingState = 'idle' | 'starting' | 'recording' | 'stopping'
+type ReadyRecording = OnlineClassroomRecordingMetadata & { replayUrl: string }
 
 const EMPTY_BOARD: ValidatedBoardSnapshot = {
   version: 0,
@@ -62,7 +83,9 @@ const EMPTY_BOARD: ValidatedBoardSnapshot = {
   operations: [],
 }
 const REVALIDATE_INTERVAL_MS = 60_000
+const BOARD_SYNC_INTERVAL_MS = 5_000
 const MAX_HISTORY_ENTRIES = 50
+const MAX_RECORDING_DURATION_MS = 3 * 60 * 60 * 1000
 
 function errorCode(error: unknown): string {
   if (typeof error !== 'object' || error === null || !('code' in error)) return ''
@@ -113,21 +136,18 @@ function recordingMimeType(): string {
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || ''
 }
 
-type RecordingWritable = {
-  write: (data: Blob) => Promise<void>
-  close: () => Promise<void>
-  abort?: () => Promise<void>
+function formatRecordingBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB'
+  const megabytes = bytes / (1024 * 1024)
+  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
 }
 
-type RecordingFileHandle = {
-  createWritable: () => Promise<RecordingWritable>
-}
-
-type SaveFilePickerWindow = Window & {
-  showSaveFilePicker?: (options: {
-    suggestedName: string
-    types: Array<{ description: string; accept: Record<string, string[]> }>
-  }) => Promise<RecordingFileHandle>
+function nestedDomExceptionName(error: unknown): string {
+  if (error instanceof DOMException) return error.name
+  if (error instanceof ClassroomRecordingUploadError && error.cause instanceof DOMException) {
+    return error.cause.name
+  }
+  return ''
 }
 
 function ClassroomPageSkeleton() {
@@ -180,9 +200,11 @@ export function OnlineClassroomPage() {
   const [pageError, setPageError] = useState('')
   const [fatalAccessError, setFatalAccessError] = useState('')
   const [access, setAccess] = useState<OnlineClassroomAccess | null>(null)
+  const [classroomToken, setClassroomToken] = useState('')
   const [board, setBoard] = useState<ValidatedBoardSnapshot>(EMPTY_BOARD)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
   const [connectionState, setConnectionState] = useState<JitsiConnectionState>('loading')
+  const [remoteParticipantCount, setRemoteParticipantCount] = useState(0)
   const [activePanel, setActivePanel] = useState<ActivePanel>('video')
   const [revalidationWarning, setRevalidationWarning] = useState('')
   const [syncWarning, setSyncWarning] = useState('')
@@ -190,6 +212,8 @@ export function OnlineClassroomPage() {
   const [recordingConsent, setRecordingConsent] = useState(false)
   const [recordingState, setRecordingState] = useState<RecordingState>('idle')
   const [recordingError, setRecordingError] = useState('')
+  const [recordingUploadedBytes, setRecordingUploadedBytes] = useState(0)
+  const [readyRecording, setReadyRecording] = useState<ReadyRecording | null>(null)
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
   const [pendingStudentOperationCount, setPendingStudentOperationCount] = useState(0)
 
@@ -198,9 +222,12 @@ export function OnlineClassroomPage() {
   const tokenRef = useRef('')
   const jitsiApiRef = useRef<JitsiExternalApi | null>(null)
   const localParticipantIdRef = useRef('')
+  const remoteParticipantIdsRef = useRef(new Set<string>())
   const dataChannelReadyRef = useRef(false)
+  const connectionStateRef = useRef<JitsiConnectionState>('loading')
   const seenMessageIdsRef = useRef(new Set<string>())
   const pendingStudentOperationsRef = useRef<BoardOperation[]>([])
+  const pendingOperationFlushRef = useRef<Promise<void> | null>(null)
   const undoHistoryRef = useRef<BoardOperation[][]>([])
   const redoHistoryRef = useRef<BoardOperation[][]>([])
   const saveTimerRef = useRef<number | null>(null)
@@ -211,9 +238,11 @@ export function OnlineClassroomPage() {
   const revalidationInFlightRef = useRef(false)
   const consecutiveRevalidationFailuresRef = useRef(0)
   const recorderRef = useRef<MediaRecorder | null>(null)
-  const recordingStreamRef = useRef<MediaStream | null>(null)
-  const recordingWriterRef = useRef<RecordingWritable | null>(null)
-  const recordingWriteChainRef = useRef<Promise<void>>(Promise.resolve())
+  const recordingCaptureRef = useRef<ClassroomRecordingCapture | null>(null)
+  const recordingUploaderRef = useRef<GcsResumableUploader | null>(null)
+  const recordingSessionRef = useRef<{ recordingId: string; replayUrl: string; maxBytes: number } | null>(null)
+  const recordingFailureRef = useRef<unknown>(null)
+  const recordingDurationTimerRef = useRef<number | null>(null)
   const unmountingRef = useRef(false)
 
   const manager = access ? isBoardManager(access.role) : false
@@ -223,8 +252,31 @@ export function OnlineClassroomPage() {
     const chromium = /Chrome\//.test(navigator.userAgent) || /Edg\//.test(navigator.userAgent)
     return chromium
       && typeof navigator.mediaDevices?.getDisplayMedia === 'function'
-      && typeof (window as SaveFilePickerWindow).showSaveFilePicker === 'function'
+      && typeof navigator.mediaDevices?.getUserMedia === 'function'
   }, [])
+
+  const broadcastGiftSignal = useCallback(async (message: string): Promise<boolean> => {
+    if (connectionStateRef.current !== 'connected'
+      || !dataChannelReadyRef.current
+      || !localParticipantIdRef.current) return false
+    try {
+      return (await broadcastJitsiTextMessage(
+        jitsiApiRef.current,
+        message,
+        localParticipantIdRef.current,
+      )) > 0
+    } catch {
+      return false
+    }
+  }, [])
+
+  const classroomGifts = useOnlineClassroomGifts({
+    bookingId,
+    role: access?.role || 'student',
+    token: classroomToken || undefined,
+    enabled: loadState === 'ready' && Boolean(access) && !fatalAccessError,
+    broadcastSignal: broadcastGiftSignal,
+  })
 
   const replaceBoard = useCallback((nextBoard: ValidatedBoardSnapshot, nextSaveStatus?: SaveStatus) => {
     boardRef.current = nextBoard
@@ -254,14 +306,18 @@ export function OnlineClassroomPage() {
     setLoadState('loading')
     setPageError('')
     setFatalAccessError('')
+    setClassroomToken('')
     seenMessageIdsRef.current = new Set()
     pendingStudentOperationsRef.current = []
     setPendingStudentOperationCount(0)
     localParticipantIdRef.current = ''
+    remoteParticipantIdsRef.current = new Set()
+    setRemoteParticipantCount(0)
     dataChannelReadyRef.current = false
     try {
       const fragmentOrStoredToken = readClassroomToken(bookingId)
       tokenRef.current = fragmentOrStoredToken
+      setClassroomToken(fragmentOrStoredToken)
 
       const result = await requestOnlineClassroomAccess(bookingId, fragmentOrStoredToken || undefined)
       if (fragmentOrStoredToken) rememberClassroomToken(bookingId, fragmentOrStoredToken)
@@ -357,20 +413,12 @@ export function OnlineClassroomPage() {
     return successful
   }, [bookingId, replaceBoard, resetHistory])
 
-  const queueBoardSave = useCallback(() => {
-    const currentAccess = accessRef.current
-    if (!currentAccess || !isBoardManager(currentAccess.role)) return
-    setSaveStatus('dirty')
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null
-      void flushBoardSave()
-    }, 1_800)
-  }, [flushBoardSave])
-
   const sendBoardPayload = useCallback(async (payload: BoardMessagePayload): Promise<number> => {
     const currentAccess = accessRef.current
-    if (!currentAccess) return 0
+    if (!currentAccess
+      || connectionStateRef.current !== 'connected'
+      || !dataChannelReadyRef.current
+      || !localParticipantIdRef.current) return 0
     const message = makeBoardMessage(bookingId, currentAccess.role, payload)
     const serialized = serializeBoardMessage(message)
     if (!serialized) return -1
@@ -400,21 +448,52 @@ export function OnlineClassroomPage() {
   }, [flushBoardSave, sendBoardPayload])
 
   const flushPendingStudentOperations = useCallback(async () => {
+    if (pendingOperationFlushRef.current) return pendingOperationFlushRef.current
     if (pendingStudentOperationsRef.current.length === 0) return
-    const pending = [...pendingStudentOperationsRef.current]
-    const deliveredIds = new Set<string>()
-    for (const operation of pending) {
-      const sent = await sendBoardPayload({
-        type: 'operation',
-        boardVersion: boardRef.current.version,
-        operation,
-      })
-      if (sent > 0) deliveredIds.add(operation.id)
+
+    const work = (async () => {
+      while (pendingStudentOperationsRef.current.length > 0) {
+        const operation = pendingStudentOperationsRef.current[0]
+        try {
+          const result = await appendOnlineClassroomBoardOperation(
+            bookingId,
+            operation,
+            tokenRef.current || undefined,
+          )
+          const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
+          pendingStudentOperationsRef.current = pendingStudentOperationsRef.current
+            .filter((item) => item.id !== operation.id)
+          const remoteIds = new Set(remoteBoard.operations.map((item) => item.id))
+          const stillPending = pendingStudentOperationsRef.current
+            .filter((item) => !remoteIds.has(item.id))
+          const visibleBoard = {
+            ...remoteBoard,
+            operations: [...remoteBoard.operations, ...stillPending].slice(0, MAX_BOARD_OPERATIONS),
+          }
+          savedVersionRef.current = remoteBoard.version
+          replaceBoard(
+            visibleBoard,
+            isBoardManager(accessRef.current?.role || 'student')
+              ? stillPending.length > 0 ? 'dirty' : 'saved'
+              : undefined,
+          )
+          setPendingStudentOperationCount(stillPending.length)
+          setSyncWarning('')
+          await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: remoteBoard.version })
+        } catch (error) {
+          setSyncWarning(`Nét vẽ đang chờ đồng bộ lên hệ thống: ${onlineClassroomErrorMessage(error)}`)
+          setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
+          break
+        }
+      }
+    })()
+    pendingOperationFlushRef.current = work
+    try {
+      await work
+    } finally {
+      pendingOperationFlushRef.current = null
     }
-    pendingStudentOperationsRef.current = pendingStudentOperationsRef.current
-      .filter((operation) => !deliveredIds.has(operation.id))
-    setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
-  }, [sendBoardPayload])
+  }, [bookingId, replaceBoard, sendBoardPayload])
 
   const handleLocalOperation = useCallback((operation: BoardOperation) => {
     const currentAccess = accessRef.current
@@ -429,22 +508,13 @@ export function OnlineClassroomPage() {
     if (isBoardManager(currentAccess.role)) rememberForUndo(previous.operations)
     const next = {
       ...previous,
-      version: previous.version + 1,
       operations: [...previous.operations, operation],
     }
     replaceBoard(next, isBoardManager(currentAccess.role) ? 'dirty' : undefined)
-    if (isBoardManager(currentAccess.role)) queueBoardSave()
-
-    void sendBoardPayload({ type: 'operation', boardVersion: next.version, operation })
-      .then((sent) => {
-        if (currentAccess.role === 'student' && sent === 0) {
-          if (!pendingStudentOperationsRef.current.some((item) => item.id === operation.id)) {
-            pendingStudentOperationsRef.current.push(operation)
-            setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
-          }
-        }
-      })
-  }, [queueBoardSave, rememberForUndo, replaceBoard, sendBoardPayload])
+    pendingStudentOperationsRef.current.push(operation)
+    setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
+    void flushPendingStudentOperations()
+  }, [flushPendingStudentOperations, rememberForUndo, replaceBoard])
 
   const commitManagerBoard = useCallback((next: ValidatedBoardSnapshot) => {
     const currentAccess = accessRef.current
@@ -500,26 +570,27 @@ export function OnlineClassroomPage() {
       accessRef.current = result
       setAccess(result)
       const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
-      const pending = result.role === 'student' ? pendingStudentOperationsRef.current : []
+      if (remoteBoard.version < savedVersionRef.current) return
+      if (isBoardManager(result.role) && saveInFlightRef.current) return
+      const pending = pendingStudentOperationsRef.current
       const remoteOperationIds = new Set(remoteBoard.operations.map((operation) => operation.id))
       const missingPending = pending.filter((operation) => !remoteOperationIds.has(operation.id))
       const visibleBoard = missingPending.length > 0
         ? {
             ...remoteBoard,
-            version: remoteBoard.version + missingPending.length,
             operations: [...remoteBoard.operations, ...missingPending].slice(0, MAX_BOARD_OPERATIONS),
           }
         : remoteBoard
-      if (visibleBoard.version >= boardRef.current.version) {
-        replaceBoard(visibleBoard, isBoardManager(result.role) ? 'saved' : undefined)
-        savedVersionRef.current = remoteBoard.version
-        resetHistory()
-      }
+      replaceBoard(
+        visibleBoard,
+        isBoardManager(result.role) ? missingPending.length > 0 ? 'dirty' : 'saved' : undefined,
+      )
+      savedVersionRef.current = remoteBoard.version
       if (missingPending.length > 0) void flushPendingStudentOperations()
     } catch {
       setSyncWarning('Chưa tải được bản bảng mới nhất. Hệ thống sẽ thử lại khi kiểm tra quyền truy cập.')
     }
-  }, [bookingId, flushPendingStudentOperations, replaceBoard, resetHistory])
+  }, [bookingId, flushPendingStudentOperations, replaceBoard])
 
   const handleBoardTextMessage = useCallback((raw: string, senderId: string) => {
     const message = parseBoardMessage(raw, bookingId)
@@ -547,54 +618,48 @@ export function OnlineClassroomPage() {
       return
     }
     if (message.type === 'snapshot-refresh') {
-      // A peer-provided role/version is never authoritative. Managers ignore
-      // remote control messages; students reload the callable-backed snapshot.
-      if (!localIsManager) void refreshBoardFromServer()
+      // Jitsi chỉ là tín hiệu nhanh. Snapshot callable mới là nguồn dữ liệu có
+      // xác thực cho cả hai vai trò, kể cả khi phòng có thêm tab quan sát.
+      void refreshBoardFromServer()
       return
     }
     if (message.type === 'snapshot') {
-      if (!localIsManager) void refreshBoardFromServer()
+      void refreshBoardFromServer()
       return
     }
 
-    const current = boardRef.current
-    // One-to-one pilot: a manager treats every remote operation as a student
-    // operation and enforces the server-backed write lock. A student treats the
-    // only remote participant as the manager. senderRole/boardVersion from the
-    // Jitsi payload are deliberately ignored and cannot elevate privileges.
-    if (localIsManager && !current.studentCanWrite) return
-    const remoteOperation: BoardOperation = {
-      ...message.operation,
-      authorRole: localIsManager ? 'student' : 'teacher',
-    }
-    if (current.operations.some((operation) => operation.id === remoteOperation.id)) return
-    if (current.operations.length >= MAX_BOARD_OPERATIONS) return
+    // Tương thích client pilot cũ còn gửi operation trực tiếp. Không tin role
+    // trong data channel; chỉ tải lại operation đã được backend xác thực.
+    void refreshBoardFromServer()
+  }, [bookingId, broadcastSnapshot, refreshBoardFromServer])
 
-    if (localIsManager) rememberForUndo(current.operations)
-    const next = {
-      ...current,
-      version: current.version + 1,
-      operations: [...current.operations, remoteOperation],
-    }
-    replaceBoard(next, localIsManager ? 'dirty' : undefined)
-    if (localIsManager) queueBoardSave()
-  }, [bookingId, broadcastSnapshot, queueBoardSave, refreshBoardFromServer, rememberForUndo, replaceBoard])
-
-  const handleConferenceJoined = useCallback((participantId: string) => {
-    localParticipantIdRef.current = participantId
-  }, [])
-
-  const handleDataChannelOpened = useCallback(() => {
-    dataChannelReadyRef.current = true
+  const startBoardHandshake = useCallback(() => {
+    if (connectionStateRef.current !== 'connected'
+      || !dataChannelReadyRef.current
+      || !localParticipantIdRef.current) return
     void sendBoardPayload({ type: 'hello' })
     const currentAccess = accessRef.current
     if (currentAccess?.role === 'student') {
       void sendBoardPayload({ type: 'snapshot-request' })
-      window.setTimeout(() => void flushPendingStudentOperations(), 900)
     }
+    window.setTimeout(() => void flushPendingStudentOperations(), 350)
   }, [flushPendingStudentOperations, sendBoardPayload])
 
-  const handleParticipantJoined = useCallback(() => {
+  const handleConferenceJoined = useCallback((participantId: string) => {
+    localParticipantIdRef.current = participantId
+    window.setTimeout(startBoardHandshake, 0)
+  }, [startBoardHandshake])
+
+  const handleDataChannelOpened = useCallback(() => {
+    dataChannelReadyRef.current = true
+    window.setTimeout(startBoardHandshake, 0)
+  }, [startBoardHandshake])
+
+  const handleParticipantJoined = useCallback((participantId: string) => {
+    if (participantId && participantId !== localParticipantIdRef.current) {
+      remoteParticipantIdsRef.current.add(participantId)
+      setRemoteParticipantCount(remoteParticipantIdsRef.current.size)
+    }
     const currentAccess = accessRef.current
     if (!dataChannelReadyRef.current || !currentAccess) return
     if (isBoardManager(currentAccess.role)) {
@@ -603,6 +668,11 @@ export function OnlineClassroomPage() {
       window.setTimeout(() => void flushPendingStudentOperations(), 900)
     }
   }, [broadcastSnapshot, flushPendingStudentOperations])
+
+  const handleParticipantLeft = useCallback((participantId: string) => {
+    remoteParticipantIdsRef.current.delete(participantId)
+    setRemoteParticipantCount(remoteParticipantIdsRef.current.size)
+  }, [])
 
   useEffect(() => {
     if (loadState !== 'ready' || fatalAccessError) return
@@ -620,15 +690,7 @@ export function OnlineClassroomPage() {
         setAccess(result)
 
         const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
-        if (remoteBoard.version > boardRef.current.version) {
-          if (result.role === 'student' && pendingStudentOperationsRef.current.length > 0) {
-            await refreshBoardFromServer()
-          } else {
-            replaceBoard(remoteBoard, isBoardManager(result.role) ? 'saved' : undefined)
-            savedVersionRef.current = remoteBoard.version
-            resetHistory()
-          }
-        }
+        if (remoteBoard.version > savedVersionRef.current) await refreshBoardFromServer()
       } catch (error) {
         if (disposed) return
         consecutiveRevalidationFailuresRef.current += 1
@@ -656,11 +718,24 @@ export function OnlineClassroomPage() {
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [bookingId, fatalAccessError, flushBoardSave, loadState, refreshBoardFromServer, replaceBoard, resetHistory])
+  }, [bookingId, fatalAccessError, flushBoardSave, loadState, refreshBoardFromServer])
+
+  useEffect(() => {
+    if (loadState !== 'ready' || fatalAccessError) return
+    const refreshVisibleBoard = () => {
+      if (document.visibilityState === 'visible') void refreshBoardFromServer()
+    }
+    const interval = window.setInterval(refreshVisibleBoard, BOARD_SYNC_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [fatalAccessError, loadState, refreshBoardFromServer])
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current
     if (!recorder || recorder.state === 'inactive') return
+    if (recordingDurationTimerRef.current !== null) {
+      window.clearTimeout(recordingDurationTimerRef.current)
+      recordingDurationTimerRef.current = null
+    }
     setRecordingState('stopping')
     recorder.stop()
   }, [])
@@ -668,101 +743,185 @@ export function OnlineClassroomPage() {
   const startRecording = useCallback(async () => {
     if (!recordingSupported || !recordingConsent) return
     setRecordingError('')
+    setRecordingUploadedBytes(0)
+    setReadyRecording(null)
     setRecordingState('starting')
+    let capture: ClassroomRecordingCapture | null = null
+    let session: Awaited<ReturnType<typeof startOnlineClassroomRecording>> | null = null
     try {
-      const savePicker = (window as SaveFilePickerWindow).showSaveFilePicker
-      if (!savePicker) throw new Error('SAVE_PICKER_UNAVAILABLE')
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const fileHandle = await savePicker({
-        suggestedName: `123english-${bookingId}-${timestamp}.webm`,
-        types: [{ description: 'Video WebM', accept: { 'video/webm': ['.webm'] } }],
+      capture = await createClassroomRecordingCapture({
+        displayConstraints: {
+          video: {
+            frameRate: { ideal: 24, max: 30 },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+          },
+          audio: true,
+          preferCurrentTab: true,
+        },
+        microphoneConstraints: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       })
-      const writer = await fileHandle.createWritable()
-      recordingWriterRef.current = writer
-      recordingWriteChainRef.current = Promise.resolve()
+      if (!capture.hasDisplayAudio) {
+        await capture.cleanup()
+        capture = null
+        throw new Error('TAB_AUDIO_REQUIRED')
+      }
+      if (!capture.hasMicrophoneAudio) {
+        await capture.cleanup()
+        capture = null
+        throw new Error('MICROPHONE_AUDIO_REQUIRED')
+      }
 
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 24, max: 30 } },
-        audio: true,
+      const mimeType = recordingMimeType() || 'video/webm'
+      session = await startOnlineClassroomRecording(bookingId, mimeType)
+      const uploader = new GcsResumableUploader({
+        sessionUrl: session.uploadSessionUrl,
+        contentType: mimeType,
+        onProgress: ({ uploadedBytes }) => {
+          if (!unmountingRef.current) setRecordingUploadedBytes(uploadedBytes)
+        },
       })
-      const mimeType = recordingMimeType()
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      recordingStreamRef.current = stream
+
+      recordingCaptureRef.current = capture
+      recordingUploaderRef.current = uploader
+      recordingSessionRef.current = {
+        recordingId: session.recordingId,
+        replayUrl: session.replayUrl,
+        maxBytes: session.maxBytes,
+      }
+      recordingFailureRef.current = null
+
+      const recorder = new MediaRecorder(capture.stream, { mimeType })
       recorderRef.current = recorder
 
       recorder.addEventListener('dataavailable', (event) => {
-        if (event.data.size === 0 || !recordingWriterRef.current) return
-        const chunk = event.data
-        const activeWriter = recordingWriterRef.current
-        recordingWriteChainRef.current = recordingWriteChainRef.current
-          .then(() => activeWriter.write(chunk))
+        if (event.data.size === 0) return
+        if (uploader.acceptedBytes + event.data.size > session!.maxBytes) {
+          recordingFailureRef.current = new Error('RECORDING_TOO_LARGE')
+          uploader.abort(recordingFailureRef.current)
+          if (recorder.state !== 'inactive') recorder.stop()
+          return
+        }
+        void uploader.append(event.data).catch((error) => {
+          if (!recordingFailureRef.current) {
+            recordingFailureRef.current = error
+            uploader.abort(error)
+            if (recorder.state !== 'inactive') {
+              if (!unmountingRef.current) setRecordingState('stopping')
+              recorder.stop()
+            }
+          }
+        })
+      })
+      recorder.addEventListener('error', (event) => {
+        const mediaError = 'error' in event
+          ? (event as Event & { error?: DOMException }).error
+          : null
+        const error = mediaError || new Error('MEDIA_RECORDER_ERROR')
+        recordingFailureRef.current = error
+        uploader.abort(error)
+        if (recorder.state !== 'inactive') recorder.stop()
       })
       recorder.addEventListener('stop', () => {
         void (async () => {
-          const activeWriter = recordingWriterRef.current
+          if (recordingDurationTimerRef.current !== null) {
+            window.clearTimeout(recordingDurationTimerRef.current)
+            recordingDurationTimerRef.current = null
+          }
           try {
-            await recordingWriteChainRef.current
-            await activeWriter?.close()
-            if (!unmountingRef.current) toast.success('Video đã được lưu trực tiếp vào tệp trên thiết bị. Hệ thống không giữ bản sao.')
-          } catch {
-            await activeWriter?.abort?.().catch(() => undefined)
-            if (!unmountingRef.current) setRecordingError('Tệp video chưa được ghi hoàn chỉnh. Vui lòng kiểm tra dung lượng ổ đĩa rồi thử lại.')
+            if (recordingFailureRef.current) throw recordingFailureRef.current
+            await uploader.finish()
+            const finalized = await finalizeOnlineClassroomRecording(session!.recordingId)
+            if (!unmountingRef.current) {
+              setReadyRecording({ ...finalized, replayUrl: session!.replayUrl })
+              toast.success('Đã lưu bản ghi riêng tư. Link xem lại có hiệu lực tối đa 3 ngày.')
+            }
+          } catch (error) {
+            uploader.abort(error)
+            await abandonOnlineClassroomRecording(session!.recordingId).catch(() => undefined)
+            if (!unmountingRef.current) {
+              const message = error instanceof Error && error.message === 'RECORDING_TOO_LARGE'
+                ? 'Bản ghi vượt giới hạn 1,25 GB nên đã dừng và xóa phần tải dở.'
+                : `Chưa lưu trọn vẹn bản ghi: ${onlineClassroomRecordingErrorMessage(error)}`
+              setRecordingError(message)
+              toast.error(message)
+            }
           } finally {
-            recordingWriterRef.current = null
-            recordingWriteChainRef.current = Promise.resolve()
-            recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
-            recordingStreamRef.current = null
+            recordingUploaderRef.current = null
+            recordingSessionRef.current = null
+            recordingFailureRef.current = null
+            await capture?.cleanup()
+            recordingCaptureRef.current = null
             recorderRef.current = null
             if (!unmountingRef.current) setRecordingState('idle')
           }
         })()
       }, { once: true })
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        if (recorder.state !== 'inactive') recorder.stop()
+      capture.displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (recorder.state !== 'inactive') stopRecording()
       }, { once: true })
 
-      // Write five-second chunks straight to disk so an 80-minute lesson does
-      // not accumulate the entire recording in browser memory.
+      // Ghi theo từng đoạn nhỏ rồi tải tuần tự để lớp dài không giữ toàn bộ
+      // video trong RAM. Uploader phía dưới gom thành chunk 8 MiB cho GCS.
       recorder.start(5_000)
+      recordingDurationTimerRef.current = window.setTimeout(stopRecording, MAX_RECORDING_DURATION_MS)
       setRecordingState('recording')
       setShowRecordingConsent(false)
       setRecordingConsent(false)
     } catch (error) {
-      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
-      recordingStreamRef.current = null
+      if (recordingDurationTimerRef.current !== null) {
+        window.clearTimeout(recordingDurationTimerRef.current)
+        recordingDurationTimerRef.current = null
+      }
+      recordingUploaderRef.current?.abort(error)
+      await capture?.cleanup()
+      if (session?.recordingId) {
+        await abandonOnlineClassroomRecording(session.recordingId).catch(() => undefined)
+      }
+      recordingCaptureRef.current = null
+      recordingUploaderRef.current = null
+      recordingSessionRef.current = null
+      recordingFailureRef.current = null
       recorderRef.current = null
-      const activeWriter = recordingWriterRef.current
-      recordingWriterRef.current = null
-      recordingWriteChainRef.current = Promise.resolve()
-      await activeWriter?.abort?.().catch(() => undefined)
       setRecordingState('idle')
-      const message = error instanceof DOMException && ['NotAllowedError', 'AbortError'].includes(error.name)
-        ? 'Bạn chưa chọn nơi lưu/màn hình hoặc đã từ chối quyền ghi. Không có video nào được tạo.'
-        : 'Chưa thể bắt đầu ghi màn hình. Hãy thử lại bằng Chrome hoặc Edge mới nhất.'
+      const domErrorName = nestedDomExceptionName(error)
+      const rawMessage = error instanceof Error ? error.message : ''
+      const message = ['NotAllowedError', 'AbortError'].includes(domErrorName)
+        ? 'Bạn chưa chọn tab hoặc đã từ chối quyền chia sẻ/micro. Không có video nào được lưu.'
+        : rawMessage === 'TAB_AUDIO_REQUIRED'
+          ? 'Chrome chưa chia sẻ âm thanh lớp. Hãy chọn đúng tab 123English và bật “Chia sẻ âm thanh của thẻ”.'
+          : rawMessage === 'MICROPHONE_AUDIO_REQUIRED'
+            ? 'Chưa lấy được âm thanh micro. Hãy cho phép micro rồi bắt đầu lại.'
+            : onlineClassroomRecordingErrorMessage(error)
       setRecordingError(message)
     }
-  }, [bookingId, recordingConsent, recordingSupported])
+  }, [bookingId, recordingConsent, recordingSupported, stopRecording])
 
   useEffect(() => {
     unmountingRef.current = false
     return () => {
       unmountingRef.current = true
       if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
+      if (recordingDurationTimerRef.current !== null) window.clearTimeout(recordingDurationTimerRef.current)
       const recorder = recorderRef.current
       if (recorder && recorder.state !== 'inactive') recorder.stop()
-      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+      else void recordingCaptureRef.current?.cleanup()
     }
   }, [])
 
   useEffect(() => {
-    if (pendingStudentOperationCount === 0) return
+    if (pendingStudentOperationCount === 0 && recordingState === 'idle') return
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnBeforeLeaving)
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
-  }, [pendingStudentOperationCount])
+  }, [pendingStudentOperationCount, recordingState])
 
   if (loadState === 'loading') return <ClassroomPageSkeleton />
   if (loadState === 'error') return <ClassroomErrorPage message={pageError} onRetry={() => void loadClassroom()} />
@@ -795,11 +954,15 @@ export function OnlineClassroomPage() {
               {connectionHealthy ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
               {connectionLabel(connectionState)}
             </span>
-            {manager && recordingState !== 'recording' && (
+            {connectionHealthy && (
+              <span className={`inline-flex min-h-10 items-center rounded-xl px-3 text-xs font-extrabold ${remoteParticipantCount > 0 ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>
+                {remoteParticipantCount > 0 ? `${remoteParticipantCount + 1} người trong lớp` : 'Đang chờ người còn lại'}
+              </span>
+            )}
+            {manager && recordingState === 'idle' && (
               <Button
                 variant="outline"
                 size="sm"
-                disabled={recordingBusy}
                 onClick={() => {
                   setRecordingError('')
                   setShowRecordingConsent(true)
@@ -807,13 +970,19 @@ export function OnlineClassroomPage() {
                 className="border-slate-300 bg-white text-slate-700 focus:ring-amber-300"
               >
                 <FileVideo2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Ghi màn hình cục bộ</span>
+                <span className="hidden sm:inline">Ghi và lưu 3 ngày</span>
               </Button>
             )}
             {manager && recordingState === 'recording' && (
               <Button variant="danger" size="sm" onClick={stopRecording}>
                 <CircleStop className="h-4 w-4" />
                 Dừng và lưu video
+              </Button>
+            )}
+            {manager && recordingBusy && (
+              <Button variant="outline" size="sm" disabled className="border-slate-300 bg-white text-slate-600">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                {recordingState === 'starting' ? 'Đang chuẩn bị' : 'Đang hoàn tất'}
               </Button>
             )}
           </div>
@@ -848,7 +1017,7 @@ export function OnlineClassroomPage() {
           )}
         </section>
 
-        {(access.publicPilotProvider || revalidationWarning || syncWarning || recordingState === 'recording') && (
+        {(access.publicPilotProvider || revalidationWarning || syncWarning || recordingState !== 'idle' || access.recordingNotice?.active || readyRecording || recordingError) && (
           <div className="mb-4 grid gap-2 lg:grid-cols-2">
             {access.publicPilotProvider && (
               <div className="flex items-start gap-3 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-semibold leading-5 text-sky-950">
@@ -862,12 +1031,71 @@ export function OnlineClassroomPage() {
                 <p>{revalidationWarning || syncWarning}</p>
               </div>
             )}
-            {recordingState === 'recording' && (
+            {(recordingState === 'recording' || recordingState === 'stopping') && (
               <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="status">
                 <span className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-600" />
-                <p>Đang ghi màn hình đã chọn trên thiết bị này. Bản ghi chưa được tải lên hệ thống.</p>
+                <p>
+                  {recordingState === 'recording'
+                    ? `Đang ghi và tải từng phần lên vùng riêng tư (${formatRecordingBytes(recordingUploadedBytes)} đã tải).`
+                    : 'Đang chốt tệp và tạo link xem lại. Không đóng trang cho đến khi hoàn tất.'}
+                </p>
               </div>
             )}
+            {access.recordingNotice?.active && recordingState === 'idle' && (
+              <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="status" aria-live="polite">
+                <span className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-600" />
+                <p><strong>Buổi học đang được ghi.</strong> Chỉ tiếp tục khi bạn đã biết và đồng ý việc ghi hình, ghi âm.</p>
+              </div>
+            )}
+            {readyRecording && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-950" role="status">
+                <div>
+                  <p className="font-black">Bản ghi đã sẵn sàng</p>
+                  <p>Tự xóa sau 3 ngày hoặc ngay khi người xem xác nhận đã tải xong.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={readyRecording.replayUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 font-extrabold text-white hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
+                    Xem lại <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(readyRecording.replayUrl)
+                        .then(() => toast.success('Đã sao chép link xem lại cho học viên.'))
+                        .catch(() => toast.error('Chưa sao chép được link. Hãy mở Xem lại rồi sao chép trên thanh địa chỉ.'))
+                    }}
+                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 font-extrabold text-emerald-900 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Sao chép link
+                  </button>
+                </div>
+              </div>
+            )}
+            {recordingError && !showRecordingConsent && (
+              <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="alert">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{recordingError}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {classroomGifts.canSendGift && (
+          <div className="mb-4">
+            <ClassroomGiftTray
+              studentName={access.studentName}
+              canSend={classroomGifts.canSendGift}
+              sendingGiftType={classroomGifts.sendingGiftType}
+              loading={classroomGifts.loadingGifts}
+              sendError={classroomGifts.sendError}
+              syncWarning={classroomGifts.syncWarning}
+              onSend={classroomGifts.sendGift}
+            />
           </div>
         )}
 
@@ -896,16 +1124,40 @@ export function OnlineClassroomPage() {
               meetingDomain={access.meetingDomain}
               roomName={access.roomName}
               displayName={access.displayName}
+              observerMode={access.role === 'admin'}
               onApiReady={(api) => {
                 jitsiApiRef.current = api
-                if (!api) dataChannelReadyRef.current = false
+                if (!api) {
+                  dataChannelReadyRef.current = false
+                  localParticipantIdRef.current = ''
+                  remoteParticipantIdsRef.current = new Set()
+                  setRemoteParticipantCount(0)
+                }
               }}
               onConferenceJoined={handleConferenceJoined}
               onParticipantJoined={handleParticipantJoined}
+              onParticipantLeft={handleParticipantLeft}
               onDataChannelOpened={handleDataChannelOpened}
-              onTextMessage={(text, senderId) => handleBoardTextMessage(text, senderId)}
-              onConnectionStateChange={setConnectionState}
-              onEnded={() => setConnectionState('ended')}
+              onTextMessage={(text, senderId) => {
+                if (classroomGifts.handleRealtimeMessage(text)) return
+                handleBoardTextMessage(text, senderId)
+              }}
+              onConnectionStateChange={(nextState) => {
+                connectionStateRef.current = nextState
+                setConnectionState(nextState)
+                if (nextState === 'connected') window.setTimeout(startBoardHandshake, 0)
+                if (nextState === 'ended' || nextState === 'error') {
+                  dataChannelReadyRef.current = false
+                  localParticipantIdRef.current = ''
+                  remoteParticipantIdsRef.current = new Set()
+                  setRemoteParticipantCount(0)
+                  stopRecording()
+                }
+              }}
+              onEnded={() => {
+                connectionStateRef.current = 'ended'
+                setConnectionState('ended')
+              }}
               onError={(message) => toast.error(message)}
             />
           </div>
@@ -938,6 +1190,11 @@ export function OnlineClassroomPage() {
         </div>
       </main>
 
+      <ClassroomGiftOverlay
+        gift={classroomGifts.activeGift}
+        pendingGiftCount={classroomGifts.pendingGiftCount}
+      />
+
       <Modal
         open={showRecordingConsent}
         onClose={() => {
@@ -947,7 +1204,7 @@ export function OnlineClassroomPage() {
             setRecordingError('')
           }
         }}
-        title="Ghi màn hình trên thiết bị"
+        title="Ghi và lưu buổi học trên hệ thống"
         size="md"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -968,21 +1225,22 @@ export function OnlineClassroomPage() {
               className="bg-[#ffc107] text-[#10213a] hover:bg-amber-400 focus:ring-amber-300"
             >
               <MonitorUp className="h-4 w-4" />
-              Chọn nơi lưu, màn hình và bắt đầu
+              Chọn tab và bắt đầu ghi
             </Button>
           </div>
         )}
       >
         <div className="space-y-4 text-sm font-semibold leading-6 text-slate-600">
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-            <p className="font-black">Bản ghi chỉ nằm trên thiết bị của bạn</p>
-            <p className="mt-1 text-xs leading-5">Bạn chọn nơi lưu trước khi ghi; dữ liệu WebM được ghi dần vào tệp để buổi học dài không làm đầy bộ nhớ. 123English không tự tải lên hoặc giữ bản sao.</p>
+            <p className="font-black">Lưu riêng tư tối đa 3 ngày</p>
+            <p className="mt-1 text-xs leading-5">Video được tải từng phần lên hệ thống trong lúc ghi. Người có link xem lại có thể tải về máy; sau khi xác nhận đã tải xong, hệ thống xóa quyền truy cập và tệp ngay.</p>
           </div>
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>Thông báo cho gia sư, học viên và người giám hộ nếu cần.</li>
             <li>Chỉ tiếp tục khi mọi người đã đồng ý ghi hình và ghi âm.</li>
-            <li>Trong cửa sổ Chrome hoặc Edge, chọn tab lớp học này và bật chia sẻ âm thanh của tab.</li>
-            <li>Dùng nút <strong>Dừng và lưu video</strong> và chờ thông báo tệp đã ghi xong.</li>
+            <li>Trong cửa sổ Chrome hoặc Edge, chọn <strong>tab lớp học 123English</strong> và bật <strong>Chia sẻ âm thanh của thẻ</strong>.</li>
+            <li>Cho phép micro ở hộp thoại kế tiếp để bản ghi có cả tiếng gia sư và học viên.</li>
+            <li>Dùng nút <strong>Dừng và lưu video</strong>, rồi giữ trang mở đến khi link xem lại xuất hiện.</li>
           </ol>
           <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-800">
             <input

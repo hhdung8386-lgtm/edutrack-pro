@@ -25,12 +25,29 @@ import {
 } from './onlineClassroom'
 
 export {
+  appendOnlineClassroomBoardOperation,
   getOnlineClassroomAccess,
   getOnlineClassroomPilotStatus,
   issueOnlineClassroomInvite,
   saveOnlineClassroomBoard,
   setOnlineClassroomPilotAccess,
 } from './onlineClassroomFunctions'
+
+export {
+  abandonOnlineClassroomRecording,
+  cleanupOnlineClassroomRecordings,
+  confirmOnlineClassroomRecordingDownloaded,
+  createOnlineClassroomRecordingShareLink,
+  finalizeOnlineClassroomRecording,
+  getOnlineClassroomRecording,
+  getOnlineClassroomRecordingsForBookings,
+  startOnlineClassroomRecording,
+} from './onlineClassroomRecordingFunctions'
+
+export {
+  getOnlineClassroomGiftEvents,
+  sendOnlineClassroomGift,
+} from './onlineClassroomGiftFunctions'
 
 initializeApp()
 

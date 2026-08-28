@@ -32,6 +32,12 @@ export type OnlineClassroomAccess = {
   requestedEnd: string
   curriculumLink: string
   boardSnapshot: ClassroomBoardSnapshot
+  recordingNotice: {
+    active: true
+    recordingId: string
+    startedByRole: 'admin' | 'teacher'
+    startedAt: string | null
+  } | null
 }
 
 const functions = getFunctions(app, 'asia-southeast1')
@@ -61,6 +67,17 @@ const saveBoardCallable = httpsCallable<
   { success: boolean; version: number; unchanged: boolean }
 >(functions, 'saveOnlineClassroomBoard')
 
+const appendBoardOperationCallable = httpsCallable<
+  { bookingId: string; token?: string; operation: unknown },
+  {
+    success: boolean
+    appended: boolean
+    duplicate: boolean
+    version: number
+    boardSnapshot: ClassroomBoardSnapshot
+  }
+>(functions, 'appendOnlineClassroomBoardOperation')
+
 export async function getOnlineClassroomPilotStatus(targetType: OnlineClassroomTargetType, targetId: string) {
   return (await getPilotStatusCallable({ targetType, targetId })).data
 }
@@ -88,6 +105,14 @@ export async function saveOnlineClassroomBoard(
   token?: string,
 ) {
   return (await saveBoardCallable({ bookingId, expectedVersion, boardSnapshot, ...(token ? { token } : {}) })).data
+}
+
+export async function appendOnlineClassroomBoardOperation(
+  bookingId: string,
+  operation: unknown,
+  token?: string,
+) {
+  return (await appendBoardOperationCallable({ bookingId, operation, ...(token ? { token } : {}) })).data
 }
 
 const tokenStorageKey = (bookingId: string) => `123english_classroom_token_${bookingId}`

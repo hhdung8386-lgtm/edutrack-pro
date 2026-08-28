@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, deleteField, setDoc, writeBatch } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Teacher, Lesson, Student, StudentSubject, TeacherAvailability, DayOfWeek, Payroll, Subject, PaymentSettings } from '@/types'
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2, ExternalLink, Loader2, Pause, Volume2 } from 'lucide-react'
 import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
 import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
@@ -31,6 +31,7 @@ import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
+import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -70,6 +71,10 @@ export function TeacherDetailPage() {
   const [showRetireConfirm, setShowRetireConfirm] = useState(false)
   const [retiring, setRetiring] = useState(false)
   const [publishingProfile, setPublishingProfile] = useState(false)
+  const [introAudioURL, setIntroAudioURL] = useState('')
+  const [introAudioLoading, setIntroAudioLoading] = useState(false)
+  const [introAudioPlaying, setIntroAudioPlaying] = useState(false)
+  const introAudioRef = useRef<HTMLAudioElement>(null)
   const [lessonsLoaded, setLessonsLoaded] = useState(false)
   const [lessonLoadFailed, setLessonLoadFailed] = useState(false)
   const [subjectsLoaded, setSubjectsLoaded] = useState(false)
@@ -79,6 +84,45 @@ export function TeacherDetailPage() {
   useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snapshot) => {
     setPaymentSettings(snapshot.exists() ? snapshot.data() as PaymentSettings : null)
   }), [])
+
+  useEffect(() => {
+    if (!teacher?.id) {
+      setIntroAudioURL('')
+      setIntroAudioLoading(false)
+      return
+    }
+
+    let active = true
+    setIntroAudioLoading(true)
+    setIntroAudioPlaying(false)
+    getTeacherIntroductionAudioURL(teacher.id)
+      .then((url) => {
+        if (active) setIntroAudioURL(url)
+      })
+      .finally(() => {
+        if (active) setIntroAudioLoading(false)
+      })
+
+    return () => {
+      active = false
+      introAudioRef.current?.pause()
+    }
+  }, [teacher?.id])
+
+  const handleToggleIntroAudio = async () => {
+    const audio = introAudioRef.current
+    if (!audio || !introAudioURL) return
+    if (!audio.paused) {
+      audio.pause()
+      return
+    }
+    try {
+      await audio.play()
+    } catch {
+      setIntroAudioPlaying(false)
+      toast.error('Chưa phát được file giới thiệu. Hãy kiểm tra âm lượng và thử lại.')
+    }
+  }
 
   // Khôi phục quyền đăng nhập cho GV bị 403: luồng đổi nickname có thể để lại
   // users doc với role 'inactive_teacher' trong khi teacher vẫn active — GV đăng
@@ -1316,7 +1360,44 @@ export function TeacherDetailPage() {
                   {teacher.code || teacher.releasedNickname || 'Đã thu hồi'}
                 </span>
                  <StatusBadge status={teacher.status} type="teacher" />
-              </div>
+                 {introAudioLoading ? (
+                   <span
+                     className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-500"
+                     role="status"
+                   >
+                     <Loader2 className="h-4 w-4 animate-spin" />
+                     Kiểm tra MP3
+                   </span>
+                 ) : introAudioURL ? (
+                   <>
+                     <button
+                       type="button"
+                       onClick={() => void handleToggleIntroAudio()}
+                       aria-label={introAudioPlaying ? 'Tạm dừng file giới thiệu của gia sư' : 'Nghe file giới thiệu của gia sư'}
+                       aria-pressed={introAudioPlaying}
+                       className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-800 transition-colors hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                     >
+                       {introAudioPlaying ? <Pause className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                       {introAudioPlaying ? 'Tạm dừng' : 'Nghe MP3'}
+                     </button>
+                     <audio
+                       ref={introAudioRef}
+                       className="hidden"
+                       preload="none"
+                       src={introAudioURL}
+                       onPlay={() => setIntroAudioPlaying(true)}
+                       onPause={() => setIntroAudioPlaying(false)}
+                       onEnded={() => setIntroAudioPlaying(false)}
+                       onError={() => {
+                         setIntroAudioPlaying(false)
+                         toast.error('File giới thiệu chưa phát được. Vui lòng tải lại MP3 trong hồ sơ gia sư.')
+                       }}
+                     >
+                       Trình duyệt của bạn không hỗ trợ phát audio.
+                     </audio>
+                   </>
+                 ) : null}
+               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm mt-2">
                 <div>
                   <span className="text-slate-500">Họ tên: </span>

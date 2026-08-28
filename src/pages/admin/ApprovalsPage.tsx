@@ -18,7 +18,7 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute } from '@/lib/constants'
-import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2 } from 'lucide-react'
+import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
@@ -30,6 +30,10 @@ import {
   countsAsDailyAttendance,
   type AttendanceAudit, type AuditMessage,
 } from '@/lib/attendanceAudit'
+import {
+  getOnlineClassroomRecordingsForBookings,
+  type OnlineClassroomRecordingSummary,
+} from '@/lib/onlineClassroomRecording'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -71,7 +75,7 @@ function AuditNotice({ message, compactWhenFine = false }: { message: AuditMessa
 }
 
 export function ApprovalsPage() {
-  const { user } = useAuthStore()
+  const { user, role } = useAuthStore()
   const [tab, setTab] = useState<string>('pending')
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
@@ -86,6 +90,7 @@ export function ApprovalsPage() {
   const [totalCounts, setTotalCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
   const [limitVal, setLimitVal] = useState(30)
   const [studentBalances, setStudentBalances] = useState<Record<string, { available: number; remaining: number }>>({})
+  const [recordingsByBooking, setRecordingsByBooking] = useState<Record<string, OnlineClassroomRecordingSummary>>({})
 
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
@@ -174,6 +179,36 @@ export function ApprovalsPage() {
   useEffect(() => {
     setLimitVal(30)
   }, [tab])
+
+  useEffect(() => {
+    if (role !== 'admin') {
+      setRecordingsByBooking({})
+      return
+    }
+    const bookingIds = [...new Set(lessons.flatMap((lesson) => [
+      lesson.bookingRequestId || '',
+      ...(lesson.bookingRequestIds || []),
+    ]).filter(Boolean))]
+    if (bookingIds.length === 0) {
+      setRecordingsByBooking({})
+      return
+    }
+    let active = true
+    const timeout = window.setTimeout(() => {
+      getOnlineClassroomRecordingsForBookings(bookingIds)
+        .then((recordings) => {
+          if (active) setRecordingsByBooking(recordings)
+        })
+        .catch((error) => {
+          console.error('Load classroom recordings for approvals failed:', error)
+          if (active) setRecordingsByBooking({})
+        })
+    }, 250)
+    return () => {
+      active = false
+      window.clearTimeout(timeout)
+    }
+  }, [lessons, role])
 
   const fetchCounts = async () => {
     try {
@@ -669,6 +704,9 @@ export function ApprovalsPage() {
           {filteredLessons.map((lesson) => {
             const balance = studentBalances[lesson.studentId]
             const isOutOfMinutes = balance && balance.remaining <= 0
+            const lessonRecording = [lesson.bookingRequestId, ...(lesson.bookingRequestIds || [])]
+              .map((bookingId) => bookingId ? recordingsByBooking[bookingId] : undefined)
+              .find((recording): recording is OnlineClassroomRecordingSummary => Boolean(recording))
             return (
               <Card key={lesson.id} className="relative">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -689,6 +727,18 @@ export function ApprovalsPage() {
                         {copiedLessonId === lesson.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                         {copiedLessonId === lesson.id ? 'Đã copy' : 'Copy buổi học'}
                       </button>
+                      {role === 'admin' && lessonRecording && (
+                        <Link
+                          to={lessonRecording.viewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800 transition-colors hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                          title={`Bản ghi tự xóa lúc ${lessonRecording.expiresAt ? new Date(lessonRecording.expiresAt).toLocaleString('vi-VN', { hour12: false }) : 'hết hạn'}`}
+                        >
+                          <FileVideo2 className="h-3.5 w-3.5" />
+                          Xem lại buổi học
+                        </Link>
+                      )}
                     </div>
 
                     {isOutOfMinutes && lesson.status === 'pending' && (

@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
+  decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
   isInsideOnlineClassroomJoinWindow,
   nextOnlineClassroomAccessGeneration,
@@ -18,6 +19,8 @@ const {
   parseVietnamBookingTime,
   partitionOnlineClassroomReminderBookings,
   sanitizeOnlineClassroomDomain,
+  validateOnlineClassroomBoardDraft,
+  validateOnlineClassroomBoardOperation,
   validateOnlineClassroomBoardSnapshot,
 } = require('../lib/onlineClassroom.js')
 
@@ -30,6 +33,42 @@ const confirmed = {
   requestedDate: '2026-08-27',
   requestedStart: '18:00',
   requestedEnd: '18:50',
+}
+
+const validStroke = {
+  id: 'stroke-test-0001',
+  authorRole: 'student',
+  createdAt: 1_787_900_000_000,
+  kind: 'stroke',
+  tool: 'pen',
+  color: '#10213a',
+  width: 4,
+  opacity: 1,
+  points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }],
+}
+
+const validText = {
+  id: 'text-test-000001',
+  authorRole: 'teacher',
+  createdAt: 1_787_900_000_001,
+  kind: 'text',
+  color: '#2563eb',
+  fontSize: 22,
+  point: { x: 0.25, y: 0.35 },
+  text: 'Câu trả lời',
+}
+
+const validShape = {
+  id: 'shape-test-00001',
+  authorRole: 'admin',
+  createdAt: 1_787_900_000_002,
+  kind: 'shape',
+  shape: 'arrow',
+  color: '#d97706',
+  width: 4,
+  opacity: 1,
+  start: { x: 0.2, y: 0.3 },
+  end: { x: 0.7, y: 0.8 },
 }
 
 test('tạo khóa allowlist và session riêng cho từng booking nhưng không lộ booking id', () => {
@@ -111,26 +150,120 @@ test('không tự sửa ngày giờ booking sai thành một lịch hợp lệ k
 test('chặn domain sai và snapshot bảng quá lớn hoặc sai schema', () => {
   assert.equal(sanitizeOnlineClassroomDomain('https://meet.jit.si/'), 'meet.jit.si')
   assert.equal(sanitizeOnlineClassroomDomain('javascript:alert(1)'), 'meet.jit.si')
-  assert.deepEqual(validateOnlineClassroomBoardSnapshot({ version: 2, studentCanWrite: true, operations: [{ id: 'a' }] }), {
+  assert.deepEqual(validateOnlineClassroomBoardSnapshot({ version: 2, studentCanWrite: true, operations: [validStroke] }), {
     version: 2,
     studentCanWrite: true,
-    operations: [{ id: 'a' }],
+    operations: [validStroke],
   })
   assert.equal(validateOnlineClassroomBoardSnapshot({ version: 1, studentCanWrite: true, operations: new Array(1501).fill({}) }), null)
   assert.equal(validateOnlineClassroomBoardSnapshot({ version: -1, studentCanWrite: true, operations: [] }), null)
+  assert.equal(validateOnlineClassroomBoardSnapshot({ version: 1, studentCanWrite: true, operations: [validStroke, validStroke] }), null)
+  assert.equal(validateOnlineClassroomBoardSnapshot({ version: 1, studentCanWrite: true, operations: [{ id: 'legacy' }] }), null)
 })
 
 test('không để request lưu bảng cũ ghi đè snapshot mới hơn', () => {
-  const current = { version: 3, studentCanWrite: true, operations: [{ id: 'new' }] }
-  const sameDraft = { studentCanWrite: true, operations: [{ id: 'new' }] }
+  const current = { version: 3, studentCanWrite: true, operations: [validStroke] }
+  const sameDraft = { studentCanWrite: true, operations: [validStroke] }
   assert.equal(decideOnlineClassroomBoardSave(current, 3, sameDraft), 'noop')
   assert.equal(decideOnlineClassroomBoardSave(current, 3, {
     studentCanWrite: true,
-    operations: [{ id: 'different' }],
+    operations: [validText],
   }), 'write')
   assert.equal(decideOnlineClassroomBoardSave(current, 2, sameDraft), 'conflict')
   assert.equal(decideOnlineClassroomBoardSave(current, 4, sameDraft), 'conflict')
   assert.equal(decideOnlineClassroomBoardSave(null, 0, { studentCanWrite: true, operations: [] }), 'write')
+})
+
+test('kiểm tra sâu schema operation và không nhận dữ liệu thừa', () => {
+  assert.deepEqual(validateOnlineClassroomBoardOperation(validStroke), validStroke)
+  assert.deepEqual(validateOnlineClassroomBoardOperation(validShape), validShape)
+  assert.deepEqual(validateOnlineClassroomBoardOperation({ ...validText, text: '  Câu trả lời  ' }), validText)
+  assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, id: 'short' }), null)
+  assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, color: 'red' }), null)
+  assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, points: [{ x: -0.1, y: 0.2 }] }), null)
+  assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, unexpected: 'data' }), null)
+  assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, points: new Array(801).fill({ x: 0.1, y: 0.2 }) }), null)
+  assert.deepEqual(validateOnlineClassroomBoardDraft({ studentCanWrite: true, operations: [validStroke] }), {
+    studentCanWrite: true,
+    operations: [validStroke],
+  })
+  assert.equal(validateOnlineClassroomBoardDraft({ studentCanWrite: true, operations: [{ id: 'legacy' }] }), null)
+})
+
+test('append operation ép vai trò từ backend và tăng đúng một version', () => {
+  const current = { version: 7, studentCanWrite: true, operations: [] }
+  const result = decideOnlineClassroomBoardOperationAppend(current, validStroke, 'teacher')
+  assert.equal(result.decision, 'append')
+  assert.equal(result.boardSnapshot.version, 8)
+  assert.equal(result.boardSnapshot.operations.length, 1)
+  assert.equal(result.boardSnapshot.operations[0].authorRole, 'teacher')
+  assert.equal(current.version, 7)
+  assert.equal(current.operations.length, 0)
+
+  const forgedRole = decideOnlineClassroomBoardOperationAppend(current, validText, 'student')
+  assert.equal(forgedRole.boardSnapshot.operations[0].authorRole, 'student')
+})
+
+test('append student bị chặn khi khóa nhưng manager vẫn ghi được', () => {
+  const locked = { version: 3, studentCanWrite: false, operations: [] }
+  assert.equal(decideOnlineClassroomBoardOperationAppend(locked, validStroke, 'student').decision, 'locked')
+  assert.equal(decideOnlineClassroomBoardOperationAppend(locked, validStroke, 'teacher').decision, 'append')
+  assert.equal(decideOnlineClassroomBoardOperationAppend(locked, validStroke, 'admin').decision, 'append')
+})
+
+test('append operation idempotent và phát hiện cùng id khác nội dung', () => {
+  const storedStroke = { ...validStroke, authorRole: 'student' }
+  const current = { version: 4, studentCanWrite: false, operations: [storedStroke] }
+  const duplicate = decideOnlineClassroomBoardOperationAppend(current, validStroke, 'student')
+  assert.equal(duplicate.decision, 'duplicate')
+  assert.equal(duplicate.boardSnapshot.version, 4)
+  assert.equal(duplicate.boardSnapshot.operations.length, 1)
+
+  const conflict = decideOnlineClassroomBoardOperationAppend(
+    current,
+    { ...validStroke, points: [...validStroke.points, { x: 0.5, y: 0.6 }] },
+    'student',
+  )
+  assert.equal(conflict.decision, 'conflict')
+  assert.equal(conflict.boardSnapshot.version, 4)
+})
+
+test('append từ chối khi đạt giới hạn số operation', () => {
+  const operations = Array.from({ length: 1_500 }, (_, index) => ({
+    ...validStroke,
+    id: `stroke-limit-${String(index).padStart(4, '0')}`,
+    points: [{ x: 0.1, y: 0.2 }],
+  }))
+  const current = { version: 10, studentCanWrite: true, operations }
+  assert.ok(validateOnlineClassroomBoardSnapshot(current))
+  assert.equal(
+    decideOnlineClassroomBoardOperationAppend(current, { ...validStroke, id: 'stroke-limit-next' }, 'student').decision,
+    'max-operations',
+  )
+})
+
+test('append từ chối khi snapshot mới vượt giới hạn byte', () => {
+  const denseStroke = {
+    ...validStroke,
+    points: Array.from({ length: 800 }, (_, index) => ({
+      x: (index % 997) / 997,
+      y: ((index * 17) % 991) / 991,
+    })),
+  }
+  const operations = []
+  let nextIndex = 0
+  while (nextIndex < 1_500) {
+    const operation = { ...denseStroke, id: `stroke-dense-${String(nextIndex).padStart(4, '0')}` }
+    const candidate = { version: nextIndex, studentCanWrite: true, operations: [...operations, operation] }
+    if (!validateOnlineClassroomBoardSnapshot(candidate)) break
+    operations.push(operation)
+    nextIndex += 1
+  }
+  const current = { version: nextIndex, studentCanWrite: true, operations }
+  assert.ok(operations.length > 0 && operations.length < 1_500)
+  assert.ok(validateOnlineClassroomBoardSnapshot(current))
+  const overflow = { ...denseStroke, id: 'stroke-dense-overflow' }
+  assert.equal(decideOnlineClassroomBoardOperationAppend(current, overflow, 'student').decision, 'max-bytes')
 })
 
 test('reminder pilot dùng allowlist private và khóa riêng theo từng session', () => {
