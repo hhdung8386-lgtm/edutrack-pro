@@ -151,7 +151,7 @@ export function OnlineClassroomPilotCard({
             <p className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />Vào lớp không tự điểm danh, trừ kim cương hoặc tạo lương.</p>
           </div>
           <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold leading-5 text-amber-800">
-            Đây là pilot kỹ thuật quy mô rất nhỏ trên hạ tầng hội nghị công cộng. Không dùng dữ liệu nhạy cảm, không chuyển tiếp magic link và dừng trước giới hạn 25 endpoints mỗi tháng.
+            Đây là pilot kỹ thuật quy mô nhỏ trên JaaS gói Dev miễn phí. Không dùng dữ liệu nhạy cảm, không chuyển tiếp magic link và theo dõi giới hạn 25 người dùng hoạt động mỗi tháng (MAU).
           </p>
           {statusError && <p className="mt-3 text-xs font-bold text-rose-700">Không xác minh được allowlist backend: {statusError}</p>}
         </div>
