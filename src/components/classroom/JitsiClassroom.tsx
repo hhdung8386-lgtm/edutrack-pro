@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, RotateCcw, Video } from 'lucide-react'
 import type { JitsiEventHandler, JitsiExternalApi } from '@/lib/jitsiExternalApi'
+import {
+  resolveJitsiLaunchConfig,
+  type OnlineClassroomMeetingProvider,
+} from '@/lib/jitsiMeeting'
 
 export type JitsiConnectionState = 'loading' | 'joining' | 'connected' | 'ended' | 'error'
 
@@ -14,6 +18,7 @@ type JitsiConstructor = new (
     lang: string
     userInfo: { displayName: string }
     configOverwrite: Record<string, unknown>
+    jwt?: string
     onload?: () => void
   },
 ) => JitsiExternalApi
@@ -25,7 +30,10 @@ declare global {
 }
 
 type JitsiClassroomProps = {
+  meetingProvider?: OnlineClassroomMeetingProvider
   meetingDomain: string
+  meetingAppId?: string
+  meetingJwt?: string
   roomName: string
   displayName: string
   observerMode?: boolean
@@ -41,6 +49,7 @@ type JitsiClassroomProps = {
 }
 
 const scriptPromises = new Map<string, Promise<void>>()
+let loadedScriptUrl = ''
 const JITSI_LOAD_TIMEOUT_MS = 30_000
 
 type MediaKind = 'camera' | 'microphone'
@@ -54,41 +63,42 @@ function readString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function isSafeMeetingDomain(domain: string): boolean {
-  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d{2,5})?$/i.test(domain)
+function jitsiScriptId(scriptUrl: string): string {
+  return `jitsi-external-api-${scriptUrl.replace(/[^a-z0-9]/gi, '-')}`
 }
 
-function jitsiScriptId(domain: string): string {
-  return `jitsi-external-api-${domain.replace(/[^a-z0-9]/gi, '-')}`
+function resetJitsiScript(scriptUrl: string): void {
+  scriptPromises.delete(scriptUrl)
+  document.getElementById(jitsiScriptId(scriptUrl))?.remove()
+  if (loadedScriptUrl === scriptUrl) loadedScriptUrl = ''
 }
 
-function resetJitsiScript(domain: string): void {
-  scriptPromises.delete(domain)
-  document.getElementById(jitsiScriptId(domain))?.remove()
-}
-
-function loadJitsiScript(domain: string): Promise<void> {
-  const existing = scriptPromises.get(domain)
+function loadJitsiScript(scriptUrl: string): Promise<void> {
+  const existing = scriptPromises.get(scriptUrl)
   if (existing) return existing
 
   const promise = new Promise<void>((resolve, reject) => {
-    if (window.JitsiMeetExternalAPI) {
+    const scriptId = jitsiScriptId(scriptUrl)
+    const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null
+    if (window.JitsiMeetExternalAPI && (loadedScriptUrl === scriptUrl || existingScript?.dataset.loaded === 'true')) {
       resolve()
       return
     }
 
-    const scriptId = jitsiScriptId(domain)
-    const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null
     // Nếu thẻ script còn tồn tại mà API chưa có thì đó là lần tải cũ đã lỗi.
     // Xóa thẻ cũ để nút thử lại luôn tạo một request mới, có thể hoàn tất.
     existingScript?.remove()
 
     const script = document.createElement('script')
     script.id = scriptId
-    script.src = `https://${domain}/external_api.js`
+    script.src = scriptUrl
     script.async = true
     script.referrerPolicy = 'strict-origin-when-cross-origin'
-    script.addEventListener('load', () => resolve(), { once: true })
+    script.addEventListener('load', () => {
+      loadedScriptUrl = scriptUrl
+      script.dataset.loaded = 'true'
+      resolve()
+    }, { once: true })
     script.addEventListener('error', () => {
       script.remove()
       reject(new Error('Không tải được trình gọi video. Hãy kiểm tra mạng rồi thử lại.'))
@@ -96,9 +106,9 @@ function loadJitsiScript(domain: string): Promise<void> {
     document.head.appendChild(script)
   })
 
-  scriptPromises.set(domain, promise)
+  scriptPromises.set(scriptUrl, promise)
   void promise.catch(() => {
-    if (scriptPromises.get(domain) === promise) scriptPromises.delete(domain)
+    if (scriptPromises.get(scriptUrl) === promise) scriptPromises.delete(scriptUrl)
   })
   return promise
 }
@@ -138,7 +148,10 @@ function participantId(payload: unknown): string {
 }
 
 export function JitsiClassroom({
+  meetingProvider,
   meetingDomain,
+  meetingAppId,
+  meetingJwt,
   roomName,
   displayName,
   observerMode = false,
@@ -169,6 +182,11 @@ export function JitsiClassroom({
   const [state, setState] = useState<JitsiConnectionState>('loading')
   const [errorMessage, setErrorMessage] = useState('')
   const [mediaWarnings, setMediaWarnings] = useState<MediaWarnings>({})
+  const meetingJwtRef = useRef(meetingJwt)
+
+  useEffect(() => {
+    meetingJwtRef.current = meetingJwt
+  }, [meetingJwt])
 
   useEffect(() => {
     callbackRef.current = {
@@ -191,6 +209,7 @@ export function JitsiClassroom({
     let failed = false
     let api: JitsiExternalApi | null = null
     let loadTimeout: number | null = null
+    let activeScriptUrl = ''
     const listeners: Array<[string, JitsiEventHandler]> = []
     const parentNode = containerRef.current
 
@@ -231,7 +250,7 @@ export function JitsiClassroom({
       failed = true
       const waitingForLoad = loadTimeout !== null
       clearLoadTimeout()
-      if (waitingForLoad) resetJitsiScript(meetingDomain)
+      if (waitingForLoad && activeScriptUrl) resetJitsiScript(activeScriptUrl)
       setErrorMessage(message)
       setState('error')
       callbackRef.current.onConnectionStateChange?.('error')
@@ -262,33 +281,42 @@ export function JitsiClassroom({
     }
 
     const mountConference = async () => {
-      if (!isSafeMeetingDomain(meetingDomain) || !roomName || !parentNode) {
+      if (!parentNode) {
         fail('Thông tin phòng học không hợp lệ.')
         return
       }
 
       try {
+        const launch = resolveJitsiLaunchConfig({
+          meetingProvider,
+          meetingDomain,
+          meetingAppId,
+          meetingJwt: meetingJwtRef.current,
+          roomName,
+        })
+        activeScriptUrl = launch.scriptUrl
         setErrorMessage('')
         setMediaWarnings({})
         updateState('loading')
         loadTimeout = window.setTimeout(() => {
           fail('Phòng học tải quá lâu. Hãy kiểm tra mạng rồi thử lại.')
         }, JITSI_LOAD_TIMEOUT_MS)
-        await loadJitsiScript(meetingDomain)
+        await loadJitsiScript(launch.scriptUrl)
         if (disposed || failed) return
         const ExternalApi = window.JitsiMeetExternalAPI
         if (!ExternalApi) {
-          resetJitsiScript(meetingDomain)
+          resetJitsiScript(launch.scriptUrl)
           throw new Error('Trình gọi video chưa sẵn sàng. Hãy thử lại.')
         }
 
-        api = new ExternalApi(meetingDomain, {
-          roomName,
+        api = new ExternalApi(launch.constructorDomain, {
+          roomName: launch.roomName,
           parentNode,
           width: '100%',
           height: '100%',
           lang: 'vi',
           userInfo: { displayName },
+          ...(launch.jwt ? { jwt: launch.jwt } : {}),
           onload: () => {
             if (disposed || failed) return
             clearLoadTimeout()
@@ -412,7 +440,7 @@ export function JitsiClassroom({
       clearLoadTimeout()
       disposeConference()
     }
-  }, [attempt, displayName, hasStarted, meetingDomain, observerMode, roomName])
+  }, [attempt, displayName, hasStarted, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
 
   const startConference = () => {
     setErrorMessage('')
@@ -442,7 +470,7 @@ export function JitsiClassroom({
             </span>
             <h2 className="mt-4 text-lg font-extrabold">Sẵn sàng vào lớp?</h2>
             <p id="jitsi-start-help" className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-300">
-              Sau khi bấm, Jitsi sẽ mở màn hình kiểm tra thiết bị. Hãy cho phép camera, micro và bấm Vào lớp trong khung cuộc gọi.
+              Sau khi bấm, phòng học sẽ mở màn hình kiểm tra thiết bị. Hãy cho phép camera, micro và bấm Vào lớp trong khung cuộc gọi.
             </p>
             <button
               type="button"

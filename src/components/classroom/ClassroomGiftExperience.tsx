@@ -122,7 +122,7 @@ export function ClassroomGiftOverlay({ gift, pendingGiftCount = 0 }: ClassroomGi
   const Icon = giftIcons[gift.giftType]
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[80] overflow-hidden" aria-live="polite" aria-atomic="true">
+    <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-live="polite" aria-atomic="true">
       <p className="sr-only">
         {gift.senderName} tặng {gift.title} cho {gift.recipientName}. {gift.message}
       </p>

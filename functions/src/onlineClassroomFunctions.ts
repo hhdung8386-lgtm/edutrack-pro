@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { Firestore, FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
+import { defineSecret } from 'firebase-functions/params'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
   ONLINE_CLASSROOM_ACCESS_COLLECTION,
@@ -22,17 +23,22 @@ import {
   onlineClassroomStudentJoinUrl,
   onlineClassroomTokenHash,
   resolveOnlineClassroomTrustedActor,
-  sanitizeOnlineClassroomDomain,
   validateOnlineClassroomBoardDraft,
   validateOnlineClassroomBoardOperation,
   validateOnlineClassroomBoardSnapshot,
   type OnlineClassroomBookingLike,
   type OnlineClassroomTargetType,
 } from './onlineClassroom'
+import {
+  OnlineClassroomJaasConfigurationError,
+  createOnlineClassroomJaasJwt,
+  onlineClassroomJaasRoomName,
+  resolveOnlineClassroomMeetingConfig,
+} from './onlineClassroomJaas'
 
 const db = new Firestore()
 const CLASSROOM_ORIGIN = 'https://www.123english.edu.vn'
-const CLASSROOM_DOMAIN = sanitizeOnlineClassroomDomain(process.env.CLASSROOM_JITSI_DOMAIN)
+const jaasPrivateKey = defineSecret('JAAS_PRIVATE_KEY')
 const ONLINE_CLASSROOM_TOKEN_CLEANUP_LIMIT = 20
 const ONLINE_CLASSROOM_RECORDING_NOTICE_MAX_AGE_MS = 4 * 60 * 60 * 1000
 const ONLINE_CLASSROOM_BOARD_RATE_WINDOW_MS = 60_000
@@ -672,6 +678,7 @@ export const getOnlineClassroomAccess = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  secrets: [jaasPrivateKey],
 }, async (request) => {
   const bookingId = request.data?.bookingId
   if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
@@ -680,11 +687,72 @@ export const getOnlineClassroomAccess = onCall({
   const viewer = await resolveViewer(request, context)
   await cleanupOnlineClassroomTokensOpportunistically()
   const subjectPackage = context.student.subjects?.find((item) => item.subjectId === context.booking.subjectId)
+  let meetingAccess:
+    | {
+      meetingProvider: 'public-jitsi'
+      meetingDomain: 'meet.jit.si'
+      roomName: string
+      publicPilotProvider: true
+    }
+    | {
+      meetingProvider: 'jaas'
+      meetingDomain: '8x8.vc'
+      meetingAppId: string
+      meetingJwt: string
+      roomName: string
+      publicPilotProvider: false
+    }
+  try {
+    const meetingConfig = resolveOnlineClassroomMeetingConfig({
+      appId: process.env.CLASSROOM_JAAS_APP_ID,
+      kid: process.env.CLASSROOM_JAAS_KID,
+      privateKey: jaasPrivateKey.value(),
+    })
+    if (meetingConfig.meetingProvider === 'public-jitsi') {
+      meetingAccess = {
+        meetingProvider: 'public-jitsi',
+        meetingDomain: meetingConfig.meetingDomain,
+        roomName: context.roomName,
+        publicPilotProvider: true,
+      }
+    } else {
+      const viewerId = viewer.role === 'admin'
+        ? `admin:${request.auth?.uid || ''}`
+        : viewer.role === 'teacher'
+          ? `teacher:${context.booking.teacherId}`
+          : `student:${context.booking.studentId}`
+      meetingAccess = {
+        meetingProvider: 'jaas',
+        meetingDomain: meetingConfig.meetingDomain,
+        meetingAppId: meetingConfig.appId,
+        meetingJwt: createOnlineClassroomJaasJwt({
+          config: meetingConfig,
+          roomAlias: context.roomName,
+          role: viewer.role,
+          displayName: viewer.displayName,
+          viewerId,
+        }),
+        roomName: onlineClassroomJaasRoomName(meetingConfig, context.roomName),
+        publicPilotProvider: false,
+      }
+    }
+  } catch (error) {
+    // Never log the JWT or key material. A partially configured provider must
+    // fail closed instead of silently moving a private class to meet.jit.si.
+    logger.error('Online classroom meeting provider configuration rejected', {
+      reason: error instanceof OnlineClassroomJaasConfigurationError
+        ? error.reason
+        : 'JAAS_JWT_SIGNING_FAILED',
+    })
+    throw new HttpsError(
+      'failed-precondition',
+      'Dịch vụ phòng học chưa được cấu hình đầy đủ. Vui lòng liên hệ Admin.',
+      { reason: 'MEETING_PROVIDER_NOT_CONFIGURED' },
+    )
+  }
   return {
     bookingId,
-    roomName: context.roomName,
-    meetingDomain: CLASSROOM_DOMAIN,
-    publicPilotProvider: CLASSROOM_DOMAIN === 'meet.jit.si',
+    ...meetingAccess,
     role: viewer.role,
     displayName: viewer.displayName,
     studentName: context.student.name || context.booking.studentName || '',

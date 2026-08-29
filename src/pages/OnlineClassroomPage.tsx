@@ -200,9 +200,10 @@ function ClassroomPageSkeleton() {
       </header>
       <main className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6">
         <div className="mb-4 h-24 animate-pulse rounded-3xl border border-slate-200 bg-white" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="h-[560px] animate-pulse rounded-3xl bg-slate-900" />
-          <div className="h-[560px] animate-pulse rounded-3xl border border-slate-200 bg-white" />
+        <div className="mb-3 h-[52px] animate-pulse rounded-2xl border border-slate-200 bg-white lg:hidden" />
+        <div className="grid gap-4 lg:grid-cols-[minmax(320px,35fr)_minmax(0,65fr)] lg:gap-2.5 lg:rounded-[1.75rem] lg:bg-[#0b0f14] lg:p-2.5">
+          <div className="h-[min(68dvh,720px)] min-h-[460px] animate-pulse rounded-3xl bg-slate-900 lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]" />
+          <div className="hidden h-[calc(100dvh-245px)] min-h-[560px] max-h-[840px] animate-pulse rounded-3xl border border-slate-200 bg-white lg:block" />
         </div>
       </main>
     </div>
@@ -1761,10 +1762,13 @@ export function OnlineClassroomPage() {
           </button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(320px,35fr)_minmax(0,65fr)] lg:gap-2.5 lg:rounded-[1.75rem] lg:bg-[#0b0f14] lg:p-2.5 lg:shadow-[0_28px_75px_-52px_rgba(2,6,23,0.9)]">
           <div className={`${activePanel === 'video' ? 'block' : 'hidden'} h-[min(68dvh,720px)] min-h-[460px] lg:block lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]`}>
             <JitsiClassroom
+              meetingProvider={access.meetingProvider}
               meetingDomain={access.meetingDomain}
+              meetingAppId={access.meetingAppId}
+              meetingJwt={access.meetingJwt}
               roomName={access.roomName}
               displayName={access.displayName}
               observerMode={access.role === 'admin'}

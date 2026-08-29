@@ -1,0 +1,217 @@
+import {
+  createHash,
+  createPrivateKey,
+  randomBytes,
+  sign,
+  type KeyObject,
+} from 'node:crypto'
+
+export const ONLINE_CLASSROOM_JAAS_DOMAIN = '8x8.vc'
+export const ONLINE_CLASSROOM_PUBLIC_JITSI_DOMAIN = 'meet.jit.si'
+// Three hours covers the longest allowed classroom recording plus transient
+// reconnects. The token is still constrained to one literal room, while the
+// application continues to revalidate booking/pilot access independently.
+export const ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS = 3 * 60 * 60
+const ONLINE_CLASSROOM_JAAS_CLOCK_SKEW_SECONDS = 10
+
+export type OnlineClassroomMeetingProvider = 'public-jitsi' | 'jaas'
+export type OnlineClassroomMeetingRole = 'admin' | 'teacher' | 'student'
+
+export type OnlineClassroomPublicJitsiConfig = {
+  meetingProvider: 'public-jitsi'
+  meetingDomain: typeof ONLINE_CLASSROOM_PUBLIC_JITSI_DOMAIN
+}
+
+export type OnlineClassroomJaasConfig = {
+  meetingProvider: 'jaas'
+  meetingDomain: typeof ONLINE_CLASSROOM_JAAS_DOMAIN
+  appId: string
+  kid: string
+  privateKey: KeyObject
+}
+
+export type OnlineClassroomMeetingConfig =
+  | OnlineClassroomPublicJitsiConfig
+  | OnlineClassroomJaasConfig
+
+export type OnlineClassroomJaasConfigurationReason =
+  | 'JAAS_CONFIG_PARTIAL'
+  | 'JAAS_APP_ID_INVALID'
+  | 'JAAS_KID_INVALID'
+  | 'JAAS_PRIVATE_KEY_INVALID'
+  | 'JAAS_ROOM_ALIAS_INVALID'
+  | 'JAAS_VIEWER_ID_INVALID'
+
+export class OnlineClassroomJaasConfigurationError extends Error {
+  constructor(public readonly reason: OnlineClassroomJaasConfigurationReason) {
+    super(reason)
+    this.name = 'OnlineClassroomJaasConfigurationError'
+  }
+}
+
+function optionalConfigValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizedPrivateKey(value: string): string {
+  // Secret Manager normally preserves PEM line breaks. Supporting the escaped
+  // form as well prevents an operator from accidentally storing a single-line
+  // key while still validating the resulting key material below.
+  return value.includes('\\n') && !value.includes('\n')
+    ? value.replace(/\\n/g, '\n').trim()
+    : value.trim()
+}
+
+function validatedPrivateKey(value: string): KeyObject {
+  try {
+    const privateKey = createPrivateKey(normalizedPrivateKey(value))
+    if (privateKey.type !== 'private' || privateKey.asymmetricKeyType !== 'rsa') {
+      throw new Error('Private key is not an RSA private key.')
+    }
+    return privateKey
+  } catch {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_PRIVATE_KEY_INVALID')
+  }
+}
+
+/**
+ * Resolve the meeting provider without ever silently downgrading a partially
+ * configured JaaS environment to the public meet.jit.si service.
+ */
+export function resolveOnlineClassroomMeetingConfig(input: {
+  appId?: unknown
+  kid?: unknown
+  privateKey?: unknown
+}): OnlineClassroomMeetingConfig {
+  const appId = optionalConfigValue(input.appId)
+  const kid = optionalConfigValue(input.kid)
+  const privateKeyPem = optionalConfigValue(input.privateKey)
+  const configuredValues = [appId, kid, privateKeyPem].filter(Boolean).length
+
+  if (configuredValues === 0) {
+    return {
+      meetingProvider: 'public-jitsi',
+      meetingDomain: ONLINE_CLASSROOM_PUBLIC_JITSI_DOMAIN,
+    }
+  }
+  if (configuredValues !== 3) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_CONFIG_PARTIAL')
+  }
+  if (!/^vpaas-magic-cookie-[A-Za-z0-9_-]{16,128}$/.test(appId)) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_APP_ID_INVALID')
+  }
+
+  const kidParts = kid.split('/')
+  if (kidParts.length !== 2
+    || kidParts[0] !== appId
+    || !/^[A-Za-z0-9_-]{2,160}$/.test(kidParts[1])) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_KID_INVALID')
+  }
+
+  return {
+    meetingProvider: 'jaas',
+    meetingDomain: ONLINE_CLASSROOM_JAAS_DOMAIN,
+    appId,
+    kid,
+    privateKey: validatedPrivateKey(privateKeyPem),
+  }
+}
+
+function validatedRoomAlias(roomAlias: string): string {
+  const normalized = roomAlias.trim()
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(normalized)) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_ROOM_ALIAS_INVALID')
+  }
+  return normalized
+}
+
+export function onlineClassroomJaasRoomName(config: OnlineClassroomJaasConfig, roomAlias: string): string {
+  return `${config.appId}/${validatedRoomAlias(roomAlias)}`
+}
+
+function normalizedDisplayName(value: string, role: OnlineClassroomMeetingRole): string {
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+  if (normalized) return normalized
+  if (role === 'student') return 'Học viên 123English'
+  if (role === 'teacher') return 'Gia sư 123English'
+  return 'Admin 123English'
+}
+
+function pseudonymousJaasUserId(appId: string, roomAlias: string, viewerId: string): string {
+  const normalizedViewerId = viewerId.trim()
+  if (!normalizedViewerId || normalizedViewerId.length > 300) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_VIEWER_ID_INVALID')
+  }
+  return createHash('sha256')
+    .update(`${appId}|${roomAlias}|${normalizedViewerId}`, 'utf8')
+    .digest('hex')
+    .slice(0, 40)
+}
+
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
+}
+
+/**
+ * Generate a short-lived RS256 token that is valid for one literal JaaS room.
+ * Paid/provider-side features remain disabled because 123English implements
+ * recording and classroom interactions in its own authorized workflow.
+ */
+export function createOnlineClassroomJaasJwt(input: {
+  config: OnlineClassroomJaasConfig
+  roomAlias: string
+  role: OnlineClassroomMeetingRole
+  displayName: string
+  viewerId: string
+  nowMs?: number
+  tokenId?: string
+}): string {
+  const roomAlias = validatedRoomAlias(input.roomAlias)
+  const nowSeconds = Math.floor((input.nowMs ?? Date.now()) / 1000)
+  const moderator = input.role === 'admin' || input.role === 'teacher'
+  const tokenId = input.tokenId && /^[A-Za-z0-9_-]{16,160}$/.test(input.tokenId)
+    ? input.tokenId
+    : randomBytes(18).toString('base64url')
+  const header = {
+    alg: 'RS256',
+    kid: input.config.kid,
+    typ: 'JWT',
+  }
+  const payload = {
+    aud: 'jitsi',
+    iss: 'chat',
+    sub: input.config.appId,
+    room: roomAlias,
+    iat: nowSeconds,
+    nbf: nowSeconds - ONLINE_CLASSROOM_JAAS_CLOCK_SKEW_SECONDS,
+    exp: nowSeconds + ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS,
+    jti: tokenId,
+    context: {
+      user: {
+        id: pseudonymousJaasUserId(input.config.appId, roomAlias, input.viewerId),
+        name: normalizedDisplayName(input.displayName, input.role),
+        moderator,
+        'hidden-from-recorder': false,
+      },
+      features: {
+        livestreaming: false,
+        recording: false,
+        transcription: false,
+        'outbound-call': false,
+        'sip-outbound-call': false,
+        'file-upload': false,
+      },
+      room: {
+        regex: false,
+      },
+    },
+  }
+  const signingInput = `${base64UrlJson(header)}.${base64UrlJson(payload)}`
+  const signature = sign('RSA-SHA256', Buffer.from(signingInput, 'utf8'), input.config.privateKey)
+    .toString('base64url')
+  return `${signingInput}.${signature}`
+}

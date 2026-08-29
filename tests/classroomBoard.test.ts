@@ -11,6 +11,7 @@ import {
   broadcastJitsiTextMessage,
   type JitsiExternalApi,
 } from '../src/lib/jitsiExternalApi.ts'
+import { resolveJitsiLaunchConfig } from '../src/lib/jitsiMeeting.ts'
 
 const rectangle: BoardOperation = {
   id: 'shape-rectangle-1',
@@ -96,4 +97,43 @@ test('gửi data-channel đúng một lần cho mỗi người tham gia từ xa'
     ['sendEndpointTextMessage', ['remote-a', 'payload']],
     ['sendEndpointTextMessage', ['remote-b', 'payload']],
   ])
+})
+
+test('giữ tương thích phòng Jitsi công cộng khi backend cũ chưa trả provider', () => {
+  assert.deepEqual(resolveJitsiLaunchConfig({
+    meetingDomain: 'meet.jit.si',
+    roomName: 'private-room-123',
+  }), {
+    constructorDomain: 'meet.jit.si',
+    scriptUrl: 'https://meet.jit.si/external_api.js',
+    roomName: 'private-room-123',
+  })
+})
+
+test('JaaS tải đúng script theo AppID và chỉ truyền JWT qua constructor', () => {
+  const jwt = 'header_payload.signature-part.final_signature'
+  const config = resolveJitsiLaunchConfig({
+    meetingProvider: 'jaas',
+    meetingDomain: '8x8.vc',
+    meetingAppId: 'vpaas-magic-cookie-123456',
+    meetingJwt: jwt,
+    roomName: 'vpaas-magic-cookie-123456/booking-room-1',
+  })
+
+  assert.deepEqual(config, {
+    constructorDomain: '8x8.vc',
+    scriptUrl: 'https://8x8.vc/vpaas-magic-cookie-123456/external_api.js',
+    roomName: 'vpaas-magic-cookie-123456/booking-room-1',
+    jwt,
+  })
+  assert.equal(config.scriptUrl.includes(jwt), false)
+})
+
+test('từ chối JaaS thiếu JWT hoặc room không thuộc AppID', () => {
+  assert.throws(() => resolveJitsiLaunchConfig({
+    meetingProvider: 'jaas',
+    meetingDomain: '8x8.vc',
+    meetingAppId: 'vpaas-magic-cookie-123456',
+    roomName: 'another-app/booking-room-1',
+  }), /bảo mật chưa đầy đủ/i)
 })

@@ -5,6 +5,9 @@ import {
   bookingIntervalStartInMinutes,
   type BookingIntervalLike,
 } from '@/lib/bookingTime'
+import type { OnlineClassroomMeetingProvider } from '@/lib/jitsiMeeting'
+
+export type { OnlineClassroomMeetingProvider } from '@/lib/jitsiMeeting'
 
 export type OnlineClassroomRole = 'admin' | 'teacher' | 'student'
 export type OnlineClassroomTargetType = 'teacher' | 'student'
@@ -31,6 +34,9 @@ export type OnlineClassroomAccess = {
   bookingId: string
   roomName: string
   meetingDomain: string
+  meetingProvider?: OnlineClassroomMeetingProvider
+  meetingAppId?: string
+  meetingJwt?: string
   publicPilotProvider: boolean
   role: OnlineClassroomRole
   displayName: string
