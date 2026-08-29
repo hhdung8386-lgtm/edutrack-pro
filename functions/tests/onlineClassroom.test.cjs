@@ -6,7 +6,9 @@ const {
   canAcquireOnlineClassroomCredentialMutation,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
+  decideOnlineClassroomScreenAnnotationSessionMutation,
   isInsideOnlineClassroomJoinWindow,
+  isSafeOnlineClassroomScreenAnnotationSessionId,
   nextOnlineClassroomAccessGeneration,
   onlineClassroomAccessGeneration,
   onlineClassroomAccessId,
@@ -27,6 +29,7 @@ const {
   validateOnlineClassroomBoardDraft,
   validateOnlineClassroomBoardOperation,
   validateOnlineClassroomBoardSnapshot,
+  validateOnlineClassroomScreenAnnotationSession,
 } = require('../lib/onlineClassroom.js')
 
 const confirmed = {
@@ -74,6 +77,27 @@ const validShape = {
   opacity: 1,
   start: { x: 0.2, y: 0.3 },
   end: { x: 0.7, y: 0.8 },
+}
+
+const validScreenAnnotationSession = {
+  sessionId: 'screen-session-00000001',
+  active: true,
+  boardSnapshot: {
+    version: 2,
+    studentCanWrite: true,
+    operations: [validStroke],
+  },
+}
+
+const validAuditedScreenAnnotationSession = {
+  ...validScreenAnnotationSession,
+  startedAtMs: 1_787_900_000_010,
+  updatedAtMs: 1_787_900_000_020,
+  endedAtMs: null,
+  startedByRole: 'teacher',
+  startedById: 'teacher-a',
+  updatedByRole: 'student',
+  updatedById: 'student-a',
 }
 
 test('tạo khóa allowlist và session riêng cho từng booking nhưng không lộ booking id', () => {
@@ -233,6 +257,7 @@ test('chặn domain sai và snapshot bảng quá lớn hoặc sai schema', () =>
   assert.equal(sanitizeOnlineClassroomDomain('javascript:alert(1)'), 'meet.jit.si')
   assert.deepEqual(validateOnlineClassroomBoardSnapshot({ version: 2, studentCanWrite: true, operations: [validStroke] }), {
     version: 2,
+    generation: 0,
     studentCanWrite: true,
     operations: [validStroke],
   })
@@ -242,11 +267,139 @@ test('chặn domain sai và snapshot bảng quá lớn hoặc sai schema', () =>
   assert.equal(validateOnlineClassroomBoardSnapshot({ version: 1, studentCanWrite: true, operations: [{ id: 'legacy' }] }), null)
 })
 
+test('phiên chú thích màn hình nhận dữ liệu legacy và audit server hợp lệ', () => {
+  const normalizedLegacySession = {
+    ...validScreenAnnotationSession,
+    boardSnapshot: {
+      ...validScreenAnnotationSession.boardSnapshot,
+      generation: 0,
+    },
+  }
+  assert.equal(isSafeOnlineClassroomScreenAnnotationSessionId(validScreenAnnotationSession.sessionId), true)
+  assert.equal(isSafeOnlineClassroomScreenAnnotationSessionId('short'), false)
+  assert.deepEqual(
+    validateOnlineClassroomScreenAnnotationSession(validScreenAnnotationSession),
+    normalizedLegacySession,
+  )
+  assert.deepEqual(
+    validateOnlineClassroomScreenAnnotationSession(validAuditedScreenAnnotationSession),
+    { ...validAuditedScreenAnnotationSession, boardSnapshot: normalizedLegacySession.boardSnapshot },
+  )
+  const validEndedSession = {
+    ...validAuditedScreenAnnotationSession,
+    active: false,
+    updatedAtMs: 1_787_900_000_040,
+    endedAtMs: 1_787_900_000_040,
+    updatedByRole: 'teacher',
+    updatedById: 'teacher-a',
+  }
+  assert.deepEqual(
+    validateOnlineClassroomScreenAnnotationSession(validEndedSession),
+    { ...validEndedSession, boardSnapshot: normalizedLegacySession.boardSnapshot },
+  )
+  const partiallyAuditedLegacySession = {
+    ...validScreenAnnotationSession,
+    updatedAtMs: 1_787_900_000_030,
+    updatedByRole: 'student',
+    updatedById: 'student-a',
+  }
+  assert.deepEqual(
+    validateOnlineClassroomScreenAnnotationSession(partiallyAuditedLegacySession),
+    { ...partiallyAuditedLegacySession, boardSnapshot: normalizedLegacySession.boardSnapshot },
+  )
+  assert.equal(validateOnlineClassroomScreenAnnotationSession(undefined), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession(null), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({}), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    legacyBoardSnapshot: validScreenAnnotationSession.boardSnapshot,
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    active: 'true',
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validAuditedScreenAnnotationSession,
+    updatedAtMs: validAuditedScreenAnnotationSession.startedAtMs - 1,
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validAuditedScreenAnnotationSession,
+    endedAtMs: validAuditedScreenAnnotationSession.updatedAtMs + 1,
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    updatedByRole: 'student',
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    updatedAtMs: 1_787_900_000_040,
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    updatedAtMs: 1_787_900_000_040,
+    updatedByRole: 'student',
+    updatedById: 'student/unsafe',
+  }), null)
+  assert.equal(validateOnlineClassroomScreenAnnotationSession({
+    ...validScreenAnnotationSession,
+    boardSnapshot: { version: 2, studentCanWrite: true, operations: [{ id: 'legacy' }] },
+  }), null)
+})
+
+test('mutation chú thích chỉ nhận đúng session đang active', () => {
+  assert.equal(
+    decideOnlineClassroomScreenAnnotationSessionMutation(validScreenAnnotationSession, validScreenAnnotationSession.sessionId),
+    'allowed',
+  )
+  assert.equal(
+    decideOnlineClassroomScreenAnnotationSessionMutation(
+      { ...validScreenAnnotationSession, active: false },
+      validScreenAnnotationSession.sessionId,
+    ),
+    'inactive',
+  )
+  assert.equal(
+    decideOnlineClassroomScreenAnnotationSessionMutation(validScreenAnnotationSession, 'screen-session-00000002'),
+    'session-mismatch',
+  )
+  assert.equal(
+    decideOnlineClassroomScreenAnnotationSessionMutation(null, validScreenAnnotationSession.sessionId),
+    'missing',
+  )
+})
+
+test('operation chú thích tái sử dụng quyết định lock, version và role server-authoritative', () => {
+  const appended = decideOnlineClassroomBoardOperationAppend(
+    validScreenAnnotationSession.boardSnapshot,
+    { ...validText, authorRole: 'admin' },
+    'student',
+  )
+  assert.equal(appended.decision, 'append')
+  assert.equal(appended.boardSnapshot.version, validScreenAnnotationSession.boardSnapshot.version + 1)
+  assert.equal(appended.operation.authorRole, 'student')
+
+  const duplicate = decideOnlineClassroomBoardOperationAppend(
+    validScreenAnnotationSession.boardSnapshot,
+    validStroke,
+    'student',
+  )
+  assert.equal(duplicate.decision, 'duplicate')
+  assert.equal(duplicate.boardSnapshot.version, validScreenAnnotationSession.boardSnapshot.version)
+
+  const locked = decideOnlineClassroomBoardOperationAppend(
+    { ...validScreenAnnotationSession.boardSnapshot, studentCanWrite: false },
+    validText,
+    'student',
+  )
+  assert.equal(locked.decision, 'locked')
+})
+
 test('không để request lưu bảng cũ ghi đè snapshot mới hơn', () => {
   const current = { version: 3, studentCanWrite: true, operations: [validStroke] }
   const sameDraft = { studentCanWrite: true, operations: [validStroke] }
   assert.equal(decideOnlineClassroomBoardSave(current, 3, sameDraft), 'noop')
   assert.equal(decideOnlineClassroomBoardSave(current, 3, {
+    generation: 1,
     studentCanWrite: true,
     operations: [validText],
   }), 'write')
@@ -265,6 +418,7 @@ test('kiểm tra sâu schema operation và không nhận dữ liệu thừa', ()
   assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, unexpected: 'data' }), null)
   assert.equal(validateOnlineClassroomBoardOperation({ ...validStroke, points: new Array(801).fill({ x: 0.1, y: 0.2 }) }), null)
   assert.deepEqual(validateOnlineClassroomBoardDraft({ studentCanWrite: true, operations: [validStroke] }), {
+    generation: 0,
     studentCanWrite: true,
     operations: [validStroke],
   })
@@ -283,6 +437,74 @@ test('append operation ép vai trò từ backend và tăng đúng một version'
 
   const forgedRole = decideOnlineClassroomBoardOperationAppend(current, validText, 'student')
   assert.equal(forgedRole.boardSnapshot.operations[0].authorRole, 'student')
+})
+
+test('append tuần tự từ gia sư và học viên giữ đủ hai nét đúng một lần', () => {
+  const empty = { version: 0, generation: 0, studentCanWrite: true, operations: [] }
+  const teacherAppend = decideOnlineClassroomBoardOperationAppend(empty, validStroke, 'teacher', 0)
+  assert.equal(teacherAppend.decision, 'append')
+
+  const studentAppend = decideOnlineClassroomBoardOperationAppend(
+    teacherAppend.boardSnapshot,
+    validText,
+    'student',
+    0,
+  )
+  assert.equal(studentAppend.decision, 'append')
+  assert.deepEqual(studentAppend.boardSnapshot.operations.map((operation) => operation.id), [validStroke.id, validText.id])
+  assert.deepEqual(studentAppend.boardSnapshot.operations.map((operation) => operation.authorRole), ['teacher', 'student'])
+
+  const retry = decideOnlineClassroomBoardOperationAppend(
+    studentAppend.boardSnapshot,
+    validText,
+    'student',
+    0,
+  )
+  assert.equal(retry.decision, 'duplicate')
+  assert.equal(retry.boardSnapshot.operations.length, 2)
+})
+
+test('không cho thao tác gửi trễ hồi sinh sau khi quản lý đã xóa bảng', () => {
+  const cleared = { version: 9, generation: 3, studentCanWrite: true, operations: [] }
+  const stale = decideOnlineClassroomBoardOperationAppend(cleared, validStroke, 'student', 2)
+  assert.equal(stale.decision, 'stale-generation')
+  assert.equal(stale.boardSnapshot.version, 9)
+  assert.equal(stale.boardSnapshot.generation, 3)
+  assert.deepEqual(stale.boardSnapshot.operations, [])
+
+  const current = decideOnlineClassroomBoardOperationAppend(cleared, validStroke, 'student', 3)
+  assert.equal(current.decision, 'append')
+  assert.equal(current.boardSnapshot.generation, 3)
+  assert.equal(current.boardSnapshot.operations.length, 1)
+})
+
+test('save bảng chỉ được tăng generation đúng một bước khi nội dung thực sự thay đổi', () => {
+  const current = { version: 4, generation: 7, studentCanWrite: true, operations: [validStroke] }
+  assert.equal(decideOnlineClassroomBoardSave(current, 4, {
+    generation: 8,
+    studentCanWrite: true,
+    operations: [],
+  }), 'write')
+  assert.equal(decideOnlineClassroomBoardSave(current, 4, {
+    generation: 8,
+    studentCanWrite: true,
+    operations: [validStroke],
+  }), 'conflict')
+  assert.equal(decideOnlineClassroomBoardSave(current, 4, {
+    generation: 9,
+    studentCanWrite: true,
+    operations: [],
+  }), 'conflict')
+  assert.equal(decideOnlineClassroomBoardSave(current, 4, {
+    generation: 7,
+    studentCanWrite: true,
+    operations: [],
+  }), 'conflict')
+  assert.equal(decideOnlineClassroomBoardSave(current, 4, {
+    generation: 8,
+    studentCanWrite: false,
+    operations: [validStroke, validText],
+  }), 'conflict')
 })
 
 test('append student bị chặn khi khóa nhưng manager vẫn ghi được', () => {

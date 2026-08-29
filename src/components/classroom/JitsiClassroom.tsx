@@ -8,6 +8,12 @@ import {
 
 export type JitsiConnectionState = 'loading' | 'joining' | 'connected' | 'ended' | 'error'
 
+export type JitsiScreenShareState = {
+  active: boolean
+  local: boolean
+  participantIds: string[]
+}
+
 type JitsiConstructor = new (
   domain: string,
   options: {
@@ -37,12 +43,14 @@ type JitsiClassroomProps = {
   roomName: string
   displayName: string
   observerMode?: boolean
+  canShareScreen?: boolean
   onApiReady?: (api: JitsiExternalApi | null) => void
   onConferenceJoined?: (participantId: string) => void
   onParticipantJoined?: (participantId: string) => void
   onParticipantLeft?: (participantId: string) => void
   onDataChannelOpened?: () => void
   onTextMessage?: (text: string, senderId: string) => void
+  onScreenShareStateChange?: (state: JitsiScreenShareState) => void
   onConnectionStateChange?: (state: JitsiConnectionState) => void
   onEnded?: () => void
   onError?: (message: string) => void
@@ -147,6 +155,33 @@ function participantId(payload: unknown): string {
   return readString(payload.id ?? payload.participantId)
 }
 
+function uniqueParticipantIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null
+
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (typeof candidate !== 'string') continue
+    const id = candidate.trim()
+    if (id) ids.add(id)
+  }
+  return [...ids]
+}
+
+function contentSharingParticipantIds(payload: unknown): string[] | null {
+  if (!isRecord(payload)) return null
+  return uniqueParticipantIds(payload.data)
+}
+
+function initialContentSharingParticipantIds(payload: unknown): string[] | null {
+  if (!isRecord(payload)) return null
+  return uniqueParticipantIds(payload.sharingParticipantIds)
+}
+
+function localScreenSharingStatus(payload: unknown): boolean | null {
+  if (!isRecord(payload) || typeof payload.on !== 'boolean') return null
+  return payload.on
+}
+
 export function JitsiClassroom({
   meetingProvider,
   meetingDomain,
@@ -155,12 +190,14 @@ export function JitsiClassroom({
   roomName,
   displayName,
   observerMode = false,
+  canShareScreen = false,
   onApiReady,
   onConferenceJoined,
   onParticipantJoined,
   onParticipantLeft,
   onDataChannelOpened,
   onTextMessage,
+  onScreenShareStateChange,
   onConnectionStateChange,
   onEnded,
   onError,
@@ -173,6 +210,7 @@ export function JitsiClassroom({
     onParticipantLeft,
     onDataChannelOpened,
     onTextMessage,
+    onScreenShareStateChange,
     onConnectionStateChange,
     onEnded,
     onError,
@@ -196,11 +234,12 @@ export function JitsiClassroom({
       onParticipantLeft,
       onDataChannelOpened,
       onTextMessage,
+      onScreenShareStateChange,
       onConnectionStateChange,
       onEnded,
       onError,
     }
-  }, [onApiReady, onConferenceJoined, onParticipantJoined, onParticipantLeft, onDataChannelOpened, onTextMessage, onConnectionStateChange, onEnded, onError])
+  }, [onApiReady, onConferenceJoined, onParticipantJoined, onParticipantLeft, onDataChannelOpened, onTextMessage, onScreenShareStateChange, onConnectionStateChange, onEnded, onError])
 
   useEffect(() => {
     if (!hasStarted) return
@@ -212,11 +251,27 @@ export function JitsiClassroom({
     let activeScriptUrl = ''
     const listeners: Array<[string, JitsiEventHandler]> = []
     const parentNode = containerRef.current
+    let localParticipantId = ''
+    let localScreenShareActive = false
+    let localScreenShareStatusKnown = false
+    let sharingParticipantIds: string[] = []
+    let lastScreenShareState: JitsiScreenShareState | null = null
+    let presentationLayoutActive = false
+    let focusedPresenterId = ''
+    let desktopModerationEnabled = false
+    let desktopModerationAttempts = 0
+    let desktopModerationRetryTimer: number | null = null
 
     const clearLoadTimeout = () => {
       if (loadTimeout === null) return
       window.clearTimeout(loadTimeout)
       loadTimeout = null
+    }
+
+    const clearDesktopModerationRetry = () => {
+      if (desktopModerationRetryTimer === null) return
+      window.clearTimeout(desktopModerationRetryTimer)
+      desktopModerationRetryTimer = null
     }
 
     const updateState = (nextState: JitsiConnectionState) => {
@@ -232,7 +287,98 @@ export function JitsiClassroom({
       listeners.length = 0
     }
 
+    const currentScreenShareState = (): JitsiScreenShareState => {
+      let participantIds = [...sharingParticipantIds]
+      if (localParticipantId && localScreenShareStatusKnown) {
+        participantIds = localScreenShareActive
+          ? [localParticipantId, ...participantIds.filter((id) => id !== localParticipantId)]
+          : participantIds.filter((id) => id !== localParticipantId)
+      }
+
+      const local = localScreenShareStatusKnown
+        ? localScreenShareActive
+        : Boolean(localParticipantId && participantIds.includes(localParticipantId))
+
+      return {
+        active: local || participantIds.length > 0,
+        local,
+        participantIds,
+      }
+    }
+
+    const isSameScreenShareState = (left: JitsiScreenShareState | null, right: JitsiScreenShareState) => (
+      left?.active === right.active
+      && left.local === right.local
+      && left.participantIds.length === right.participantIds.length
+      && left.participantIds.every((id, index) => id === right.participantIds[index])
+    )
+
+    const applyPresentationLayout = (screenShareState: JitsiScreenShareState) => {
+      if (!api || disposed || failed) return
+      if (!screenShareState.active) {
+        if (presentationLayoutActive) {
+          try {
+            api.executeCommand('setTileView', true)
+          } catch {
+            // Giữ bố cục hiện tại nếu deployment không hỗ trợ setTileView.
+          }
+        }
+        presentationLayoutActive = false
+        focusedPresenterId = ''
+        return
+      }
+
+      if (!presentationLayoutActive) {
+        presentationLayoutActive = true
+        try {
+          api.executeCommand('setTileView', false)
+        } catch {
+          // Một số bản Jitsi cũ không hỗ trợ lệnh này; giữ nguyên bố cục hiện tại.
+        }
+      }
+
+      const presenterId = screenShareState.participantIds[0] ?? ''
+      if (!presenterId || presenterId === focusedPresenterId) return
+      focusedPresenterId = presenterId
+      try {
+        api.executeCommand('setLargeVideoParticipant', presenterId, 'desktop')
+      } catch {
+        // Jitsi vẫn tự đưa màn hình chia sẻ lên sân khấu nếu API ghim không có sẵn.
+      }
+    }
+
+    const emitScreenShareState = (force = false) => {
+      const screenShareState = currentScreenShareState()
+      applyPresentationLayout(screenShareState)
+      if (!force && isSameScreenShareState(lastScreenShareState, screenShareState)) return
+      lastScreenShareState = {
+        ...screenShareState,
+        participantIds: [...screenShareState.participantIds],
+      }
+      callbackRef.current.onScreenShareStateChange?.({
+        ...screenShareState,
+        participantIds: [...screenShareState.participantIds],
+      })
+    }
+
+    const updateSharingParticipantIds = (participantIds: string[]) => {
+      sharingParticipantIds = [...participantIds]
+      emitScreenShareState()
+    }
+
+    const resetScreenShareState = () => {
+      localParticipantId = ''
+      localScreenShareActive = false
+      localScreenShareStatusKnown = false
+      sharingParticipantIds = []
+      presentationLayoutActive = false
+      focusedPresenterId = ''
+      emitScreenShareState()
+    }
+
     const disposeConference = () => {
+      clearDesktopModerationRetry()
+      resetScreenShareState()
       removeListeners()
       const currentApi = api
       api = null
@@ -264,11 +410,50 @@ export function JitsiClassroom({
       listeners.push([eventName, handler])
     }
 
+    const refreshContentSharingParticipants = async () => {
+      const currentApi = api
+      if (!currentApi?.getContentSharingParticipants) {
+        emitScreenShareState()
+        return
+      }
+
+      try {
+        const payload = await currentApi.getContentSharingParticipants()
+        if (disposed || failed || api !== currentApi) return
+        const participantIds = initialContentSharingParticipantIds(payload)
+        if (participantIds) updateSharingParticipantIds(participantIds)
+        else emitScreenShareState()
+      } catch {
+        // Đây là dữ liệu hỗ trợ bố cục. Cuộc gọi vẫn tiếp tục nếu API cũ không trả được.
+        if (!disposed && !failed && api === currentApi) emitScreenShareState()
+      }
+    }
+
     const reportMediaError = (kind: MediaKind, payload: unknown) => {
       if (disposed || failed) return
       const message = mediaErrorMessage(kind, payload)
       setMediaWarnings((current) => ({ ...current, [kind]: message }))
       callbackRef.current.onError?.(message)
+    }
+
+    const enforceDesktopSharingModeration = () => {
+      if (!api || desktopModerationEnabled || (!canShareScreen && !observerMode)) return
+      try {
+        // JaaS release 8717 adds the desktop media type to moderation. Keeping
+        // this server-mediated guard on means a student cannot bypass the
+        // hidden toolbar simply by invoking the embedded API themselves.
+        api.executeCommand('toggleModeration', true, 'desktop')
+        desktopModerationAttempts += 1
+        clearDesktopModerationRetry()
+        if (desktopModerationAttempts < 3) {
+          desktopModerationRetryTimer = window.setTimeout(() => {
+            desktopModerationRetryTimer = null
+            enforceDesktopSharingModeration()
+          }, 1_200)
+        }
+      } catch {
+        // Public/older Jitsi deployments may not expose desktop moderation.
+      }
     }
 
     const clearMediaWarning = (kind: MediaKind) => {
@@ -309,6 +494,21 @@ export function JitsiClassroom({
           throw new Error('Trình gọi video chưa sẵn sàng. Hãy thử lại.')
         }
 
+        const toolbarButtons = [
+          'microphone',
+          'camera',
+          'chat',
+          'raisehand',
+          'participants-pane',
+          'tileview',
+          'closedcaptions',
+          'select-background',
+          'videoquality',
+          'settings',
+          'shortcuts',
+          'hangup',
+        ]
+
         api = new ExternalApi(launch.constructorDomain, {
           roomName: launch.roomName,
           parentNode,
@@ -339,39 +539,21 @@ export function JitsiClassroom({
               hideMoreActionsButton: true,
               hideMuteAllButton: true,
             },
-            participantMenuButtonsWithNotifyClick: [
-              'grant-moderator',
-              'kick',
-              'mute',
-              'mute-others',
-              'mute-others-video',
-              'mute-video',
-            ],
             prejoinConfig: { enabled: true, hideDisplayName: true },
-            toolbarButtons: [
-              'microphone',
-              'camera',
-              'desktop',
-              'chat',
-              'raisehand',
-              'participants-pane',
-              'tileview',
-              'closedcaptions',
-              'select-background',
-              'videoquality',
-              'settings',
-              'shortcuts',
-              'fullscreen',
-              'hangup',
-            ],
+            toolbarButtons,
           },
         })
 
         const iframe = api.getIFrame?.()
         if (iframe) {
           iframe.title = `Lớp học trực tuyến của ${displayName}`
-          iframe.setAttribute('allow', 'camera; microphone; display-capture; autoplay; fullscreen')
-          iframe.setAttribute('allowfullscreen', 'true')
+          iframe.setAttribute(
+            'allow',
+            canShareScreen
+              ? 'camera; microphone; display-capture; autoplay'
+              : 'camera; microphone; autoplay',
+          )
+          iframe.removeAttribute('allowfullscreen')
         }
 
         addListener('browserSupport', (payload) => {
@@ -382,7 +564,24 @@ export function JitsiClassroom({
         addListener('videoConferenceJoined', (payload) => {
           clearLoadTimeout()
           updateState('connected')
-          callbackRef.current.onConferenceJoined?.(participantId(payload))
+          localParticipantId = participantId(payload)
+          emitScreenShareState()
+          callbackRef.current.onConferenceJoined?.(localParticipantId)
+          enforceDesktopSharingModeration()
+          void refreshContentSharingParticipants()
+        })
+        addListener('participantRoleChanged', (payload) => {
+          if (isRecord(payload) && payload.role === 'moderator') enforceDesktopSharingModeration()
+        })
+        addListener('moderationStatusChanged', (payload) => {
+          if (!isRecord(payload) || payload.mediaType !== 'desktop') return
+          desktopModerationEnabled = payload.enabled === true
+          clearDesktopModerationRetry()
+          if (desktopModerationEnabled) {
+            desktopModerationAttempts = 0
+          } else if (desktopModerationAttempts < 3) {
+            enforceDesktopSharingModeration()
+          }
         })
         addListener('participantJoined', (payload) => {
           const id = participantId(payload)
@@ -390,12 +589,34 @@ export function JitsiClassroom({
         })
         addListener('participantLeft', (payload) => {
           const id = participantId(payload)
-          if (id) callbackRef.current.onParticipantLeft?.(id)
+          if (id) {
+            if (sharingParticipantIds.includes(id)) {
+              updateSharingParticipantIds(sharingParticipantIds.filter((participant) => participant !== id))
+            }
+            callbackRef.current.onParticipantLeft?.(id)
+          }
         })
         addListener('dataChannelOpened', () => callbackRef.current.onDataChannelOpened?.())
         addListener('endpointTextMessageReceived', (payload) => {
           const message = endpointMessage(payload)
           if (message) callbackRef.current.onTextMessage?.(message.text, message.senderId)
+        })
+        addListener('contentSharingParticipantsChanged', (payload) => {
+          const participantIds = contentSharingParticipantIds(payload)
+          if (participantIds) updateSharingParticipantIds(participantIds)
+        })
+        addListener('screenSharingStatusChanged', (payload) => {
+          const active = localScreenSharingStatus(payload)
+          if (active === null) return
+
+          localScreenShareStatusKnown = true
+          localScreenShareActive = active
+          if (localParticipantId) {
+            sharingParticipantIds = active
+              ? [localParticipantId, ...sharingParticipantIds.filter((id) => id !== localParticipantId)]
+              : sharingParticipantIds.filter((id) => id !== localParticipantId)
+          }
+          emitScreenShareState()
         })
         addListener('cameraError', (payload) => reportMediaError('camera', payload))
         addListener('micError', (payload) => reportMediaError('microphone', payload))
@@ -406,10 +627,12 @@ export function JitsiClassroom({
           if (isRecord(payload) && payload.available === true) clearMediaWarning('microphone')
         })
         addListener('readyToClose', () => {
+          resetScreenShareState()
           updateState('ended')
           callbackRef.current.onEnded?.()
         })
         addListener('videoConferenceLeft', () => {
+          resetScreenShareState()
           updateState('ended')
           callbackRef.current.onEnded?.()
         })
@@ -438,9 +661,10 @@ export function JitsiClassroom({
     return () => {
       disposed = true
       clearLoadTimeout()
+      clearDesktopModerationRetry()
       disposeConference()
     }
-  }, [attempt, displayName, hasStarted, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
+  }, [attempt, canShareScreen, displayName, hasStarted, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
 
   const startConference = () => {
     setErrorMessage('')
@@ -459,7 +683,7 @@ export function JitsiClassroom({
   const warningMessages = Object.values(mediaWarnings).filter((message): message is string => Boolean(message))
 
   return (
-    <section className="relative h-full min-h-[420px] overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.85)]" aria-label="Cuộc gọi video">
+    <section className="relative h-full min-h-0 overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.85)]" aria-label="Cuộc gọi video">
       <div ref={containerRef} className="absolute inset-0" />
 
       {!hasStarted && (

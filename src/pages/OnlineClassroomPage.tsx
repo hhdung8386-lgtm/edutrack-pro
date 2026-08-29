@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   AlertTriangle,
   BookOpenCheck,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleStop,
   Copy,
   ExternalLink,
   FileVideo2,
   Info,
   LockKeyhole,
+  Maximize2,
+  Minimize2,
+  Minus,
   MonitorUp,
   PenLine,
   RefreshCw,
@@ -20,6 +25,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { CollaborativeWhiteboard } from '@/components/classroom/CollaborativeWhiteboard'
+import { ScreenShareAnnotationStage } from '@/components/classroom/ScreenShareAnnotationStage'
 import {
   ClassroomGiftOverlay,
   ClassroomGiftTray,
@@ -33,10 +39,12 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import {
   MAX_BOARD_OPERATIONS,
+  boardMessageSurface,
   isBoardManager,
   makeBoardMessage,
   parseBoardMessage,
   sanitizeBoardSnapshot,
+  sanitizeScreenAnnotationSession,
   serializeBoardMessage,
   toCallableBoardDraft,
   type BoardMessagePayload,
@@ -47,6 +55,9 @@ import {
   onlineClassroomErrorMessage,
   forgetClassroomToken,
   appendOnlineClassroomBoardOperation,
+  appendOnlineClassroomScreenAnnotationOperation,
+  beginOnlineClassroomScreenAnnotation,
+  endOnlineClassroomScreenAnnotation,
   readClassroomToken,
   rememberClassroomToken,
   removeClassroomTokenFromAddressBar,
@@ -54,7 +65,9 @@ import {
   requestOnlineClassroomAccess,
   respondOnlineClassroomRecordingConsent,
   saveOnlineClassroomBoard,
+  saveOnlineClassroomScreenAnnotation,
   type OnlineClassroomAccess,
+  type OnlineClassroomScreenAnnotationSession,
 } from '@/lib/onlineClassroom'
 import { toast } from '@/stores/toastStore'
 import { broadcastJitsiTextMessage, type JitsiExternalApi } from '@/lib/jitsiExternalApi'
@@ -80,8 +93,15 @@ import { useOnlineClassroomGifts } from '@/hooks/useOnlineClassroomGifts'
 type LoadState = 'loading' | 'ready' | 'error'
 type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error'
 type ActivePanel = 'video' | 'board'
+type WhiteboardWindowMode = 'normal' | 'maximized' | 'minimized'
 type RecordingState = 'idle' | 'starting' | 'recording' | 'stopping'
 type RecordingHydrationState = 'idle' | 'loading' | 'ready' | 'error'
+type ClassroomScreenShareState = {
+  active: boolean
+  local: boolean
+  participantIds: string[]
+}
+type ScreenFrameState = 'idle' | 'loading' | 'ready' | 'error'
 type ReadyRecording = OnlineClassroomRecordingMetadata & {
   replayUrl: string
   studentShareUrl?: string
@@ -91,14 +111,16 @@ type ClassroomRouteScope = Readonly<{
   routeEpoch: object
   loadEpoch: number
 }>
-type BoardSavePipeline = {
-  scope: ClassroomRouteScope
-  queued: boolean
-  promise: Promise<boolean>
-}
-type StudentOperationPipeline = {
+type BoardOperationPipeline = {
   scope: ClassroomRouteScope
   promise: Promise<void>
+}
+type PendingBoardOperation = {
+  operation: BoardOperation
+  generation: number
+}
+type ScreenAnnotationOperationPipeline = BoardOperationPipeline & {
+  sessionId: string
 }
 type BoardRefreshPipeline = {
   scope: ClassroomRouteScope
@@ -108,6 +130,7 @@ type BoardRefreshPipeline = {
 
 const EMPTY_BOARD: ValidatedBoardSnapshot = {
   version: 0,
+  generation: 0,
   studentCanWrite: true,
   operations: [],
 }
@@ -117,10 +140,37 @@ const MAX_HISTORY_ENTRIES = 50
 const MAX_RECORDING_DURATION_MS = 3 * 60 * 60 * 1000
 const RECORDING_HEARTBEAT_INTERVAL_MS = 60_000
 const RECORDING_HEARTBEAT_BYTE_STEP = 8 * 1024 * 1024
+const EMPTY_SCREEN_SHARE_STATE: ClassroomScreenShareState = { active: false, local: false, participantIds: [] }
 
 function errorCode(error: unknown): string {
   if (typeof error !== 'object' || error === null || !('code' in error)) return ''
   return typeof error.code === 'string' ? error.code.replace(/^functions\//, '') : ''
+}
+
+function errorReason(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return ''
+  const details = error.details
+  if (typeof details !== 'object' || details === null || !('reason' in details)) return ''
+  return typeof details.reason === 'string' ? details.reason : ''
+}
+
+function isTerminalBoardOperationError(error: unknown): boolean {
+  const code = errorCode(error)
+  if (['permission-denied', 'unauthenticated', 'failed-precondition', 'not-found', 'invalid-argument']
+    .includes(code)) return true
+  return code === 'resource-exhausted' && errorReason(error) !== 'BOARD_RATE_LIMITED'
+}
+
+function isTerminalScreenAnnotationOperationError(error: unknown): boolean {
+  const code = errorCode(error)
+  if (['permission-denied', 'unauthenticated', 'failed-precondition', 'not-found', 'invalid-argument']
+    .includes(code)) return true
+  return code === 'resource-exhausted' && errorReason(error) !== 'SCREEN_ANNOTATION_RATE_LIMITED'
+}
+
+function isSafeScreenFrameUrl(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i.test(value)
 }
 
 function isHardAccessFailure(error: unknown): boolean {
@@ -266,7 +316,22 @@ export function OnlineClassroomPage() {
   const [recordingHydrationError, setRecordingHydrationError] = useState('')
   const [creatingReadyShareLink, setCreatingReadyShareLink] = useState(false)
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false })
-  const [pendingStudentOperationCount, setPendingStudentOperationCount] = useState(0)
+  const [pendingBoardOperationCount, setPendingBoardOperationCount] = useState(0)
+  const [boardMutationBusy, setBoardMutationBusy] = useState(false)
+  const [screenShareState, setScreenShareState] = useState<ClassroomScreenShareState>(EMPTY_SCREEN_SHARE_STATE)
+  const [screenAnnotationSession, setScreenAnnotationSession] = useState<OnlineClassroomScreenAnnotationSession | null>(null)
+  const [screenAnnotationHistory, setScreenAnnotationHistory] = useState({ canUndo: false, canRedo: false })
+  const [screenAnnotationSaveStatus, setScreenAnnotationSaveStatus] = useState<SaveStatus>('saved')
+  const [screenAnnotationBusy, setScreenAnnotationBusy] = useState(false)
+  const [screenAnnotationPendingOperationCount, setScreenAnnotationPendingOperationCount] = useState(0)
+  const [screenAnnotationError, setScreenAnnotationError] = useState('')
+  const [screenFrameUrl, setScreenFrameUrl] = useState('')
+  const [screenFrameState, setScreenFrameState] = useState<ScreenFrameState>('idle')
+  const [screenFrameError, setScreenFrameError] = useState('')
+  const [isMeetingFullscreen, setIsMeetingFullscreen] = useState(false)
+  const [isMeetingPseudoFullscreen, setIsMeetingPseudoFullscreen] = useState(false)
+  const [meetingControlsCollapsed, setMeetingControlsCollapsed] = useState(false)
+  const [whiteboardWindowMode, setWhiteboardWindowMode] = useState<WhiteboardWindowMode>('minimized')
 
   const accessRef = useRef<OnlineClassroomAccess | null>(null)
   const boardRef = useRef<ValidatedBoardSnapshot>(EMPTY_BOARD)
@@ -277,12 +342,10 @@ export function OnlineClassroomPage() {
   const dataChannelReadyRef = useRef(false)
   const connectionStateRef = useRef<JitsiConnectionState>('loading')
   const seenMessageIdsRef = useRef(new Set<string>())
-  const pendingStudentOperationsRef = useRef<BoardOperation[]>([])
-  const pendingOperationFlushRef = useRef<StudentOperationPipeline | null>(null)
+  const pendingBoardOperationsRef = useRef<PendingBoardOperation[]>([])
+  const pendingOperationFlushRef = useRef<BoardOperationPipeline | null>(null)
   const undoHistoryRef = useRef<BoardOperation[][]>([])
   const redoHistoryRef = useRef<BoardOperation[][]>([])
-  const saveTimerRef = useRef<number | null>(null)
-  const savePipelineRef = useRef<BoardSavePipeline | null>(null)
   const savedVersionRef = useRef(0)
   const revalidationInFlightRef = useRef<ClassroomRouteScope | null>(null)
   const consecutiveRevalidationFailuresRef = useRef(0)
@@ -305,6 +368,34 @@ export function OnlineClassroomPage() {
   const recordingAttemptRef = useRef(0)
   const recordingStartLockRef = useRef(false)
   const unmountingRef = useRef(false)
+  const meetingShellRef = useRef<HTMLDivElement>(null)
+  const whiteboardDialogRef = useRef<HTMLDivElement>(null)
+  const whiteboardLauncherRef = useRef<HTMLButtonElement>(null)
+  const previousWhiteboardWindowModeRef = useRef<WhiteboardWindowMode>('minimized')
+  const whiteboardRestoreModeRef = useRef<Exclude<WhiteboardWindowMode, 'minimized'>>('normal')
+  const boardMutationRef = useRef<Promise<boolean> | null>(null)
+  const screenAnnotationSessionRef = useRef<OnlineClassroomScreenAnnotationSession | null>(null)
+  const screenAnnotationUndoRef = useRef<BoardOperation[][]>([])
+  const screenAnnotationRedoRef = useRef<BoardOperation[][]>([])
+  const screenAnnotationMutationRef = useRef<Promise<void> | null>(null)
+  const screenAnnotationMutationEpochRef = useRef(0)
+  const screenAnnotationPendingOperationsRef = useRef<PendingBoardOperation[]>([])
+  const screenAnnotationOperationFlushRef = useRef<ScreenAnnotationOperationPipeline | null>(null)
+  const flushScreenAnnotationOperationsRef = useRef<() => Promise<void>>(async () => undefined)
+  const endScreenAnnotationRef = useRef<() => Promise<void>>(async () => undefined)
+  const restartScreenAnnotationRef = useRef<() => Promise<void>>(async () => undefined)
+  const screenAnnotationRetryTimerRef = useRef<number | null>(null)
+  const screenAnnotationEndRetryTimerRef = useRef<number | null>(null)
+  const screenAnnotationRetryAttemptRef = useRef(0)
+  const screenAnnotationEndRequestedRef = useRef(false)
+  const screenAnnotationEndAwaitingFlushRef = useRef(false)
+  const screenAnnotationRestartAfterEndRef = useRef(false)
+  const screenAnnotationSessionShareEpochRef = useRef(-1)
+  const screenFrameInFlightRef = useRef<Promise<void> | null>(null)
+  const screenFrameCaptureEpochRef = useRef(0)
+  const screenFrameUrlRef = useRef('')
+  const screenShareStateRef = useRef<ClassroomScreenShareState>(EMPTY_SCREEN_SHARE_STATE)
+  const screenShareEpochRef = useRef(0)
 
   useLayoutEffect(() => {
     bookingIdRef.current = bookingId
@@ -367,6 +458,26 @@ export function OnlineClassroomPage() {
     if (nextSaveStatus) setSaveStatus(nextSaveStatus)
   }, [])
 
+  const replaceScreenAnnotationSession = useCallback((next: OnlineClassroomScreenAnnotationSession | null) => {
+    screenAnnotationSessionRef.current = next
+    setScreenAnnotationSession(next)
+  }, [])
+
+  const resetScreenAnnotationHistory = useCallback(() => {
+    screenAnnotationUndoRef.current = []
+    screenAnnotationRedoRef.current = []
+    setScreenAnnotationHistory({ canUndo: false, canRedo: false })
+  }, [])
+
+  const rememberScreenAnnotationForUndo = useCallback((operations: BoardOperation[]) => {
+    screenAnnotationUndoRef.current = [
+      ...screenAnnotationUndoRef.current.slice(-(MAX_HISTORY_ENTRIES - 1)),
+      operations,
+    ]
+    screenAnnotationRedoRef.current = []
+    setScreenAnnotationHistory({ canUndo: true, canRedo: false })
+  }, [])
+
   const resetHistory = useCallback(() => {
     undoHistoryRef.current = []
     redoHistoryRef.current = []
@@ -409,13 +520,45 @@ export function OnlineClassroomPage() {
     recordingConsentBusyRef.current = null
     setRecordingSetupConfirmed(false)
     setRecordingState('idle')
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = null
+    setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
+    screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
+    screenShareEpochRef.current += 1
+    replaceScreenAnnotationSession(null)
+    screenAnnotationSessionShareEpochRef.current = -1
+    resetScreenAnnotationHistory()
+    setScreenAnnotationSaveStatus('saved')
+    setScreenAnnotationBusy(false)
+    setScreenAnnotationPendingOperationCount(0)
+    setScreenAnnotationError('')
+    screenAnnotationMutationEpochRef.current += 1
+    screenAnnotationMutationRef.current = null
+    screenAnnotationPendingOperationsRef.current = []
+    screenAnnotationOperationFlushRef.current = null
+    screenAnnotationRetryAttemptRef.current = 0
+    screenAnnotationEndRequestedRef.current = false
+    screenAnnotationEndAwaitingFlushRef.current = false
+    screenAnnotationRestartAfterEndRef.current = false
+    if (screenAnnotationRetryTimerRef.current !== null) window.clearTimeout(screenAnnotationRetryTimerRef.current)
+    screenAnnotationRetryTimerRef.current = null
+    if (screenAnnotationEndRetryTimerRef.current !== null) window.clearTimeout(screenAnnotationEndRetryTimerRef.current)
+    screenAnnotationEndRetryTimerRef.current = null
+    screenFrameCaptureEpochRef.current += 1
+    screenFrameInFlightRef.current = null
+    screenFrameUrlRef.current = ''
+    setScreenFrameUrl('')
+    setScreenFrameState('idle')
+    setScreenFrameError('')
     if (boardRefreshTimerRef.current !== null) window.clearTimeout(boardRefreshTimerRef.current)
     boardRefreshTimerRef.current = null
     seenMessageIdsRef.current = new Set()
-    pendingStudentOperationsRef.current = []
-    setPendingStudentOperationCount(0)
+    pendingBoardOperationsRef.current = []
+    pendingOperationFlushRef.current = null
+    boardMutationRef.current = null
+    setPendingBoardOperationCount(0)
+    setBoardMutationBusy(false)
+    setWhiteboardWindowMode('minimized')
+    whiteboardRestoreModeRef.current = 'normal'
+    setMeetingControlsCollapsed(false)
     localParticipantIdRef.current = ''
     remoteParticipantIdsRef.current = new Set()
     setRemoteParticipantCount(0)
@@ -432,11 +575,13 @@ export function OnlineClassroomPage() {
       if (fragmentOrStoredToken) rememberClassroomToken(bookingId, fragmentOrStoredToken)
       removeClassroomTokenFromAddressBar()
       const initialBoard = sanitizeBoardSnapshot(result.boardSnapshot)
+      const initialScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
       accessRef.current = result
       boardRef.current = initialBoard
       savedVersionRef.current = initialBoard.version
       setAccess(result)
       setBoard(initialBoard)
+      replaceScreenAnnotationSession(initialScreenAnnotation)
       setSaveStatus('saved')
       resetHistory()
       setLoadState('ready')
@@ -449,7 +594,7 @@ export function OnlineClassroomPage() {
       setPageError(onlineClassroomErrorMessage(error))
       setLoadState('error')
     }
-  }, [bookingId, resetHistory, routeEpoch])
+  }, [bookingId, replaceScreenAnnotationSession, resetHistory, resetScreenAnnotationHistory, routeEpoch])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadClassroom(), 0)
@@ -504,93 +649,10 @@ export function OnlineClassroomPage() {
     return () => window.clearInterval(interval)
   }, [bookingId, existingRecording, hydrateExistingRecording, loadState])
 
-  const flushBoardSave = useCallback(async (): Promise<boolean> => {
-    const scope = captureRouteScope()
-    const currentAccess = accessRef.current
-    if (
-      !isRouteScopeActive(scope)
-      || !currentAccess
-      || currentAccess.bookingId !== scope.bookingId
-      || !isBoardManager(currentAccess.role)
-    ) return false
-
-    const existingPipeline = savePipelineRef.current
-    if (existingPipeline && isRouteScopeActive(existingPipeline.scope)) {
-      existingPipeline.queued = true
-      return existingPipeline.promise
-    }
-
-    const pipeline: BoardSavePipeline = {
-      scope,
-      queued: false,
-      promise: Promise.resolve(false),
-    }
-    const saveWork = (async () => {
-      let successful = true
-      try {
-        do {
-          if (!isRouteScopeActive(scope)) return false
-          pipeline.queued = false
-          const snapshotToSave = boardRef.current
-          setSaveStatus('saving')
-          const expectedVersion = savedVersionRef.current
-          const token = tokenRef.current || undefined
-          const result = await saveOnlineClassroomBoard(
-            scope.bookingId,
-            expectedVersion,
-            toCallableBoardDraft(snapshotToSave),
-            token,
-          )
-          if (!isRouteScopeActive(scope)) return false
-          savedVersionRef.current = result.version
-          if (boardRef.current === snapshotToSave) {
-            replaceBoard({ ...snapshotToSave, version: result.version })
-          } else if (boardRef.current.version <= result.version) {
-            replaceBoard({ ...boardRef.current, version: result.version + 1 }, 'dirty')
-          }
-        } while (
-          isRouteScopeActive(scope)
-          && (pipeline.queued || boardRef.current.version > savedVersionRef.current)
-        )
-
-        if (!isRouteScopeActive(scope)) return false
-        setSaveStatus(boardRef.current.version === savedVersionRef.current ? 'saved' : 'dirty')
-      } catch (error) {
-        if (!isRouteScopeActive(scope)) return false
-        successful = false
-        if (errorCode(error) === 'failed-precondition') {
-          try {
-            const latestAccess = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
-            if (!isRouteScopeActive(scope) || latestAccess.bookingId !== scope.bookingId) return false
-            const authoritativeBoard = sanitizeBoardSnapshot(latestAccess.boardSnapshot)
-            accessRef.current = latestAccess
-            setAccess(latestAccess)
-            replaceBoard(authoritativeBoard, 'saved')
-            savedVersionRef.current = authoritativeBoard.version
-            resetHistory()
-            toast.warning('Bảng đã được cập nhật ở một cửa sổ khác. Đã tải lại bản lưu mới nhất để tránh ghi đè.')
-          } catch (refreshError) {
-            if (!isRouteScopeActive(scope)) return false
-            setSaveStatus('error')
-            toast.error(`Chưa đồng bộ lại được bảng: ${onlineClassroomErrorMessage(refreshError)}`)
-          }
-        } else {
-          setSaveStatus('error')
-          toast.error(`Chưa lưu được bảng: ${onlineClassroomErrorMessage(error)}`)
-        }
-      }
-      return successful
-    })()
-    pipeline.promise = saveWork
-    savePipelineRef.current = pipeline
-    try {
-      return await saveWork
-    } finally {
-      if (savePipelineRef.current === pipeline) savePipelineRef.current = null
-    }
-  }, [captureRouteScope, isRouteScopeActive, replaceBoard, resetHistory])
-
-  const sendBoardPayload = useCallback(async (payload: BoardMessagePayload): Promise<number> => {
+  const sendBoardPayload = useCallback(async (
+    payload: BoardMessagePayload,
+    surface: 'board' | 'screen' = 'board',
+  ): Promise<number> => {
     const scope = captureRouteScope()
     const currentAccess = accessRef.current
     if (!isRouteScopeActive(scope)
@@ -599,7 +661,7 @@ export function OnlineClassroomPage() {
       || connectionStateRef.current !== 'connected'
       || !dataChannelReadyRef.current
       || !localParticipantIdRef.current) return 0
-    const message = makeBoardMessage(scope.bookingId, currentAccess.role, payload)
+    const message = makeBoardMessage(scope.bookingId, currentAccess.role, payload, surface)
     const serialized = serializeBoardMessage(message)
     if (!serialized) return -1
 
@@ -625,64 +687,78 @@ export function OnlineClassroomPage() {
     const sent = await sendBoardPayload({ type: 'snapshot', snapshot })
     if (sent !== -1 || !isRouteScopeActive(scope)) return
 
-    const saved = await flushBoardSave()
-    if (saved && isRouteScopeActive(scope)) {
-      await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: snapshot.version })
-    }
-  }, [captureRouteScope, flushBoardSave, isRouteScopeActive, sendBoardPayload])
+    await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: snapshot.version })
+  }, [captureRouteScope, isRouteScopeActive, sendBoardPayload])
 
-  const scheduleManagerBoardSave = useCallback((delayMs = 350) => {
-    const scope = captureRouteScope()
-    if (!isRouteScopeActive(scope)) return
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null
-      if (!isRouteScopeActive(scope)) return
-      void flushBoardSave().then((saved) => {
-        if (saved && isRouteScopeActive(scope)) {
-          void sendBoardPayload({ type: 'snapshot-refresh', boardVersion: boardRef.current.version })
-        }
-      })
-    }, delayMs)
-  }, [captureRouteScope, flushBoardSave, isRouteScopeActive, sendBoardPayload])
-
-  const flushPendingStudentOperations = useCallback(async () => {
+  const flushPendingBoardOperations = useCallback(async () => {
     const scope = captureRouteScope()
     const currentAccess = accessRef.current
     if (
       !isRouteScopeActive(scope)
       || !currentAccess
       || currentAccess.bookingId !== scope.bookingId
-      || currentAccess.role !== 'student'
     ) return
 
     const existingPipeline = pendingOperationFlushRef.current
     if (existingPipeline && isRouteScopeActive(existingPipeline.scope)) return existingPipeline.promise
-    if (pendingStudentOperationsRef.current.length === 0) return
+    if (pendingBoardOperationsRef.current.length === 0) return
 
-    const pipeline: StudentOperationPipeline = {
+    const pipeline: BoardOperationPipeline = {
       scope,
       promise: Promise.resolve(),
     }
     const work = (async () => {
-      while (isRouteScopeActive(scope) && pendingStudentOperationsRef.current.length > 0) {
-        const operation = pendingStudentOperationsRef.current[0]
+      while (isRouteScopeActive(scope) && pendingBoardOperationsRef.current.length > 0) {
+        const queued = pendingBoardOperationsRef.current[0]
+        const operation = queued.operation
         try {
           const result = await appendOnlineClassroomBoardOperation(
             scope.bookingId,
             operation,
+            queued.generation,
             tokenRef.current || undefined,
           )
           if (!isRouteScopeActive(scope)) return
           const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
-          pendingStudentOperationsRef.current = pendingStudentOperationsRef.current
-            .filter((item) => item.id !== operation.id)
+          const visibleBeforeCommit = boardRef.current
+          const knownOperationIds = new Set(visibleBeforeCommit.operations.map((item) => item.id))
           const remoteIds = new Set(remoteBoard.operations.map((item) => item.id))
-          const stillPending = pendingStudentOperationsRef.current
-            .filter((item) => !remoteIds.has(item.id))
+          const remoteHasUnexpectedOperation = remoteBoard.operations
+            .some((item) => !knownOperationIds.has(item.id))
+          const pendingOperationIds = new Set(pendingBoardOperationsRef.current.map((item) => item.operation.id))
+          const remoteRemovedUnexpectedOperation = visibleBeforeCommit.operations.some((item) => (
+            !remoteIds.has(item.id)
+            && !pendingOperationIds.has(item.id)
+          ))
+          pendingBoardOperationsRef.current = pendingBoardOperationsRef.current
+            .filter((item) => item.operation.id !== operation.id)
+          let stillPending = pendingBoardOperationsRef.current
+            .filter((item) => item.generation === remoteBoard.generation && !remoteIds.has(item.operation.id))
+          pendingBoardOperationsRef.current = stillPending
+
+          // A periodic refresh may have installed a newer authoritative board
+          // while this callable response was travelling back. The operation has
+          // already been acknowledged above, but an older ACK must never roll
+          // back a later clear, lock or collaborator append.
+          const liveBoard = boardRef.current
+          if (remoteBoard.version < liveBoard.version) {
+            const liveIds = new Set(liveBoard.operations.map((item) => item.id))
+            stillPending = pendingBoardOperationsRef.current.filter((item) => (
+              item.generation === liveBoard.generation && !liveIds.has(item.operation.id)
+            ))
+            pendingBoardOperationsRef.current = stillPending
+            setPendingBoardOperationCount(stillPending.length)
+            if (isBoardManager(accessRef.current?.role || 'student')) {
+              setSaveStatus(stillPending.length > 0 ? 'dirty' : 'saved')
+            }
+            continue
+          }
           const visibleBoard = {
             ...remoteBoard,
-            operations: [...remoteBoard.operations, ...stillPending].slice(0, MAX_BOARD_OPERATIONS),
+            operations: [
+              ...remoteBoard.operations,
+              ...stillPending.map((item) => item.operation),
+            ].slice(0, MAX_BOARD_OPERATIONS),
           }
           savedVersionRef.current = remoteBoard.version
           replaceBoard(
@@ -691,13 +767,51 @@ export function OnlineClassroomPage() {
               ? stillPending.length > 0 ? 'dirty' : 'saved'
               : undefined,
           )
-          setPendingStudentOperationCount(stillPending.length)
+          setPendingBoardOperationCount(stillPending.length)
+          if (isBoardManager(accessRef.current?.role || 'student')
+            && (remoteHasUnexpectedOperation
+              || remoteRemovedUnexpectedOperation
+              || remoteBoard.generation !== visibleBeforeCommit.generation)) {
+            resetHistory()
+          }
           setSyncWarning('')
           await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: remoteBoard.version })
         } catch (error) {
           if (!isRouteScopeActive(scope)) return
+          if (isTerminalBoardOperationError(error)) {
+            pendingBoardOperationsRef.current = pendingBoardOperationsRef.current
+              .filter((item) => item.operation.id !== operation.id)
+            setPendingBoardOperationCount(pendingBoardOperationsRef.current.length)
+            setSyncWarning(`Nét vẽ không được hệ thống nhận: ${onlineClassroomErrorMessage(error)}`)
+            try {
+              const latestAccess = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
+              if (!isRouteScopeActive(scope) || latestAccess.bookingId !== scope.bookingId) return
+              accessRef.current = latestAccess
+              setAccess(latestAccess)
+              const authoritativeBoard = sanitizeBoardSnapshot(latestAccess.boardSnapshot)
+              const authoritativeIds = new Set(authoritativeBoard.operations.map((item) => item.id))
+              const retryablePending = pendingBoardOperationsRef.current
+                .filter((item) => item.generation === authoritativeBoard.generation
+                  && !authoritativeIds.has(item.operation.id))
+              pendingBoardOperationsRef.current = retryablePending
+              replaceBoard({
+                ...authoritativeBoard,
+                operations: [
+                  ...authoritativeBoard.operations,
+                  ...retryablePending.map((item) => item.operation),
+                ].slice(0, MAX_BOARD_OPERATIONS),
+              })
+              savedVersionRef.current = authoritativeBoard.version
+              setPendingBoardOperationCount(retryablePending.length)
+              resetHistory()
+            } catch {
+              // Keep the authoritative rejection visible. The normal refresh
+              // interval will recover the snapshot when connectivity returns.
+            }
+            continue
+          }
           setSyncWarning(`Nét vẽ đang chờ đồng bộ lên hệ thống: ${onlineClassroomErrorMessage(error)}`)
-          setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
+          setPendingBoardOperationCount(pendingBoardOperationsRef.current.length)
           break
         }
       }
@@ -709,19 +823,23 @@ export function OnlineClassroomPage() {
     } finally {
       if (pendingOperationFlushRef.current === pipeline) pendingOperationFlushRef.current = null
     }
-  }, [captureRouteScope, isRouteScopeActive, replaceBoard, sendBoardPayload])
+  }, [captureRouteScope, isRouteScopeActive, replaceBoard, resetHistory, sendBoardPayload])
 
-  const handleLocalOperation = useCallback((operation: BoardOperation) => {
+  const handleLocalOperation = useCallback((operation: BoardOperation): boolean => {
     const scope = captureRouteScope()
     const currentAccess = accessRef.current
     const previous = boardRef.current
-    if (!isRouteScopeActive(scope) || !currentAccess || currentAccess.bookingId !== scope.bookingId) return
+    if (!isRouteScopeActive(scope) || !currentAccess || currentAccess.bookingId !== scope.bookingId) return false
+    if (boardMutationRef.current) {
+      toast.info('Bảng đang hoàn tất một thao tác quản lý. Hãy viết tiếp sau giây lát.')
+      return false
+    }
     if (previous.operations.length >= MAX_BOARD_OPERATIONS) {
       toast.warning('Bảng đã đạt giới hạn nét vẽ. Gia sư hãy lưu rồi xóa bảng để tiếp tục.')
-      return
+      return false
     }
-    if (currentAccess.role === 'student' && !previous.studentCanWrite) return
-    if (previous.operations.some((item) => item.id === operation.id)) return
+    if (currentAccess.role === 'student' && !previous.studentCanWrite) return false
+    if (previous.operations.some((item) => item.id === operation.id)) return false
 
     const localIsManager = isBoardManager(currentAccess.role)
     if (localIsManager) rememberForUndo(previous.operations)
@@ -730,18 +848,16 @@ export function OnlineClassroomPage() {
       operations: [...previous.operations, operation],
     }
     replaceBoard(next, localIsManager ? 'dirty' : undefined)
-    if (localIsManager) {
-      // Manager mutations use the single versioned snapshot pipeline. Mixing
-      // append + snapshot writes can resurrect a stroke after Undo/Clear.
-      scheduleManagerBoardSave()
-      return
-    }
-    pendingStudentOperationsRef.current.push(operation)
-    setPendingStudentOperationCount(pendingStudentOperationsRef.current.length)
-    void flushPendingStudentOperations()
-  }, [captureRouteScope, flushPendingStudentOperations, isRouteScopeActive, rememberForUndo, replaceBoard, scheduleManagerBoardSave])
+    pendingBoardOperationsRef.current.push({ operation, generation: previous.generation })
+    setPendingBoardOperationCount(pendingBoardOperationsRef.current.length)
+    void flushPendingBoardOperations()
+    return true
+  }, [captureRouteScope, flushPendingBoardOperations, isRouteScopeActive, rememberForUndo, replaceBoard])
 
-  const commitManagerBoard = useCallback((next: ValidatedBoardSnapshot) => {
+  const commitManagerBoardMutation = useCallback((
+    createNext: (current: ValidatedBoardSnapshot) => ValidatedBoardSnapshot,
+    retryOnConflict = false,
+  ): Promise<boolean> => {
     const scope = captureRouteScope()
     const currentAccess = accessRef.current
     if (
@@ -749,16 +865,83 @@ export function OnlineClassroomPage() {
       || !currentAccess
       || currentAccess.bookingId !== scope.bookingId
       || !isBoardManager(currentAccess.role)
-    ) return
-    replaceBoard(next, 'dirty')
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = null
-    void flushBoardSave().then((saved) => {
-      if (saved && isRouteScopeActive(scope)) {
-        void sendBoardPayload({ type: 'snapshot-refresh', boardVersion: boardRef.current.version })
+    ) return Promise.resolve(false)
+    const existing = boardMutationRef.current
+    if (existing) return existing
+
+    const work = (async () => {
+      setBoardMutationBusy(true)
+      try {
+        await flushPendingBoardOperations()
+        if (!isRouteScopeActive(scope)) return false
+        if (pendingBoardOperationsRef.current.length > 0) {
+          toast.warning('Một số nét vẽ chưa đồng bộ. Hãy kiểm tra mạng rồi thử lại thao tác quản lý bảng.')
+          return false
+        }
+
+        for (let attempt = 0; attempt < (retryOnConflict ? 3 : 1); attempt += 1) {
+          if (!isRouteScopeActive(scope)) return false
+          const current = boardRef.current
+          const candidate = createNext(current)
+          const candidateIds = new Set(candidate.operations.map((operation) => operation.id))
+          const removesStoredOperation = current.operations.some((operation) => !candidateIds.has(operation.id))
+          const next = removesStoredOperation && candidate.generation === current.generation
+            ? { ...candidate, generation: current.generation + 1 }
+            : candidate
+          replaceBoard(next, 'saving')
+          try {
+            const result = await saveOnlineClassroomBoard(
+              scope.bookingId,
+              current.version,
+              toCallableBoardDraft(next),
+              tokenRef.current || undefined,
+            )
+            if (!isRouteScopeActive(scope)) return false
+            const committed = { ...next, version: result.version }
+            savedVersionRef.current = result.version
+            replaceBoard(committed, 'saved')
+            await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: result.version })
+            return true
+          } catch (error) {
+            if (!isRouteScopeActive(scope)) return false
+            if (errorCode(error) !== 'failed-precondition') {
+              replaceBoard(current, 'error')
+              toast.error(`Chưa lưu được bảng: ${onlineClassroomErrorMessage(error)}`)
+              return false
+            }
+            try {
+              const latestAccess = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
+              if (!isRouteScopeActive(scope) || latestAccess.bookingId !== scope.bookingId) return false
+              const authoritativeBoard = sanitizeBoardSnapshot(latestAccess.boardSnapshot)
+              accessRef.current = latestAccess
+              setAccess(latestAccess)
+              savedVersionRef.current = authoritativeBoard.version
+              replaceBoard(authoritativeBoard, 'saved')
+              resetHistory()
+            } catch (refreshError) {
+              if (!isRouteScopeActive(scope)) return false
+              setSaveStatus('error')
+              toast.error(`Chưa đồng bộ lại được bảng: ${onlineClassroomErrorMessage(refreshError)}`)
+              return false
+            }
+            if (!retryOnConflict) {
+              toast.warning('Bảng vừa có thay đổi từ người khác. Hệ thống đã giữ bản mới nhất; hãy thao tác lại nếu cần.')
+              return false
+            }
+          }
+        }
+        toast.warning('Bảng đang có nhiều thay đổi đồng thời. Hãy thử lại sau giây lát.')
+        return false
+      } finally {
+        if (isRouteScopeActive(scope)) setBoardMutationBusy(false)
       }
+    })()
+    boardMutationRef.current = work
+    void work.finally(() => {
+      if (boardMutationRef.current === work) boardMutationRef.current = null
     })
-  }, [captureRouteScope, flushBoardSave, isRouteScopeActive, replaceBoard, sendBoardPayload])
+    return work
+  }, [captureRouteScope, flushPendingBoardOperations, isRouteScopeActive, replaceBoard, resetHistory, sendBoardPayload])
 
   const handleUndo = useCallback(() => {
     const previousOperations = undoHistoryRef.current.pop()
@@ -769,8 +952,9 @@ export function OnlineClassroomPage() {
       canUndo: undoHistoryRef.current.length > 0,
       canRedo: redoHistoryRef.current.length > 0,
     })
-    commitManagerBoard({ ...current, version: current.version + 1, operations: previousOperations })
-  }, [commitManagerBoard])
+    void commitManagerBoardMutation((latest) => ({ ...latest, operations: previousOperations }))
+      .then((saved) => { if (!saved) resetHistory() })
+  }, [commitManagerBoardMutation, resetHistory])
 
   const handleRedo = useCallback(() => {
     const nextOperations = redoHistoryRef.current.pop()
@@ -781,21 +965,816 @@ export function OnlineClassroomPage() {
       canUndo: undoHistoryRef.current.length > 0,
       canRedo: redoHistoryRef.current.length > 0,
     })
-    commitManagerBoard({ ...current, version: current.version + 1, operations: nextOperations })
-  }, [commitManagerBoard])
+    void commitManagerBoardMutation((latest) => ({ ...latest, operations: nextOperations }))
+      .then((saved) => { if (!saved) resetHistory() })
+  }, [commitManagerBoardMutation, resetHistory])
 
   const handleClear = useCallback(() => {
     const current = boardRef.current
     if (current.operations.length === 0) return
     rememberForUndo(current.operations)
-    commitManagerBoard({ ...current, version: current.version + 1, operations: [] })
-  }, [commitManagerBoard, rememberForUndo])
+    void commitManagerBoardMutation((latest) => ({
+      ...latest,
+      generation: latest.generation + 1,
+      operations: [],
+    }), true).then((saved) => { if (saved) resetHistory() })
+  }, [commitManagerBoardMutation, rememberForUndo, resetHistory])
 
   const handleStudentCanWriteChange = useCallback((enabled: boolean) => {
     const current = boardRef.current
     if (current.studentCanWrite === enabled) return
-    commitManagerBoard({ ...current, version: current.version + 1, studentCanWrite: enabled })
-  }, [commitManagerBoard])
+    void commitManagerBoardMutation((latest) => ({ ...latest, studentCanWrite: enabled }), true)
+  }, [commitManagerBoardMutation])
+
+  const reloadScreenAnnotationSession = useCallback(async () => {
+    const scope = captureRouteScope()
+    if (!isRouteScopeActive(scope)) return null
+    const latestAccess = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
+    if (!isRouteScopeActive(scope) || latestAccess.bookingId !== scope.bookingId) return null
+    accessRef.current = latestAccess
+    setAccess(latestAccess)
+    const nextSession = sanitizeScreenAnnotationSession(latestAccess.screenAnnotationSession)
+    const previousSession = screenAnnotationSessionRef.current
+    replaceScreenAnnotationSession(nextSession)
+    if (nextSession?.sessionId !== previousSession?.sessionId
+      || nextSession?.boardSnapshot.version !== previousSession?.boardSnapshot.version) {
+      resetScreenAnnotationHistory()
+    }
+    if (nextSession?.sessionId !== previousSession?.sessionId || !nextSession?.active) {
+      screenAnnotationSessionShareEpochRef.current = -1
+      screenAnnotationPendingOperationsRef.current = []
+      setScreenAnnotationPendingOperationCount(0)
+    }
+    return nextSession
+  }, [captureRouteScope, isRouteScopeActive, replaceScreenAnnotationSession, resetScreenAnnotationHistory])
+
+  const signalScreenAnnotationRefresh = useCallback(async (session: OnlineClassroomScreenAnnotationSession) => {
+    await sendBoardPayload({
+      type: 'snapshot-refresh',
+      boardVersion: session.boardSnapshot.version,
+    }, 'screen')
+  }, [sendBoardPayload])
+
+  const scheduleRequestedScreenAnnotationEnd = useCallback((delayMs = 0) => {
+    const scope = captureRouteScope()
+    if (!isRouteScopeActive(scope)
+      || !screenAnnotationEndRequestedRef.current
+      || screenAnnotationEndAwaitingFlushRef.current
+      || screenAnnotationMutationRef.current
+      || screenAnnotationPendingOperationsRef.current.length > 0
+      || screenAnnotationEndRetryTimerRef.current !== null) return
+
+    screenAnnotationEndRetryTimerRef.current = window.setTimeout(() => {
+      screenAnnotationEndRetryTimerRef.current = null
+      if (!isRouteScopeActive(scope)
+        || !screenAnnotationEndRequestedRef.current
+        || screenAnnotationEndAwaitingFlushRef.current
+        || screenAnnotationMutationRef.current
+        || screenAnnotationPendingOperationsRef.current.length > 0) return
+      void endScreenAnnotationRef.current()
+    }, Math.max(0, delayMs))
+  }, [captureRouteScope, isRouteScopeActive])
+
+  const flushScreenAnnotationOperations = useCallback(async () => {
+    const scope = captureRouteScope()
+    const currentAccess = accessRef.current
+    const currentSession = screenAnnotationSessionRef.current
+    if (!isRouteScopeActive(scope)
+      || !currentAccess
+      || currentAccess.bookingId !== scope.bookingId
+      || !currentSession?.active
+      || screenAnnotationPendingOperationsRef.current.length === 0) return
+    const existing = screenAnnotationOperationFlushRef.current
+    if (existing && isRouteScopeActive(existing.scope) && existing.sessionId === currentSession.sessionId) {
+      return existing.promise
+    }
+
+    const pipeline: ScreenAnnotationOperationPipeline = {
+      scope,
+      sessionId: currentSession.sessionId,
+      promise: Promise.resolve(),
+    }
+    const work = (async () => {
+      while (
+        isRouteScopeActive(scope)
+        && screenAnnotationSessionRef.current?.sessionId === pipeline.sessionId
+        && screenAnnotationSessionRef.current.active
+        && screenAnnotationPendingOperationsRef.current.length > 0
+      ) {
+        const queued = screenAnnotationPendingOperationsRef.current[0]
+        const operation = queued.operation
+        const knownOperationIdsAtDispatch = new Set(
+          sanitizeBoardSnapshot(screenAnnotationSessionRef.current?.boardSnapshot)
+            .operations.map((item) => item.id),
+        )
+        try {
+          const result = await appendOnlineClassroomScreenAnnotationOperation(
+            scope.bookingId,
+            pipeline.sessionId,
+            operation,
+            queued.generation,
+            tokenRef.current || undefined,
+          )
+          if (!isRouteScopeActive(scope)) return
+          const savedSession = sanitizeScreenAnnotationSession(result)
+          if (!savedSession || savedSession.sessionId !== pipeline.sessionId) {
+            throw new Error('Phiên chú thích trả về không hợp lệ.')
+          }
+          const liveSession = screenAnnotationSessionRef.current
+          if (!liveSession?.active || liveSession.sessionId !== pipeline.sessionId) return
+
+          const authoritativeSnapshot = sanitizeBoardSnapshot(savedSession.boardSnapshot)
+          const liveSnapshot = sanitizeBoardSnapshot(liveSession.boardSnapshot)
+          const authoritativeIds = new Set(authoritativeSnapshot.operations.map((item) => item.id))
+          if (isBoardManager(currentAccess.role)
+            && authoritativeSnapshot.operations.some((item) => !knownOperationIdsAtDispatch.has(item.id))) {
+            // A collaborator committed while this request was in flight. Whole-
+            // snapshot undo entries are no longer safe because they could erase
+            // those remote strokes.
+            resetScreenAnnotationHistory()
+          }
+
+          screenAnnotationPendingOperationsRef.current = screenAnnotationPendingOperationsRef.current
+            .filter((item) => item.operation.id !== operation.id)
+          const pending = screenAnnotationPendingOperationsRef.current
+            .filter((item) => item.generation === authoritativeSnapshot.generation
+              && !authoritativeIds.has(item.operation.id))
+          screenAnnotationPendingOperationsRef.current = pending
+
+          // A refresh may already have installed a newer authoritative version
+          // while this callable response was travelling back to the browser.
+          // Never let the older ACK roll that state back.
+          if (authoritativeSnapshot.version < liveSnapshot.version) {
+            const liveIds = new Set(liveSnapshot.operations.map((item) => item.id))
+            const stillPending = pending.filter((item) => !liveIds.has(item.operation.id))
+            screenAnnotationPendingOperationsRef.current = stillPending
+            setScreenAnnotationPendingOperationCount(stillPending.length)
+            setScreenAnnotationSaveStatus(stillPending.length > 0 ? 'saving' : 'saved')
+            screenAnnotationRetryAttemptRef.current = 0
+            continue
+          }
+
+          const visibleSession: OnlineClassroomScreenAnnotationSession = {
+            ...savedSession,
+            boardSnapshot: {
+              ...authoritativeSnapshot,
+              operations: [
+                ...authoritativeSnapshot.operations,
+                ...pending.map((item) => item.operation),
+              ].slice(0, MAX_BOARD_OPERATIONS),
+            },
+          }
+          replaceScreenAnnotationSession(visibleSession)
+          setScreenAnnotationPendingOperationCount(pending.length)
+          setScreenAnnotationSaveStatus(pending.length > 0 ? 'saving' : 'saved')
+          setScreenAnnotationError('')
+          screenAnnotationRetryAttemptRef.current = 0
+          if (screenAnnotationRetryTimerRef.current !== null) {
+            window.clearTimeout(screenAnnotationRetryTimerRef.current)
+            screenAnnotationRetryTimerRef.current = null
+          }
+          void signalScreenAnnotationRefresh(savedSession)
+        } catch (error) {
+          if (!isRouteScopeActive(scope)) return
+          setScreenAnnotationSaveStatus('error')
+          setScreenAnnotationError(`Nét chú thích đang chờ đồng bộ: ${onlineClassroomErrorMessage(error)}`)
+          if (isTerminalScreenAnnotationOperationError(error)) {
+            screenAnnotationPendingOperationsRef.current = []
+            setScreenAnnotationPendingOperationCount(0)
+            screenAnnotationRetryAttemptRef.current = 0
+            resetScreenAnnotationHistory()
+            try {
+              await reloadScreenAnnotationSession()
+            } catch {
+              // Authenticated refresh will retry on the normal sync interval.
+            }
+          } else if (screenAnnotationRetryTimerRef.current === null) {
+            const retryAttempt = Math.min(8, screenAnnotationRetryAttemptRef.current + 1)
+            screenAnnotationRetryAttemptRef.current = retryAttempt
+            const rateLimited = errorReason(error) === 'SCREEN_ANNOTATION_RATE_LIMITED'
+            const baseDelay = rateLimited ? 10_000 : 1_600
+            const maxDelay = rateLimited ? 60_000 : 20_000
+            const retryDelay = Math.min(maxDelay, baseDelay * (2 ** (retryAttempt - 1)))
+              + Math.floor(Math.random() * 400)
+            screenAnnotationRetryTimerRef.current = window.setTimeout(() => {
+              screenAnnotationRetryTimerRef.current = null
+              void flushScreenAnnotationOperationsRef.current()
+            }, retryDelay)
+          }
+          break
+        }
+      }
+    })()
+    pipeline.promise = work
+    screenAnnotationOperationFlushRef.current = pipeline
+    try {
+      await work
+    } finally {
+      if (screenAnnotationOperationFlushRef.current === pipeline) {
+        screenAnnotationOperationFlushRef.current = null
+      }
+      if (screenAnnotationPendingOperationsRef.current.length === 0) {
+        scheduleRequestedScreenAnnotationEnd()
+      }
+    }
+  }, [captureRouteScope, isRouteScopeActive, reloadScreenAnnotationSession, replaceScreenAnnotationSession, resetScreenAnnotationHistory, scheduleRequestedScreenAnnotationEnd, signalScreenAnnotationRefresh])
+
+  useEffect(() => {
+    flushScreenAnnotationOperationsRef.current = flushScreenAnnotationOperations
+  }, [flushScreenAnnotationOperations])
+
+  const handleScreenAnnotationOperation = useCallback((operation: BoardOperation): boolean => {
+    const scope = captureRouteScope()
+    const currentAccess = accessRef.current
+    const currentSession = screenAnnotationSessionRef.current
+    if (!isRouteScopeActive(scope)
+      || !currentAccess
+      || currentAccess.bookingId !== scope.bookingId
+      || !currentSession?.active
+      || screenAnnotationMutationRef.current) return false
+    const previousSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    if (previousSnapshot.operations.length >= MAX_BOARD_OPERATIONS) {
+      toast.warning('Phần chú thích đã đạt giới hạn. Gia sư hãy xóa chú thích để tiếp tục.')
+      return false
+    }
+    if (currentAccess.role === 'student' && !previousSnapshot.studentCanWrite) return false
+    if (previousSnapshot.operations.some((item) => item.id === operation.id)) return false
+
+    if (isBoardManager(currentAccess.role)) rememberScreenAnnotationForUndo(previousSnapshot.operations)
+    replaceScreenAnnotationSession({
+      ...currentSession,
+      boardSnapshot: {
+        ...previousSnapshot,
+        operations: [...previousSnapshot.operations, operation],
+      },
+    })
+    screenAnnotationPendingOperationsRef.current.push({
+      operation,
+      generation: previousSnapshot.generation,
+    })
+    setScreenAnnotationPendingOperationCount(screenAnnotationPendingOperationsRef.current.length)
+    setScreenAnnotationSaveStatus('saving')
+    setScreenAnnotationError('')
+    void flushScreenAnnotationOperations()
+    return true
+  }, [captureRouteScope, flushScreenAnnotationOperations, isRouteScopeActive, rememberScreenAnnotationForUndo, replaceScreenAnnotationSession])
+
+  const commitScreenAnnotationSnapshot = useCallback((requestedSnapshot: ValidatedBoardSnapshot) => {
+    const scope = captureRouteScope()
+    const currentAccess = accessRef.current
+    const currentSession = screenAnnotationSessionRef.current
+    if (!isRouteScopeActive(scope)
+      || !currentAccess
+      || currentAccess.bookingId !== scope.bookingId
+      || !isBoardManager(currentAccess.role)
+      || !currentSession?.active) return
+    if (screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) {
+      toast.info('Đang đồng bộ chú thích. Vui lòng chờ giây lát.')
+      return
+    }
+
+    const currentSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    const requestedIds = new Set(requestedSnapshot.operations.map((operation) => operation.id))
+    const removesStoredOperation = currentSnapshot.operations.some((operation) => !requestedIds.has(operation.id))
+    const nextSnapshot = removesStoredOperation && requestedSnapshot.generation === currentSnapshot.generation
+      ? { ...requestedSnapshot, generation: currentSnapshot.generation + 1 }
+      : requestedSnapshot
+
+    replaceScreenAnnotationSession({ ...currentSession, boardSnapshot: nextSnapshot })
+    setScreenAnnotationSaveStatus('saving')
+    setScreenAnnotationBusy(true)
+    setScreenAnnotationError('')
+    const mutationEpoch = ++screenAnnotationMutationEpochRef.current
+    const work = (async () => {
+      try {
+        const result = await saveOnlineClassroomScreenAnnotation(
+          scope.bookingId,
+          currentSession.sessionId,
+          currentSession.boardSnapshot.version,
+          toCallableBoardDraft(nextSnapshot),
+        )
+        if (!isRouteScopeActive(scope)) return
+        const savedSession = sanitizeScreenAnnotationSession(result)
+        if (!savedSession || savedSession.sessionId !== currentSession.sessionId) {
+          throw new Error('Phiên chú thích trả về không hợp lệ.')
+        }
+        replaceScreenAnnotationSession(savedSession)
+        setScreenAnnotationSaveStatus('saved')
+        await signalScreenAnnotationRefresh(savedSession)
+      } catch (error) {
+        if (!isRouteScopeActive(scope)) return
+        setScreenAnnotationSaveStatus('error')
+        setScreenAnnotationError(onlineClassroomErrorMessage(error))
+        try {
+          await reloadScreenAnnotationSession()
+        } catch {
+          replaceScreenAnnotationSession(currentSession)
+        }
+        resetScreenAnnotationHistory()
+      } finally {
+        if (screenAnnotationMutationEpochRef.current === mutationEpoch) screenAnnotationMutationRef.current = null
+        if (isRouteScopeActive(scope)) setScreenAnnotationBusy(false)
+      }
+    })()
+    screenAnnotationMutationRef.current = work
+  }, [captureRouteScope, isRouteScopeActive, reloadScreenAnnotationSession, replaceScreenAnnotationSession, resetScreenAnnotationHistory, signalScreenAnnotationRefresh])
+
+  const handleScreenAnnotationUndo = useCallback(() => {
+    if (screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) return
+    const previousOperations = screenAnnotationUndoRef.current.pop()
+    const currentSession = screenAnnotationSessionRef.current
+    if (!previousOperations || !currentSession?.active) return
+    const currentSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    screenAnnotationRedoRef.current.push(currentSnapshot.operations)
+    setScreenAnnotationHistory({
+      canUndo: screenAnnotationUndoRef.current.length > 0,
+      canRedo: screenAnnotationRedoRef.current.length > 0,
+    })
+    commitScreenAnnotationSnapshot({ ...currentSnapshot, operations: previousOperations })
+  }, [commitScreenAnnotationSnapshot])
+
+  const handleScreenAnnotationRedo = useCallback(() => {
+    if (screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) return
+    const nextOperations = screenAnnotationRedoRef.current.pop()
+    const currentSession = screenAnnotationSessionRef.current
+    if (!nextOperations || !currentSession?.active) return
+    const currentSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    screenAnnotationUndoRef.current.push(currentSnapshot.operations)
+    setScreenAnnotationHistory({
+      canUndo: screenAnnotationUndoRef.current.length > 0,
+      canRedo: screenAnnotationRedoRef.current.length > 0,
+    })
+    commitScreenAnnotationSnapshot({ ...currentSnapshot, operations: nextOperations })
+  }, [commitScreenAnnotationSnapshot])
+
+  const handleScreenAnnotationClear = useCallback(() => {
+    const currentSession = screenAnnotationSessionRef.current
+    if (!currentSession?.active || screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) return
+    const currentSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    if (currentSnapshot.operations.length === 0) return
+    rememberScreenAnnotationForUndo(currentSnapshot.operations)
+    commitScreenAnnotationSnapshot({
+      ...currentSnapshot,
+      generation: currentSnapshot.generation + 1,
+      operations: [],
+    })
+  }, [commitScreenAnnotationSnapshot, rememberScreenAnnotationForUndo])
+
+  const handleScreenStudentCanWriteChange = useCallback((enabled: boolean) => {
+    const currentSession = screenAnnotationSessionRef.current
+    if (!currentSession?.active || screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) return
+    const currentSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
+    if (currentSnapshot.studentCanWrite === enabled) return
+    commitScreenAnnotationSnapshot({ ...currentSnapshot, studentCanWrite: enabled })
+  }, [commitScreenAnnotationSnapshot])
+
+  const handleBeginScreenAnnotation = useCallback(async (expectedShareEpoch = screenShareEpochRef.current) => {
+    const scope = captureRouteScope()
+    const currentAccess = accessRef.current
+    if (!isRouteScopeActive(scope)
+      || !currentAccess
+      || currentAccess.bookingId !== scope.bookingId
+      || !isBoardManager(currentAccess.role)
+      || !screenShareStateRef.current.active
+      || screenShareEpochRef.current !== expectedShareEpoch
+      || screenAnnotationMutationRef.current) return
+    screenAnnotationEndRequestedRef.current = false
+    if (screenAnnotationEndRetryTimerRef.current !== null) {
+      window.clearTimeout(screenAnnotationEndRetryTimerRef.current)
+      screenAnnotationEndRetryTimerRef.current = null
+    }
+    setScreenAnnotationBusy(true)
+    setScreenAnnotationError('')
+    const mutationEpoch = ++screenAnnotationMutationEpochRef.current
+    const work = (async () => {
+      try {
+        const result = await beginOnlineClassroomScreenAnnotation(scope.bookingId)
+        if (!isRouteScopeActive(scope)) return
+        const session = sanitizeScreenAnnotationSession(result)
+        if (!session?.active) throw new Error('Chưa tạo được phiên chú thích màn hình.')
+        if (!screenShareStateRef.current.active
+          || screenShareEpochRef.current !== expectedShareEpoch
+          || screenAnnotationEndRequestedRef.current) {
+          screenAnnotationRestartAfterEndRef.current = Boolean(
+            screenShareStateRef.current.active
+            && screenShareStateRef.current.local
+            && accessRef.current?.role === 'teacher',
+          )
+          const ended = sanitizeScreenAnnotationSession(
+            await endOnlineClassroomScreenAnnotation(scope.bookingId, session.sessionId),
+          )
+          if (isRouteScopeActive(scope)) {
+            replaceScreenAnnotationSession(ended)
+            screenAnnotationSessionShareEpochRef.current = -1
+            screenAnnotationEndRequestedRef.current = false
+          }
+          return
+        }
+        screenAnnotationPendingOperationsRef.current = []
+        setScreenAnnotationPendingOperationCount(0)
+        resetScreenAnnotationHistory()
+        replaceScreenAnnotationSession(session)
+        screenAnnotationSessionShareEpochRef.current = expectedShareEpoch
+        screenAnnotationRestartAfterEndRef.current = false
+        screenFrameUrlRef.current = ''
+        setScreenFrameUrl('')
+        setScreenFrameState('loading')
+        setScreenFrameError('')
+        setScreenAnnotationSaveStatus('saved')
+        await signalScreenAnnotationRefresh(session)
+      } catch (error) {
+        if (isRouteScopeActive(scope)) setScreenAnnotationError(onlineClassroomErrorMessage(error))
+      } finally {
+        if (screenAnnotationMutationEpochRef.current === mutationEpoch) screenAnnotationMutationRef.current = null
+        if (isRouteScopeActive(scope)) setScreenAnnotationBusy(false)
+        if (isRouteScopeActive(scope)
+          && screenAnnotationRestartAfterEndRef.current
+          && screenShareStateRef.current.active
+          && screenShareStateRef.current.local
+          && accessRef.current?.role === 'teacher') {
+          window.setTimeout(() => void restartScreenAnnotationRef.current(), 0)
+        }
+      }
+    })()
+    screenAnnotationMutationRef.current = work
+    await work
+  }, [captureRouteScope, isRouteScopeActive, replaceScreenAnnotationSession, resetScreenAnnotationHistory, signalScreenAnnotationRefresh])
+
+  const handleEndScreenAnnotation = useCallback(async () => {
+    const scope = captureRouteScope()
+    const currentAccess = accessRef.current
+    if (!isRouteScopeActive(scope)
+      || !currentAccess
+      || currentAccess.bookingId !== scope.bookingId
+      || !isBoardManager(currentAccess.role)) return
+
+    screenAnnotationEndRequestedRef.current = true
+    const existingMutation = screenAnnotationMutationRef.current
+    if (existingMutation) {
+      try {
+        await existingMutation
+      } catch {
+        // The mutation reports its own error; continue reconciling the end.
+      }
+      if (!isRouteScopeActive(scope)) return
+    }
+
+    let currentSession = screenAnnotationSessionRef.current
+    if (!currentSession?.active) {
+      screenAnnotationEndRequestedRef.current = false
+      return
+    }
+    if (screenAnnotationPendingOperationsRef.current.length > 0) {
+      screenAnnotationEndAwaitingFlushRef.current = true
+      try {
+        await flushScreenAnnotationOperations()
+      } finally {
+        screenAnnotationEndAwaitingFlushRef.current = false
+      }
+      if (screenAnnotationPendingOperationsRef.current.length > 0) {
+        if (isRouteScopeActive(scope)) {
+          setScreenAnnotationError('Vẫn còn nét chưa đồng bộ. Hãy chờ mạng ổn định trước khi tắt chú thích.')
+        }
+        return
+      }
+    }
+    currentSession = screenAnnotationSessionRef.current
+    if (!currentSession?.active) {
+      screenAnnotationEndRequestedRef.current = false
+      return
+    }
+    if (screenAnnotationMutationRef.current) {
+      scheduleRequestedScreenAnnotationEnd()
+      return
+    }
+    setScreenAnnotationBusy(true)
+    const mutationEpoch = ++screenAnnotationMutationEpochRef.current
+    const work = (async () => {
+      try {
+        const result = await endOnlineClassroomScreenAnnotation(scope.bookingId, currentSession.sessionId)
+        if (!isRouteScopeActive(scope)) return
+        const session = sanitizeScreenAnnotationSession(result)
+        replaceScreenAnnotationSession(session)
+        screenAnnotationSessionShareEpochRef.current = -1
+        screenAnnotationPendingOperationsRef.current = []
+        setScreenAnnotationPendingOperationCount(0)
+        screenAnnotationEndRequestedRef.current = false
+        screenAnnotationRetryAttemptRef.current = 0
+        if (screenAnnotationEndRetryTimerRef.current !== null) {
+          window.clearTimeout(screenAnnotationEndRetryTimerRef.current)
+          screenAnnotationEndRetryTimerRef.current = null
+        }
+        if (session) await signalScreenAnnotationRefresh(session)
+      } catch (error) {
+        if (isRouteScopeActive(scope)) {
+          setScreenAnnotationError(onlineClassroomErrorMessage(error))
+          scheduleRequestedScreenAnnotationEnd(2_500)
+        }
+      } finally {
+        screenFrameUrlRef.current = ''
+        if (isRouteScopeActive(scope)) {
+          setScreenFrameUrl('')
+          setScreenFrameState('idle')
+          setScreenAnnotationBusy(false)
+        }
+        if (screenAnnotationMutationEpochRef.current === mutationEpoch) screenAnnotationMutationRef.current = null
+        if (isRouteScopeActive(scope) && screenAnnotationEndRequestedRef.current) {
+          scheduleRequestedScreenAnnotationEnd(2_500)
+        }
+        if (isRouteScopeActive(scope)
+          && screenAnnotationRestartAfterEndRef.current
+          && !screenAnnotationSessionRef.current?.active
+          && screenShareStateRef.current.active
+          && screenShareStateRef.current.local
+          && accessRef.current?.role === 'teacher') {
+          window.setTimeout(() => void restartScreenAnnotationRef.current(), 0)
+        }
+      }
+    })()
+    screenAnnotationMutationRef.current = work
+    await work
+  }, [captureRouteScope, flushScreenAnnotationOperations, isRouteScopeActive, replaceScreenAnnotationSession, scheduleRequestedScreenAnnotationEnd, signalScreenAnnotationRefresh])
+
+  useEffect(() => {
+    endScreenAnnotationRef.current = handleEndScreenAnnotation
+  }, [handleEndScreenAnnotation])
+
+  const restartScreenAnnotationForLocalShare = useCallback(async () => {
+    const inFlightMutation = screenAnnotationMutationRef.current
+    if (inFlightMutation) {
+      try {
+        await inFlightMutation
+      } catch {
+        // The originating action already surfaced its error.
+      }
+    }
+    if (!screenShareStateRef.current.active
+      || !screenShareStateRef.current.local
+      || accessRef.current?.role !== 'teacher') return
+
+    const currentShareEpoch = screenShareEpochRef.current
+    if (screenAnnotationSessionRef.current?.active
+      && screenAnnotationSessionShareEpochRef.current !== currentShareEpoch) {
+      screenAnnotationRestartAfterEndRef.current = true
+      await handleEndScreenAnnotation()
+    }
+    if (screenAnnotationSessionRef.current?.active
+      && screenAnnotationSessionShareEpochRef.current === currentShareEpoch) {
+      screenAnnotationRestartAfterEndRef.current = false
+      return
+    }
+    if (screenShareStateRef.current.active
+      && screenShareStateRef.current.local
+      && !screenAnnotationSessionRef.current?.active) {
+      screenAnnotationRestartAfterEndRef.current = false
+      await handleBeginScreenAnnotation(screenShareEpochRef.current)
+    }
+  }, [handleBeginScreenAnnotation, handleEndScreenAnnotation])
+
+  useEffect(() => {
+    restartScreenAnnotationRef.current = restartScreenAnnotationForLocalShare
+  }, [restartScreenAnnotationForLocalShare])
+
+  const captureScreenShareFrame = useCallback(async () => {
+    const scope = captureRouteScope()
+    const captureSessionId = screenAnnotationSessionRef.current?.sessionId || ''
+    if (!isRouteScopeActive(scope)
+      || !screenShareStateRef.current.active
+      || !screenAnnotationSessionRef.current?.active
+      || !captureSessionId) return
+    if (screenFrameInFlightRef.current) return screenFrameInFlightRef.current
+    const api = jitsiApiRef.current
+    const capture = api?.captureLargeVideoScreenshot
+    if (!capture) {
+      setScreenFrameState('error')
+      setScreenFrameError('Trình gọi video chưa hỗ trợ lấy khung trình chiếu để chú thích.')
+      return
+    }
+    setScreenFrameState('loading')
+    const captureEpoch = ++screenFrameCaptureEpochRef.current
+    const work = (async () => {
+      try {
+        const presenterId = screenShareStateRef.current.participantIds[0] || ''
+        if (presenterId) {
+          try {
+            api.executeCommand('setTileView', false)
+            api.executeCommand('setLargeVideoParticipant', presenterId, 'desktop')
+            // Jitsi needs a short layout/track switch before the large-video
+            // screenshot reliably contains the shared desktop rather than a
+            // participant camera or the previous tile frame.
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 300))
+          } catch {
+            // Jitsi thường tự chọn desktop; tiếp tục chụp nếu API ghim không có.
+          }
+        }
+        const result = await capture.call(api)
+        if (!isRouteScopeActive(scope) || screenAnnotationSessionRef.current?.sessionId !== captureSessionId) return
+        if (!isSafeScreenFrameUrl(result?.dataURL)) {
+          throw new Error(result?.error || 'Chưa nhận được hình ảnh trình chiếu.')
+        }
+        screenFrameUrlRef.current = result.dataURL
+        setScreenFrameUrl(result.dataURL)
+        setScreenFrameState('ready')
+        setScreenFrameError('')
+      } catch (error) {
+        if (!isRouteScopeActive(scope) || screenAnnotationSessionRef.current?.sessionId !== captureSessionId) return
+        setScreenFrameError(error instanceof Error ? error.message : 'Chưa làm mới được khung trình chiếu.')
+        setScreenFrameState(screenFrameUrlRef.current ? 'ready' : 'error')
+      } finally {
+        try {
+          // Sau khi lấy khung bài giảng, trả iframe hẹp về dạng lưới để cột
+          // bên cạnh ưu tiên camera người học thay vì lặp lại màn hình share.
+          api.executeCommand('setTileView', true)
+        } catch {
+          // Bố cục phụ không được làm hỏng chức năng chụp khung.
+        }
+        if (screenFrameCaptureEpochRef.current === captureEpoch) screenFrameInFlightRef.current = null
+      }
+    })()
+    screenFrameInFlightRef.current = work
+    await work
+  }, [captureRouteScope, isRouteScopeActive])
+
+  const refreshSharedScreenFrame = useCallback(async () => {
+    const currentAccess = accessRef.current
+    const shareState = screenShareStateRef.current
+    const localParticipantId = localParticipantIdRef.current
+    const localTeacherIsPresenter = currentAccess?.role === 'teacher'
+      && shareState.active
+      && shareState.local
+      && Boolean(localParticipantId)
+      && shareState.participantIds.includes(localParticipantId)
+    if (!localTeacherIsPresenter) {
+      toast.warning('Chỉ gia sư đang trình chiếu mới có thể đổi khung bài giảng cho cả lớp.')
+      return
+    }
+    await captureScreenShareFrame()
+    await sendBoardPayload({ type: 'frame-refresh' }, 'screen')
+  }, [captureScreenShareFrame, sendBoardPayload])
+
+  const handleScreenShareStateChange = useCallback((nextState: ClassroomScreenShareState) => {
+    const previous = screenShareStateRef.current
+    const normalized: ClassroomScreenShareState = {
+      active: nextState.active,
+      local: nextState.local,
+      participantIds: Array.from(new Set(nextState.participantIds.filter(Boolean))),
+    }
+    const shareIdentityChanged = previous.active !== normalized.active
+      || previous.local !== normalized.local
+      || [...previous.participantIds].sort().join('\u0000') !== [...normalized.participantIds].sort().join('\u0000')
+    if (shareIdentityChanged) screenShareEpochRef.current += 1
+    screenShareStateRef.current = normalized
+    setScreenShareState(normalized)
+    if (!normalized.active) {
+      screenAnnotationRestartAfterEndRef.current = false
+      setActivePanel('video')
+      screenFrameUrlRef.current = ''
+      setScreenFrameUrl('')
+      setScreenFrameState('idle')
+      setScreenFrameError('')
+      if (previous.local && screenAnnotationSessionRef.current?.active && isBoardManager(accessRef.current?.role || 'student')) {
+        void handleEndScreenAnnotation()
+      }
+    } else {
+      if (normalized.local && !previous.local && accessRef.current?.role === 'teacher') {
+        void restartScreenAnnotationForLocalShare()
+        return
+      }
+      if (screenAnnotationSessionRef.current?.active) return
+      if (normalized.local && accessRef.current?.role === 'teacher') {
+        // Sharing should be one action for the tutor: once Jitsi confirms the
+        // local desktop track, open the protected annotation surface too.
+        void handleBeginScreenAnnotation(screenShareEpochRef.current)
+      } else {
+        // A remote participant may start sharing before the data-channel signal
+        // for the annotation session arrives. Refresh once without trusting it.
+        void reloadScreenAnnotationSession().catch(() => undefined)
+      }
+    }
+  }, [handleBeginScreenAnnotation, handleEndScreenAnnotation, reloadScreenAnnotationSession, restartScreenAnnotationForLocalShare])
+
+  const handleToggleScreenShare = useCallback(() => {
+    const currentAccess = accessRef.current
+    if (currentAccess?.role !== 'teacher') return
+    if (connectionStateRef.current !== 'connected' || !jitsiApiRef.current) {
+      toast.warning('Hãy vào cuộc gọi trước khi chia sẻ màn hình.')
+      return
+    }
+    setScreenAnnotationError('')
+    jitsiApiRef.current.executeCommand('toggleShareScreen')
+  }, [])
+
+  const toggleMeetingFullscreen = useCallback(async () => {
+    if (isMeetingPseudoFullscreen) {
+      setIsMeetingPseudoFullscreen(false)
+      return
+    }
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else if (meetingShellRef.current?.requestFullscreen) {
+        await meetingShellRef.current.requestFullscreen()
+      } else {
+        setIsMeetingPseudoFullscreen(true)
+      }
+    } catch {
+      // iOS/Safari and embedded browsers may reject the native Fullscreen API.
+      // Keep the class usable with an in-page fullscreen fallback.
+      setIsMeetingPseudoFullscreen(true)
+      toast.info('Đã mở lớp học toàn màn hình trong trình duyệt.')
+    }
+  }, [isMeetingPseudoFullscreen])
+
+  const openWhiteboardWindow = useCallback(() => {
+    setWhiteboardWindowMode(whiteboardRestoreModeRef.current)
+  }, [])
+
+  const minimizeWhiteboardWindow = useCallback(() => {
+    setWhiteboardWindowMode((current) => {
+      if (current !== 'minimized') whiteboardRestoreModeRef.current = current
+      return 'minimized'
+    })
+    window.requestAnimationFrame(() => whiteboardLauncherRef.current?.focus())
+  }, [])
+
+  const toggleWhiteboardMaximize = useCallback(() => {
+    setWhiteboardWindowMode((current) => {
+      const next = current === 'maximized' ? 'normal' : 'maximized'
+      whiteboardRestoreModeRef.current = next
+      return next
+    })
+  }, [])
+
+  const handleWhiteboardDialogKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true')
+    if (focusable.length === 0) {
+      event.preventDefault()
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+    if (event.shiftKey && (
+      active === first
+      || active === event.currentTarget
+      || !event.currentTarget.contains(active)
+    )) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }, [])
+
+  useEffect(() => {
+    const previous = previousWhiteboardWindowModeRef.current
+    previousWhiteboardWindowModeRef.current = whiteboardWindowMode
+    if (previous !== 'minimized' || whiteboardWindowMode === 'minimized') return
+    const frame = window.requestAnimationFrame(() => whiteboardDialogRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [whiteboardWindowMode])
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsMeetingFullscreen(document.fullscreenElement === meetingShellRef.current)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (whiteboardWindowMode !== 'minimized') {
+        event.preventDefault()
+        event.stopPropagation()
+        minimizeWhiteboardWindow()
+        return
+      }
+      if (isMeetingPseudoFullscreen) setIsMeetingPseudoFullscreen(false)
+    }
+    if (isMeetingPseudoFullscreen) document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isMeetingPseudoFullscreen, minimizeWhiteboardWindow, whiteboardWindowMode])
+
+  useEffect(() => {
+    const annotationActive = screenShareState.active && screenAnnotationSession?.active
+    if (!annotationActive || screenFrameUrlRef.current) return
+    let cancelled = false
+    void captureScreenShareFrame().finally(() => {
+      if (!cancelled && screenShareStateRef.current.active && screenAnnotationSessionRef.current?.active) {
+        setActivePanel('board')
+      }
+    })
+    return () => { cancelled = true }
+  }, [captureScreenShareFrame, screenAnnotationSession?.active, screenAnnotationSession?.sessionId, screenShareState.active])
 
   const refreshBoardFromServer = useCallback(async () => {
     const scope = captureRouteScope()
@@ -821,18 +1800,62 @@ export function OnlineClassroomPage() {
           if (!isRouteScopeActive(scope) || result.bookingId !== scope.bookingId) return
           accessRef.current = result
           setAccess(result)
+          const remoteScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
+          const currentScreenAnnotation = screenAnnotationSessionRef.current
+          if (!screenAnnotationMutationRef.current && (
+            remoteScreenAnnotation?.sessionId !== currentScreenAnnotation?.sessionId
+            || remoteScreenAnnotation?.active !== currentScreenAnnotation?.active
+            || (remoteScreenAnnotation?.boardSnapshot.version ?? -1) >= (currentScreenAnnotation?.boardSnapshot.version ?? -1)
+          )) {
+            const sessionChanged = remoteScreenAnnotation?.sessionId !== currentScreenAnnotation?.sessionId
+            const remoteAdvanced = (remoteScreenAnnotation?.boardSnapshot.version ?? -1)
+              > (currentScreenAnnotation?.boardSnapshot.version ?? -1)
+            if (sessionChanged || remoteScreenAnnotation?.active !== currentScreenAnnotation?.active || remoteAdvanced) {
+              resetScreenAnnotationHistory()
+            }
+            if (sessionChanged || !remoteScreenAnnotation?.active) {
+              screenAnnotationSessionShareEpochRef.current = -1
+              screenAnnotationPendingOperationsRef.current = []
+              setScreenAnnotationPendingOperationCount(0)
+              replaceScreenAnnotationSession(remoteScreenAnnotation)
+            } else if (remoteScreenAnnotation) {
+              const authoritative = sanitizeBoardSnapshot(remoteScreenAnnotation.boardSnapshot)
+              const authoritativeIds = new Set(authoritative.operations.map((operation) => operation.id))
+              const stillPending = screenAnnotationPendingOperationsRef.current
+                .filter((item) => item.generation === authoritative.generation
+                  && !authoritativeIds.has(item.operation.id))
+              screenAnnotationPendingOperationsRef.current = stillPending
+              setScreenAnnotationPendingOperationCount(stillPending.length)
+              replaceScreenAnnotationSession({
+                ...remoteScreenAnnotation,
+                boardSnapshot: {
+                  ...authoritative,
+                  operations: [
+                    ...authoritative.operations,
+                    ...stillPending.map((item) => item.operation),
+                  ].slice(0, MAX_BOARD_OPERATIONS),
+                },
+              })
+            }
+          }
           const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
           if (remoteBoard.version < savedVersionRef.current) continue
-          const saveInFlightForScope = savePipelineRef.current
-            && isRouteScopeActive(savePipelineRef.current.scope)
-          if (isBoardManager(result.role) && (saveInFlightForScope || saveTimerRef.current !== null)) continue
-          const pending = pendingStudentOperationsRef.current
+          if (boardMutationRef.current) continue
+          const previousBoard = boardRef.current
+          const pending = pendingBoardOperationsRef.current
           const remoteOperationIds = new Set(remoteBoard.operations.map((operation) => operation.id))
-          const missingPending = pending.filter((operation) => !remoteOperationIds.has(operation.id))
+          const missingPending = pending.filter((item) => (
+            item.generation === remoteBoard.generation
+            && !remoteOperationIds.has(item.operation.id)
+          ))
+          pendingBoardOperationsRef.current = missingPending
           const visibleBoard = missingPending.length > 0
             ? {
                 ...remoteBoard,
-                operations: [...remoteBoard.operations, ...missingPending].slice(0, MAX_BOARD_OPERATIONS),
+                operations: [
+                  ...remoteBoard.operations,
+                  ...missingPending.map((item) => item.operation),
+                ].slice(0, MAX_BOARD_OPERATIONS),
               }
             : remoteBoard
           replaceBoard(
@@ -840,7 +1863,17 @@ export function OnlineClassroomPage() {
             isBoardManager(result.role) ? missingPending.length > 0 ? 'dirty' : 'saved' : undefined,
           )
           savedVersionRef.current = remoteBoard.version
-          if (missingPending.length > 0) void flushPendingStudentOperations()
+          setPendingBoardOperationCount(missingPending.length)
+          const previousIds = new Set(previousBoard.operations.map((operation) => operation.id))
+          const pendingIds = new Set(pending.map((item) => item.operation.id))
+          const hasUnexpectedRemoteChange = remoteBoard.generation !== previousBoard.generation
+            || remoteBoard.operations.some((operation) => !previousIds.has(operation.id)
+              && !pending.some((item) => item.operation.id === operation.id))
+            || previousBoard.operations.some((operation) => (
+              !remoteOperationIds.has(operation.id) && !pendingIds.has(operation.id)
+            ))
+          if (isBoardManager(result.role) && hasUnexpectedRemoteChange) resetHistory()
+          if (missingPending.length > 0) void flushPendingBoardOperations()
           setSyncWarning('')
         } catch {
           if (isRouteScopeActive(scope)) {
@@ -859,7 +1892,7 @@ export function OnlineClassroomPage() {
         boardRefreshInFlightRef.current = null
       }
     }
-  }, [captureRouteScope, flushPendingStudentOperations, isRouteScopeActive, replaceBoard])
+  }, [captureRouteScope, flushPendingBoardOperations, isRouteScopeActive, replaceBoard, replaceScreenAnnotationSession, resetHistory, resetScreenAnnotationHistory])
 
   const scheduleBoardRefresh = useCallback(() => {
     const scope = captureRouteScope()
@@ -891,6 +1924,33 @@ export function OnlineClassroomPage() {
       seenMessageIdsRef.current = new Set(Array.from(seenMessageIdsRef.current).slice(-250))
     }
 
+    if (boardMessageSurface(message) === 'screen') {
+      if (message.type === 'frame-refresh') {
+        const presenterIds = screenShareStateRef.current.participantIds
+        if (message.senderRole === 'teacher'
+          && screenShareStateRef.current.active
+          && presenterIds.includes(senderId)) {
+          const frameScope = captureRouteScope()
+          const frameSessionId = screenAnnotationSessionRef.current?.sessionId || ''
+          const frameShareEpoch = screenShareEpochRef.current
+          void captureScreenShareFrame().finally(() => {
+            if (isRouteScopeActive(frameScope)
+              && screenAnnotationSessionRef.current?.active
+              && screenAnnotationSessionRef.current.sessionId === frameSessionId
+              && screenShareStateRef.current.active
+              && screenShareEpochRef.current === frameShareEpoch) {
+              setActivePanel('board')
+            }
+          })
+        }
+        return
+      }
+      // Data-channel only wakes the authenticated callable refresh. Never trust
+      // an operation or role received directly from another browser.
+      scheduleBoardRefresh()
+      return
+    }
+
     const localIsManager = isBoardManager(currentAccess.role)
     if (message.type === 'hello') {
       if (localIsManager) void broadcastSnapshot()
@@ -914,7 +1974,7 @@ export function OnlineClassroomPage() {
     // Tương thích client pilot cũ còn gửi operation trực tiếp. Không tin role
     // trong data channel; chỉ tải lại operation đã được backend xác thực.
     scheduleBoardRefresh()
-  }, [broadcastSnapshot, captureRouteScope, isRouteScopeActive, scheduleBoardRefresh])
+  }, [broadcastSnapshot, captureRouteScope, captureScreenShareFrame, isRouteScopeActive, scheduleBoardRefresh])
 
   const startBoardHandshake = useCallback(() => {
     const scope = captureRouteScope()
@@ -929,9 +1989,9 @@ export function OnlineClassroomPage() {
       void sendBoardPayload({ type: 'snapshot-request' })
     }
     window.setTimeout(() => {
-      if (isRouteScopeActive(scope)) void flushPendingStudentOperations()
+      if (isRouteScopeActive(scope)) void flushPendingBoardOperations()
     }, 350)
-  }, [captureRouteScope, flushPendingStudentOperations, isRouteScopeActive, sendBoardPayload])
+  }, [captureRouteScope, flushPendingBoardOperations, isRouteScopeActive, sendBoardPayload])
 
   const handleConferenceJoined = useCallback((participantId: string) => {
     const scope = captureRouteScope()
@@ -968,10 +2028,10 @@ export function OnlineClassroomPage() {
       }, 600)
     } else {
       window.setTimeout(() => {
-        if (isRouteScopeActive(scope)) void flushPendingStudentOperations()
+        if (isRouteScopeActive(scope)) void flushPendingBoardOperations()
       }, 900)
     }
-  }, [broadcastSnapshot, captureRouteScope, flushPendingStudentOperations, isRouteScopeActive])
+  }, [broadcastSnapshot, captureRouteScope, flushPendingBoardOperations, isRouteScopeActive])
 
   const handleParticipantLeft = useCallback((participantId: string) => {
     const scope = captureRouteScope()
@@ -998,7 +2058,12 @@ export function OnlineClassroomPage() {
         setAccess(result)
 
         const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
-        if (remoteBoard.version > savedVersionRef.current) await refreshBoardFromServer()
+        const remoteScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
+        const currentScreenAnnotation = screenAnnotationSessionRef.current
+        const screenAnnotationChanged = remoteScreenAnnotation?.sessionId !== currentScreenAnnotation?.sessionId
+          || remoteScreenAnnotation?.active !== currentScreenAnnotation?.active
+          || (remoteScreenAnnotation?.boardSnapshot.version ?? -1) > (currentScreenAnnotation?.boardSnapshot.version ?? -1)
+        if (remoteBoard.version > savedVersionRef.current || screenAnnotationChanged) await refreshBoardFromServer()
       } catch (error) {
         if (disposed || !isRouteScopeActive(scope)) return
         consecutiveRevalidationFailuresRef.current += 1
@@ -1019,9 +2084,7 @@ export function OnlineClassroomPage() {
     const interval = window.setInterval(() => void revalidate(), REVALIDATE_INTERVAL_MS)
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void revalidate()
-      if (document.visibilityState === 'hidden' && isBoardManager(accessRef.current?.role || 'student')) {
-        void flushBoardSave()
-      }
+      if (document.visibilityState === 'hidden') void flushPendingBoardOperations()
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
@@ -1029,7 +2092,7 @@ export function OnlineClassroomPage() {
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [captureRouteScope, fatalAccessError, flushBoardSave, isRouteScopeActive, loadState, refreshBoardFromServer])
+  }, [captureRouteScope, fatalAccessError, flushPendingBoardOperations, isRouteScopeActive, loadState, refreshBoardFromServer])
 
   useEffect(() => {
     if (loadState !== 'ready' || fatalAccessError) return
@@ -1435,10 +2498,24 @@ export function OnlineClassroomPage() {
       unmountingRef.current = true
       recordingAttemptRef.current += 1
       recordingStartLockRef.current = false
-      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
       if (boardRefreshTimerRef.current !== null) window.clearTimeout(boardRefreshTimerRef.current)
       boardRefreshTimerRef.current = null
+      screenFrameCaptureEpochRef.current += 1
+      screenFrameInFlightRef.current = null
+      screenAnnotationMutationEpochRef.current += 1
+      screenAnnotationMutationRef.current = null
+      screenAnnotationPendingOperationsRef.current = []
+      screenAnnotationOperationFlushRef.current = null
+      screenAnnotationRetryAttemptRef.current = 0
+      screenAnnotationEndRequestedRef.current = false
+      screenAnnotationEndAwaitingFlushRef.current = false
+      screenAnnotationRestartAfterEndRef.current = false
+      screenAnnotationSessionShareEpochRef.current = -1
+      screenShareEpochRef.current += 1
+      if (screenAnnotationRetryTimerRef.current !== null) window.clearTimeout(screenAnnotationRetryTimerRef.current)
+      screenAnnotationRetryTimerRef.current = null
+      if (screenAnnotationEndRetryTimerRef.current !== null) window.clearTimeout(screenAnnotationEndRetryTimerRef.current)
+      screenAnnotationEndRetryTimerRef.current = null
       if (recordingDurationTimerRef.current !== null) window.clearTimeout(recordingDurationTimerRef.current)
       recordingDurationTimerRef.current = null
       const cancellation = new Error('RECORDING_CANCELLED')
@@ -1455,14 +2532,22 @@ export function OnlineClassroomPage() {
   }, [bookingId])
 
   useEffect(() => {
-    if (pendingStudentOperationCount === 0 && recordingState === 'idle') return
+    if (pendingBoardOperationCount === 0
+      && screenAnnotationPendingOperationCount === 0
+      && recordingState === 'idle'
+      && !boardMutationBusy
+      && !screenAnnotationBusy
+      && saveStatus !== 'saving'
+      && saveStatus !== 'dirty'
+      && screenAnnotationSaveStatus !== 'saving'
+      && screenAnnotationSaveStatus !== 'dirty') return
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnBeforeLeaving)
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
-  }, [pendingStudentOperationCount, recordingState])
+  }, [boardMutationBusy, pendingBoardOperationCount, recordingState, saveStatus, screenAnnotationBusy, screenAnnotationPendingOperationCount, screenAnnotationSaveStatus])
 
   if (!loadStateMatchesRoute || loadState === 'loading') return <ClassroomPageSkeleton />
   if (loadState === 'error') return <ClassroomErrorPage message={pageError} onRetry={() => void loadClassroom()} />
@@ -1476,6 +2561,12 @@ export function OnlineClassroomPage() {
   const recordingBusy = recordingState === 'starting' || recordingState === 'stopping'
   const serverRecordingConsent = access.recordingConsent
   const recordingConsentAccepted = serverRecordingConsent?.status === 'accepted'
+  const screenAnnotationActive = Boolean(screenShareState.active && screenAnnotationSession?.active)
+  const screenAnnotationSnapshot = screenAnnotationSession?.boardSnapshot
+    ? sanitizeBoardSnapshot(screenAnnotationSession.boardSnapshot)
+    : EMPTY_BOARD
+  const keepVideoRenderedOffscreen = screenAnnotationActive && activePanel === 'board'
+  const meetingExpanded = isMeetingFullscreen || isMeetingPseudoFullscreen
 
   return (
     <div className="min-h-[100dvh] bg-[#f6f8fb] font-[var(--font-quicksand)] text-[#10213a]">
@@ -1743,104 +2834,307 @@ export function OnlineClassroomPage() {
           </div>
         )}
 
-        <div className="mb-3 grid grid-cols-2 rounded-2xl border border-slate-200 bg-white p-1 lg:hidden" aria-label="Chọn khu vực lớp học">
-          <button
-            type="button"
-            onClick={() => setActivePanel('video')}
-            className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'video' ? 'bg-[#10213a] text-white' : 'text-slate-600'}`}
-          >
-            <Video className="h-4 w-4" />
-            Cuộc gọi
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePanel('board')}
-            className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'board' ? 'bg-[#ffc107] text-[#10213a]' : 'text-slate-600'}`}
-          >
-            <PenLine className="h-4 w-4" />
-            Bảng học
-          </button>
-        </div>
+        <div
+          ref={meetingShellRef}
+          className={`relative flex flex-col overflow-hidden bg-[#080b10] text-white shadow-[0_30px_80px_-48px_rgba(2,6,23,0.95)] ${meetingExpanded ? `h-[100dvh] w-screen rounded-none p-2.5 sm:p-3 ${isMeetingPseudoFullscreen ? 'fixed inset-0 z-[100]' : ''}` : 'rounded-[1.75rem] p-2.5'}`}
+        >
+          <div className="mb-2.5 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-[#10151d] px-3 py-2.5 sm:px-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${screenShareState.active ? 'animate-pulse bg-emerald-400' : connectionHealthy ? 'bg-sky-400' : 'bg-slate-500'}`} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">
+                  {screenShareState.active ? 'Đang trình chiếu bài học' : 'Lớp học trực tiếp 123English'}
+                </p>
+                <p className={`truncate text-[11px] font-semibold text-slate-400 ${meetingControlsCollapsed ? 'hidden' : ''}`}>
+                  {screenShareState.active
+                    ? screenAnnotationActive
+                      ? 'Gia sư và học viên có thể chú thích đồng bộ trên nội dung chia sẻ'
+                      : 'Đang chuẩn bị công cụ viết trên màn hình chia sẻ'
+                    : `${remoteParticipantCount + 1} người · ${roleLabel(access.role)}`}
+                </p>
+              </div>
+            </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(320px,35fr)_minmax(0,65fr)] lg:gap-2.5 lg:rounded-[1.75rem] lg:bg-[#0b0f14] lg:p-2.5 lg:shadow-[0_28px_75px_-52px_rgba(2,6,23,0.9)]">
-          <div className={`${activePanel === 'video' ? 'block' : 'hidden'} h-[min(68dvh,720px)] min-h-[460px] lg:block lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]`}>
-            <JitsiClassroom
-              meetingProvider={access.meetingProvider}
-              meetingDomain={access.meetingDomain}
-              meetingAppId={access.meetingAppId}
-              meetingJwt={access.meetingJwt}
-              roomName={access.roomName}
-              displayName={access.displayName}
-              observerMode={access.role === 'admin'}
-              onApiReady={(api) => {
-                jitsiApiRef.current = api
-                if (!api) {
-                  dataChannelReadyRef.current = false
-                  localParticipantIdRef.current = ''
-                  conferenceJoinedRef.current = false
-                  setConferenceJoined(false)
-                  remoteParticipantIdsRef.current = new Set()
-                  setRemoteParticipantCount(0)
-                }
-              }}
-              onConferenceJoined={handleConferenceJoined}
-              onParticipantJoined={handleParticipantJoined}
-              onParticipantLeft={handleParticipantLeft}
-              onDataChannelOpened={handleDataChannelOpened}
-              onTextMessage={(text, senderId) => {
-                if (classroomGifts.handleRealtimeMessage(text)) return
-                handleBoardTextMessage(text, senderId)
-              }}
-              onConnectionStateChange={(nextState) => {
-                connectionStateRef.current = nextState
-                setConnectionState(nextState)
-                if (nextState === 'connected') window.setTimeout(startBoardHandshake, 0)
-                if (nextState === 'ended' || nextState === 'error') {
-                  dataChannelReadyRef.current = false
-                  localParticipantIdRef.current = ''
-                  conferenceJoinedRef.current = false
-                  setConferenceJoined(false)
-                  remoteParticipantIdsRef.current = new Set()
-                  setRemoteParticipantCount(0)
-                  if (recordingStartLockRef.current) {
-                    recordingAttemptRef.current += 1
-                    recordingStartLockRef.current = false
-                    void recordingCaptureRef.current?.cleanup()
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!meetingControlsCollapsed && access.role === 'teacher' && (
+                <button
+                  type="button"
+                  disabled={!connectionHealthy || !conferenceJoined}
+                  onClick={handleToggleScreenShare}
+                  className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-45 ${screenShareState.local ? 'bg-rose-500 text-white hover:bg-rose-400' : 'bg-emerald-400 text-slate-950 hover:bg-emerald-300'}`}
+                  title={!connectionHealthy || !conferenceJoined ? 'Hãy vào cuộc gọi trước khi chia sẻ' : undefined}
+                >
+                  <MonitorUp className="h-4 w-4" />
+                  <span className="hidden sm:inline">{screenShareState.local ? 'Dừng trình chiếu' : 'Chia sẻ màn hình'}</span>
+                  <span className="sm:hidden">{screenShareState.local ? 'Dừng share' : 'Share'}</span>
+                </button>
+              )}
+              {!meetingControlsCollapsed && manager && screenShareState.active && (
+                <button
+                  type="button"
+                  disabled={screenAnnotationBusy}
+                  onClick={() => {
+                    if (screenAnnotationActive) {
+                      screenAnnotationRestartAfterEndRef.current = false
+                      void handleEndScreenAnnotation()
+                    } else {
+                      void handleBeginScreenAnnotation(screenShareEpochRef.current)
+                    }
+                  }}
+                  className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-wait disabled:opacity-55 ${screenAnnotationActive ? 'border-amber-300/40 bg-amber-300 text-slate-950 hover:bg-amber-200' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
+                >
+                  <PenLine className="h-4 w-4" />
+                  {screenAnnotationBusy ? 'Đang xử lý' : screenAnnotationActive ? 'Tắt chú thích' : 'Bật công cụ viết'}
+                </button>
+              )}
+              <button
+                ref={whiteboardLauncherRef}
+                type="button"
+                onClick={openWhiteboardWindow}
+                aria-haspopup="dialog"
+                aria-expanded={whiteboardWindowMode !== 'minimized'}
+                className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 ${whiteboardWindowMode !== 'minimized' ? 'border-amber-300 bg-amber-300 text-slate-950 hover:bg-amber-200' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
+              >
+                <PenLine className="h-4 w-4" />
+                <span className={meetingControlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>
+                  {whiteboardWindowMode === 'minimized' ? 'Mở bảng trắng' : 'Bảng trắng đang mở'}
+                </span>
+                {pendingBoardOperationCount > 0 && (
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] text-amber-200" aria-label={`${pendingBoardOperationCount} nét đang chờ đồng bộ`}>
+                    {pendingBoardOperationCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMeetingControlsCollapsed((current) => !current)}
+                aria-expanded={!meetingControlsCollapsed}
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                aria-label={meetingControlsCollapsed ? 'Hiện các điều khiển lớp học' : 'Thu gọn các điều khiển lớp học'}
+                title={meetingControlsCollapsed ? 'Hiện điều khiển' : 'Thu gọn điều khiển'}
+              >
+                {meetingControlsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => void toggleMeetingFullscreen()}
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                aria-label={meetingExpanded ? 'Thoát toàn màn hình' : 'Mở toàn màn hình lớp học'}
+                title={meetingExpanded ? 'Thoát toàn màn hình' : 'Mở toàn màn hình'}
+              >
+                {meetingExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          {(screenAnnotationError || (screenShareState.active && access.role === 'student' && !screenAnnotationActive)) && (
+            <div className={`mb-2.5 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${screenAnnotationError ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-amber-300/25 bg-amber-300/10 text-amber-100'}`} role={screenAnnotationError ? 'alert' : 'status'}>
+              {screenAnnotationError ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />}
+              <p>{screenAnnotationError || 'Gia sư đang chia sẻ. Công cụ viết sẽ hiện tự động ngay khi phiên chú thích sẵn sàng.'}</p>
+            </div>
+          )}
+
+          {screenAnnotationActive && (
+          <div className="mb-2.5 grid grid-cols-2 rounded-2xl border border-white/10 bg-white/5 p-1 lg:hidden" aria-label="Chọn khu vực lớp học">
+            <button
+              type="button"
+              onClick={() => setActivePanel('video')}
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'video' ? 'bg-white text-slate-950' : 'text-slate-300'}`}
+            >
+              <Video className="h-4 w-4" />
+              Cuộc gọi
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePanel('board')}
+              className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'board' ? 'bg-[#ffc107] text-[#10213a]' : 'text-slate-300'}`}
+            >
+              <PenLine className="h-4 w-4" />
+              {screenAnnotationActive ? 'Chú thích' : 'Bảng học'}
+            </button>
+          </div>
+          )}
+
+          <div className={`grid gap-2.5 ${screenAnnotationActive ? 'lg:grid-cols-[minmax(0,72fr)_minmax(300px,28fr)]' : 'lg:grid-cols-1'} ${meetingExpanded ? 'min-h-0 flex-1' : ''}`}>
+            <div className={`${activePanel === 'video' ? 'block' : keepVideoRenderedOffscreen ? 'pointer-events-none fixed -left-[10000px] top-0 h-[360px] w-[640px] min-h-0 overflow-hidden opacity-0 lg:pointer-events-auto lg:visible lg:static lg:block lg:w-auto lg:overflow-visible lg:opacity-100' : 'hidden lg:block'} ${meetingExpanded ? keepVideoRenderedOffscreen ? 'lg:h-full lg:min-h-0 lg:max-h-none' : 'h-full min-h-0 max-h-none' : keepVideoRenderedOffscreen ? 'lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]' : 'h-[min(68dvh,720px)] min-h-[460px] lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]'} ${screenAnnotationActive ? 'lg:order-2' : 'lg:order-1'}`}>
+              <JitsiClassroom
+                meetingProvider={access.meetingProvider}
+                meetingDomain={access.meetingDomain}
+                meetingAppId={access.meetingAppId}
+                meetingJwt={access.meetingJwt}
+                roomName={access.roomName}
+                displayName={access.displayName}
+                observerMode={access.role === 'admin'}
+                canShareScreen={access.role === 'teacher'}
+                onApiReady={(api) => {
+                  jitsiApiRef.current = api
+                  if (!api) {
+                    dataChannelReadyRef.current = false
+                    localParticipantIdRef.current = ''
+                    conferenceJoinedRef.current = false
+                    setConferenceJoined(false)
+                    remoteParticipantIdsRef.current = new Set()
+                    setRemoteParticipantCount(0)
+                    screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
+                    setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
                   }
+                }}
+                onConferenceJoined={handleConferenceJoined}
+                onParticipantJoined={handleParticipantJoined}
+                onParticipantLeft={handleParticipantLeft}
+                onDataChannelOpened={handleDataChannelOpened}
+                onTextMessage={(text, senderId) => {
+                  if (classroomGifts.handleRealtimeMessage(text)) return
+                  handleBoardTextMessage(text, senderId)
+                }}
+                onScreenShareStateChange={handleScreenShareStateChange}
+                onConnectionStateChange={(nextState) => {
+                  connectionStateRef.current = nextState
+                  setConnectionState(nextState)
+                  if (nextState === 'connected') window.setTimeout(startBoardHandshake, 0)
+                  if (nextState === 'ended' || nextState === 'error') {
+                    dataChannelReadyRef.current = false
+                    localParticipantIdRef.current = ''
+                    conferenceJoinedRef.current = false
+                    setConferenceJoined(false)
+                    remoteParticipantIdsRef.current = new Set()
+                    setRemoteParticipantCount(0)
+                    screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
+                    setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
+                    if (recordingStartLockRef.current) {
+                      recordingAttemptRef.current += 1
+                      recordingStartLockRef.current = false
+                      void recordingCaptureRef.current?.cleanup()
+                    }
+                    stopRecording()
+                  }
+                }}
+                onEnded={() => {
+                  connectionStateRef.current = 'ended'
+                  setConnectionState('ended')
+                  conferenceJoinedRef.current = false
+                  setConferenceJoined(false)
+                  screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
+                  setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
                   stopRecording()
-                }
-              }}
-              onEnded={() => {
-                connectionStateRef.current = 'ended'
-                setConnectionState('ended')
-                conferenceJoinedRef.current = false
-                setConferenceJoined(false)
-                stopRecording()
-              }}
-              onError={(message) => toast.error(message)}
-            />
+                }}
+                onError={(message) => toast.error(message)}
+              />
+            </div>
+
+            {screenAnnotationActive && (
+            <div className={`${activePanel === 'board' ? 'block' : 'hidden'} lg:block ${meetingExpanded ? 'h-full min-h-0 max-h-none' : 'h-[min(68dvh,720px)] min-h-[460px] lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]'} lg:order-1`}>
+                <ScreenShareAnnotationStage
+                  frameUrl={screenFrameUrl}
+                  loading={screenFrameState === 'loading'}
+                  error={screenFrameError}
+                  canRefreshFrame={access.role === 'teacher' && screenShareState.local}
+                  onRefresh={refreshSharedScreenFrame}
+                  onReturnToLive={() => setActivePanel('video')}
+                  snapshot={screenAnnotationSnapshot}
+                  role={access.role}
+                  canUndo={screenAnnotationHistory.canUndo && screenAnnotationPendingOperationCount === 0}
+                  canRedo={screenAnnotationHistory.canRedo && screenAnnotationPendingOperationCount === 0}
+                  saveStatus={screenAnnotationSaveStatus}
+                  pendingOperationCount={screenAnnotationPendingOperationCount}
+                  onOperation={handleScreenAnnotationOperation}
+                  onUndo={handleScreenAnnotationUndo}
+                  onRedo={handleScreenAnnotationRedo}
+                  onClear={handleScreenAnnotationClear}
+                  onStudentCanWriteChange={handleScreenStudentCanWriteChange}
+                  onSave={() => {
+                    if (manager && !screenAnnotationBusy && screenAnnotationPendingOperationCount === 0) {
+                      commitScreenAnnotationSnapshot(screenAnnotationSnapshot)
+                    }
+                  }}
+                />
+            </div>
+            )}
           </div>
 
-          <div className={`${activePanel === 'board' ? 'block' : 'hidden'} h-[min(68dvh,720px)] min-h-[460px] lg:block lg:h-[calc(100dvh-245px)] lg:min-h-[560px] lg:max-h-[840px]`}>
-            <CollaborativeWhiteboard
-              snapshot={board}
-              role={access.role}
-              canUndo={historyState.canUndo}
-              canRedo={historyState.canRedo}
-              saveStatus={saveStatus}
-              pendingOperationCount={pendingStudentOperationCount}
-              onOperation={handleLocalOperation}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onClear={handleClear}
-              onStudentCanWriteChange={handleStudentCanWriteChange}
-              onSave={() => {
-                if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
-                saveTimerRef.current = null
-                void flushBoardSave()
-              }}
-            />
+          <div
+            className={`absolute inset-0 z-30 ${whiteboardWindowMode === 'minimized' ? 'invisible pointer-events-none' : ''}`}
+            aria-hidden={whiteboardWindowMode === 'minimized'}
+            inert={whiteboardWindowMode === 'minimized'}
+          >
+            {whiteboardWindowMode === 'normal' && (
+              <button
+                type="button"
+                onClick={minimizeWhiteboardWindow}
+                aria-label="Thu nhỏ bảng trắng và trở lại lớp học"
+                tabIndex={-1}
+                className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]"
+              />
+            )}
+            <div
+              ref={whiteboardDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Bảng trắng dùng chung"
+              tabIndex={-1}
+              onKeyDown={handleWhiteboardDialogKeyDown}
+              className={`pointer-events-auto absolute z-10 min-h-0 transition-[inset] duration-200 motion-reduce:transition-none ${whiteboardWindowMode === 'maximized' ? 'inset-0' : 'inset-3 sm:inset-6 lg:inset-x-[6%] lg:inset-y-[5%]'}`}
+            >
+              <CollaborativeWhiteboard
+                snapshot={board}
+                role={access.role}
+                canUndo={historyState.canUndo && pendingBoardOperationCount === 0 && !boardMutationBusy}
+                canRedo={historyState.canRedo && pendingBoardOperationCount === 0 && !boardMutationBusy}
+                saveStatus={saveStatus}
+                pendingOperationCount={pendingBoardOperationCount}
+                onOperation={handleLocalOperation}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onClear={handleClear}
+                onStudentCanWriteChange={handleStudentCanWriteChange}
+                onSave={() => void flushPendingBoardOperations()}
+                headerActions={(
+                  <>
+                    <button
+                      type="button"
+                      onClick={minimizeWhiteboardWindow}
+                      aria-label="Thu nhỏ bảng trắng"
+                      title="Thu nhỏ"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleWhiteboardMaximize}
+                      aria-label={whiteboardWindowMode === 'maximized' ? 'Thu gọn cửa sổ bảng trắng' : 'Phóng to bảng trắng'}
+                      title={whiteboardWindowMode === 'maximized' ? 'Thu gọn cửa sổ' : 'Phóng to'}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    >
+                      {whiteboardWindowMode === 'maximized' ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                    </button>
+                  </>
+                )}
+              />
+            </div>
           </div>
+
+          {whiteboardWindowMode === 'minimized' && (
+            <button
+              type="button"
+              onClick={openWhiteboardWindow}
+              className="absolute bottom-4 right-4 z-30 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-amber-300 px-4 text-sm font-black text-slate-950 shadow-[0_16px_40px_-18px_rgba(251,191,36,0.8)] transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-slate-950"
+              aria-haspopup="dialog"
+            >
+              <PenLine className="h-4 w-4" />
+              Bảng trắng
+              {pendingBoardOperationCount > 0 && (
+                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] text-amber-200">
+                  {pendingBoardOperationCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          <ClassroomGiftOverlay
+            gift={classroomGifts.activeGift}
+            pendingGiftCount={classroomGifts.pendingGiftCount}
+          />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] font-semibold leading-5 text-slate-500">
@@ -1848,11 +3142,6 @@ export function OnlineClassroomPage() {
           <p>Trang này không tự ghi điểm danh, điểm thưởng hoặc dữ liệu tính lương.</p>
         </div>
       </main>
-
-      <ClassroomGiftOverlay
-        gift={classroomGifts.activeGift}
-        pendingGiftCount={classroomGifts.pendingGiftCount}
-      />
 
       <Modal
         open={showRecordingConsent}

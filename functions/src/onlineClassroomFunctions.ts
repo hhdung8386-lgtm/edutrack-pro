@@ -6,11 +6,14 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
   ONLINE_CLASSROOM_ACCESS_COLLECTION,
   ONLINE_CLASSROOM_ROOMS_COLLECTION,
+  ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT,
   ONLINE_CLASSROOM_TOKENS_COLLECTION,
   ONLINE_CLASSROOM_TOKEN_BYTES,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
+  decideOnlineClassroomScreenAnnotationSessionMutation,
   isInsideOnlineClassroomJoinWindow,
+  isSafeOnlineClassroomScreenAnnotationSessionId,
   isSafeClassroomId,
   nextOnlineClassroomAccessGeneration,
   onlineClassroomAccessGeneration,
@@ -26,7 +29,11 @@ import {
   validateOnlineClassroomBoardDraft,
   validateOnlineClassroomBoardOperation,
   validateOnlineClassroomBoardSnapshot,
+  validateOnlineClassroomScreenAnnotationSession,
+  type OnlineClassroomBoardAuthorRole,
+  type OnlineClassroomBoardSnapshot,
   type OnlineClassroomBookingLike,
+  type OnlineClassroomScreenAnnotationSession,
   type OnlineClassroomTargetType,
 } from './onlineClassroom'
 import {
@@ -102,10 +109,18 @@ export type AccessContext = {
   sessionKey: string
   roomName: string
   boardSnapshot: ReturnType<typeof validateOnlineClassroomBoardSnapshot>
+  screenAnnotationSession: OnlineClassroomScreenAnnotationSession | null
   recordingNotice: ClassroomRecordingNotice | null
   recordingConsent: ClassroomRecordingConsent | null
   studentPilotGeneration: number
   teacherPilotGeneration: number
+}
+
+function screenAnnotationSurfaceRef(sessionKey: string) {
+  return db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION)
+    .doc(sessionKey)
+    .collection('surfaces')
+    .doc(ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT)
 }
 
 function validatedRecordingNotice(value: unknown): ClassroomRecordingNotice | null {
@@ -282,8 +297,14 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
     studentAccess.generation,
     teacherAccess.generation,
   )
-  const roomSnapshot = await db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(sessionKey).get()
+  const [roomSnapshot, screenAnnotationSnapshot] = await Promise.all([
+    db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(sessionKey).get(),
+    screenAnnotationSurfaceRef(sessionKey).get(),
+  ])
   const boardSnapshot = validateOnlineClassroomBoardSnapshot(roomSnapshot.data()?.boardSnapshot)
+  const screenAnnotationSession = validateOnlineClassroomScreenAnnotationSession(
+    screenAnnotationSnapshot.data(),
+  )
   const recordingNotice = validatedRecordingNotice(roomSnapshot.data()?.recordingNotice)
   const recordingConsent = validatedRecordingConsent(roomSnapshot.data()?.recordingConsent)
   return {
@@ -293,6 +314,7 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
     sessionKey,
     roomName,
     boardSnapshot,
+    screenAnnotationSession,
     recordingNotice,
     recordingConsent,
     studentPilotGeneration: studentAccess.generation,
@@ -762,21 +784,41 @@ export const getOnlineClassroomAccess = onCall({
     requestedStart: context.booking.requestedStart || '',
     requestedEnd: context.booking.requestedEnd || '',
     curriculumLink: context.booking.curriculumLink || subjectPackage?.curriculumLink || '',
-    boardSnapshot: context.boardSnapshot || { version: 0, studentCanWrite: true, operations: [] },
+    boardSnapshot: context.boardSnapshot || { version: 0, generation: 0, studentCanWrite: true, operations: [] },
+    screenAnnotationSession: context.screenAnnotationSession,
     recordingNotice: context.recordingNotice,
     recordingConsent: context.recordingConsent,
   }
 })
 
+type BoardAppendTransactionResult =
+  | {
+      outcome: 'appended' | 'duplicate'
+      boardSnapshot: OnlineClassroomBoardSnapshot
+    }
+  | {
+      outcome: 'invalid-snapshot'
+    }
+  | {
+      outcome: 'locked' | 'stale-generation' | 'max-operations' | 'max-bytes' | 'conflict'
+      currentVersion: number
+      currentGeneration: number
+    }
+
 export const appendOnlineClassroomBoardOperation = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  maxInstances: 3,
 }, async (request) => {
   const bookingId = request.data?.bookingId
   if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
   const operation = validateOnlineClassroomBoardOperation(request.data?.operation)
   if (!operation) throw new HttpsError('invalid-argument', 'Thao tác bảng sai định dạng hoặc vượt giới hạn.')
+  const expectedGeneration = request.data?.expectedGeneration ?? 0
+  if (!Number.isSafeInteger(expectedGeneration) || Number(expectedGeneration) < 0) {
+    throw new HttpsError('invalid-argument', 'Thế hệ bảng mong đợi không hợp lệ.')
+  }
 
   await preauthorizeClassroomRequest(request, bookingId)
   const context = await loadEligibleContext(bookingId)
@@ -789,7 +831,7 @@ export const appendOnlineClassroomBoardOperation = onCall({
       : `student_${context.booking.studentId}`
   const rateRef = db.collection('onlineClassroomBoardRateLimits')
     .doc(`${context.sessionKey}_${rateActorId}`)
-  const result = await db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction<BoardAppendTransactionResult>(async (transaction) => {
     const [currentSnapshot, rateSnapshot] = await Promise.all([
       transaction.get(roomRef),
       transaction.get(rateRef),
@@ -809,40 +851,41 @@ export const appendOnlineClassroomBoardOperation = onCall({
         { reason: 'BOARD_RATE_LIMITED' },
       )
     }
+    // Rejected, duplicate and conflicting attempts still consume quota. The
+    // transaction returns an outcome so the rate write commits before the
+    // callable maps the result to a typed HttpsError below.
+    transaction.set(rateRef, {
+      sessionKey: context.sessionKey,
+      actorId: rateActorId,
+      count: rateCount + 1,
+      windowStartedAt: withinRateWindow
+        ? Timestamp.fromMillis(rateWindowStartedAt)
+        : Timestamp.fromMillis(nowMs),
+      updatedAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(nowMs + 24 * 60 * 60 * 1000),
+    }, { merge: true })
+
     const rawBoardSnapshot = currentSnapshot.data()?.boardSnapshot
     const currentBoard = validateOnlineClassroomBoardSnapshot(rawBoardSnapshot)
     if (rawBoardSnapshot !== undefined && rawBoardSnapshot !== null && !currentBoard) {
-      throw new HttpsError(
-        'failed-precondition',
-        'Bản bảng đang lưu không hợp lệ. Đã dừng thao tác để tránh ghi đè dữ liệu.',
-        { reason: 'BOARD_SNAPSHOT_INVALID' },
-      )
+      return { outcome: 'invalid-snapshot' }
     }
 
-    const append = decideOnlineClassroomBoardOperationAppend(currentBoard, operation, viewer.role)
-    if (append.decision === 'locked') {
-      throw new HttpsError(
-        'permission-denied',
-        'Gia sư đang khóa quyền viết của học viên.',
-        { reason: 'BOARD_STUDENT_WRITE_LOCKED' },
-      )
-    }
-    if (append.decision === 'max-operations' || append.decision === 'max-bytes') {
-      throw new HttpsError(
-        'resource-exhausted',
-        'Bảng đã đạt giới hạn dữ liệu. Gia sư hãy lưu nội dung cần thiết rồi xóa bảng để tiếp tục.',
-        { reason: append.decision === 'max-operations' ? 'BOARD_OPERATION_LIMIT' : 'BOARD_SIZE_LIMIT' },
-      )
-    }
-    if (append.decision === 'conflict') {
-      throw new HttpsError(
-        'failed-precondition',
-        'Mã thao tác đã tồn tại với nội dung khác. Vui lòng tải lại bảng trước khi tiếp tục.',
-        { reason: 'BOARD_OPERATION_ID_CONFLICT', currentVersion: append.boardSnapshot.version },
-      )
+    const append = decideOnlineClassroomBoardOperationAppend(
+      currentBoard,
+      operation,
+      viewer.role,
+      Number(expectedGeneration),
+    )
+    if (append.decision !== 'append' && append.decision !== 'duplicate') {
+      return {
+        outcome: append.decision,
+        currentVersion: append.boardSnapshot.version,
+        currentGeneration: append.boardSnapshot.generation,
+      }
     }
     if (append.decision === 'duplicate') {
-      return { appended: false, duplicate: true, boardSnapshot: append.boardSnapshot }
+      return { outcome: 'duplicate', boardSnapshot: append.boardSnapshot }
     }
 
     transaction.set(roomRef, {
@@ -855,23 +898,56 @@ export const appendOnlineClassroomBoardOperation = onCall({
           : `student:${context.booking.studentId}`,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    transaction.set(rateRef, {
-      sessionKey: context.sessionKey,
-      actorId: rateActorId,
-      count: rateCount + 1,
-      windowStartedAt: withinRateWindow
-        ? Timestamp.fromMillis(rateWindowStartedAt)
-        : Timestamp.fromMillis(nowMs),
-      updatedAt: FieldValue.serverTimestamp(),
-      expiresAt: Timestamp.fromMillis(nowMs + 24 * 60 * 60 * 1000),
-    }, { merge: true })
-    return { appended: true, duplicate: false, boardSnapshot: append.boardSnapshot }
+    return { outcome: 'appended', boardSnapshot: append.boardSnapshot }
   })
+
+  if (result.outcome === 'invalid-snapshot') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Bản bảng đang lưu không hợp lệ. Đã dừng thao tác để tránh ghi đè dữ liệu.',
+      { reason: 'BOARD_SNAPSHOT_INVALID' },
+    )
+  }
+  if (result.outcome === 'locked') {
+    throw new HttpsError(
+      'permission-denied',
+      'Gia sư đang khóa quyền viết của học viên.',
+      { reason: 'BOARD_STUDENT_WRITE_LOCKED' },
+    )
+  }
+  if (result.outcome === 'stale-generation') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Bảng vừa được xóa hoặc tạo lại. Nét cũ chưa đồng bộ sẽ không được khôi phục.',
+      {
+        reason: 'BOARD_GENERATION_MISMATCH',
+        currentVersion: result.currentVersion,
+        currentGeneration: result.currentGeneration,
+      },
+    )
+  }
+  if (result.outcome === 'max-operations' || result.outcome === 'max-bytes') {
+    throw new HttpsError(
+      'resource-exhausted',
+      'Bảng đã đạt giới hạn dữ liệu. Gia sư hãy lưu nội dung cần thiết rồi xóa bảng để tiếp tục.',
+      { reason: result.outcome === 'max-operations' ? 'BOARD_OPERATION_LIMIT' : 'BOARD_SIZE_LIMIT' },
+    )
+  }
+  if (result.outcome === 'conflict') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Mã thao tác đã tồn tại với nội dung khác. Vui lòng tải lại bảng trước khi tiếp tục.',
+      { reason: 'BOARD_OPERATION_ID_CONFLICT', currentVersion: result.currentVersion },
+    )
+  }
+  if (result.outcome !== 'appended' && result.outcome !== 'duplicate') {
+    throw new HttpsError('internal', 'Chưa thể đồng bộ bảng học.')
+  }
 
   return {
     success: true,
-    appended: result.appended,
-    duplicate: result.duplicate,
+    appended: result.outcome === 'appended',
+    duplicate: result.outcome === 'duplicate',
     version: result.boardSnapshot.version,
     boardSnapshot: result.boardSnapshot,
   }
@@ -881,6 +957,7 @@ export const saveOnlineClassroomBoard = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  maxInstances: 3,
 }, async (request) => {
   const bookingId = request.data?.bookingId
   if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
@@ -927,4 +1004,425 @@ export const saveOnlineClassroomBoard = onCall({
     return { unchanged: false, version: boardSnapshot.version }
   })
   return { success: true, version: result.version, unchanged: result.unchanged }
+})
+
+function throwScreenAnnotationSessionError(
+  decision: Exclude<ReturnType<typeof decideOnlineClassroomScreenAnnotationSessionMutation>, 'allowed'>,
+): never {
+  if (decision === 'session-mismatch') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Phiên chú thích màn hình đã thay đổi. Vui lòng tải lại lớp học.',
+      { reason: 'SCREEN_ANNOTATION_SESSION_MISMATCH' },
+    )
+  }
+  if (decision === 'inactive') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Phiên chú thích màn hình đã kết thúc.',
+      { reason: 'SCREEN_ANNOTATION_NOT_ACTIVE' },
+    )
+  }
+  throw new HttpsError(
+    'failed-precondition',
+    'Gia sư chưa bắt đầu phiên chú thích màn hình.',
+    { reason: 'SCREEN_ANNOTATION_NOT_STARTED' },
+  )
+}
+
+function validatedStoredScreenAnnotationSession(
+  rawSession: unknown,
+): OnlineClassroomScreenAnnotationSession | null {
+  const session = validateOnlineClassroomScreenAnnotationSession(rawSession)
+  if (rawSession !== undefined && rawSession !== null && !session) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Dữ liệu chú thích màn hình đang lưu không hợp lệ. Đã dừng thao tác để tránh ghi đè.',
+      { reason: 'SCREEN_ANNOTATION_SESSION_INVALID' },
+    )
+  }
+  return session
+}
+
+type ScreenAnnotationActor<Role extends OnlineClassroomBoardAuthorRole = OnlineClassroomBoardAuthorRole> = {
+  role: Role
+  id: string
+}
+
+function resolveScreenAnnotationActor<Role extends OnlineClassroomBoardAuthorRole>(
+  role: Role,
+  authenticatedUid: string | undefined,
+  context: AccessContext,
+): ScreenAnnotationActor<Role> {
+  const id = role === 'admin'
+    ? authenticatedUid
+    : role === 'teacher'
+      ? context.booking.teacherId
+      : context.booking.studentId
+  if (!isSafeClassroomId(id)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Không xác định được người thao tác chú thích màn hình.',
+      { reason: 'SCREEN_ANNOTATION_ACTOR_INVALID' },
+    )
+  }
+  return { role, id }
+}
+
+function nextScreenAnnotationAuditTimestamp(
+  session: OnlineClassroomScreenAnnotationSession | null,
+): number {
+  return Math.max(
+    Date.now(),
+    session?.startedAtMs ?? 0,
+    session?.updatedAtMs ?? 0,
+    session?.endedAtMs ?? 0,
+  )
+}
+
+type ScreenAnnotationAppendTransactionResult =
+  | {
+      outcome: 'appended' | 'duplicate'
+      screenAnnotationSession: OnlineClassroomScreenAnnotationSession
+    }
+  | {
+      outcome: 'session-error'
+      decision: Exclude<ReturnType<typeof decideOnlineClassroomScreenAnnotationSessionMutation>, 'allowed'>
+    }
+  | {
+      outcome: 'locked' | 'stale-generation' | 'max-operations' | 'max-bytes' | 'conflict'
+      currentVersion: number
+      currentGeneration: number
+    }
+
+export const beginOnlineClassroomScreenAnnotation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 3,
+}, async (request) => {
+  const bookingId = request.data?.bookingId
+  if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
+  await preauthorizeClassroomRequest(request, bookingId)
+  const context = await loadEligibleContext(bookingId)
+  const viewer = await resolveViewer(request, context)
+  if (viewer.role === 'student') {
+    throw new HttpsError('permission-denied', 'Chỉ gia sư hoặc Admin được bắt đầu chú thích màn hình.')
+  }
+  const actor = resolveScreenAnnotationActor(viewer.role, request.auth?.uid, context)
+
+  const surfaceRef = screenAnnotationSurfaceRef(context.sessionKey)
+  const result = await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(surfaceRef)
+    const current = validatedStoredScreenAnnotationSession(currentSnapshot.data())
+    if (current?.active) {
+      return { unchanged: true, screenAnnotationSession: current }
+    }
+    const nowMs = nextScreenAnnotationAuditTimestamp(current)
+    const next: OnlineClassroomScreenAnnotationSession = {
+      // Generate inside the transaction callback so a Firestore retry returns
+      // the exact id that was committed by the successful attempt.
+      sessionId: randomBytes(24).toString('base64url'),
+      active: true,
+      boardSnapshot: { version: 0, generation: 0, studentCanWrite: true, operations: [] },
+      startedAtMs: nowMs,
+      updatedAtMs: nowMs,
+      endedAtMs: null,
+      startedByRole: actor.role,
+      startedById: actor.id,
+      updatedByRole: actor.role,
+      updatedById: actor.id,
+    }
+    transaction.set(surfaceRef, next)
+    return { unchanged: false, screenAnnotationSession: next }
+  })
+  return {
+    success: true,
+    unchanged: result.unchanged,
+    screenAnnotationSession: result.screenAnnotationSession,
+  }
+})
+
+export const appendOnlineClassroomScreenAnnotationOperation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 3,
+}, async (request) => {
+  const bookingId = request.data?.bookingId
+  const sessionId = request.data?.sessionId
+  if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
+  if (!isSafeOnlineClassroomScreenAnnotationSessionId(sessionId)) {
+    throw new HttpsError('invalid-argument', 'Phiên chú thích màn hình không hợp lệ.')
+  }
+  const operation = validateOnlineClassroomBoardOperation(request.data?.operation)
+  if (!operation) {
+    throw new HttpsError('invalid-argument', 'Thao tác chú thích sai định dạng hoặc vượt giới hạn.')
+  }
+  const expectedGeneration = request.data?.expectedGeneration ?? 0
+  if (!Number.isSafeInteger(expectedGeneration) || Number(expectedGeneration) < 0) {
+    throw new HttpsError('invalid-argument', 'Thế hệ chú thích mong đợi không hợp lệ.')
+  }
+
+  await preauthorizeClassroomRequest(request, bookingId)
+  const context = await loadEligibleContext(bookingId)
+  const viewer = await resolveViewer(request, context)
+  const actor = resolveScreenAnnotationActor(viewer.role, request.auth?.uid, context)
+  const surfaceRef = screenAnnotationSurfaceRef(context.sessionKey)
+  const rateActorId = `${actor.role}_${actor.id}`
+  const rateRef = db.collection('onlineClassroomBoardRateLimits')
+    .doc(`${context.sessionKey}_${rateActorId}_screen`)
+  const result = await db.runTransaction<ScreenAnnotationAppendTransactionResult>(async (transaction) => {
+    const [currentSnapshot, rateSnapshot] = await Promise.all([
+      transaction.get(surfaceRef),
+      transaction.get(rateRef),
+    ])
+    const current = validatedStoredScreenAnnotationSession(currentSnapshot.data())
+    const requestNowMs = Date.now()
+    const auditNowMs = nextScreenAnnotationAuditTimestamp(current)
+    const rateWindowStartedAt = rateSnapshot.data()?.windowStartedAt instanceof Timestamp
+      ? rateSnapshot.data()!.windowStartedAt.toMillis()
+      : 0
+    const withinRateWindow = requestNowMs - rateWindowStartedAt < ONLINE_CLASSROOM_BOARD_RATE_WINDOW_MS
+    const rateCount = withinRateWindow && Number.isSafeInteger(rateSnapshot.data()?.count)
+      ? Number(rateSnapshot.data()!.count)
+      : 0
+    if (rateCount >= ONLINE_CLASSROOM_BOARD_RATE_MAX_OPERATIONS) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Bạn đang gửi quá nhiều nét chú thích. Hãy chờ vài giây rồi tiếp tục.',
+        { reason: 'SCREEN_ANNOTATION_RATE_LIMITED' },
+      )
+    }
+
+    // Consume the attempt before branching on duplicate/locked/conflict. Those
+    // outcomes are still authenticated callable work and must not bypass the
+    // per-actor quota. Returning an outcome (instead of throwing in the
+    // transaction) lets this write commit before the callable maps it to an
+    // HttpsError below.
+    transaction.set(rateRef, {
+      sessionKey: context.sessionKey,
+      actorId: rateActorId,
+      surface: ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT,
+      count: rateCount + 1,
+      windowStartedAt: withinRateWindow
+        ? Timestamp.fromMillis(rateWindowStartedAt)
+        : Timestamp.fromMillis(requestNowMs),
+      updatedAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(requestNowMs + 24 * 60 * 60 * 1000),
+    }, { merge: true })
+
+    const sessionDecision = decideOnlineClassroomScreenAnnotationSessionMutation(current, sessionId)
+    if (sessionDecision !== 'allowed') {
+      return { outcome: 'session-error', decision: sessionDecision }
+    }
+
+    const append = decideOnlineClassroomBoardOperationAppend(
+      current!.boardSnapshot,
+      operation,
+      viewer.role,
+      Number(expectedGeneration),
+    )
+    if (append.decision === 'locked'
+      || append.decision === 'stale-generation'
+      || append.decision === 'max-operations'
+      || append.decision === 'max-bytes'
+      || append.decision === 'conflict') {
+      return {
+        outcome: append.decision,
+        currentVersion: append.boardSnapshot.version,
+        currentGeneration: append.boardSnapshot.generation,
+      }
+    }
+    if (append.decision === 'duplicate') {
+      return {
+        outcome: 'duplicate',
+        screenAnnotationSession: current!,
+      }
+    }
+
+    const next: OnlineClassroomScreenAnnotationSession = {
+      ...current!,
+      boardSnapshot: append.boardSnapshot,
+      updatedAtMs: auditNowMs,
+      updatedByRole: actor.role,
+      updatedById: actor.id,
+    }
+    transaction.set(surfaceRef, next)
+    return { outcome: 'appended', screenAnnotationSession: next }
+  })
+
+  if (result.outcome === 'session-error') throwScreenAnnotationSessionError(result.decision)
+  if (result.outcome === 'locked') {
+    throw new HttpsError(
+      'permission-denied',
+      'Gia sư đang khóa quyền chú thích của học viên.',
+      { reason: 'SCREEN_ANNOTATION_STUDENT_WRITE_LOCKED' },
+    )
+  }
+  if (result.outcome === 'stale-generation') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Chú thích vừa được xóa hoặc tạo lại. Nét cũ chưa đồng bộ sẽ không được khôi phục.',
+      {
+        reason: 'SCREEN_ANNOTATION_GENERATION_MISMATCH',
+        currentVersion: result.currentVersion,
+        currentGeneration: result.currentGeneration,
+      },
+    )
+  }
+  if (result.outcome === 'max-operations' || result.outcome === 'max-bytes') {
+    throw new HttpsError(
+      'resource-exhausted',
+      'Chú thích màn hình đã đạt giới hạn dữ liệu. Gia sư hãy xóa nét cũ để tiếp tục.',
+      {
+        reason: result.outcome === 'max-operations'
+          ? 'SCREEN_ANNOTATION_OPERATION_LIMIT'
+          : 'SCREEN_ANNOTATION_SIZE_LIMIT',
+      },
+    )
+  }
+  if (result.outcome === 'conflict') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Mã thao tác chú thích đã tồn tại với nội dung khác. Vui lòng tải lại lớp học.',
+      {
+        reason: 'SCREEN_ANNOTATION_OPERATION_ID_CONFLICT',
+        currentVersion: result.currentVersion,
+      },
+    )
+  }
+  if (result.outcome !== 'appended' && result.outcome !== 'duplicate') {
+    throw new HttpsError('internal', 'Chưa thể đồng bộ chú thích màn hình.')
+  }
+
+  return {
+    success: true,
+    appended: result.outcome === 'appended',
+    duplicate: result.outcome === 'duplicate',
+    version: result.screenAnnotationSession.boardSnapshot.version,
+    boardSnapshot: result.screenAnnotationSession.boardSnapshot,
+    screenAnnotationSession: result.screenAnnotationSession,
+  }
+})
+
+export const saveOnlineClassroomScreenAnnotation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 3,
+}, async (request) => {
+  const bookingId = request.data?.bookingId
+  const sessionId = request.data?.sessionId
+  const expectedVersion = request.data?.expectedVersion
+  if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
+  if (!isSafeOnlineClassroomScreenAnnotationSessionId(sessionId)) {
+    throw new HttpsError('invalid-argument', 'Phiên chú thích màn hình không hợp lệ.')
+  }
+  if (!Number.isSafeInteger(expectedVersion) || Number(expectedVersion) < 0) {
+    throw new HttpsError('invalid-argument', 'Phiên bản chú thích mong đợi không hợp lệ.')
+  }
+  const boardDraft = validateOnlineClassroomBoardDraft(request.data?.boardSnapshot)
+  if (!boardDraft) {
+    throw new HttpsError('invalid-argument', 'Dữ liệu chú thích vượt giới hạn hoặc sai định dạng.')
+  }
+
+  await preauthorizeClassroomRequest(request, bookingId)
+  const context = await loadEligibleContext(bookingId)
+  const viewer = await resolveViewer(request, context)
+  if (viewer.role === 'student') {
+    throw new HttpsError('permission-denied', 'Chỉ gia sư hoặc Admin được lưu chú thích màn hình.')
+  }
+  const actor = resolveScreenAnnotationActor(viewer.role, request.auth?.uid, context)
+  const surfaceRef = screenAnnotationSurfaceRef(context.sessionKey)
+  const result = await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(surfaceRef)
+    const current = validatedStoredScreenAnnotationSession(currentSnapshot.data())
+    const sessionDecision = decideOnlineClassroomScreenAnnotationSessionMutation(current, sessionId)
+    if (sessionDecision !== 'allowed') throwScreenAnnotationSessionError(sessionDecision)
+
+    const currentVersion = current!.boardSnapshot.version
+    const saveDecision = decideOnlineClassroomBoardSave(
+      current!.boardSnapshot,
+      Number(expectedVersion),
+      boardDraft,
+    )
+    if (saveDecision === 'conflict') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Chú thích đã có thay đổi mới hơn. Vui lòng tải lại trước khi lưu.',
+        { reason: 'SCREEN_ANNOTATION_VERSION_CONFLICT', currentVersion },
+      )
+    }
+    if (saveDecision === 'noop') {
+      return { unchanged: true, screenAnnotationSession: current! }
+    }
+
+    const nowMs = nextScreenAnnotationAuditTimestamp(current)
+    const next: OnlineClassroomScreenAnnotationSession = {
+      ...current!,
+      boardSnapshot: { ...boardDraft, version: currentVersion + 1 },
+      updatedAtMs: nowMs,
+      updatedByRole: actor.role,
+      updatedById: actor.id,
+    }
+    transaction.set(surfaceRef, next)
+    return { unchanged: false, screenAnnotationSession: next }
+  })
+  return {
+    success: true,
+    unchanged: result.unchanged,
+    version: result.screenAnnotationSession.boardSnapshot.version,
+    screenAnnotationSession: result.screenAnnotationSession,
+  }
+})
+
+export const endOnlineClassroomScreenAnnotation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 3,
+}, async (request) => {
+  const bookingId = request.data?.bookingId
+  const sessionId = request.data?.sessionId
+  if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
+  if (!isSafeOnlineClassroomScreenAnnotationSessionId(sessionId)) {
+    throw new HttpsError('invalid-argument', 'Phiên chú thích màn hình không hợp lệ.')
+  }
+  await preauthorizeClassroomRequest(request, bookingId)
+  const context = await loadEligibleContext(bookingId)
+  const viewer = await resolveViewer(request, context)
+  if (viewer.role === 'student') {
+    throw new HttpsError('permission-denied', 'Chỉ gia sư hoặc Admin được kết thúc chú thích màn hình.')
+  }
+  const actor = resolveScreenAnnotationActor(viewer.role, request.auth?.uid, context)
+
+  const surfaceRef = screenAnnotationSurfaceRef(context.sessionKey)
+  const result = await db.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(surfaceRef)
+    const current = validatedStoredScreenAnnotationSession(currentSnapshot.data())
+    const sessionDecision = decideOnlineClassroomScreenAnnotationSessionMutation(current, sessionId)
+    if (sessionDecision === 'missing' || sessionDecision === 'session-mismatch') {
+      throwScreenAnnotationSessionError(sessionDecision)
+    }
+    if (sessionDecision === 'inactive') {
+      return { unchanged: true, screenAnnotationSession: current! }
+    }
+    const nowMs = nextScreenAnnotationAuditTimestamp(current)
+    const next: OnlineClassroomScreenAnnotationSession = {
+      ...current!,
+      active: false,
+      updatedAtMs: nowMs,
+      endedAtMs: nowMs,
+      updatedByRole: actor.role,
+      updatedById: actor.id,
+    }
+    transaction.set(surfaceRef, next)
+    return { unchanged: false, screenAnnotationSession: next }
+  })
+  return {
+    success: true,
+    unchanged: result.unchanged,
+    screenAnnotationSession: result.screenAnnotationSession,
+  }
 })

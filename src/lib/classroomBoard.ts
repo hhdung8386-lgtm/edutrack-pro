@@ -1,10 +1,16 @@
 import { z } from 'zod'
-import type { ClassroomBoardDraft, ClassroomBoardSnapshot, OnlineClassroomRole } from '@/lib/onlineClassroom'
+import type {
+  ClassroomBoardDraft,
+  ClassroomBoardSnapshot,
+  OnlineClassroomRole,
+  OnlineClassroomScreenAnnotationSession,
+} from '@/lib/onlineClassroom'
 
 export const BOARD_MESSAGE_NAMESPACE = '123english-classroom-board'
 export const BOARD_SCHEMA_VERSION = 1 as const
 export const MAX_BOARD_OPERATIONS = 1_500
 export const MAX_BOARD_MESSAGE_BYTES = 48_000
+export type BoardSurface = 'board' | 'screen'
 
 const boardPointSchema = z.object({
   x: z.number().finite().min(0).max(1),
@@ -59,12 +65,14 @@ export type BoardPoint = z.infer<typeof boardPointSchema>
 
 export type ValidatedBoardSnapshot = {
   version: number
+  generation: number
   studentCanWrite: boolean
   operations: BoardOperation[]
 }
 
 const boardSnapshotSchema = z.object({
   version: z.number().int().nonnegative(),
+  generation: z.number().int().nonnegative().default(0),
   studentCanWrite: z.boolean(),
   operations: z.array(boardOperationSchema).max(MAX_BOARD_OPERATIONS),
 }).strict()
@@ -76,6 +84,9 @@ const envelopeFields = {
   messageId: z.string().min(8).max(120),
   senderRole: z.enum(['admin', 'teacher', 'student']),
   sentAt: z.number().int().nonnegative(),
+  // Omitted for the legacy whiteboard so cached clients keep accepting the
+  // existing wire format. Screen annotations use their own explicit surface.
+  surface: z.literal('screen').optional(),
 }
 
 const boardMessageSchema = z.discriminatedUnion('type', [
@@ -103,6 +114,11 @@ const boardMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('snapshot-refresh'),
     boardVersion: z.number().int().nonnegative(),
   }).strict(),
+  z.object({
+    ...envelopeFields,
+    surface: z.literal('screen'),
+    type: z.literal('frame-refresh'),
+  }).strict(),
 ])
 
 export type BoardWireMessage = z.infer<typeof boardMessageSchema>
@@ -112,6 +128,7 @@ export type BoardMessagePayload =
   | { type: 'snapshot'; snapshot: ValidatedBoardSnapshot }
   | { type: 'snapshot-request' }
   | { type: 'snapshot-refresh'; boardVersion: number }
+  | { type: 'frame-refresh' }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -130,11 +147,14 @@ export function createBoardId(prefix = 'board'): string {
 
 export function sanitizeBoardSnapshot(snapshot: ClassroomBoardSnapshot | unknown): ValidatedBoardSnapshot {
   if (!isRecord(snapshot)) {
-    return { version: 0, studentCanWrite: true, operations: [] }
+    return { version: 0, generation: 0, studentCanWrite: true, operations: [] }
   }
 
   const version = Number.isSafeInteger(snapshot.version) && Number(snapshot.version) >= 0
     ? Number(snapshot.version)
+    : 0
+  const generation = Number.isSafeInteger(snapshot.generation) && Number(snapshot.generation) >= 0
+    ? Number(snapshot.generation)
     : 0
   const studentCanWrite = typeof snapshot.studentCanWrite === 'boolean'
     ? snapshot.studentCanWrite
@@ -149,11 +169,24 @@ export function sanitizeBoardSnapshot(snapshot: ClassroomBoardSnapshot | unknown
     if (parsed.success) operations.push(parsed.data)
   }
 
-  return { version, studentCanWrite, operations }
+  return { version, generation, studentCanWrite, operations }
+}
+
+export function sanitizeScreenAnnotationSession(value: unknown): OnlineClassroomScreenAnnotationSession | null {
+  if (!isRecord(value)
+    || typeof value.sessionId !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9_-]{15,119}$/.test(value.sessionId)
+    || typeof value.active !== 'boolean') return null
+  return {
+    sessionId: value.sessionId,
+    active: value.active,
+    boardSnapshot: sanitizeBoardSnapshot(value.boardSnapshot),
+  }
 }
 
 export function toCallableBoardDraft(snapshot: ValidatedBoardSnapshot): ClassroomBoardDraft {
   return {
+    generation: snapshot.generation,
     studentCanWrite: snapshot.studentCanWrite,
     operations: snapshot.operations,
   }
@@ -163,6 +196,7 @@ export function makeBoardMessage(
   bookingId: string,
   senderRole: OnlineClassroomRole,
   payload: BoardMessagePayload,
+  surface: BoardSurface = 'board',
 ): BoardWireMessage {
   const common = {
     namespace: BOARD_MESSAGE_NAMESPACE,
@@ -171,9 +205,14 @@ export function makeBoardMessage(
     messageId: createBoardId('message'),
     senderRole,
     sentAt: Date.now(),
+    ...(surface === 'screen' ? { surface: 'screen' as const } : {}),
   } as const
 
   return boardMessageSchema.parse({ ...common, ...payload })
+}
+
+export function boardMessageSurface(message: BoardWireMessage): BoardSurface {
+  return message.surface === 'screen' ? 'screen' : 'board'
 }
 
 export function serializeBoardMessage(message: BoardWireMessage): string | null {

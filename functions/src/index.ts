@@ -30,12 +30,16 @@ import {
 } from './onlineClassroom'
 
 export {
+  appendOnlineClassroomScreenAnnotationOperation,
   appendOnlineClassroomBoardOperation,
+  beginOnlineClassroomScreenAnnotation,
+  endOnlineClassroomScreenAnnotation,
   getOnlineClassroomAccess,
   getOnlineClassroomPilotStatus,
   issueOnlineClassroomInvite,
   rotateOnlineClassroomTeacherPassword,
   saveOnlineClassroomBoard,
+  saveOnlineClassroomScreenAnnotation,
   setOnlineClassroomPilotAccess,
 } from './onlineClassroomFunctions'
 

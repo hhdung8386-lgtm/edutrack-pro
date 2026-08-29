@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  boardMessageSurface,
   makeBoardMessage,
   parseBoardMessage,
   sanitizeBoardSnapshot,
+  sanitizeScreenAnnotationSession,
   serializeBoardMessage,
   type BoardOperation,
 } from '../src/lib/classroomBoard.ts'
@@ -64,6 +66,33 @@ test('message bảng chỉ được nhận đúng booking và đúng namespace',
   assert.equal(parseBoardMessage(serialized, 'booking-a')?.type, 'operation')
   assert.equal(parseBoardMessage(serialized, 'booking-b'), null)
   assert.equal(parseBoardMessage(JSON.stringify({ ...message, namespace: 'unknown' }), 'booking-a'), null)
+})
+
+test('message chú thích màn hình dùng surface riêng nhưng message bảng cũ giữ nguyên wire format', () => {
+  const legacy = makeBoardMessage('booking-a', 'teacher', { type: 'hello' })
+  const screen = makeBoardMessage('booking-a', 'teacher', { type: 'snapshot-refresh', boardVersion: 2 }, 'screen')
+  const frameRefresh = makeBoardMessage('booking-a', 'teacher', { type: 'frame-refresh' }, 'screen')
+
+  assert.equal('surface' in legacy, false)
+  assert.equal(boardMessageSurface(legacy), 'board')
+  assert.equal(boardMessageSurface(screen), 'screen')
+  assert.equal(boardMessageSurface(parseBoardMessage(serializeBoardMessage(screen), 'booking-a')!), 'screen')
+  assert.equal(parseBoardMessage(serializeBoardMessage(frameRefresh), 'booking-a')?.type, 'frame-refresh')
+  assert.equal(parseBoardMessage(JSON.stringify({ ...frameRefresh, surface: undefined }), 'booking-a'), null)
+})
+
+test('lọc session chú thích màn hình không hợp lệ và giữ snapshot hợp lệ', () => {
+  assert.equal(sanitizeScreenAnnotationSession({ sessionId: 'short', active: true, boardSnapshot: {} }), null)
+  const session = sanitizeScreenAnnotationSession({
+    sessionId: 'screen-session-1234567890',
+    active: true,
+    boardSnapshot: { version: 3, studentCanWrite: false, operations: [rectangle] },
+  })
+  assert.equal(session?.sessionId, 'screen-session-1234567890')
+  assert.equal(session?.active, true)
+  assert.equal(session?.boardSnapshot.version, 3)
+  assert.equal(session?.boardSnapshot.studentCanWrite, false)
+  assert.deepEqual(session?.boardSnapshot.operations, [rectangle])
 })
 
 test('không phát snapshot realtime vượt giới hạn payload', () => {

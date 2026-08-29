@@ -9,6 +9,7 @@ export const ONLINE_CLASSROOM_JOIN_LATE_MS = 6 * 60 * 60 * 1000
 export const ONLINE_CLASSROOM_BOARD_OPERATION_MAX_BYTES = 48_000
 export const ONLINE_CLASSROOM_BOARD_MAX_BYTES = 500_000
 export const ONLINE_CLASSROOM_BOARD_MAX_OPERATIONS = 1_500
+export const ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT = 'screen-share'
 // Callable timeout is currently 30 seconds. Keeping the credential lease well
 // beyond that timeout prevents an expired owner from resuming while a newer
 // invocation is changing the same Firebase Auth account.
@@ -80,11 +81,31 @@ export type OnlineClassroomBookingLike = {
 
 export type OnlineClassroomBoardSnapshot = {
   version: number
+  generation: number
   studentCanWrite: boolean
   operations: OnlineClassroomBoardOperation[]
 }
 
 export type OnlineClassroomBoardDraft = Omit<OnlineClassroomBoardSnapshot, 'version'>
+
+export type OnlineClassroomScreenAnnotationSession = {
+  sessionId: string
+  active: boolean
+  boardSnapshot: OnlineClassroomBoardSnapshot
+  startedAtMs?: number
+  updatedAtMs?: number
+  endedAtMs?: number | null
+  startedByRole?: 'admin' | 'teacher'
+  startedById?: string
+  updatedByRole?: OnlineClassroomBoardAuthorRole
+  updatedById?: string
+}
+
+export type OnlineClassroomScreenAnnotationSessionDecision =
+  | 'allowed'
+  | 'missing'
+  | 'inactive'
+  | 'session-mismatch'
 
 export type OnlineClassroomBoardSaveDecision = 'write' | 'noop' | 'conflict'
 
@@ -92,6 +113,7 @@ export type OnlineClassroomBoardAppendDecision =
   | 'append'
   | 'duplicate'
   | 'locked'
+  | 'stale-generation'
   | 'max-operations'
   | 'max-bytes'
   | 'conflict'
@@ -505,8 +527,16 @@ function validateOnlineClassroomBoardOperations(value: unknown): OnlineClassroom
 }
 
 export function validateOnlineClassroomBoardSnapshot(value: unknown): OnlineClassroomBoardSnapshot | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['version', 'studentCanWrite', 'operations'])) return null
+  if (!isRecord(value)) return null
+  const hasGeneration = Object.prototype.hasOwnProperty.call(value, 'generation')
+  if (!hasExactKeys(
+    value,
+    hasGeneration
+      ? ['version', 'generation', 'studentCanWrite', 'operations']
+      : ['version', 'studentCanWrite', 'operations'],
+  )) return null
   if (!Number.isSafeInteger(value.version) || Number(value.version) < 0) return null
+  if (hasGeneration && (!Number.isSafeInteger(value.generation) || Number(value.generation) < 0)) return null
   if (typeof value.studentCanWrite !== 'boolean') return null
   const rawEncodedBytes = jsonByteLength(value)
   if (rawEncodedBytes === null || rawEncodedBytes > ONLINE_CLASSROOM_BOARD_MAX_BYTES) return null
@@ -514,6 +544,7 @@ export function validateOnlineClassroomBoardSnapshot(value: unknown): OnlineClas
   if (!operations) return null
   const snapshot: OnlineClassroomBoardSnapshot = {
     version: Number(value.version),
+    generation: hasGeneration ? Number(value.generation) : 0,
     studentCanWrite: value.studentCanWrite,
     operations,
   }
@@ -522,13 +553,22 @@ export function validateOnlineClassroomBoardSnapshot(value: unknown): OnlineClas
 }
 
 export function validateOnlineClassroomBoardDraft(value: unknown): OnlineClassroomBoardDraft | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['studentCanWrite', 'operations'])) return null
+  if (!isRecord(value)) return null
+  const hasGeneration = Object.prototype.hasOwnProperty.call(value, 'generation')
+  if (!hasExactKeys(
+    value,
+    hasGeneration
+      ? ['generation', 'studentCanWrite', 'operations']
+      : ['studentCanWrite', 'operations'],
+  )) return null
+  if (hasGeneration && (!Number.isSafeInteger(value.generation) || Number(value.generation) < 0)) return null
   if (typeof value.studentCanWrite !== 'boolean') return null
   const rawEncodedBytes = jsonByteLength(value)
   if (rawEncodedBytes === null || rawEncodedBytes > ONLINE_CLASSROOM_BOARD_MAX_BYTES) return null
   const operations = validateOnlineClassroomBoardOperations(value.operations)
   if (!operations) return null
   const draft: OnlineClassroomBoardDraft = {
+    generation: hasGeneration ? Number(value.generation) : 0,
     studentCanWrite: value.studentCanWrite,
     operations,
   }
@@ -536,12 +576,103 @@ export function validateOnlineClassroomBoardDraft(value: unknown): OnlineClassro
   return encodedBytes !== null && encodedBytes <= ONLINE_CLASSROOM_BOARD_MAX_BYTES ? draft : null
 }
 
+export function validateOnlineClassroomScreenAnnotationSession(
+  value: unknown,
+): OnlineClassroomScreenAnnotationSession | null {
+  if (!isRecord(value)) return null
+  const requiredKeys = ['sessionId', 'active', 'boardSnapshot']
+  const optionalAuditKeys = [
+    'startedAtMs',
+    'updatedAtMs',
+    'endedAtMs',
+    'startedByRole',
+    'startedById',
+    'updatedByRole',
+    'updatedById',
+  ]
+  const allowedKeys = new Set([...requiredKeys, ...optionalAuditKeys])
+  const actualKeys = Object.keys(value)
+  if (!requiredKeys.every((key) => actualKeys.includes(key))
+    || actualKeys.some((key) => !allowedKeys.has(key))) return null
+  if (!isSafeOnlineClassroomScreenAnnotationSessionId(value.sessionId)
+    || typeof value.active !== 'boolean') return null
+  const boardSnapshot = validateOnlineClassroomBoardSnapshot(value.boardSnapshot)
+  if (!boardSnapshot) return null
+
+  const hasKey = (key: string) => Object.prototype.hasOwnProperty.call(value, key)
+  const hasStartedAt = hasKey('startedAtMs')
+  const hasUpdatedAt = hasKey('updatedAtMs')
+  const hasEndedAt = hasKey('endedAtMs')
+  const hasStartedByRole = hasKey('startedByRole')
+  const hasStartedById = hasKey('startedById')
+  const hasUpdatedByRole = hasKey('updatedByRole')
+  const hasUpdatedById = hasKey('updatedById')
+
+  if ((hasStartedAt && (!Number.isSafeInteger(value.startedAtMs) || Number(value.startedAtMs) < 0))
+    || (hasUpdatedAt && (!Number.isSafeInteger(value.updatedAtMs) || Number(value.updatedAtMs) < 0))
+    || (hasEndedAt && !(value.endedAtMs === null
+      || (Number.isSafeInteger(value.endedAtMs) && Number(value.endedAtMs) >= 0)))
+    || hasStartedByRole !== hasStartedById
+    || hasUpdatedByRole !== hasUpdatedById
+    || hasStartedAt !== hasStartedByRole
+    || hasUpdatedAt !== hasUpdatedByRole
+    || (hasEndedAt && !hasUpdatedAt)
+    || (hasStartedByRole && !['admin', 'teacher'].includes(String(value.startedByRole)))
+    || (hasStartedById && !isSafeClassroomId(value.startedById))
+    || (hasUpdatedByRole && !['admin', 'teacher', 'student'].includes(String(value.updatedByRole)))
+    || (hasUpdatedById && !isSafeClassroomId(value.updatedById))) return null
+
+  const startedAtMs = hasStartedAt ? Number(value.startedAtMs) : null
+  const updatedAtMs = hasUpdatedAt ? Number(value.updatedAtMs) : null
+  const endedAtMs = hasEndedAt && value.endedAtMs !== null ? Number(value.endedAtMs) : null
+  if ((startedAtMs !== null && updatedAtMs !== null && updatedAtMs < startedAtMs)
+    || (startedAtMs !== null && endedAtMs !== null && endedAtMs < startedAtMs)
+    || (updatedAtMs !== null && endedAtMs !== null && endedAtMs < updatedAtMs)
+    || (hasEndedAt && value.active && value.endedAtMs !== null)
+    || (hasEndedAt && !value.active && value.endedAtMs === null)) return null
+
+  return {
+    sessionId: value.sessionId,
+    active: value.active,
+    boardSnapshot,
+    ...(hasStartedAt ? { startedAtMs: Number(value.startedAtMs) } : {}),
+    ...(hasUpdatedAt ? { updatedAtMs: Number(value.updatedAtMs) } : {}),
+    ...(hasEndedAt ? { endedAtMs: value.endedAtMs === null ? null : Number(value.endedAtMs) } : {}),
+    ...(hasStartedByRole ? {
+      startedByRole: value.startedByRole as 'admin' | 'teacher',
+      startedById: value.startedById as string,
+    } : {}),
+    ...(hasUpdatedByRole ? {
+      updatedByRole: value.updatedByRole as OnlineClassroomBoardAuthorRole,
+      updatedById: value.updatedById as string,
+    } : {}),
+  }
+}
+
+export function isSafeOnlineClassroomScreenAnnotationSessionId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{15,119}$/.test(value)
+}
+
+export function decideOnlineClassroomScreenAnnotationSessionMutation(
+  current: OnlineClassroomScreenAnnotationSession | null,
+  expectedSessionId: unknown,
+): OnlineClassroomScreenAnnotationSessionDecision {
+  if (!current) return 'missing'
+  if (typeof expectedSessionId !== 'string' || expectedSessionId !== current.sessionId) {
+    return 'session-mismatch'
+  }
+  return current.active ? 'allowed' : 'inactive'
+}
+
 export function decideOnlineClassroomBoardOperationAppend(
   current: OnlineClassroomBoardSnapshot | null,
   operation: OnlineClassroomBoardOperation,
   viewerRole: OnlineClassroomBoardAuthorRole,
+  expectedGeneration: number = 0,
 ): OnlineClassroomBoardAppendResult {
-  const boardSnapshot = current || { version: 0, studentCanWrite: true, operations: [] }
+  const boardSnapshot = current
+    ? { ...current, generation: Number.isSafeInteger(current.generation) ? current.generation : 0 }
+    : { version: 0, generation: 0, studentCanWrite: true, operations: [] }
   const authoritativeOperation: OnlineClassroomBoardOperation = { ...operation, authorRole: viewerRole }
   const duplicate = boardSnapshot.operations.find((candidate) => candidate.id === authoritativeOperation.id)
   if (duplicate) {
@@ -550,6 +681,11 @@ export function decideOnlineClassroomBoardOperationAppend(
       boardSnapshot,
       operation: authoritativeOperation,
     }
+  }
+  if (!Number.isSafeInteger(expectedGeneration)
+    || expectedGeneration < 0
+    || expectedGeneration !== boardSnapshot.generation) {
+    return { decision: 'stale-generation', boardSnapshot, operation: authoritativeOperation }
   }
   if (viewerRole === 'student' && !boardSnapshot.studentCanWrite) {
     return { decision: 'locked', boardSnapshot, operation: authoritativeOperation }
@@ -578,15 +714,31 @@ export function decideOnlineClassroomBoardSave(
   expectedVersion: number,
   next: OnlineClassroomBoardDraft,
 ): OnlineClassroomBoardSaveDecision {
+  const nextGeneration = Number.isSafeInteger(next.generation) ? next.generation : 0
+  const normalizedNext: OnlineClassroomBoardDraft = { ...next, generation: nextGeneration }
   const currentVersion = current?.version ?? 0
   if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0 || expectedVersion !== currentVersion) return 'conflict'
-  if (!current) return 'write'
+  if (!current) return nextGeneration === 0 ? 'write' : 'conflict'
+  const currentGeneration = Number.isSafeInteger(current.generation) ? current.generation : 0
 
   // Version authority stays on the server. A client may only prove which
   // snapshot it read (expectedVersion) and submit the next content.
   const currentDraft: OnlineClassroomBoardDraft = {
+    generation: currentGeneration,
     studentCanWrite: current.studentCanWrite,
     operations: current.operations,
   }
-  return JSON.stringify(currentDraft) === JSON.stringify(next) ? 'noop' : 'write'
+  const operationsChanged = JSON.stringify(current.operations) !== JSON.stringify(normalizedNext.operations)
+  const nextOperationIds = new Set(normalizedNext.operations.map((operation) => operation.id))
+  const removesStoredOperation = current.operations.some((operation) => !nextOperationIds.has(operation.id))
+  // Removing even one stored operation is a destructive board boundary. It
+  // must advance the generation so an append dispatched before undo/clear
+  // cannot arrive later and resurrect content that a manager removed.
+  if (removesStoredOperation) {
+    if (nextGeneration !== currentGeneration + 1) return 'conflict'
+  } else if (nextGeneration !== currentGeneration) return 'conflict'
+  const sameContent = currentDraft.generation === normalizedNext.generation
+    && currentDraft.studentCanWrite === normalizedNext.studentCanWrite
+    && !operationsChanged
+  return sameContent ? 'noop' : 'write'
 }

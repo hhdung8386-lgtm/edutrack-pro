@@ -9,10 +9,13 @@ import {
 } from 'react'
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   Circle,
   Eraser,
   Highlighter,
   Lock,
+  MousePointer2,
   MoveUpRight,
   PenLine,
   Redo2,
@@ -37,23 +40,26 @@ import type { OnlineClassroomRole } from '@/lib/onlineClassroom'
 
 type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error'
 
-type CollaborativeWhiteboardProps = {
+export type CollaborativeWhiteboardProps = {
   snapshot: ValidatedBoardSnapshot
   role: OnlineClassroomRole
   canUndo: boolean
   canRedo: boolean
   saveStatus: SaveStatus
   pendingOperationCount: number
-  onOperation: (operation: BoardOperation) => void
+  onOperation: (operation: BoardOperation) => boolean | void
   onUndo: () => void
   onRedo: () => void
   onClear: () => void
   onStudentCanWriteChange: (enabled: boolean) => void
   onSave: () => void
+  variant?: 'board' | 'overlay'
+  headerActions?: React.ReactNode
 }
 
 type CanvasSize = { width: number; height: number; dpr: number }
 type StrokeSize = 'thin' | 'medium' | 'thick'
+type ActiveBoardTool = BoardTool | 'pointer'
 
 const BOARD_COLORS = ['#10213a', '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#d97706'] as const
 
@@ -65,6 +71,11 @@ const TOOL_META: Record<BoardTool, { label: string; Icon: typeof PenLine }> = {
   ellipse: { label: 'Hình tròn hoặc ellipse', Icon: Circle },
   arrow: { label: 'Mũi tên', Icon: MoveUpRight },
   text: { label: 'Gõ chữ', Icon: Type },
+}
+
+const OVERLAY_TOOL_META: Record<ActiveBoardTool, { label: string; Icon: typeof PenLine }> = {
+  pointer: { label: 'Con trỏ', Icon: MousePointer2 },
+  ...TOOL_META,
 }
 
 const WIDTHS: Record<Exclude<BoardTool, 'text'>, Record<StrokeSize, number>> = {
@@ -201,6 +212,42 @@ function ToolButton({
   )
 }
 
+function OverlayToolButton({
+  active,
+  disabled,
+  label,
+  onClick,
+  children,
+  danger = false,
+}: {
+  active?: boolean
+  disabled?: boolean
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={`flex h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border px-2.5 text-xs font-extrabold transition focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:min-w-9 md:rounded-lg md:px-2 ${
+        active
+          ? 'border-amber-300 bg-amber-300 text-slate-950'
+          : danger
+            ? 'border-rose-400/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+            : 'border-white/15 bg-white/10 text-white hover:border-white/25 hover:bg-white/15'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function CollaborativeWhiteboard({
   snapshot,
   role,
@@ -214,20 +261,26 @@ export function CollaborativeWhiteboard({
   onClear,
   onStudentCanWriteChange,
   onSave,
+  variant = 'board',
+  headerActions,
 }: CollaborativeWhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasShellRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<BoardOperation | null>(null)
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0, dpr: 1 })
-  const [tool, setTool] = useState<BoardTool>('pen')
+  const [tool, setTool] = useState<ActiveBoardTool>(variant === 'overlay' ? 'pointer' : 'pen')
   const [color, setColor] = useState<(typeof BOARD_COLORS)[number]>('#10213a')
   const [strokeSize, setStrokeSize] = useState<StrokeSize>('medium')
   const [confirmClear, setConfirmClear] = useState(false)
   const [isDrawing, setIsDrawing] = useState(false)
   const [pendingText, setPendingText] = useState<BoardPoint | null>(null)
   const [textDraft, setTextDraft] = useState('')
+  const [overlayToolsExpanded, setOverlayToolsExpanded] = useState(false)
+  const [boardToolsExpanded, setBoardToolsExpanded] = useState(true)
+  const [overlayDesktopToolsVisible, setOverlayDesktopToolsVisible] = useState(true)
   const manager = isBoardManager(role)
   const canDraw = manager || snapshot.studentCanWrite
+  const drawingEnabled = canDraw && tool !== 'pointer'
 
   const redraw = useCallback((draft?: BoardOperation | null) => {
     const canvas = canvasRef.current
@@ -284,7 +337,7 @@ export function CollaborativeWhiteboard({
   }
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (!canDraw || event.button !== 0) return
+    if (!drawingEnabled || event.button !== 0) return
     const point = pointFromEvent(event)
     if (!point) return
     event.preventDefault()
@@ -356,7 +409,8 @@ export function CollaborativeWhiteboard({
       redraw()
       return
     }
-    onOperation(draft.kind === 'stroke' ? { ...draft, points: [...draft.points] } : draft)
+    const accepted = onOperation(draft.kind === 'stroke' ? { ...draft, points: [...draft.points] } : draft)
+    if (accepted === false) redraw()
   }
 
   const cancelStroke = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -382,7 +436,7 @@ export function CollaborativeWhiteboard({
   const commitText = () => {
     const text = textDraft.trim()
     if (!pendingText || !text || !canDraw) return
-    onOperation({
+    const accepted = onOperation({
       id: createBoardId('text'),
       kind: 'text',
       point: pendingText,
@@ -392,14 +446,16 @@ export function CollaborativeWhiteboard({
       authorRole: role,
       createdAt: Date.now(),
     })
-    setPendingText(null)
-    setTextDraft('')
+    if (accepted !== false) {
+      setPendingText(null)
+      setTextDraft('')
+    }
   }
 
   const saveLabel = !manager
     ? pendingOperationCount > 0
-      ? `${pendingOperationCount} nét đang chờ gia sư kết nối để đồng bộ`
-      : 'Đồng bộ qua gia sư · bản chính thức do gia sư lưu'
+      ? `${pendingOperationCount} nét đang chờ đồng bộ`
+      : `Đã đồng bộ phiên bản ${snapshot.version}`
     : saveStatus === 'saving'
       ? 'Đang lưu'
       : saveStatus === 'error'
@@ -428,6 +484,261 @@ export function CollaborativeWhiteboard({
         return { left, top }
       })()
     : null
+
+  const chooseOverlayTool = (nextTool: ActiveBoardTool) => {
+    draftRef.current = null
+    setIsDrawing(false)
+    setPendingText(null)
+    setTextDraft('')
+    setTool(nextTool)
+    redraw()
+  }
+
+  const renderOverlayControls = () => (
+    <div className="flex min-w-max items-center gap-1.5 p-1.5 md:min-w-0">
+      <div className="flex shrink-0 items-center gap-1 rounded-xl bg-white/5 p-1">
+        {(Object.keys(OVERLAY_TOOL_META) as ActiveBoardTool[]).map((item) => {
+          const { Icon, label } = OVERLAY_TOOL_META[item]
+          return (
+            <OverlayToolButton
+              key={item}
+              active={tool === item}
+              disabled={!canDraw && item !== 'pointer'}
+              label={label}
+              onClick={() => chooseOverlayTool(item)}
+            >
+              <Icon className="h-4 w-4" />
+            </OverlayToolButton>
+          )
+        })}
+      </div>
+
+      {tool !== 'eraser' && tool !== 'pointer' && (
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label="Chọn màu chú thích">
+          {BOARD_COLORS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setColor(item)}
+              disabled={!canDraw}
+              aria-label={`Chọn màu ${item}`}
+              title={`Màu ${item}`}
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9 md:rounded-lg"
+            >
+              <span className="h-5 w-5 rounded-full border border-white/25" style={{ backgroundColor: item }} />
+              {color === item && <Check className={`absolute h-3 w-3 ${item === '#10213a' || item === '#2563eb' || item === '#dc2626' || item === '#9333ea' ? 'text-white' : 'text-slate-950'}`} />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tool !== 'pointer' && (
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label="Chọn độ dày nét chú thích">
+          {(['thin', 'medium', 'thick'] as StrokeSize[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setStrokeSize(item)}
+              disabled={!canDraw}
+              aria-label={`Độ dày ${item === 'thin' ? 'mảnh' : item === 'medium' ? 'vừa' : 'đậm'}`}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9 md:rounded-lg ${strokeSize === item ? 'bg-amber-300 text-slate-950' : 'hover:bg-white/10'}`}
+            >
+              <span className="rounded-full bg-current" style={{ width: WIDTHS.pen[item] + 3, height: WIDTHS.pen[item] + 3 }} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+        {manager ? (
+          <OverlayToolButton
+            active={!snapshot.studentCanWrite}
+            label={snapshot.studentCanWrite ? 'Khóa quyền viết của học viên' : 'Mở quyền viết cho học viên'}
+            onClick={() => onStudentCanWriteChange(!snapshot.studentCanWrite)}
+          >
+            {snapshot.studentCanWrite ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+          </OverlayToolButton>
+        ) : (
+          <span className={`inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold md:h-9 md:rounded-lg ${snapshot.studentCanWrite ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-slate-300'}`}>
+            {snapshot.studentCanWrite ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {snapshot.studentCanWrite ? 'Được viết' : 'Chỉ xem'}
+          </span>
+        )}
+
+        {manager && (
+          <>
+            <OverlayToolButton label="Hoàn tác" onClick={onUndo} disabled={!canUndo}>
+              <Undo2 className="h-4 w-4" />
+            </OverlayToolButton>
+            <OverlayToolButton label="Làm lại" onClick={onRedo} disabled={!canRedo}>
+              <Redo2 className="h-4 w-4" />
+            </OverlayToolButton>
+            {!confirmClear ? (
+              <OverlayToolButton label="Xóa toàn bộ chú thích" onClick={() => setConfirmClear(true)} danger>
+                <Trash2 className="h-4 w-4" />
+              </OverlayToolButton>
+            ) : (
+              <div className="flex h-11 shrink-0 items-center gap-1 rounded-xl border border-rose-400/30 bg-rose-500/15 px-1 md:h-9 md:rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClear()
+                    setConfirmClear(false)
+                  }}
+                  className="h-9 rounded-lg px-2 text-xs font-extrabold text-rose-100 hover:bg-rose-400/20 focus:outline-none focus:ring-2 focus:ring-rose-300 md:h-7"
+                >
+                  Xác nhận xóa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  aria-label="Hủy xóa chú thích"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300 md:h-7 md:w-7"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <OverlayToolButton label="Lưu chú thích ngay" onClick={onSave}>
+              {saveStatus === 'saving' ? <RotateCcw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            </OverlayToolButton>
+          </>
+        )}
+      </div>
+    </div>
+  )
+
+  if (variant === 'overlay') {
+    const ActiveToolIcon = OVERLAY_TOOL_META[tool].Icon
+    return (
+      <section
+        className="pointer-events-none relative h-full min-h-0 w-full overflow-visible bg-transparent"
+        aria-label="Lớp chú thích trên màn hình chia sẻ"
+        onKeyDown={handleKeyboard}
+      >
+        {overlayDesktopToolsVisible ? (
+          <div className="pointer-events-auto absolute left-1/2 top-3 z-20 hidden max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center rounded-2xl border border-white/15 bg-slate-950/92 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
+            <div className="min-w-0 overflow-x-auto">{renderOverlayControls()}</div>
+            <button
+              type="button"
+              onClick={() => setOverlayDesktopToolsVisible(false)}
+              aria-label="Thu gọn công cụ chú thích"
+              title="Thu gọn công cụ"
+              className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-amber-300"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOverlayDesktopToolsVisible(true)}
+            className="pointer-events-auto absolute left-1/2 top-3 z-20 hidden min-h-10 -translate-x-1/2 items-center gap-2 rounded-xl border border-white/15 bg-slate-950/92 px-3 text-xs font-extrabold text-white shadow-xl backdrop-blur-xl hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300 md:flex"
+          >
+            <PenLine className="h-4 w-4 text-amber-300" />
+            Hiện công cụ viết
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        )}
+
+        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-20 md:hidden">
+          <div className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950/94 text-white shadow-2xl shadow-black/50 backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setOverlayToolsExpanded((current) => !current)}
+              aria-expanded={overlayToolsExpanded}
+              className="flex min-h-12 w-full items-center justify-between gap-3 px-3 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-amber-300"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tool === 'pointer' ? 'bg-white/10 text-white' : 'bg-amber-300 text-slate-950'}`}>
+                  <ActiveToolIcon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-black">Công cụ chú thích</span>
+                  <span className="block truncate text-[10px] font-semibold text-slate-300">{OVERLAY_TOOL_META[tool].label} · {saveLabel}</span>
+                </span>
+              </span>
+              {overlayToolsExpanded ? <ChevronDown className="h-5 w-5 shrink-0" /> : <ChevronUp className="h-5 w-5 shrink-0" />}
+            </button>
+            {overlayToolsExpanded && (
+              <div className="max-h-[52dvh] overflow-auto border-t border-white/10">
+                {renderOverlayControls()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div ref={canvasShellRef} className="absolute inset-0 overflow-hidden bg-transparent">
+          <canvas
+            ref={canvasRef}
+            className={`block h-full w-full select-none ${drawingEnabled ? 'pointer-events-auto cursor-crosshair touch-none' : 'pointer-events-none cursor-default'}`}
+            aria-label={drawingEnabled ? 'Vùng chú thích trên màn hình chia sẻ' : tool === 'pointer' ? 'Chế độ con trỏ, không tạo nét mới' : 'Chú thích đang ở chế độ chỉ xem'}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={finishStroke}
+            onPointerCancel={cancelStroke}
+          />
+
+          {!canDraw && (
+            <div className="pointer-events-none absolute bottom-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 text-xs font-extrabold text-white shadow-lg backdrop-blur md:bottom-4">
+              <Lock className="h-3.5 w-3.5" />
+              Gia sư đang khóa quyền viết
+            </div>
+          )}
+
+          {pendingText && canDraw && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                commitText()
+              }}
+              className="pointer-events-auto absolute z-30 w-64 rounded-2xl border border-amber-300/40 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur-xl"
+              style={{
+                width: 'min(16rem, calc(100% - 1.5rem))',
+                left: `${textEditorPosition?.left ?? 12}px`,
+                top: `${textEditorPosition?.top ?? 12}px`,
+              }}
+            >
+              <label htmlFor="classroom-overlay-text" className="text-xs font-extrabold text-slate-100">Nội dung cần thêm</label>
+              <textarea
+                id="classroom-overlay-text"
+                value={textDraft}
+                onChange={(event) => setTextDraft(event.target.value.slice(0, 240))}
+                onKeyDown={(event) => event.stopPropagation()}
+                rows={3}
+                maxLength={240}
+                autoFocus
+                placeholder="Nhập câu hỏi hoặc câu trả lời"
+                className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-slate-400 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20"
+              />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold text-slate-400">{textDraft.length}/240</span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingText(null)
+                      setTextDraft('')
+                    }}
+                    className="min-h-9 rounded-lg px-3 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!textDraft.trim()}
+                    className="min-h-9 rounded-lg bg-amber-300 px-3 text-xs font-black text-slate-950 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Thêm chữ
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -468,9 +779,22 @@ export function CollaborativeWhiteboard({
                 <span className="hidden sm:inline">{snapshot.studentCanWrite ? 'Học viên được viết' : 'Đã khóa học viên'}</span>
               </ToolButton>
             )}
+            <button
+              type="button"
+              onClick={() => setBoardToolsExpanded((current) => !current)}
+              aria-expanded={boardToolsExpanded}
+              aria-label={boardToolsExpanded ? 'Ẩn công cụ bảng trắng' : 'Hiện công cụ bảng trắng'}
+              title={boardToolsExpanded ? 'Ẩn công cụ' : 'Hiện công cụ'}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
+            >
+              {boardToolsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              <span className="hidden sm:inline">{boardToolsExpanded ? 'Ẩn công cụ' : 'Hiện công cụ'}</span>
+            </button>
+            {headerActions}
           </div>
         </div>
 
+        {boardToolsExpanded && (
         <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Công cụ bảng học">
           <div className="flex shrink-0 items-center gap-1 rounded-2xl bg-slate-100 p-1">
             {(Object.keys(TOOL_META) as BoardTool[]).map((item) => {
@@ -564,6 +888,7 @@ export function CollaborativeWhiteboard({
             </div>
           )}
         </div>
+        )}
       </header>
 
       <div ref={canvasShellRef} className="relative min-h-0 flex-1 overflow-hidden bg-white">

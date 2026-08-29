@@ -14,11 +14,18 @@ export type OnlineClassroomTargetType = 'teacher' | 'student'
 
 export type ClassroomBoardSnapshot = {
   version: number
+  generation?: number
   studentCanWrite: boolean
   operations: unknown[]
 }
 
 export type ClassroomBoardDraft = Omit<ClassroomBoardSnapshot, 'version'>
+
+export type OnlineClassroomScreenAnnotationSession = {
+  sessionId: string
+  active: boolean
+  boardSnapshot: ClassroomBoardSnapshot
+}
 
 export type OnlineClassroomRecordingConsent = {
   requestId: string
@@ -48,6 +55,7 @@ export type OnlineClassroomAccess = {
   requestedEnd: string
   curriculumLink: string
   boardSnapshot: ClassroomBoardSnapshot
+  screenAnnotationSession: OnlineClassroomScreenAnnotationSession | null
   recordingNotice: {
     active: true
     recordingId: string
@@ -90,7 +98,7 @@ const saveBoardCallable = httpsCallable<
 >(functions, 'saveOnlineClassroomBoard')
 
 const appendBoardOperationCallable = httpsCallable<
-  { bookingId: string; token?: string; operation: unknown },
+  { bookingId: string; token?: string; expectedGeneration: number; operation: unknown },
   {
     success: boolean
     appended: boolean
@@ -99,6 +107,37 @@ const appendBoardOperationCallable = httpsCallable<
     boardSnapshot: ClassroomBoardSnapshot
   }
 >(functions, 'appendOnlineClassroomBoardOperation')
+
+const beginScreenAnnotationCallable = httpsCallable<
+  { bookingId: string },
+  { success: boolean; unchanged: boolean; screenAnnotationSession: OnlineClassroomScreenAnnotationSession }
+>(functions, 'beginOnlineClassroomScreenAnnotation')
+
+const appendScreenAnnotationOperationCallable = httpsCallable<
+  { bookingId: string; sessionId: string; token?: string; expectedGeneration: number; operation: unknown },
+  {
+    success: boolean
+    appended: boolean
+    duplicate: boolean
+    version: number
+    screenAnnotationSession: OnlineClassroomScreenAnnotationSession
+  }
+>(functions, 'appendOnlineClassroomScreenAnnotationOperation')
+
+const saveScreenAnnotationCallable = httpsCallable<
+  {
+    bookingId: string
+    sessionId: string
+    expectedVersion: number
+    boardSnapshot: ClassroomBoardDraft
+  },
+  { success: boolean; version: number; unchanged: boolean; screenAnnotationSession: OnlineClassroomScreenAnnotationSession }
+>(functions, 'saveOnlineClassroomScreenAnnotation')
+
+const endScreenAnnotationCallable = httpsCallable<
+  { bookingId: string; sessionId: string },
+  { success: boolean; screenAnnotationSession: OnlineClassroomScreenAnnotationSession }
+>(functions, 'endOnlineClassroomScreenAnnotation')
 
 const requestRecordingConsentCallable = httpsCallable<
   { bookingId: string },
@@ -142,9 +181,53 @@ export async function saveOnlineClassroomBoard(
 export async function appendOnlineClassroomBoardOperation(
   bookingId: string,
   operation: unknown,
+  expectedGeneration: number,
   token?: string,
 ) {
-  return (await appendBoardOperationCallable({ bookingId, operation, ...(token ? { token } : {}) })).data
+  return (await appendBoardOperationCallable({
+    bookingId,
+    operation,
+    expectedGeneration,
+    ...(token ? { token } : {}),
+  })).data
+}
+
+export async function beginOnlineClassroomScreenAnnotation(bookingId: string) {
+  return (await beginScreenAnnotationCallable({ bookingId })).data.screenAnnotationSession
+}
+
+export async function appendOnlineClassroomScreenAnnotationOperation(
+  bookingId: string,
+  sessionId: string,
+  operation: unknown,
+  expectedGeneration: number,
+  token?: string,
+) {
+  return (await appendScreenAnnotationOperationCallable({
+    bookingId,
+    sessionId,
+    operation,
+    expectedGeneration,
+    ...(token ? { token } : {}),
+  })).data.screenAnnotationSession
+}
+
+export async function saveOnlineClassroomScreenAnnotation(
+  bookingId: string,
+  sessionId: string,
+  expectedVersion: number,
+  boardSnapshot: ClassroomBoardDraft,
+) {
+  return (await saveScreenAnnotationCallable({
+    bookingId,
+    sessionId,
+    expectedVersion,
+    boardSnapshot,
+  })).data.screenAnnotationSession
+}
+
+export async function endOnlineClassroomScreenAnnotation(bookingId: string, sessionId: string) {
+  return (await endScreenAnnotationCallable({ bookingId, sessionId })).data.screenAnnotationSession
 }
 
 export async function requestOnlineClassroomRecordingConsent(bookingId: string) {
