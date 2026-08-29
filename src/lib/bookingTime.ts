@@ -8,6 +8,12 @@ export interface BookingIntervalLike {
 const MINUTES_PER_DAY = 24 * 60
 const MAX_BOOKING_MINUTES = 100
 const VALID_BOOKING_MINUTES = new Set([25, 50, 75, 100])
+const VIETNAM_OFFSET_MINUTES = 7 * 60
+
+export type OnlineClassroomMeetingTimer = {
+  durationSeconds: number
+  elapsedSeconds: number
+}
 
 export function bookingTimeToMinutes(value?: string) {
   if (!value) return Number.NaN
@@ -84,4 +90,35 @@ export function bookingIntervalsOverlap(first: BookingIntervalLike, second: Book
 
   // Half-open intervals allow adjacent classes, including across midnight.
   return firstStart < secondEnd && secondStart < firstEnd
+}
+
+/**
+ * Đồng hồ JaaS dùng giây nhưng lịch của hệ thống lưu theo giờ Việt Nam, kể cả
+ * mốc 24:xx/25:xx. Dùng cùng parser với booking để hai phía không lệch ngày.
+ */
+export function onlineClassroomMeetingTimer(
+  booking: BookingIntervalLike,
+  nowMs: number,
+): OnlineClassroomMeetingTimer {
+  const startMinutes = bookingIntervalStartInMinutes(booking)
+  const endMinutes = bookingIntervalEndInMinutes(booking)
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) {
+    return { durationSeconds: 0, elapsedSeconds: 0 }
+  }
+
+  const scheduledStartMs = (startMinutes - VIETNAM_OFFSET_MINUTES) * 60_000
+  return {
+    durationSeconds: Math.floor((endMinutes - startMinutes) * 60),
+    elapsedSeconds: Math.max(0, Math.floor((nowMs - scheduledStartMs) / 1_000)),
+  }
+}
+
+export function formatClassroomElapsed(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(Number.isFinite(totalSeconds) ? totalSeconds : 0))
+  const hours = Math.floor(safeSeconds / 3_600)
+  const minutes = Math.floor((safeSeconds % 3_600) / 60)
+  const seconds = safeSeconds % 60
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }

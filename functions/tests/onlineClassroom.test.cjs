@@ -6,6 +6,7 @@ const {
   canAcquireOnlineClassroomCredentialMutation,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
+  decideOnlineClassroomInviteIssuance,
   decideOnlineClassroomScreenAnnotationSessionMutation,
   isInsideOnlineClassroomJoinWindow,
   isSafeOnlineClassroomScreenAnnotationSessionId,
@@ -148,6 +149,33 @@ test('quyền gia sư chỉ hợp lệ khi UID khớp liên kết chuẩn trên 
     ),
     null,
   )
+})
+
+test('chỉ Admin hoặc gia sư chuẩn được phân công mới cấp link học viên', () => {
+  const canonicalTeacher = resolveOnlineClassroomTrustedActor(
+    'teacher-uid',
+    { role: 'teacher', teacherId: 'teacher-a' },
+    { loginAccountUid: 'teacher-uid' },
+  )
+  const forgedTeacher = resolveOnlineClassroomTrustedActor(
+    'attacker-uid',
+    { role: 'teacher', teacherId: 'teacher-a' },
+    { loginAccountUid: 'teacher-uid' },
+  )
+  const insideWindow = Date.parse('2026-08-27T10:00:00.000Z')
+  const beforeWindow = Date.parse('2026-08-26T22:59:00.000Z')
+
+  assert.equal(decideOnlineClassroomInviteIssuance({ role: 'admin' }, confirmed, beforeWindow), 'allowed')
+  assert.equal(decideOnlineClassroomInviteIssuance(canonicalTeacher, confirmed, insideWindow), 'allowed')
+  assert.equal(
+    decideOnlineClassroomInviteIssuance(canonicalTeacher, { ...confirmed, teacherId: 'teacher-b' }, insideWindow),
+    'teacher-not-assigned',
+  )
+  assert.equal(
+    decideOnlineClassroomInviteIssuance(canonicalTeacher, confirmed, beforeWindow),
+    'outside-join-window',
+  )
+  assert.equal(decideOnlineClassroomInviteIssuance(forgedTeacher, confirmed, insideWindow), 'untrusted-actor')
 })
 
 test('token cũ bị vô hiệu khi booking đổi ngày, môn hoặc gia sư', () => {

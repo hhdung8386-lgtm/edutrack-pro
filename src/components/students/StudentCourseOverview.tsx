@@ -448,7 +448,40 @@ export function StudentCourseOverview({
 
       <section className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-[0_22px_60px_-46px_rgba(5,150,105,0.5)]">
         <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50/60 px-4 py-3.5 sm:px-5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 ring-1 ring-emerald-100"><Trophy className="h-4.5 w-4.5" /></span><h3 className="font-extrabold text-slate-950">Đã hoàn thành</h3><span className="rounded-md bg-white px-2 py-0.5 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">{completedRows.length}</span></div>
-        {completedRows.length > 0 ? <div className="divide-y divide-slate-100">{completedRows.map((row) => <article key={row.subject.subjectId} className="grid gap-4 px-4 py-4 sm:grid-cols-[1.5fr_1fr_1fr_auto] sm:items-center sm:px-5"><CourseIdentity subject={row.subject} paymentCount={row.payments.length} /><div><p className="text-[11px] font-bold text-slate-400">Tổng thời lượng</p><Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} /></div><div><p className="text-[11px] font-bold text-slate-400">Hoàn thành</p><p className="mt-1 text-sm font-extrabold text-emerald-700">{row.completedAt}</p></div><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300">Xem chi tiết<ChevronRight className="h-4 w-4" /></button></article>)}</div> : <div className="px-5 py-7 text-center text-sm font-medium text-slate-500">Chưa có khóa học đã hoàn thành.</div>}
+        {completedRows.length > 0 ? (
+          <div className="divide-y divide-slate-100">
+            {completedRows.map((row) => (
+              <article key={row.subject.subjectId} className="grid gap-4 px-4 py-4 sm:grid-cols-[1.5fr_1fr_1fr_auto] sm:items-center sm:px-5">
+                <CourseIdentity subject={row.subject} paymentCount={row.payments.length} />
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400">Tổng thời lượng</p>
+                  <Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400">Hoàn thành</p>
+                  <p className="mt-1 text-sm font-extrabold text-emerald-700">{row.completedAt}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onAddRights(row.subject.subjectId)}
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    aria-label={`Cộng thêm quyền học cho ${row.subject.subjectName}`}
+                  >
+                    <CirclePlus className="h-4 w-4" />Cộng thêm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailSubjectId(row.subject.subjectId)}
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                  >
+                    Xem chi tiết<ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : <div className="px-5 py-7 text-center text-sm font-medium text-slate-500">Chưa có khóa học đã hoàn thành.</div>}
       </section>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-[11px] font-medium text-slate-500"><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-indigo-500" />Phút = thời lượng học thực tế</span><span className="inline-flex items-center gap-1.5"><DiamondPointsIcon className="h-3.5 w-3.5" />Kim cương = quỹ dùng để đặt và duyệt buổi</span></div>

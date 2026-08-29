@@ -3,6 +3,7 @@ import {
   createPrivateKey,
   randomBytes,
   sign,
+  timingSafeEqual,
   type KeyObject,
 } from 'node:crypto'
 
@@ -12,7 +13,14 @@ export const ONLINE_CLASSROOM_PUBLIC_JITSI_DOMAIN = 'meet.jit.si'
 // reconnects. The token is still constrained to one literal room, while the
 // application continues to revalidate booking/pilot access independently.
 export const ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS = 3 * 60 * 60
+export const ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS = Object.freeze({
+  lobbyEnabled: true as const,
+  lobbyType: 'WAIT_FOR_APPROVAL' as const,
+  maxOccupants: 4 as const,
+})
 const ONLINE_CLASSROOM_JAAS_CLOCK_SKEW_SECONDS = 10
+const ONLINE_CLASSROOM_JAAS_APP_ID_PATTERN = /^vpaas-magic-cookie-[A-Za-z0-9_-]{16,128}$/
+const ONLINE_CLASSROOM_JAAS_ROOM_ALIAS_PATTERN = /^[A-Za-z0-9_-]{1,200}$/
 
 export type OnlineClassroomMeetingProvider = 'public-jitsi' | 'jaas'
 export type OnlineClassroomMeetingRole = 'admin' | 'teacher' | 'student'
@@ -34,6 +42,18 @@ export type OnlineClassroomMeetingConfig =
   | OnlineClassroomPublicJitsiConfig
   | OnlineClassroomJaasConfig
 
+export type OnlineClassroomJaasProvisioningDecision =
+  | {
+    ok: true
+    status: 200
+    body: typeof ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS
+  }
+  | {
+    ok: false
+    status: 400 | 401 | 403 | 405 | 503
+    body: { error: string }
+  }
+
 export type OnlineClassroomJaasConfigurationReason =
   | 'JAAS_CONFIG_PARTIAL'
   | 'JAAS_APP_ID_INVALID'
@@ -51,6 +71,72 @@ export class OnlineClassroomJaasConfigurationError extends Error {
 
 function optionalConfigValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * The JaaS Console sends the configured Authorization value verbatim. An
+ * empty server-side value intentionally makes this check optional, while a
+ * configured value is compared without data-dependent byte comparisons.
+ */
+export function onlineClassroomJaasWebhookAuthorizationMatches(
+  configuredAuthorization: unknown,
+  providedAuthorization: unknown,
+): boolean {
+  const configured = optionalConfigValue(configuredAuthorization)
+  if (!configured) return true
+  const provided = optionalConfigValue(providedAuthorization)
+  const configuredBytes = Buffer.from(configured, 'utf8')
+  const providedBytes = Buffer.from(provided, 'utf8')
+  return configuredBytes.length === providedBytes.length
+    && timingSafeEqual(configuredBytes, providedBytes)
+}
+
+export function resolveOnlineClassroomJaasSettingsProvisioning(input: {
+  method?: unknown
+  appId?: unknown
+  configuredAuthorization?: unknown
+  providedAuthorization?: unknown
+  body?: unknown
+}): OnlineClassroomJaasProvisioningDecision {
+  if (input.method !== 'POST') {
+    return { ok: false, status: 405, body: { error: 'method-not-allowed' } }
+  }
+
+  const appId = optionalConfigValue(input.appId)
+  if (!ONLINE_CLASSROOM_JAAS_APP_ID_PATTERN.test(appId)) {
+    return { ok: false, status: 503, body: { error: 'jaas-app-not-configured' } }
+  }
+  if (!onlineClassroomJaasWebhookAuthorizationMatches(
+    input.configuredAuthorization,
+    input.providedAuthorization,
+  )) {
+    return { ok: false, status: 401, body: { error: 'unauthorized' } }
+  }
+  if (!isRecord(input.body) || typeof input.body.fqn !== 'string') {
+    return { ok: false, status: 400, body: { error: 'invalid-payload' } }
+  }
+
+  const fqn = input.body.fqn.trim()
+  const separatorIndex = fqn.indexOf('/')
+  const requestedAppId = separatorIndex > 0 ? fqn.slice(0, separatorIndex) : ''
+  const roomAlias = separatorIndex > 0 ? fqn.slice(separatorIndex + 1) : ''
+  if (!ONLINE_CLASSROOM_JAAS_APP_ID_PATTERN.test(requestedAppId)
+    || !ONLINE_CLASSROOM_JAAS_ROOM_ALIAS_PATTERN.test(roomAlias)) {
+    return { ok: false, status: 400, body: { error: 'invalid-fqn' } }
+  }
+  if (requestedAppId !== appId) {
+    return { ok: false, status: 403, body: { error: 'fqn-not-allowed' } }
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    body: ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS,
+  }
 }
 
 function normalizedPrivateKey(value: string): string {
@@ -97,7 +183,7 @@ export function resolveOnlineClassroomMeetingConfig(input: {
   if (configuredValues !== 3) {
     throw new OnlineClassroomJaasConfigurationError('JAAS_CONFIG_PARTIAL')
   }
-  if (!/^vpaas-magic-cookie-[A-Za-z0-9_-]{16,128}$/.test(appId)) {
+  if (!ONLINE_CLASSROOM_JAAS_APP_ID_PATTERN.test(appId)) {
     throw new OnlineClassroomJaasConfigurationError('JAAS_APP_ID_INVALID')
   }
 
@@ -119,7 +205,7 @@ export function resolveOnlineClassroomMeetingConfig(input: {
 
 function validatedRoomAlias(roomAlias: string): string {
   const normalized = roomAlias.trim()
-  if (!/^[A-Za-z0-9_-]{1,200}$/.test(normalized)) {
+  if (!ONLINE_CLASSROOM_JAAS_ROOM_ALIAS_PATTERN.test(normalized)) {
     throw new OnlineClassroomJaasConfigurationError('JAAS_ROOM_ALIAS_INVALID')
   }
   return normalized

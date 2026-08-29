@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, RotateCcw, Video } from 'lucide-react'
 import type { JitsiEventHandler, JitsiExternalApi } from '@/lib/jitsiExternalApi'
 import {
+  jitsiClassroomToolbarButtons,
+  parseJitsiKnockingParticipant,
+  type JitsiKnockingParticipant,
+} from '@/lib/jitsiClassroomControls'
+import {
   resolveJitsiLaunchConfig,
   type OnlineClassroomMeetingProvider,
 } from '@/lib/jitsiMeeting'
@@ -13,6 +18,8 @@ export type JitsiScreenShareState = {
   local: boolean
   participantIds: string[]
 }
+
+export type { JitsiKnockingParticipant } from '@/lib/jitsiClassroomControls'
 
 type JitsiConstructor = new (
   domain: string,
@@ -44,10 +51,15 @@ type JitsiClassroomProps = {
   displayName: string
   observerMode?: boolean
   canShareScreen?: boolean
+  manageWaitingRoom?: boolean
+  scheduledDurationSeconds?: number
+  scheduledElapsedSeconds?: number
   onApiReady?: (api: JitsiExternalApi | null) => void
   onConferenceJoined?: (participantId: string) => void
   onParticipantJoined?: (participantId: string) => void
   onParticipantLeft?: (participantId: string) => void
+  onWaitingRoomReadyChange?: (ready: boolean) => void
+  onKnockingParticipant?: (participant: JitsiKnockingParticipant) => void
   onDataChannelOpened?: () => void
   onTextMessage?: (text: string, senderId: string) => void
   onScreenShareStateChange?: (state: JitsiScreenShareState) => void
@@ -191,10 +203,15 @@ export function JitsiClassroom({
   displayName,
   observerMode = false,
   canShareScreen = false,
+  manageWaitingRoom = false,
+  scheduledDurationSeconds = 0,
+  scheduledElapsedSeconds = 0,
   onApiReady,
   onConferenceJoined,
   onParticipantJoined,
   onParticipantLeft,
+  onWaitingRoomReadyChange,
+  onKnockingParticipant,
   onDataChannelOpened,
   onTextMessage,
   onScreenShareStateChange,
@@ -208,6 +225,8 @@ export function JitsiClassroom({
     onConferenceJoined,
     onParticipantJoined,
     onParticipantLeft,
+    onWaitingRoomReadyChange,
+    onKnockingParticipant,
     onDataChannelOpened,
     onTextMessage,
     onScreenShareStateChange,
@@ -232,6 +251,8 @@ export function JitsiClassroom({
       onConferenceJoined,
       onParticipantJoined,
       onParticipantLeft,
+      onWaitingRoomReadyChange,
+      onKnockingParticipant,
       onDataChannelOpened,
       onTextMessage,
       onScreenShareStateChange,
@@ -239,7 +260,7 @@ export function JitsiClassroom({
       onEnded,
       onError,
     }
-  }, [onApiReady, onConferenceJoined, onParticipantJoined, onParticipantLeft, onDataChannelOpened, onTextMessage, onScreenShareStateChange, onConnectionStateChange, onEnded, onError])
+  }, [onApiReady, onConferenceJoined, onParticipantJoined, onParticipantLeft, onWaitingRoomReadyChange, onKnockingParticipant, onDataChannelOpened, onTextMessage, onScreenShareStateChange, onConnectionStateChange, onEnded, onError])
 
   useEffect(() => {
     if (!hasStarted) return
@@ -258,20 +279,12 @@ export function JitsiClassroom({
     let lastScreenShareState: JitsiScreenShareState | null = null
     let presentationLayoutActive = false
     let focusedPresenterId = ''
-    let desktopModerationEnabled = false
-    let desktopModerationAttempts = 0
-    let desktopModerationRetryTimer: number | null = null
+    let waitingRoomReady = false
 
     const clearLoadTimeout = () => {
       if (loadTimeout === null) return
       window.clearTimeout(loadTimeout)
       loadTimeout = null
-    }
-
-    const clearDesktopModerationRetry = () => {
-      if (desktopModerationRetryTimer === null) return
-      window.clearTimeout(desktopModerationRetryTimer)
-      desktopModerationRetryTimer = null
     }
 
     const updateState = (nextState: JitsiConnectionState) => {
@@ -377,7 +390,8 @@ export function JitsiClassroom({
     }
 
     const disposeConference = () => {
-      clearDesktopModerationRetry()
+      if (waitingRoomReady) callbackRef.current.onWaitingRoomReadyChange?.(false)
+      waitingRoomReady = false
       resetScreenShareState()
       removeListeners()
       const currentApi = api
@@ -436,23 +450,16 @@ export function JitsiClassroom({
       callbackRef.current.onError?.(message)
     }
 
-    const enforceDesktopSharingModeration = () => {
-      if (!api || desktopModerationEnabled || (!canShareScreen && !observerMode)) return
+    const enableWaitingRoomForModerator = () => {
+      if (!api || !manageWaitingRoom || waitingRoomReady) return
       try {
-        // JaaS release 8717 adds the desktop media type to moderation. Keeping
-        // this server-mediated guard on means a student cannot bypass the
-        // hidden toolbar simply by invoking the embedded API themselves.
-        api.executeCommand('toggleModeration', true, 'desktop')
-        desktopModerationAttempts += 1
-        clearDesktopModerationRetry()
-        if (desktopModerationAttempts < 3) {
-          desktopModerationRetryTimer = window.setTimeout(() => {
-            desktopModerationRetryTimer = null
-            enforceDesktopSharingModeration()
-          }, 1_200)
-        }
+        // SETTINGS_PROVISIONING bật lobby từ phía JaaS. Lệnh idempotent này là
+        // lớp dự phòng cho pilot và chỉ chạy sau khi JWT được xác nhận moderator.
+        api.executeCommand('toggleLobby', true)
+        waitingRoomReady = true
+        callbackRef.current.onWaitingRoomReadyChange?.(true)
       } catch {
-        // Public/older Jitsi deployments may not expose desktop moderation.
+        callbackRef.current.onWaitingRoomReadyChange?.(false)
       }
     }
 
@@ -494,20 +501,7 @@ export function JitsiClassroom({
           throw new Error('Trình gọi video chưa sẵn sàng. Hãy thử lại.')
         }
 
-        const toolbarButtons = [
-          'microphone',
-          'camera',
-          'chat',
-          'raisehand',
-          'participants-pane',
-          'tileview',
-          'closedcaptions',
-          'select-background',
-          'videoquality',
-          'settings',
-          'shortcuts',
-          'hangup',
-        ]
+        const toolbarButtons = jitsiClassroomToolbarButtons(canShareScreen)
 
         api = new ExternalApi(launch.constructorDomain, {
           roomName: launch.roomName,
@@ -540,6 +534,7 @@ export function JitsiClassroom({
               hideMuteAllButton: true,
             },
             prejoinConfig: { enabled: true, hideDisplayName: true },
+            lobby: { autoKnock: true, enableChat: false },
             toolbarButtons,
           },
         })
@@ -567,21 +562,24 @@ export function JitsiClassroom({
           localParticipantId = participantId(payload)
           emitScreenShareState()
           callbackRef.current.onConferenceJoined?.(localParticipantId)
-          enforceDesktopSharingModeration()
+          if (scheduledDurationSeconds > 0) {
+            try {
+              api?.executeCommand('setMeetingTimer', {
+                duration: Math.floor(scheduledDurationSeconds),
+                elapsed: Math.max(0, Math.floor(scheduledElapsedSeconds)),
+              })
+            } catch {
+              // Đồng hồ ngoài iframe vẫn hoạt động nếu deployment chưa hỗ trợ.
+            }
+          }
           void refreshContentSharingParticipants()
         })
         addListener('participantRoleChanged', (payload) => {
-          if (isRecord(payload) && payload.role === 'moderator') enforceDesktopSharingModeration()
+          if (isRecord(payload) && payload.role === 'moderator') enableWaitingRoomForModerator()
         })
-        addListener('moderationStatusChanged', (payload) => {
-          if (!isRecord(payload) || payload.mediaType !== 'desktop') return
-          desktopModerationEnabled = payload.enabled === true
-          clearDesktopModerationRetry()
-          if (desktopModerationEnabled) {
-            desktopModerationAttempts = 0
-          } else if (desktopModerationAttempts < 3) {
-            enforceDesktopSharingModeration()
-          }
+        addListener('knockingParticipant', (payload) => {
+          const participant = parseJitsiKnockingParticipant(payload)
+          if (participant) callbackRef.current.onKnockingParticipant?.(participant)
         })
         addListener('participantJoined', (payload) => {
           const id = participantId(payload)
@@ -661,10 +659,9 @@ export function JitsiClassroom({
     return () => {
       disposed = true
       clearLoadTimeout()
-      clearDesktopModerationRetry()
       disposeConference()
     }
-  }, [attempt, canShareScreen, displayName, hasStarted, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
+  }, [attempt, canShareScreen, displayName, hasStarted, manageWaitingRoom, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName, scheduledDurationSeconds, scheduledElapsedSeconds])
 
   const startConference = () => {
     setErrorMessage('')

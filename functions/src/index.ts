@@ -65,6 +65,8 @@ export {
 
 export { cleanupOnlineClassroomEphemeralData } from './onlineClassroomEphemeralCleanup'
 
+export { onlineClassroomJaasSettingsProvisioning } from './onlineClassroomProvisioningFunctions'
+
 initializeApp()
 
 const db = new Firestore()

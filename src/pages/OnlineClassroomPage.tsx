@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleStop,
+  Clock3,
   Copy,
   ExternalLink,
   FileVideo2,
@@ -20,6 +21,9 @@ import {
   PenLine,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
+  UserCheck,
+  UserX,
   Video,
   Wifi,
   WifiOff,
@@ -32,6 +36,7 @@ import {
 } from '@/components/classroom/ClassroomGiftExperience'
 import {
   JitsiClassroom,
+  type JitsiKnockingParticipant,
   type JitsiConnectionState,
 } from '@/components/classroom/JitsiClassroom'
 import { Logo } from '@/components/shared/Logo'
@@ -61,6 +66,7 @@ import {
   readClassroomToken,
   rememberClassroomToken,
   removeClassroomTokenFromAddressBar,
+  issueOnlineClassroomInvite,
   requestOnlineClassroomRecordingConsent,
   requestOnlineClassroomAccess,
   respondOnlineClassroomRecordingConsent,
@@ -69,6 +75,7 @@ import {
   type OnlineClassroomAccess,
   type OnlineClassroomScreenAnnotationSession,
 } from '@/lib/onlineClassroom'
+import { formatClassroomElapsed, onlineClassroomMeetingTimer } from '@/lib/bookingTime'
 import { toast } from '@/stores/toastStore'
 import { broadcastJitsiTextMessage, type JitsiExternalApi } from '@/lib/jitsiExternalApi'
 import {
@@ -300,6 +307,11 @@ export function OnlineClassroomPage() {
   const [connectionState, setConnectionState] = useState<JitsiConnectionState>('loading')
   const [conferenceJoined, setConferenceJoined] = useState(false)
   const [remoteParticipantCount, setRemoteParticipantCount] = useState(0)
+  const [classroomElapsedSeconds, setClassroomElapsedSeconds] = useState(0)
+  const [waitingRoomReady, setWaitingRoomReady] = useState(false)
+  const [issuingStudentInvite, setIssuingStudentInvite] = useState(false)
+  const [knockingParticipants, setKnockingParticipants] = useState<JitsiKnockingParticipant[]>([])
+  const [scheduledMeetingTimer, setScheduledMeetingTimer] = useState({ durationSeconds: 0, elapsedSeconds: 0 })
   const [activePanel, setActivePanel] = useState<ActivePanel>('video')
   const [revalidationWarning, setRevalidationWarning] = useState('')
   const [syncWarning, setSyncWarning] = useState('')
@@ -354,6 +366,7 @@ export function OnlineClassroomPage() {
   const activeRouteEpochRef = useRef(routeEpoch)
   const fatalAccessErrorRef = useRef('')
   const conferenceJoinedRef = useRef(false)
+  const classroomStartedAtRef = useRef<number | null>(null)
   const boardRefreshInFlightRef = useRef<BoardRefreshPipeline | null>(null)
   const boardRefreshTimerRef = useRef<number | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -564,6 +577,12 @@ export function OnlineClassroomPage() {
     setRemoteParticipantCount(0)
     setConferenceJoined(false)
     conferenceJoinedRef.current = false
+    classroomStartedAtRef.current = null
+    setClassroomElapsedSeconds(0)
+    setWaitingRoomReady(false)
+    setIssuingStudentInvite(false)
+    setKnockingParticipants([])
+    setScheduledMeetingTimer({ durationSeconds: 0, elapsedSeconds: 0 })
     dataChannelReadyRef.current = false
     try {
       const fragmentOrStoredToken = readClassroomToken(bookingId)
@@ -576,6 +595,7 @@ export function OnlineClassroomPage() {
       removeClassroomTokenFromAddressBar()
       const initialBoard = sanitizeBoardSnapshot(result.boardSnapshot)
       const initialScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
+      setScheduledMeetingTimer(onlineClassroomMeetingTimer(result, Date.now()))
       accessRef.current = result
       boardRef.current = initialBoard
       savedVersionRef.current = initialBoard.version
@@ -605,6 +625,18 @@ export function OnlineClassroomPage() {
     if (!accessMatchesRoute || !access) return
     document.title = `${access.subjectName || 'Lớp học trực tuyến'} | 123English`
   }, [access, accessMatchesRoute])
+
+  useEffect(() => {
+    if (!conferenceJoined) return
+    if (classroomStartedAtRef.current === null) classroomStartedAtRef.current = Date.now()
+    const updateElapsed = () => {
+      const startedAt = classroomStartedAtRef.current
+      if (startedAt !== null) setClassroomElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000))
+    }
+    updateElapsed()
+    const interval = window.setInterval(updateElapsed, 1_000)
+    return () => window.clearInterval(interval)
+  }, [conferenceJoined])
 
   const hydrateExistingRecording = useCallback(async () => {
     const current = accessRef.current
@@ -1358,7 +1390,7 @@ export function OnlineClassroomPage() {
           screenAnnotationRestartAfterEndRef.current = Boolean(
             screenShareStateRef.current.active
             && screenShareStateRef.current.local
-            && accessRef.current?.role === 'teacher',
+            && isBoardManager(accessRef.current?.role || 'student'),
           )
           const ended = sanitizeScreenAnnotationSession(
             await endOnlineClassroomScreenAnnotation(scope.bookingId, session.sessionId),
@@ -1391,7 +1423,7 @@ export function OnlineClassroomPage() {
           && screenAnnotationRestartAfterEndRef.current
           && screenShareStateRef.current.active
           && screenShareStateRef.current.local
-          && accessRef.current?.role === 'teacher') {
+          && isBoardManager(accessRef.current?.role || 'student')) {
           window.setTimeout(() => void restartScreenAnnotationRef.current(), 0)
         }
       }
@@ -1486,7 +1518,7 @@ export function OnlineClassroomPage() {
           && !screenAnnotationSessionRef.current?.active
           && screenShareStateRef.current.active
           && screenShareStateRef.current.local
-          && accessRef.current?.role === 'teacher') {
+          && isBoardManager(accessRef.current?.role || 'student')) {
           window.setTimeout(() => void restartScreenAnnotationRef.current(), 0)
         }
       }
@@ -1510,7 +1542,7 @@ export function OnlineClassroomPage() {
     }
     if (!screenShareStateRef.current.active
       || !screenShareStateRef.current.local
-      || accessRef.current?.role !== 'teacher') return
+      || !isBoardManager(accessRef.current?.role || 'student')) return
 
     const currentShareEpoch = screenShareEpochRef.current
     if (screenAnnotationSessionRef.current?.active
@@ -1599,7 +1631,7 @@ export function OnlineClassroomPage() {
     const currentAccess = accessRef.current
     const shareState = screenShareStateRef.current
     const localParticipantId = localParticipantIdRef.current
-    const localTeacherIsPresenter = currentAccess?.role === 'teacher'
+    const localTeacherIsPresenter = Boolean(currentAccess && isBoardManager(currentAccess.role))
       && shareState.active
       && shareState.local
       && Boolean(localParticipantId)
@@ -1636,12 +1668,12 @@ export function OnlineClassroomPage() {
         void handleEndScreenAnnotation()
       }
     } else {
-      if (normalized.local && !previous.local && accessRef.current?.role === 'teacher') {
+      if (normalized.local && !previous.local && isBoardManager(accessRef.current?.role || 'student')) {
         void restartScreenAnnotationForLocalShare()
         return
       }
       if (screenAnnotationSessionRef.current?.active) return
-      if (normalized.local && accessRef.current?.role === 'teacher') {
+      if (normalized.local && isBoardManager(accessRef.current?.role || 'student')) {
         // Sharing should be one action for the tutor: once Jitsi confirms the
         // local desktop track, open the protected annotation surface too.
         void handleBeginScreenAnnotation(screenShareEpochRef.current)
@@ -1655,13 +1687,59 @@ export function OnlineClassroomPage() {
 
   const handleToggleScreenShare = useCallback(() => {
     const currentAccess = accessRef.current
-    if (currentAccess?.role !== 'teacher') return
+    if (!currentAccess || !isBoardManager(currentAccess.role)) return
     if (connectionStateRef.current !== 'connected' || !jitsiApiRef.current) {
       toast.warning('Hãy vào cuộc gọi trước khi chia sẻ màn hình.')
       return
     }
     setScreenAnnotationError('')
     jitsiApiRef.current.executeCommand('toggleShareScreen')
+  }, [])
+
+  const handleCopyStudentInvite = useCallback(async () => {
+    const currentAccess = accessRef.current
+    if (!currentAccess || !isBoardManager(currentAccess.role)) return
+    if (!conferenceJoinedRef.current || connectionStateRef.current !== 'connected') {
+      toast.warning('Hãy vào cuộc gọi trước khi tạo link học viên.')
+      return
+    }
+    if (!waitingRoomReady) {
+      toast.warning('Phòng chờ đang được bảo vệ. Vui lòng đợi vài giây rồi thử lại.')
+      return
+    }
+    setIssuingStudentInvite(true)
+    try {
+      const joinUrl = await issueOnlineClassroomInvite(currentAccess.bookingId)
+      await navigator.clipboard.writeText(joinUrl)
+      toast.success('Đã sao chép link học viên. Học viên sẽ chờ gia sư cho phép vào lớp.')
+    } catch (error) {
+      toast.error(onlineClassroomErrorMessage(error))
+    } finally {
+      setIssuingStudentInvite(false)
+    }
+  }, [waitingRoomReady])
+
+  const handleAnswerKnockingParticipant = useCallback((participantId: string, approved: boolean) => {
+    if (!participantId || !jitsiApiRef.current || !isBoardManager(accessRef.current?.role || 'student')) return
+    try {
+      jitsiApiRef.current.executeCommand('answerKnockingParticipant', participantId, approved)
+      setKnockingParticipants((current) => current.filter((participant) => participant.id !== participantId))
+      toast.success(approved ? 'Đã cho học viên vào lớp.' : 'Đã từ chối yêu cầu vào lớp.')
+    } catch {
+      toast.error('Chưa thể xử lý yêu cầu vào lớp. Vui lòng thử lại.')
+    }
+  }, [])
+
+  const handleOpenCameraEffects = useCallback(() => {
+    if (!conferenceJoinedRef.current || !jitsiApiRef.current) {
+      toast.warning('Hãy vào cuộc gọi trước khi chọn hiệu ứng camera.')
+      return
+    }
+    try {
+      jitsiApiRef.current.executeCommand('toggleVirtualBackgroundDialog')
+    } catch {
+      toast.error('Thiết bị này chưa hỗ trợ làm mờ hoặc hình nền ảo.')
+    }
   }, [])
 
   const toggleMeetingFullscreen = useCallback(async () => {
@@ -2019,6 +2097,7 @@ export function OnlineClassroomPage() {
     if (participantId && participantId !== localParticipantIdRef.current) {
       remoteParticipantIdsRef.current.add(participantId)
       setRemoteParticipantCount(remoteParticipantIdsRef.current.size)
+      setKnockingParticipants((current) => current.filter((participant) => participant.id !== participantId))
     }
     const currentAccess = accessRef.current
     if (!dataChannelReadyRef.current || !currentAccess) return
@@ -2587,6 +2666,12 @@ export function OnlineClassroomPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {conferenceJoined && (
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" aria-label={`Thời gian trong lớp ${formatClassroomElapsed(classroomElapsedSeconds)}`}>
+                <Clock3 className="h-4 w-4 text-amber-300" />
+                {formatClassroomElapsed(classroomElapsedSeconds)}
+              </span>
+            )}
             <span className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-extrabold ${connectionHealthy ? 'bg-emerald-50 text-emerald-800' : connectionState === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
               {connectionHealthy ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
               {connectionLabel(connectionState)}
@@ -2595,6 +2680,20 @@ export function OnlineClassroomPage() {
               <span className={`inline-flex min-h-10 items-center rounded-xl px-3 text-xs font-extrabold ${remoteParticipantCount > 0 ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>
                 {remoteParticipantCount > 0 ? `${remoteParticipantCount + 1} người trong lớp` : 'Đang chờ người còn lại'}
               </span>
+            )}
+            {manager && (
+              <Button
+                variant="outline"
+                size="sm"
+                loading={issuingStudentInvite}
+                disabled={!connectionHealthy || !conferenceJoined || !waitingRoomReady}
+                onClick={() => void handleCopyStudentInvite()}
+                title={!waitingRoomReady ? 'Link chỉ mở sau khi phòng chờ đã được bảo vệ' : 'Sao chép link riêng để gửi cho học viên'}
+                className="border-sky-200 bg-sky-50 text-sky-800 focus:ring-sky-300"
+              >
+                <Copy className="h-4 w-4" />
+                <span className="hidden sm:inline">Sao chép link học viên</span>
+              </Button>
             )}
             {manager && recordingState === 'idle' && recordingHydrationState === 'ready' && !existingRecording && (
               <Button
@@ -2856,7 +2955,13 @@ export function OnlineClassroomPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {!meetingControlsCollapsed && access.role === 'teacher' && (
+              {conferenceJoined && (
+                <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-2.5 font-mono text-xs font-black tabular-nums text-white" title="Thời gian đã ở trong lớp">
+                  <Clock3 className="h-4 w-4 text-amber-300" />
+                  {formatClassroomElapsed(classroomElapsedSeconds)}
+                </span>
+              )}
+              {manager && (
                 <button
                   type="button"
                   disabled={!connectionHealthy || !conferenceJoined}
@@ -2865,8 +2970,20 @@ export function OnlineClassroomPage() {
                   title={!connectionHealthy || !conferenceJoined ? 'Hãy vào cuộc gọi trước khi chia sẻ' : undefined}
                 >
                   <MonitorUp className="h-4 w-4" />
-                  <span className="hidden sm:inline">{screenShareState.local ? 'Dừng trình chiếu' : 'Chia sẻ màn hình'}</span>
-                  <span className="sm:hidden">{screenShareState.local ? 'Dừng share' : 'Share'}</span>
+                  <span className={meetingControlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>{screenShareState.local ? 'Dừng trình chiếu' : 'Chia sẻ màn hình'}</span>
+                  {!meetingControlsCollapsed && <span className="sm:hidden">{screenShareState.local ? 'Dừng share' : 'Share'}</span>}
+                </button>
+              )}
+              {!meetingControlsCollapsed && (
+                <button
+                  type="button"
+                  disabled={!conferenceJoined}
+                  onClick={handleOpenCameraEffects}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Làm mờ hoặc chọn hình nền ảo"
+                >
+                  <Sparkles className="h-4 w-4 text-fuchsia-300" />
+                  <span className="hidden sm:inline">Hiệu ứng nền</span>
                 </button>
               )}
               {!meetingControlsCollapsed && manager && screenShareState.active && (
@@ -2893,6 +3010,7 @@ export function OnlineClassroomPage() {
                 onClick={openWhiteboardWindow}
                 aria-haspopup="dialog"
                 aria-expanded={whiteboardWindowMode !== 'minimized'}
+                aria-label={whiteboardWindowMode === 'minimized' ? 'Mở bảng trắng' : 'Bảng trắng đang mở'}
                 className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 ${whiteboardWindowMode !== 'minimized' ? 'border-amber-300 bg-amber-300 text-slate-950 hover:bg-amber-200' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
               >
                 <PenLine className="h-4 w-4" />
@@ -2926,6 +3044,35 @@ export function OnlineClassroomPage() {
               </button>
             </div>
           </div>
+
+          {manager && knockingParticipants.length > 0 && (
+            <div className="mb-2.5 rounded-2xl border border-sky-300/30 bg-sky-400/10 p-3" role="status" aria-live="polite">
+              <p className="text-xs font-black text-sky-100">Có người đang xin vào lớp</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {knockingParticipants.map((participant) => (
+                  <div key={participant.id} className="flex min-w-0 flex-1 basis-[280px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2">
+                    <p className="min-w-0 truncate text-sm font-extrabold text-white">{participant.name}</p>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAnswerKnockingParticipant(participant.id, false)}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-rose-300/25 bg-rose-500/15 px-3 text-xs font-black text-rose-100 hover:bg-rose-500/25 focus:outline-none focus:ring-2 focus:ring-rose-300"
+                      >
+                        <UserX className="h-4 w-4" />Từ chối
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAnswerKnockingParticipant(participant.id, true)}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-black text-slate-950 hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                      >
+                        <UserCheck className="h-4 w-4" />Cho vào
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(screenAnnotationError || (screenShareState.active && access.role === 'student' && !screenAnnotationActive)) && (
             <div className={`mb-2.5 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${screenAnnotationError ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-amber-300/25 bg-amber-300/10 text-amber-100'}`} role={screenAnnotationError ? 'alert' : 'status'}>
@@ -2965,7 +3112,10 @@ export function OnlineClassroomPage() {
                 roomName={access.roomName}
                 displayName={access.displayName}
                 observerMode={access.role === 'admin'}
-                canShareScreen={access.role === 'teacher'}
+                canShareScreen={manager}
+                manageWaitingRoom={manager}
+                scheduledDurationSeconds={scheduledMeetingTimer.durationSeconds}
+                scheduledElapsedSeconds={scheduledMeetingTimer.elapsedSeconds}
                 onApiReady={(api) => {
                   jitsiApiRef.current = api
                   if (!api) {
@@ -2977,11 +3127,22 @@ export function OnlineClassroomPage() {
                     setRemoteParticipantCount(0)
                     screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
                     setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
+                    setWaitingRoomReady(false)
+                    setKnockingParticipants([])
                   }
                 }}
                 onConferenceJoined={handleConferenceJoined}
                 onParticipantJoined={handleParticipantJoined}
                 onParticipantLeft={handleParticipantLeft}
+                onWaitingRoomReadyChange={setWaitingRoomReady}
+                onKnockingParticipant={(participant) => {
+                  setKnockingParticipants((current) => {
+                    const existing = current.find((candidate) => candidate.id === participant.id)
+                    return existing
+                      ? current.map((candidate) => candidate.id === participant.id ? participant : candidate)
+                      : [...current, participant]
+                  })
+                }}
                 onDataChannelOpened={handleDataChannelOpened}
                 onTextMessage={(text, senderId) => {
                   if (classroomGifts.handleRealtimeMessage(text)) return
@@ -3001,6 +3162,8 @@ export function OnlineClassroomPage() {
                     setRemoteParticipantCount(0)
                     screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
                     setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
+                    setWaitingRoomReady(false)
+                    setKnockingParticipants([])
                     if (recordingStartLockRef.current) {
                       recordingAttemptRef.current += 1
                       recordingStartLockRef.current = false
@@ -3016,6 +3179,8 @@ export function OnlineClassroomPage() {
                   setConferenceJoined(false)
                   screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
                   setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
+                  setWaitingRoomReady(false)
+                  setKnockingParticipants([])
                   stopRecording()
                 }}
                 onError={(message) => toast.error(message)}
@@ -3028,7 +3193,7 @@ export function OnlineClassroomPage() {
                   frameUrl={screenFrameUrl}
                   loading={screenFrameState === 'loading'}
                   error={screenFrameError}
-                  canRefreshFrame={access.role === 'teacher' && screenShareState.local}
+                  canRefreshFrame={manager && screenShareState.local}
                   onRefresh={refreshSharedScreenFrame}
                   onReturnToLive={() => setActivePanel('video')}
                   snapshot={screenAnnotationSnapshot}

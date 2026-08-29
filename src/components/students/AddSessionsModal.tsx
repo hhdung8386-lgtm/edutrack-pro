@@ -12,7 +12,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
-import { appendCourseBatch } from '@/lib/studentCourseLedger'
+import { appendCourseBatch, getStatusAfterCourseRightsAdded } from '@/lib/studentCourseLedger'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -147,7 +147,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
           subjectId: primarySubject?.subjectId || '',
           subjectName: primarySubject?.subjectName || '',
           minutesPerSession: primarySubject?.minutesPerSession || 25,
-          status: totals.remainingMinutes > 0 ? 'active' : currentStudent.status,
+          status: getStatusAfterCourseRightsAdded(currentStudent.status, totals.remainingMinutes),
           updatedAt: serverTimestamp(),
         })
         tx.set(logRef, {

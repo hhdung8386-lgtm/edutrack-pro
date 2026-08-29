@@ -9,6 +9,7 @@ import {
   ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT,
   ONLINE_CLASSROOM_TOKENS_COLLECTION,
   ONLINE_CLASSROOM_TOKEN_BYTES,
+  decideOnlineClassroomInviteIssuance,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
   decideOnlineClassroomScreenAnnotationSessionMutation,
@@ -35,6 +36,7 @@ import {
   type OnlineClassroomBookingLike,
   type OnlineClassroomScreenAnnotationSession,
   type OnlineClassroomTargetType,
+  type OnlineClassroomTrustedActor,
 } from './onlineClassroom'
 import {
   OnlineClassroomJaasConfigurationError,
@@ -191,6 +193,23 @@ async function requireSystemAdmin(uid: string | undefined): Promise<string> {
   return uid
 }
 
+function assertOnlineClassroomInviteIssuanceAllowed(
+  actor: OnlineClassroomTrustedActor | null,
+  booking: Booking,
+  nowMs: number = Date.now(),
+): void {
+  const decision = decideOnlineClassroomInviteIssuance(actor, booking, nowMs)
+  if (decision === 'allowed') return
+  if (decision === 'outside-join-window') throw classroomError('OUTSIDE_JOIN_WINDOW')
+  throw new HttpsError(
+    'permission-denied',
+    decision === 'teacher-not-assigned'
+      ? 'Gia sư chỉ được tạo link cho buổi học được phân công cho mình.'
+      : 'Bạn không có quyền tạo link vào phòng học.',
+    { reason: decision === 'teacher-not-assigned' ? 'TEACHER_NOT_ASSIGNED' : 'TRUSTED_ACTOR_REQUIRED' },
+  )
+}
+
 export async function resolveTrustedClassroomActor(uid: string | undefined) {
   if (!uid) return null
   const userSnapshot = await db.collection('users').doc(uid).get()
@@ -322,15 +341,27 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
   }
 }
 
-async function createStudentInvite(booking: Booking, issuedBy: string): Promise<{
+async function createStudentInvite(
+  booking: Booking,
+  issuedBy: string,
+  actor?: OnlineClassroomTrustedActor,
+): Promise<{
   joinUrl: string
+  studentId: string
+  teacherId: string
   studentPilotGeneration: number
   teacherPilotGeneration: number
 }> {
   await cleanupOnlineClassroomTokensOpportunistically()
   const context = await loadEligibleContext(booking.id)
+  const nowMs = Date.now()
+  if (actor) {
+    // Re-check against the freshly loaded booking. This closes the race where
+    // a booking is reassigned after the callable's first permission check.
+    assertOnlineClassroomInviteIssuanceAllowed(actor, context.booking, nowMs)
+  }
   const window = onlineClassroomJoinWindow(context.booking)
-  if (!window || window.closesAt.getTime() <= Date.now()) throw classroomError('OUTSIDE_JOIN_WINDOW')
+  if (!window || window.closesAt.getTime() <= nowMs) throw classroomError('OUTSIDE_JOIN_WINDOW')
   const token = randomBytes(ONLINE_CLASSROOM_TOKEN_BYTES).toString('base64url')
   await db.collection(ONLINE_CLASSROOM_TOKENS_COLLECTION).doc(onlineClassroomTokenHash(token)).set({
     bookingId: context.booking.id,
@@ -345,6 +376,8 @@ async function createStudentInvite(booking: Booking, issuedBy: string): Promise<
   })
   return {
     joinUrl: onlineClassroomStudentJoinUrl(CLASSROOM_ORIGIN, context.booking.id, token),
+    studentId: context.booking.studentId!,
+    teacherId: context.booking.teacherId!,
     studentPilotGeneration: context.studentPilotGeneration,
     teacherPilotGeneration: context.teacherPilotGeneration,
   }
@@ -633,19 +666,30 @@ export const issueOnlineClassroomInvite = onCall({
   timeoutSeconds: 30,
   memory: '256MiB',
 }, async (request) => {
-  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  const actorUid = request.auth?.uid
+  if (!actorUid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại.')
+  const actor = await resolveTrustedClassroomActor(actorUid)
+  if (!actor) {
+    throw new HttpsError('permission-denied', 'Chỉ Admin hệ thống hoặc gia sư được phân công mới được tạo link phòng học.')
+  }
   const bookingId = request.data?.bookingId
   if (!isSafeClassroomId(bookingId)) throw new HttpsError('invalid-argument', 'Booking không hợp lệ.')
   const snapshot = await db.collection('bookingRequests').doc(bookingId).get()
   if (!snapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy buổi học.')
   const booking = { id: snapshot.id, ...snapshot.data() } as Booking
-  const invite = await createStudentInvite(booking, `admin:${actorUid}`)
+  assertOnlineClassroomInviteIssuanceAllowed(actor, booking)
+  const invite = await createStudentInvite(booking, `${actor.role}:${actorUid}`, actor)
   await db.collection('adminLogs').add({
+    // Keep adminId for compatibility with the existing audit viewer while
+    // recording the actual actor explicitly for teacher-issued invitations.
     adminId: actorUid,
+    actorUid,
+    actorRole: actor.role,
+    ...(actor.role === 'teacher' ? { actorTeacherId: actor.teacherId } : {}),
     action: 'ISSUE_ONLINE_CLASSROOM_INVITE',
     targetType: 'booking',
     targetId: bookingId,
-    changes: { studentId: booking.studentId || '', teacherId: booking.teacherId || '' },
+    changes: { studentId: invite.studentId, teacherId: invite.teacherId },
     createdAt: FieldValue.serverTimestamp(),
   })
   return { joinUrl: invite.joinUrl }

@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Student } from '../src/types/index.ts'
-import { appendCourseBatch, deleteCourseEntry, editCourseEntry, getCourseEntry } from '../src/lib/studentCourseLedger.ts'
+import {
+  appendCourseBatch,
+  deleteCourseEntry,
+  editCourseEntry,
+  getCourseEntry,
+  getStatusAfterCourseRightsAdded,
+} from '../src/lib/studentCourseLedger.ts'
 
 function studentFixture(): Student {
   return {
@@ -89,6 +95,13 @@ test('adding a fourth payment appends history without a three-installment limit'
   const result = appendCourseBatch(existing, fourth)
   assert.deepEqual(result.map((batch) => batch.id), ['batch-1', 'batch-2', 'batch-3', 'batch-4'])
   assert.equal(existing.length, 3)
+})
+
+test('adding course rights reactivates expired students but preserves a manual reservation', () => {
+  assert.equal(getStatusAfterCourseRightsAdded('expired', 250), 'active')
+  assert.equal(getStatusAfterCourseRightsAdded('active', 250), 'active')
+  assert.equal(getStatusAfterCourseRightsAdded('reserved', 250), 'reserved')
+  assert.equal(getStatusAfterCourseRightsAdded('reserved', 0), 'reserved')
 })
 
 test('editing diamonds updates subject and student aggregates by the same delta', () => {

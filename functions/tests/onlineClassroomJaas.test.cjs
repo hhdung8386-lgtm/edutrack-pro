@@ -3,9 +3,12 @@ const { generateKeyPairSync, verify } = require('node:crypto')
 const test = require('node:test')
 const {
   ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS,
+  ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS,
   OnlineClassroomJaasConfigurationError,
   createOnlineClassroomJaasJwt,
   onlineClassroomJaasRoomName,
+  onlineClassroomJaasWebhookAuthorizationMatches,
+  resolveOnlineClassroomJaasSettingsProvisioning,
   resolveOnlineClassroomMeetingConfig,
 } = require('../lib/onlineClassroomJaas.js')
 
@@ -82,6 +85,61 @@ test('valid JaaS config creates the full tenant room name', () => {
     () => onlineClassroomJaasRoomName(config, '../other-room'),
     (error) => error.reason === 'JAAS_ROOM_ALIAS_INVALID',
   )
+})
+
+test('SETTINGS_PROVISIONING chỉ mở lobby chờ duyệt cho đúng AppID và room hợp lệ', () => {
+  const result = resolveOnlineClassroomJaasSettingsProvisioning({
+    method: 'POST',
+    appId: APP_ID,
+    body: { fqn: `${APP_ID}/${ROOM_ALIAS}` },
+  })
+  assert.deepEqual(result, {
+    ok: true,
+    status: 200,
+    body: {
+      lobbyEnabled: true,
+      lobbyType: 'WAIT_FOR_APPROVAL',
+      maxOccupants: 4,
+    },
+  })
+  assert.deepEqual(result.body, ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS)
+})
+
+test('SETTINGS_PROVISIONING fail closed với method, cấu hình, payload hoặc FQN sai', () => {
+  const valid = {
+    method: 'POST',
+    appId: APP_ID,
+    body: { fqn: `${APP_ID}/${ROOM_ALIAS}` },
+  }
+  const otherAppId = 'vpaas-magic-cookie-fedcba0987654321fedcba0987654321'
+
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({ ...valid, method: 'GET' }).status, 405)
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({ ...valid, appId: '' }).status, 503)
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({ ...valid, body: {} }).status, 400)
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({
+    ...valid,
+    body: { fqn: `${otherAppId}/${ROOM_ALIAS}` },
+  }).status, 403)
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({
+    ...valid,
+    body: { fqn: `${APP_ID}/${ROOM_ALIAS}/nested` },
+  }).status, 400)
+})
+
+test('Authorization của webhook là tùy chọn nhưng được so khớp constant-time khi cấu hình', () => {
+  const authorization = 'Bearer classroom-webhook-secret'
+  assert.equal(onlineClassroomJaasWebhookAuthorizationMatches('', undefined), true)
+  assert.equal(onlineClassroomJaasWebhookAuthorizationMatches(authorization, authorization), true)
+  assert.equal(onlineClassroomJaasWebhookAuthorizationMatches(authorization, 'Bearer wrong-secret'), false)
+  assert.equal(onlineClassroomJaasWebhookAuthorizationMatches(authorization, undefined), false)
+
+  assert.equal(resolveOnlineClassroomJaasSettingsProvisioning({
+    method: 'POST',
+    appId: APP_ID,
+    configuredAuthorization: authorization,
+    providedAuthorization: 'Bearer wrong-secret',
+    body: { fqn: `${APP_ID}/${ROOM_ALIAS}` },
+  }).status, 401)
 })
 
 test('student JWT is RS256, session-lived, exact-room, non-moderator, and verifiable', () => {

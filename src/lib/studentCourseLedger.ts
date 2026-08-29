@@ -5,6 +5,19 @@ export function appendCourseBatch(existing: TopUpBatch[] | undefined, batch: Top
   return [...(existing || []).map((item) => ({ ...item })), { ...batch }]
 }
 
+/**
+ * Cộng quyền học sẽ mở lại hồ sơ đã hết quỹ, nhưng không được tự ý bỏ trạng
+ * thái bảo lưu do giáo vụ đã chọn. Các trạng thái khác giữ hành vi hiện hữu:
+ * có quỹ thì học viên trở lại nhóm đang học.
+ */
+export function getStatusAfterCourseRightsAdded(
+  currentStatus: Student['status'],
+  remainingMinutes: number,
+): Student['status'] {
+  if (currentStatus === 'reserved') return 'reserved'
+  return remainingMinutes > 0 ? 'active' : currentStatus
+}
+
 export interface CourseEntryEditInput {
   learningMinutes: number
   diamonds: number

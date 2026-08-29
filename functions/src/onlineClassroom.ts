@@ -23,6 +23,12 @@ export type OnlineClassroomTrustedActor =
   | { role: 'admin' }
   | { role: 'teacher'; teacherId: string }
 
+export type OnlineClassroomInviteIssuanceDecision =
+  | 'allowed'
+  | 'untrusted-actor'
+  | 'teacher-not-assigned'
+  | 'outside-join-window'
+
 export type OnlineClassroomBoardPoint = {
   x: number
   y: number
@@ -258,6 +264,25 @@ export function resolveOnlineClassroomTrustedActor(
   return teacher.loginAccountUid === uid
     ? { role: 'teacher', teacherId: user.teacherId }
     : null
+}
+
+/**
+ * Admins may prepare an invite before the room opens. A teacher may issue one
+ * only for their own booking while that booking's join window is active. The
+ * caller must pass a trusted actor resolved through the canonical teacher UID
+ * boundary above; null deliberately fails closed.
+ */
+export function decideOnlineClassroomInviteIssuance(
+  actor: OnlineClassroomTrustedActor | null,
+  booking: OnlineClassroomBookingLike,
+  nowMs: number,
+): OnlineClassroomInviteIssuanceDecision {
+  if (!actor) return 'untrusted-actor'
+  if (actor.role === 'admin') return 'allowed'
+  if (actor.teacherId !== booking.teacherId) return 'teacher-not-assigned'
+  return isInsideOnlineClassroomJoinWindow(booking, nowMs)
+    ? 'allowed'
+    : 'outside-join-window'
 }
 
 export function onlineClassroomSessionKey(
