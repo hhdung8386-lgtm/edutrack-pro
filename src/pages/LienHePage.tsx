@@ -19,7 +19,7 @@ const CONSULTING_PHONE = { label: '0933.964.683', href: 'tel:0933964683' }
 const ACADEMIC_PHONE = { label: '039.399.8733', href: 'tel:0393998733' }
 const OFFICES = [
   'Văn phòng Bình Tân: 104A đường 32B, phường Bình Trị Đông B, quận Bình Tân',
-  'Văn phòng Quận 2: 12 đường số 5, phường An Lạc, quận 2',
+  'Văn phòng Quận 2: 12 đường số 5, KĐT Sala, phường An Khánh, TP.HCM',
 ]
 
 export function LienHePage() {
