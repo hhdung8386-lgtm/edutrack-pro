@@ -87,9 +87,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * separate recording-scoped bearer-token path so disabling a teacher does not
  * invalidate the student's 72-hour download link.
  *
- * Older recordings did not persist teacherPilotGeneration. They still require
- * every current teacher invariant below; recordings created after this field
- * was introduced additionally fail closed after a disable/re-enable rotation.
+ * Teacher pilot/password flags are intentionally not authorization boundaries.
+ * The current canonical UID and active profile remain mandatory. Recordings
+ * with a teacher generation additionally fail closed after account recovery.
  */
 export function resolveOnlineClassroomRecordingIdentityRole(
   uid: string,
@@ -102,18 +102,24 @@ export function resolveOnlineClassroomRecordingIdentityRole(
   if (user.role === 'admin') return 'admin'
   if (user.role !== 'teacher'
     || !isRecord(teacher)
-    || !isRecord(access)
     || !isRecord(recording)
     || typeof recording.teacherId !== 'string'
     || user.teacherId !== recording.teacherId
     || teacher.status !== 'active'
-    || teacher.loginAccountUid !== uid
-    || access.enabled !== true
-    || access.credentialHardenedUid !== uid) return null
+    || teacher.loginAccountUid !== uid) return null
 
   if (Object.prototype.hasOwnProperty.call(recording, 'teacherPilotGeneration')) {
     const recordingGeneration = recording.teacherPilotGeneration
-    const currentGeneration = access.generation
+    // Teachers who were never individually enrolled have no legacy access doc;
+    // their canonical generation is zero. A malformed existing doc still
+    // fails closed instead of being interpreted as a fresh account.
+    const currentGeneration = access == null
+      ? 0
+      : isRecord(access)
+        ? Object.prototype.hasOwnProperty.call(access, 'generation')
+          ? access.generation
+          : 0
+        : null
     if (!Number.isSafeInteger(recordingGeneration)
       || Number(recordingGeneration) < 0
       || !Number.isSafeInteger(currentGeneration)

@@ -112,10 +112,12 @@ export type OnlineClassroomInviteLike = {
 
 export type OnlineClassroomReminderBookingLike = {
   id: string
+  lessonId?: string
   studentId?: string
   teacherId?: string
   requestedDate?: string
   requestedStart?: string
+  groupClassId?: string
 }
 
 export function onlineClassroomAccessGeneration(value: unknown): number {
@@ -265,8 +267,9 @@ export function partitionOnlineClassroomReminderBookings<T extends OnlineClassro
     const enabled = Boolean(
       booking.studentId
       && booking.teacherId
-      && enabledAccessIds.has(onlineClassroomAccessId('student', booking.studentId))
-      && enabledAccessIds.has(onlineClassroomAccessId('teacher', booking.teacherId)),
+      && !booking.lessonId
+      && !booking.groupClassId
+      && enabledAccessIds.has(onlineClassroomAccessId('student', booking.studentId)),
     )
     ;(enabled ? pilot : legacy).push(booking)
   }

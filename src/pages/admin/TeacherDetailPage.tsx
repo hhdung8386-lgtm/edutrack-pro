@@ -30,7 +30,6 @@ import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
 import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
-import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -148,8 +147,8 @@ export function TeacherDetailPage() {
     try {
       const result = await recoverTeacherLoginAccount(teacher.id)
       toast.success(result.reclaimedOrphan
-        ? 'Đã sửa liên kết tài khoản cũ và khôi phục đăng nhập. Pilot đã tự tắt; hãy tạo lại mật khẩu pilot trước khi mở lớp.'
-        : 'Đã khôi phục đăng nhập. Pilot đã tự tắt; hãy tạo lại mật khẩu pilot trước khi mở lớp.')
+        ? 'Đã sửa liên kết tài khoản cũ và khôi phục đăng nhập. Tài khoản đã sẵn sàng để vào lớp khi booking đủ điều kiện.'
+        : 'Đã khôi phục đăng nhập. Tài khoản đã sẵn sàng để vào lớp khi booking đủ điều kiện.')
     } catch (err) {
       console.error('Restore login role failed:', err)
       const message = err instanceof Error ? err.message.replace(/^FirebaseError:\s*/i, '') : ''
@@ -1504,14 +1503,6 @@ export function TeacherDetailPage() {
           </div>
         </div>
       </Card>
-
-      <OnlineClassroomPilotCard
-        targetType="teacher"
-        targetId={teacher.id}
-        targetName={teacher.name}
-        mirroredEnabled={teacher.onlineClassroomPilotEnabled}
-        onUpdated={(enabled) => setTeacher((current) => current ? { ...current, onlineClassroomPilotEnabled: enabled } : current)}
-      />
 
       {/* Interview Profile Card */}
       {teacher && (teacher.yob || teacher.livingArea || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (

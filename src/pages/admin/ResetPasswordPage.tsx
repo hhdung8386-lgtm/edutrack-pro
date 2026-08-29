@@ -95,7 +95,7 @@ export function ResetPasswordPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Reset Mật khẩu Gia sư</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Khôi phục tài khoản legacy; quyền pilot sẽ tự tắt để bảo vệ lớp học</p>
+          <p className="text-sm text-slate-500 mt-0.5">Khôi phục tài khoản legacy và đồng bộ UID đăng nhập chuẩn của gia sư</p>
         </div>
         <Button
           onClick={() => setResetAll(true)}
@@ -110,8 +110,8 @@ export function ResetPasswordPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
         <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
-          <p className="font-semibold mb-1">ℹ️ Mục đích của trang này:</p>
-          <p>Đây là luồng tương thích tài khoản cũ. Mỗi lần khôi phục sẽ thu hồi phiên đăng nhập và tự tắt pilot; Admin phải tạo lại mật khẩu pilot riêng trước khi mở lớp trực tuyến.</p>
+          <p className="font-semibold mb-1">Mục đích của trang này:</p>
+          <p>Đây là luồng tương thích tài khoản cũ. Mỗi lần khôi phục sẽ thu hồi phiên đăng nhập trước đó và liên kết lại đúng tài khoản gia sư. Không cần tạo thêm mật khẩu pilot.</p>
         </div>
       </div>
 

@@ -205,8 +205,8 @@ async function loadRecordingManagerContext(uid: string | undefined, bookingId: s
     db.collection('students').doc(booking.studentId!).get(),
     db.collection('teachers').doc(booking.teacherId!).get(),
   ])
-  if (studentAccess.data()?.enabled !== true || teacherAccess.data()?.enabled !== true) {
-    throw recordingError('Admin chưa cấp đủ quyền pilot cho gia sư và học viên.', 'PILOT_NOT_ENABLED')
+  if (studentAccess.data()?.enabled !== true) {
+    throw recordingError('Admin chưa bật phòng học trực tuyến cho học viên.', 'PILOT_NOT_ENABLED')
   }
   if (studentSnapshot.data()?.status !== 'active' || teacherSnapshot.data()?.status !== 'active') {
     throw recordingError('Gia sư hoặc học viên không còn hoạt động.', 'PARTICIPANT_NOT_ACTIVE')
@@ -214,10 +214,19 @@ async function loadRecordingManagerContext(uid: string | undefined, bookingId: s
   const canonicalTeacherUid = typeof teacherSnapshot.data()?.loginAccountUid === 'string'
     ? teacherSnapshot.data()!.loginAccountUid
     : ''
-  if (!canonicalTeacherUid || teacherAccess.data()?.credentialHardenedUid !== canonicalTeacherUid) {
+  if (!isSafeClassroomId(canonicalTeacherUid)) {
     throw recordingError(
-      'Gia sư chưa có mật khẩu pilot riêng. Admin cần tạo mật khẩu trước khi ghi.',
-      'TEACHER_PILOT_CREDENTIAL_REQUIRED',
+      'Gia sư chưa có tài khoản đăng nhập chuẩn. Admin cần khôi phục đăng nhập trước khi ghi.',
+      'TEACHER_CANONICAL_UID_REQUIRED',
+    )
+  }
+  const canonicalTeacherUser = await db.collection('users').doc(canonicalTeacherUid).get()
+  if (!canonicalTeacherUser.exists
+    || canonicalTeacherUser.data()?.role !== 'teacher'
+    || canonicalTeacherUser.data()?.teacherId !== booking.teacherId) {
+    throw recordingError(
+      'Tài khoản đăng nhập của gia sư chưa khớp hồ sơ. Admin cần khôi phục đăng nhập trước khi ghi.',
+      'TEACHER_IDENTITY_MISMATCH',
     )
   }
 

@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto'
-import { getAuth } from 'firebase-admin/auth'
 import { Firestore, FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
@@ -8,8 +7,6 @@ import {
   ONLINE_CLASSROOM_ROOMS_COLLECTION,
   ONLINE_CLASSROOM_TOKENS_COLLECTION,
   ONLINE_CLASSROOM_TOKEN_BYTES,
-  ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS,
-  canAcquireOnlineClassroomCredentialMutation,
   decideOnlineClassroomBoardOperationAppend,
   decideOnlineClassroomBoardSave,
   isInsideOnlineClassroomJoinWindow,
@@ -21,8 +18,6 @@ import {
   onlineClassroomJoinWindow,
   onlineClassroomInviteMatches,
   onlineClassroomInvitePredatesGeneration,
-  onlineClassroomCredentialMutationMatches,
-  onlineClassroomCredentialRotationFence,
   onlineClassroomSessionKey,
   onlineClassroomStudentJoinUrl,
   onlineClassroomTokenHash,
@@ -156,7 +151,7 @@ function classroomError(code: string): HttpsError {
     BOOKING_MISSING_PARTICIPANTS: 'Buổi học thiếu thông tin gia sư hoặc học viên.',
     GROUP_CLASS_NOT_SUPPORTED: 'Pilot hiện chỉ mở cho lớp 1 kèm 1.',
     BOOKING_TIME_INVALID: 'Buổi học chưa có ngày giờ hợp lệ.',
-    PILOT_NOT_ENABLED: 'Admin chưa cấp đủ quyền pilot cho gia sư và học viên.',
+    PILOT_NOT_ENABLED: 'Admin chưa bật phòng học trực tuyến cho học viên.',
     TEACHER_NOT_ACTIVE: 'Gia sư không còn ở trạng thái đang dạy.',
     STUDENT_NOT_ACTIVE: 'Học viên đang bảo lưu, hết hạn hoặc chưa hoạt động.',
     OFFLINE_CLASS_NOT_SUPPORTED: 'Pilot phòng học trực tuyến không áp dụng cho lớp offline.',
@@ -181,19 +176,11 @@ export async function resolveTrustedClassroomActor(uid: string | undefined) {
   const user = userSnapshot.data() || {}
   if (user.role === 'admin') return resolveOnlineClassroomTrustedActor(uid, user, null)
   if (user.role !== 'teacher' || !isSafeClassroomId(user.teacherId)) return null
-  const [teacherSnapshot, pilotSnapshot] = await Promise.all([
-    db.collection('teachers').doc(user.teacherId).get(),
-    db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION)
-      .doc(onlineClassroomAccessId('teacher', user.teacherId))
-      .get(),
-  ])
-  const actor = resolveOnlineClassroomTrustedActor(uid, user, teacherSnapshot.data() || null)
-  // The legacy teacher login uses a shared password. Classroom privileges are
-  // therefore granted only after a system Admin rotates this exact canonical
-  // Auth UID to a unique pilot credential. The marker is backend-only.
-  return actor?.role === 'teacher' && pilotSnapshot.data()?.credentialHardenedUid === uid
-    ? actor
-    : null
+  const teacherSnapshot = await db.collection('teachers').doc(user.teacherId).get()
+  // Pilot selection now lives on the student only. A teacher joins with the
+  // existing account, but the immutable canonical UID on teachers/{id} must
+  // still match users/{uid}; a forged or stale teacher link remains denied.
+  return resolveOnlineClassroomTrustedActor(uid, user, teacherSnapshot.data() || null)
 }
 
 async function pilotAccess(type: OnlineClassroomTargetType, id: string): Promise<{
@@ -256,16 +243,26 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
   if (!studentSnapshot.exists || !teacherSnapshot.exists) {
     throw new HttpsError('not-found', 'Không tìm thấy hồ sơ gia sư hoặc học viên.')
   }
-  if (!studentAccess.enabled || !teacherAccess.enabled) throw classroomError('PILOT_NOT_ENABLED')
+  if (!studentAccess.enabled) throw classroomError('PILOT_NOT_ENABLED')
 
   const student = studentSnapshot.data() as Student
   const teacher = teacherSnapshot.data() as Teacher
   if (teacher.status !== 'active') throw classroomError('TEACHER_NOT_ACTIVE')
-  if (!teacher.loginAccountUid || teacherAccess.credentialHardenedUid !== teacher.loginAccountUid) {
+  if (!isSafeClassroomId(teacher.loginAccountUid)) {
     throw new HttpsError(
       'failed-precondition',
-      'Gia sư chưa có mật khẩu pilot riêng. Admin cần tạo mật khẩu pilot trước khi mở lớp.',
-      { reason: 'TEACHER_PILOT_CREDENTIAL_REQUIRED' },
+      'Gia sư chưa có tài khoản đăng nhập chuẩn. Admin cần khôi phục đăng nhập trước khi mở lớp.',
+      { reason: 'TEACHER_CANONICAL_UID_REQUIRED' },
+    )
+  }
+  const teacherUserSnapshot = await db.collection('users').doc(teacher.loginAccountUid).get()
+  if (!teacherUserSnapshot.exists
+    || teacherUserSnapshot.data()?.role !== 'teacher'
+    || teacherUserSnapshot.data()?.teacherId !== booking.teacherId) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Tài khoản đăng nhập của gia sư chưa khớp hồ sơ. Admin cần khôi phục đăng nhập trước khi mở lớp.',
+      { reason: 'TEACHER_IDENTITY_MISMATCH' },
     )
   }
   if (student.status !== 'active') throw classroomError('STUDENT_NOT_ACTIVE')
@@ -441,11 +438,24 @@ export const getOnlineClassroomPilotStatus = onCall({
   const canonicalTeacherUid = type === 'teacher' && typeof targetSnapshot.data()?.loginAccountUid === 'string'
     ? targetSnapshot.data()!.loginAccountUid
     : ''
+  const canonicalUserSnapshot = type === 'teacher' && isSafeClassroomId(canonicalTeacherUid)
+    ? await db.collection('users').doc(canonicalTeacherUid).get()
+    : null
+  const teacherReady = type === 'teacher'
+    && targetSnapshot.exists
+    && targetSnapshot.data()?.status === 'active'
+    && isSafeClassroomId(canonicalTeacherUid)
+    && canonicalUserSnapshot?.data()?.role === 'teacher'
+    && canonicalUserSnapshot.data()?.teacherId === targetId
   return {
-    enabled: snapshot.data()?.enabled === true,
+    // Backward compatible response for cached admin bundles: teachers are
+    // automatically ready from their canonical account and no longer need an
+    // independent allowlist/password step.
+    enabled: type === 'teacher' ? teacherReady : snapshot.data()?.enabled === true,
     credentialHardened: type === 'teacher'
-      ? Boolean(canonicalTeacherUid && snapshot.data()?.credentialHardenedUid === canonicalTeacherUid)
+      ? teacherReady
       : null,
+    accountReady: type === 'teacher' ? teacherReady : null,
     updatedAt: snapshot.data()?.updatedAt instanceof Timestamp
       ? snapshot.data()!.updatedAt.toDate().toISOString()
       : null,
@@ -453,213 +463,25 @@ export const getOnlineClassroomPilotStatus = onCall({
 })
 
 /**
- * Replace the legacy shared teacher password with a unique pilot credential.
- * The password is returned exactly once to the system Admin and is never
- * persisted in Firestore or logs. Rotation first disables access and advances
- * the generation, so a partial failure always fails closed.
+ * Compatibility endpoint for cached admin bundles. Password rotation was
+ * retired when pilot selection moved to students; keeping this callable as a
+ * fail-closed stub prevents an older browser tab from mutating Auth accounts.
  */
 export const rotateOnlineClassroomTeacherPassword = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
 }, async (request) => {
-  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  await requireSystemAdmin(request.auth?.uid)
   const teacherId = request.data?.teacherId
   if (!isSafeClassroomId(teacherId)) {
     throw new HttpsError('invalid-argument', 'Hồ sơ gia sư không hợp lệ.')
   }
-
-  const teacherRef = db.collection('teachers').doc(teacherId)
-  const accessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION)
-    .doc(onlineClassroomAccessId('teacher', teacherId))
-  const initialTeacherSnapshot = await teacherRef.get()
-  const initialTeacher = initialTeacherSnapshot.data() || {}
-  const canonicalUid = typeof initialTeacher.loginAccountUid === 'string'
-    ? initialTeacher.loginAccountUid.trim()
-    : ''
-  if (!initialTeacherSnapshot.exists || initialTeacher.status !== 'active') {
-    throw classroomError('TEACHER_NOT_ACTIVE')
-  }
-  if (!isSafeClassroomId(canonicalUid)) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Gia sư chưa có UID đăng nhập chuẩn. Hãy khôi phục đăng nhập trước.',
-      { reason: 'TEACHER_CANONICAL_UID_REQUIRED' },
-    )
-  }
-  const canonicalUserSnapshot = await db.collection('users').doc(canonicalUid).get()
-  const canonicalUser = canonicalUserSnapshot.data() || {}
-  if (!canonicalUserSnapshot.exists
-    || canonicalUser.role !== 'teacher'
-    || canonicalUser.teacherId !== teacherId) {
-    throw new HttpsError(
-      'failed-precondition',
-      'UID đăng nhập và hồ sơ gia sư chưa khớp. Hãy khôi phục đăng nhập trước.',
-      { reason: 'TEACHER_IDENTITY_MISMATCH' },
-    )
-  }
-
-  const rotationNonce = randomBytes(16).toString('hex')
-  const rotation = await db.runTransaction(async (transaction) => {
-    const [teacherSnapshot, accessSnapshot] = await Promise.all([
-      transaction.get(teacherRef),
-      transaction.get(accessRef),
-    ])
-    const teacher = teacherSnapshot.data() || {}
-    if (!teacherSnapshot.exists
-      || teacher.status !== 'active'
-      || teacher.loginAccountUid !== canonicalUid) {
-      throw new HttpsError('aborted', 'Hồ sơ gia sư vừa thay đổi. Vui lòng tải lại và thử lại.')
-    }
-    const access = accessSnapshot.data() || {}
-    const transactionNow = Date.now()
-    if (!canAcquireOnlineClassroomCredentialMutation(access, transactionNow)) {
-      throw new HttpsError(
-        'aborted',
-        'Mật khẩu gia sư đang được xử lý ở một yêu cầu khác. Vui lòng chờ rồi thử lại.',
-        { reason: 'TEACHER_CREDENTIAL_ROTATION_IN_PROGRESS' },
-      )
-    }
-    const previousGeneration = onlineClassroomAccessGeneration(accessSnapshot.data()?.generation)
-    const nextGeneration = previousGeneration + 1
-    const rotationFence = onlineClassroomCredentialRotationFence(access.credentialRotationFence) + 1
-    transaction.set(accessRef, {
-      targetType: 'teacher',
-      targetId: teacherId,
-      enabled: false,
-      generation: nextGeneration,
-      reminderGenerationDeliveryEnabled: true,
-      credentialHardenedUid: FieldValue.delete(),
-      credentialHardenedAt: FieldValue.delete(),
-      credentialHardenedBy: FieldValue.delete(),
-      credentialRotationState: 'rotating',
-      credentialRotationNonce: rotationNonce,
-      credentialRotationFence: rotationFence,
-      credentialRotationLeaseExpiresAt: Timestamp.fromMillis(
-        transactionNow + ONLINE_CLASSROOM_CREDENTIAL_ROTATION_LEASE_MS,
-      ),
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: actorUid,
-      ...(accessSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-    }, { merge: true })
-    transaction.set(teacherRef, {
-      onlineClassroomPilotEnabled: false,
-      onlineClassroomPilotUpdatedAt: FieldValue.delete(),
-      onlineClassroomPilotUpdatedBy: FieldValue.delete(),
-    }, { merge: true })
-    return {
-      previousEnabled: accessSnapshot.data()?.enabled === true,
-      previousGeneration,
-      nextGeneration,
-      rotationFence,
-    }
-  })
-
-  const temporaryPassword = `${randomBytes(18).toString('base64url')}!A7`
-  let authPasswordChanged = false
-  try {
-    const authService = getAuth()
-    await authService.updateUser(canonicalUid, { password: temporaryPassword, disabled: false })
-    authPasswordChanged = true
-    await authService.revokeRefreshTokens(canonicalUid)
-    await db.runTransaction(async (transaction) => {
-      const [teacherSnapshot, accessSnapshot] = await Promise.all([
-        transaction.get(teacherRef),
-        transaction.get(accessRef),
-      ])
-      if (teacherSnapshot.data()?.loginAccountUid !== canonicalUid
-        || !onlineClassroomCredentialMutationMatches(accessSnapshot.data(), {
-          state: 'rotating',
-          nonce: rotationNonce,
-          fence: rotation.rotationFence,
-        })
-        || accessSnapshot.data()?.enabled === true) {
-        throw new HttpsError(
-          'aborted',
-          'Quyền pilot đã thay đổi trong lúc tạo mật khẩu. Pilot vẫn đang tắt; hãy thử lại.',
-        )
-      }
-      transaction.set(accessRef, {
-        credentialHardenedUid: canonicalUid,
-        credentialHardenedAt: FieldValue.serverTimestamp(),
-        credentialHardenedBy: actorUid,
-        // Keep the lease through the response tail (invite cleanup/logging).
-        // A second concurrent callable therefore cannot overwrite Auth before
-        // this invocation has returned its one-time password.
-        credentialRotationState: 'rotation_cooldown',
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: actorUid,
-      }, { merge: true })
-      transaction.set(db.collection('adminLogs').doc(), {
-        adminId: actorUid,
-        action: 'ROTATE_ONLINE_CLASSROOM_TEACHER_PASSWORD',
-        targetType: 'teacher',
-        targetId: teacherId,
-        changes: {
-          canonicalUid,
-          pilotDisabled: true,
-          generation: { from: rotation.previousGeneration, to: rotation.nextGeneration },
-        },
-        createdAt: FieldValue.serverTimestamp(),
-      })
-    })
-  } catch (error) {
-    await db.runTransaction(async (transaction) => {
-      const accessSnapshot = await transaction.get(accessRef)
-      const access = accessSnapshot.data() || {}
-      if (access.credentialRotationNonce !== rotationNonce
-        || access.credentialRotationFence !== rotation.rotationFence
-        || access.credentialRotationState !== 'rotating') return
-      transaction.set(accessRef, {
-        credentialRotationState: authPasswordChanged ? 'recovery_required' : 'rotation_failed',
-        credentialRotationNonce: FieldValue.delete(),
-        credentialRotationLeaseExpiresAt: FieldValue.delete(),
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: actorUid,
-      }, { merge: true })
-    }).catch((cleanupError) => {
-      logger.error('Unable to release failed teacher credential rotation lease', {
-        actorUid,
-        teacherId,
-        canonicalUid,
-        rotationNonce,
-        rotationFence: rotation.rotationFence,
-        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-      })
-    })
-    logger.error('Online classroom teacher credential rotation failed closed', {
-      actorUid,
-      teacherId,
-      canonicalUid,
-      rotationNonce,
-      rotationFence: rotation.rotationFence,
-      authPasswordChanged,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    throw error
-  }
-
-  let revokedInviteCount = 0
-  try {
-    revokedInviteCount = await revokeOnlineClassroomTokens(
-      'teacher',
-      teacherId,
-      rotation.nextGeneration,
-      actorUid,
-    )
-  } catch (error) {
-    logger.warn('Credential rotated but old invite metadata could not be marked revoked', {
-      teacherId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
-  return {
-    success: true,
-    temporaryPassword,
-    credentialHardened: true,
-    enabled: false,
-    revokedInviteCount,
-  }
+  throw new HttpsError(
+    'failed-precondition',
+    'Phòng học không còn dùng mật khẩu pilot riêng. Gia sư đăng nhập bằng tài khoản hiện tại.',
+    { reason: 'TEACHER_PILOT_PASSWORD_RETIRED' },
+  )
 })
 
 export const setOnlineClassroomPilotAccess = onCall({
@@ -675,9 +497,36 @@ export const setOnlineClassroomPilotAccess = onCall({
     throw new HttpsError('invalid-argument', 'Dữ liệu cấp quyền pilot không hợp lệ.')
   }
 
-  const targetCollection = type === 'teacher' ? 'teachers' : 'students'
-  const targetRef = db.collection(targetCollection).doc(targetId)
-  const accessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION).doc(onlineClassroomAccessId(type, targetId))
+  if (type === 'teacher') {
+    const teacherSnapshot = await db.collection('teachers').doc(targetId).get()
+    const teacher = teacherSnapshot.data() || {}
+    if (!teacherSnapshot.exists || teacher.status !== 'active') throw classroomError('TEACHER_NOT_ACTIVE')
+    const canonicalUid = typeof teacher.loginAccountUid === 'string' ? teacher.loginAccountUid.trim() : ''
+    if (!isSafeClassroomId(canonicalUid)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Gia sư chưa có tài khoản đăng nhập chuẩn. Hãy khôi phục đăng nhập trước.',
+        { reason: 'TEACHER_CANONICAL_UID_REQUIRED' },
+      )
+    }
+    const canonicalUserSnapshot = await db.collection('users').doc(canonicalUid).get()
+    if (!canonicalUserSnapshot.exists
+      || canonicalUserSnapshot.data()?.role !== 'teacher'
+      || canonicalUserSnapshot.data()?.teacherId !== targetId) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Tài khoản đăng nhập của gia sư chưa khớp hồ sơ. Hãy khôi phục đăng nhập trước.',
+        { reason: 'TEACHER_IDENTITY_MISMATCH' },
+      )
+    }
+    // Cached admin clients may still call this endpoint during rolling deploy.
+    // Teacher classroom access is automatic now, so do not rotate generations
+    // or revoke student links from an obsolete teacher toggle.
+    return { success: true, enabled: true, automatic: true, revokedInviteCount: 0 }
+  }
+
+  const targetRef = db.collection('students').doc(targetId)
+  const accessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION).doc(onlineClassroomAccessId('student', targetId))
   const logRef = db.collection('adminLogs').doc()
 
   const accessGeneration = await db.runTransaction(async (transaction) => {
@@ -687,18 +536,7 @@ export const setOnlineClassroomPilotAccess = onCall({
     ])
     if (!targetSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ cần cấp quyền.')
     const target = targetSnapshot.data() || {}
-    if (enabled && type === 'teacher' && target.status !== 'active') throw classroomError('TEACHER_NOT_ACTIVE')
-    if (enabled && type === 'teacher') {
-      const canonicalUid = typeof target.loginAccountUid === 'string' ? target.loginAccountUid.trim() : ''
-      if (!canonicalUid || accessSnapshot.data()?.credentialHardenedUid !== canonicalUid) {
-        throw new HttpsError(
-          'failed-precondition',
-          'Hãy tạo mật khẩu pilot riêng cho gia sư trước khi bật quyền.',
-          { reason: 'TEACHER_PILOT_CREDENTIAL_REQUIRED' },
-        )
-      }
-    }
-    if (enabled && type === 'student') {
+    if (enabled) {
       if (target.status !== 'active') throw classroomError('STUDENT_NOT_ACTIVE')
       if (target.recordType === 'group_class') throw classroomError('GROUP_CLASS_NOT_SUPPORTED')
       if (target.learningScheduleType === 'offline' || target.classDeliveryMode === 'offline') {
@@ -710,7 +548,7 @@ export const setOnlineClassroomPilotAccess = onCall({
     const nextGeneration = nextOnlineClassroomAccessGeneration(previousGeneration, previous, enabled)
     const generationChanged = previous !== enabled
     transaction.set(accessRef, {
-      targetType: type,
+      targetType: 'student',
       targetId,
       enabled,
       generation: nextGeneration,
@@ -732,7 +570,7 @@ export const setOnlineClassroomPilotAccess = onCall({
     transaction.set(logRef, {
       adminId: actorUid,
       action: enabled ? 'ENABLE_ONLINE_CLASSROOM_PILOT' : 'DISABLE_ONLINE_CLASSROOM_PILOT',
-      targetType: type,
+      targetType: 'student',
       targetId,
       changes: {
         onlineClassroomPilotEnabled: { from: previous, to: enabled },
@@ -746,12 +584,12 @@ export const setOnlineClassroomPilotAccess = onCall({
   let revokedInviteCount = 0
   if (!enabled) {
     try {
-      revokedInviteCount = await revokeOnlineClassroomTokens(type, targetId, accessGeneration, actorUid)
+      revokedInviteCount = await revokeOnlineClassroomTokens('student', targetId, accessGeneration, actorUid)
     } catch (error) {
       // Generation rotation above already invalidates every old token, even if
       // the best-effort metadata cleanup fails. Log it for operational retry.
       logger.error('Failed to mark rotated online classroom tokens as revoked', {
-        targetType: type,
+        targetType: 'student',
         targetId,
         accessGeneration,
         error: error instanceof Error ? error.message : String(error),

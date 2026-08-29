@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, KeyRound, LockKeyhole, Video } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Copy, ExternalLink, LockKeyhole, Video } from 'lucide-react'
 import type { BookingRequest } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
@@ -10,9 +10,7 @@ import {
   getOnlineClassroomPilotStatus,
   issueOnlineClassroomInvite,
   onlineClassroomErrorMessage,
-  rotateOnlineClassroomTeacherPassword,
   setOnlineClassroomPilotAccess,
-  type OnlineClassroomTargetType,
 } from '@/lib/onlineClassroom'
 
 const RECENT_VIETNAM_DATE = new Date(Date.now() + 7 * 60 * 60 * 1_000 - 24 * 60 * 60 * 1_000)
@@ -20,7 +18,6 @@ const RECENT_VIETNAM_DATE = new Date(Date.now() + 7 * 60 * 60 * 1_000 - 24 * 60 
   .slice(0, 10)
 
 type Props = {
-  targetType: OnlineClassroomTargetType
   targetId: string
   targetName: string
   mirroredEnabled?: boolean
@@ -29,7 +26,6 @@ type Props = {
 }
 
 export function OnlineClassroomPilotCard({
-  targetType,
   targetId,
   targetName,
   mirroredEnabled,
@@ -41,9 +37,6 @@ export function OnlineClassroomPilotCard({
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError, setStatusError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [credentialHardened, setCredentialHardened] = useState(targetType !== 'teacher')
-  const [rotatingCredential, setRotatingCredential] = useState(false)
-  const [temporaryPassword, setTemporaryPassword] = useState('')
   const [issuingBookingId, setIssuingBookingId] = useState('')
   const [partnerTeacherStatus, setPartnerTeacherStatus] = useState<Record<string, boolean | 'error'>>({})
 
@@ -53,12 +46,10 @@ export function OnlineClassroomPilotCard({
     void Promise.resolve().then(async () => {
       if (!active) return
       setStatusLoading(true)
-      setTemporaryPassword('')
       try {
-        const result = await getOnlineClassroomPilotStatus(targetType, targetId)
+        const result = await getOnlineClassroomPilotStatus('student', targetId)
         if (active) {
           setEnabled(result.enabled)
-          setCredentialHardened(targetType !== 'teacher' || result.credentialHardened === true)
           setStatusError('')
         }
       } catch (error) {
@@ -68,7 +59,7 @@ export function OnlineClassroomPilotCard({
       }
     })
     return () => { active = false }
-  }, [role, targetId, targetType])
+  }, [role, targetId])
 
   const eligibleBookings = useMemo(() => {
     return bookings
@@ -89,12 +80,15 @@ export function OnlineClassroomPilotCard({
   )
 
   useEffect(() => {
-    if (role !== 'admin' || targetType !== 'student' || !enabled || partnerTeacherIds.length === 0) return
+    if (role !== 'admin' || !enabled || partnerTeacherIds.length === 0) return
     let active = true
     Promise.all(partnerTeacherIds.map(async (teacherId) => {
       try {
         const result = await getOnlineClassroomPilotStatus('teacher', teacherId)
-        return [teacherId, result.enabled && result.credentialHardened === true] as const
+        return [
+          teacherId,
+          result.accountReady ?? (result.enabled && result.credentialHardened === true),
+        ] as const
       } catch {
         return [teacherId, 'error'] as const
       }
@@ -103,7 +97,7 @@ export function OnlineClassroomPilotCard({
       setPartnerTeacherStatus(Object.fromEntries(entries))
     })
     return () => { active = false }
-  }, [enabled, partnerTeacherIds, role, targetType])
+  }, [enabled, partnerTeacherIds, role])
 
   if (role !== 'admin') return null
 
@@ -111,7 +105,8 @@ export function OnlineClassroomPilotCard({
     const next = !enabled
     setSaving(true)
     try {
-      const result = await setOnlineClassroomPilotAccess(targetType, targetId, next)
+      const result = await setOnlineClassroomPilotAccess('student', targetId, next)
+      setPartnerTeacherStatus({})
       setEnabled(result.enabled)
       onUpdated?.(result.enabled)
       toast.success(result.enabled
@@ -121,36 +116,6 @@ export function OnlineClassroomPilotCard({
       toast.error(onlineClassroomErrorMessage(error))
     } finally {
       setSaving(false)
-    }
-  }
-
-  const rotateCredential = async () => {
-    if (targetType !== 'teacher') return
-    if (credentialHardened && !window.confirm(
-      'Đổi mật khẩu sẽ đăng xuất các phiên cũ và tắt pilot. Bạn cần gửi mật khẩu mới cho gia sư rồi bật pilot lại. Tiếp tục?',
-    )) return
-    setRotatingCredential(true)
-    try {
-      const result = await rotateOnlineClassroomTeacherPassword(targetId)
-      setTemporaryPassword(result.temporaryPassword)
-      setCredentialHardened(true)
-      setEnabled(false)
-      onUpdated?.(false)
-      toast.success('Đã tạo mật khẩu pilot riêng và tắt quyền cũ. Hãy sao chép mật khẩu, gửi riêng cho gia sư rồi bật pilot lại.')
-    } catch (error) {
-      toast.error(onlineClassroomErrorMessage(error))
-    } finally {
-      setRotatingCredential(false)
-    }
-  }
-
-  const copyTemporaryPassword = async () => {
-    if (!temporaryPassword) return
-    try {
-      await navigator.clipboard.writeText(temporaryPassword)
-      toast.success('Đã sao chép mật khẩu pilot.')
-    } catch {
-      toast.error('Không sao chép tự động được. Hãy chọn và sao chép mật khẩu trong ô.')
     }
   }
 
@@ -177,7 +142,7 @@ export function OnlineClassroomPilotCard({
             </span>
             <div>
               <h2 className="text-base font-black text-slate-950">Pilot phòng học trực tuyến 123English</h2>
-              <p className="mt-0.5 text-xs font-semibold text-slate-500">Cấp riêng từng gia sư và học viên, mặc định luôn tắt</p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-500">Chỉ bật cho học viên thử nghiệm; gia sư của booking được liên kết tự động khi tài khoản đăng nhập hợp lệ</p>
             </div>
           </div>
 
@@ -199,55 +164,15 @@ export function OnlineClassroomPilotCard({
             size="sm"
             variant={enabled ? 'danger' : 'primary'}
             loading={saving}
-            disabled={statusLoading || Boolean(statusError) || (targetType === 'teacher' && !credentialHardened)}
+            disabled={statusLoading || Boolean(statusError)}
             onClick={toggle}
           >
             {enabled ? 'Thu hồi quyền pilot' : 'Bật quyền pilot'}
           </Button>
-          {targetType === 'teacher' && (
-            <Button
-              size="sm"
-              variant="outline"
-              loading={rotatingCredential}
-              disabled={statusLoading || Boolean(statusError) || saving}
-              onClick={rotateCredential}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              {credentialHardened ? 'Đổi mật khẩu pilot' : 'Tạo mật khẩu pilot'}
-            </Button>
-          )}
         </div>
       </div>
 
-      {targetType === 'teacher' && (
-        <div className={`mt-4 rounded-xl border px-4 py-3 text-xs leading-5 ${credentialHardened ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-          <p className="font-black">
-            {credentialHardened
-              ? 'Đã bảo vệ bằng mật khẩu pilot riêng.'
-              : 'Chưa thể bật pilot: mật khẩu dùng chung không đủ an toàn cho phòng học.'}
-          </p>
-          <p className="mt-1 font-semibold">
-            Mật khẩu mới chỉ hiện một lần cho Admin. Không gửi trong nhóm chung và không lưu vào ghi chú công khai.
-          </p>
-          {temporaryPassword && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-              <input
-                readOnly
-                value={temporaryPassword}
-                aria-label="Mật khẩu pilot tạm thời"
-                onFocus={(event) => event.currentTarget.select()}
-                className="min-h-10 w-full rounded-lg border border-emerald-300 bg-white px-3 font-mono text-sm font-black tracking-wide text-slate-950 outline-none focus:ring-2 focus:ring-emerald-300"
-              />
-              <Button size="sm" variant="outline" onClick={copyTemporaryPassword}>
-                <Copy className="h-3.5 w-3.5" />
-                Sao chép
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {targetType === 'student' && enabled && (
+      {enabled && (
         <div className="mt-5 border-t border-sky-200 pt-4">
           <div className="flex items-center gap-2">
             <CalendarClock className="h-4 w-4 text-sky-700" />
@@ -266,13 +191,15 @@ export function OnlineClassroomPilotCard({
                     <p className="mt-1 text-xs font-semibold text-slate-500">
                       {booking.requestedDate || 'Chưa có ngày'} lúc {booking.requestedStart || '--:--'} - {booking.requestedEnd || '--:--'}
                     </p>
-                    {partnerTeacherStatus[booking.teacherId] !== true && (
+                    {(!booking.teacherId || partnerTeacherStatus[booking.teacherId] !== true) && (
                       <p className="mt-1 text-[11px] font-bold text-amber-700">
-                        {partnerTeacherStatus[booking.teacherId] === false
-                          ? 'Cần bật pilot cho gia sư của booking này trước.'
+                        {!booking.teacherId
+                          ? 'Booking chưa có gia sư; hãy xếp lại lịch trước khi tạo link.'
+                          : partnerTeacherStatus[booking.teacherId] === false
+                          ? 'Tài khoản gia sư chưa sẵn sàng. Hãy khôi phục đăng nhập ở hồ sơ gia sư.'
                           : partnerTeacherStatus[booking.teacherId] === 'error'
-                            ? 'Không xác minh được quyền pilot của gia sư.'
-                            : 'Đang xác minh quyền pilot của gia sư…'}
+                            ? 'Không xác minh được tài khoản đăng nhập của gia sư.'
+                            : 'Đang xác minh tài khoản đăng nhập của gia sư…'}
                       </p>
                     )}
                   </div>
@@ -281,11 +208,11 @@ export function OnlineClassroomPilotCard({
                       size="sm"
                       variant="outline"
                       loading={issuingBookingId === booking.id}
-                      disabled={partnerTeacherStatus[booking.teacherId] !== true}
+                      disabled={!booking.teacherId || partnerTeacherStatus[booking.teacherId] !== true}
                       onClick={() => copyInvite(booking)}
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      Link học viên
+                      Sao chép link HV
                     </Button>
                     {partnerTeacherStatus[booking.teacherId] === true ? (
                       <a

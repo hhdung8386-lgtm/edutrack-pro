@@ -2204,15 +2204,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     && booking.status === 'confirmed'
     && !booking.lessonId
     && !booking.groupClassId
-    && student.onlineClassroomPilotEnabled
-    && teacherMap[booking.teacherId]?.onlineClassroomPilotEnabled,
+    && student.onlineClassroomPilotEnabled,
   )
   const roomLinkOf = (booking: BookingRequest | null) => {
     if (!booking) return ''
-    // Teacher mirrors load asynchronously. Until the referenced profile is
-    // resolved, do not leak a legacy room for what may be a pilot booking.
-    if (!teacherMap[booking.teacherId]) return ''
     if (isPilotBooking(booking)) return cachedClassroomJoinLink(booking.id)
+    // Teacher mirrors load asynchronously. For legacy rooms, wait until the
+    // referenced profile is resolved before exposing the fallback URL.
+    if (!teacherMap[booking.teacherId]) return ''
     return student.classroomURL || booking.classroomURL || ''
   }
   const studentGivenName = student.name.trim().split(/\s+/).slice(-1)[0] || student.name

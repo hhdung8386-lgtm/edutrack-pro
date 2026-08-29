@@ -1541,7 +1541,7 @@ export function StudentDetailPage() {
 
       {!groupClass && (
         <OnlineClassroomPilotCard
-          targetType="student"
+          key={student.id}
           targetId={student.id}
           targetName={student.name}
           mirroredEnabled={student.onlineClassroomPilotEnabled}

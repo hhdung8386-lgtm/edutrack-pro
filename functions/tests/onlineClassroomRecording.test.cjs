@@ -51,31 +51,70 @@ test('state machine cho phép retry idempotent nhưng không hồi sinh bản gh
   assert.equal(canTransitionOnlineClassroomRecordingStatus('expired', 'ready'), false)
 })
 
-test('quyền bản ghi của gia sư bị thu hồi theo trạng thái, pilot, UID và generation hiện tại', () => {
+test('quyền bản ghi của gia sư dùng UID chuẩn và generation, không phụ thuộc mật khẩu pilot', () => {
   const uid = 'teacher-auth-uid'
   const user = { role: 'teacher', teacherId: 'teacher-a' }
   const teacher = { status: 'active', loginAccountUid: uid }
-  const access = { enabled: true, credentialHardenedUid: uid, generation: 7 }
+  const access = { enabled: false, credentialHardenedUid: 'legacy-marker', generation: 7 }
   const recording = { teacherId: 'teacher-a', teacherPilotGeneration: 7 }
 
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, access, recording), 'teacher')
-  assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, enabled: false }, recording), null)
+  assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, enabled: true }, recording), 'teacher')
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, { ...teacher, status: 'resigned' }, access, recording), null)
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, { ...teacher, loginAccountUid: 'other-uid' }, access, recording), null)
-  assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, credentialHardenedUid: 'other-uid' }, recording), null)
+  assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, credentialHardenedUid: uid }, recording), 'teacher')
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, generation: 8 }, recording), null)
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, { ...user, teacherId: 'teacher-b' }, teacher, access, recording), null)
   assert.equal(resolveOnlineClassroomRecordingIdentityRole(uid, { role: 'student' }, teacher, access, recording), null)
 
   // Backward compatibility: legacy recordings without a captured generation
-  // still require every current teacher invariant and are revoked while pilot
-  // is disabled. New recordings additionally stay revoked after re-enabling.
+  // still require active status and the canonical two-way teacher identity.
   assert.equal(
     resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, access, { teacherId: 'teacher-a' }),
     'teacher',
   )
   assert.equal(
-    resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, { ...access, enabled: false }, { teacherId: 'teacher-a' }),
+    resolveOnlineClassroomRecordingIdentityRole(uid, user, teacher, {}, { teacherId: 'teacher-a' }),
+    'teacher',
+  )
+  assert.equal(
+    resolveOnlineClassroomRecordingIdentityRole(
+      uid,
+      user,
+      teacher,
+      null,
+      { teacherId: 'teacher-a', teacherPilotGeneration: 0 },
+    ),
+    'teacher',
+  )
+  assert.equal(
+    resolveOnlineClassroomRecordingIdentityRole(
+      uid,
+      user,
+      teacher,
+      {},
+      { teacherId: 'teacher-a', teacherPilotGeneration: 0 },
+    ),
+    'teacher',
+  )
+  assert.equal(
+    resolveOnlineClassroomRecordingIdentityRole(
+      uid,
+      user,
+      teacher,
+      null,
+      { teacherId: 'teacher-a', teacherPilotGeneration: 1 },
+    ),
+    null,
+  )
+  assert.equal(
+    resolveOnlineClassroomRecordingIdentityRole(
+      uid,
+      user,
+      teacher,
+      'malformed-access',
+      { teacherId: 'teacher-a', teacherPilotGeneration: 0 },
+    ),
     null,
   )
   assert.equal(

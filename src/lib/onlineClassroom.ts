@@ -55,19 +55,13 @@ const functions = getFunctions(app, 'asia-southeast1')
 
 const getPilotStatusCallable = httpsCallable<
   { targetType: OnlineClassroomTargetType; targetId: string },
-  { enabled: boolean; credentialHardened: boolean | null; updatedAt: string | null }
->(functions, 'getOnlineClassroomPilotStatus')
-
-const rotateTeacherPasswordCallable = httpsCallable<
-  { teacherId: string },
   {
-    success: true
-    temporaryPassword: string
-    credentialHardened: true
-    enabled: false
-    revokedInviteCount: number
+    enabled: boolean
+    credentialHardened: boolean | null
+    accountReady: boolean | null
+    updatedAt: string | null
   }
->(functions, 'rotateOnlineClassroomTeacherPassword')
+>(functions, 'getOnlineClassroomPilotStatus')
 
 const setPilotAccessCallable = httpsCallable<
   { targetType: OnlineClassroomTargetType; targetId: string; enabled: boolean },
@@ -120,10 +114,6 @@ export async function setOnlineClassroomPilotAccess(
   enabled: boolean,
 ) {
   return (await setPilotAccessCallable({ targetType, targetId, enabled })).data
-}
-
-export async function rotateOnlineClassroomTeacherPassword(teacherId: string) {
-  return (await rotateTeacherPasswordCallable({ teacherId })).data
 }
 
 export async function issueOnlineClassroomInvite(bookingId: string): Promise<string> {

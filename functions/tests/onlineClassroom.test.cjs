@@ -347,11 +347,10 @@ test('append từ chối khi snapshot mới vượt giới hạn byte', () => {
   assert.equal(decideOnlineClassroomBoardOperationAppend(current, overflow, 'student').decision, 'max-bytes')
 })
 
-test('reminder pilot dùng allowlist private và khóa riêng theo từng session', () => {
+test('reminder pilot chỉ dùng allowlist học viên và khóa riêng theo từng session', () => {
   const second = { ...confirmed, id: 'booking-b', requestedStart: '20:00', requestedEnd: '20:25' }
   const enabled = new Set([
     onlineClassroomAccessId('student', 'student-a'),
-    onlineClassroomAccessId('teacher', 'teacher-a'),
   ])
   const partitioned = partitionOnlineClassroomReminderBookings([confirmed, second], enabled)
   assert.equal(partitioned.pilot.length, 2)
@@ -361,4 +360,12 @@ test('reminder pilot dùng allowlist private và khóa riêng theo từng sessio
     onlineClassroomPilotReminderDeliveryId(second, '30m'),
   )
   assert.equal(partitionOnlineClassroomReminderBookings([confirmed], new Set()).legacy.length, 1)
+  assert.equal(partitionOnlineClassroomReminderBookings([
+    confirmed,
+  ], new Set([onlineClassroomAccessId('teacher', 'teacher-a')])).legacy.length, 1)
+  assert.equal(partitionOnlineClassroomReminderBookings([
+    { ...confirmed, teacherId: undefined },
+    { ...confirmed, id: 'group-booking', groupClassId: 'group-a' },
+    { ...confirmed, id: 'attended-booking', lessonId: 'lesson-a' },
+  ], enabled).legacy.length, 3)
 })

@@ -168,10 +168,9 @@ type TeacherBookingView = BookingRequest & {
   displayDay: DayOfWeek
 }
 
-function pilotClassroomConfigured(booking: BookingRequest, teacher: Teacher, student: Student) {
+function pilotClassroomConfigured(booking: BookingRequest, student: Student) {
   return Boolean(
     booking.status === 'confirmed'
-    && teacher.onlineClassroomPilotEnabled
     && student.onlineClassroomPilotEnabled
     && !booking.lessonId
     && !booking.groupClassId,
@@ -188,7 +187,7 @@ function classroomLinkForBooking(
   // a legacy room that may belong to an enabled pilot booking.
   if (!teacher || !student) return ''
   const pilotEnabled = Boolean(
-    pilotClassroomConfigured(booking, teacher, student),
+    pilotClassroomConfigured(booking, student),
   )
   if (pilotEnabled) {
     return onlineClassroomJoinWindow(booking, nowMs).isOpen ? classroomRoute(booking.id) : ''
@@ -1232,7 +1231,7 @@ export function BookingSchedulesPage() {
               {/* Classroom URL & Curriculum Link display */}
               {(() => {
                 const student = students[selectedBooking.studentId]
-                const pilotConfigured = Boolean(teacher && student && pilotClassroomConfigured(selectedBooking, teacher, student))
+                const pilotConfigured = Boolean(student && pilotClassroomConfigured(selectedBooking, student))
                 const pilotWindow = pilotConfigured ? onlineClassroomJoinWindow(selectedBooking, attendanceNow) : null
                 const roomLink = classroomLinkForBooking(selectedBooking, teacher, student, attendanceNow)
                 const subjectPkg = student?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
@@ -1414,7 +1413,7 @@ export function BookingSchedulesPage() {
             {/* Links and materials display inside Attendance Modal */}
             {(() => {
               const student = students[selectedBooking.studentId]
-              const pilotConfigured = Boolean(teacher && student && pilotClassroomConfigured(selectedBooking, teacher, student))
+              const pilotConfigured = Boolean(student && pilotClassroomConfigured(selectedBooking, student))
               const pilotWindow = pilotConfigured ? onlineClassroomJoinWindow(selectedBooking, attendanceNow) : null
               const roomLink = classroomLinkForBooking(selectedBooking, teacher, student, attendanceNow)
               const subjectPkg = student?.subjects?.find(s => s.subjectId === selectedBooking.subjectId)
