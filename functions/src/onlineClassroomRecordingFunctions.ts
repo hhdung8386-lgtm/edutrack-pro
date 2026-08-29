@@ -501,6 +501,7 @@ export const respondOnlineClassroomRecordingConsent = onCall({
   // This is a small consent transaction for the limited pilot. Fractional CPU
   // avoids exhausting the regional Cloud Run CPU quota during safe revisions.
   cpu: 'gcf_gen1',
+  maxInstances: 3,
 }, async (request) => {
   const bookingId = request.data?.bookingId
   const requestId = request.data?.requestId

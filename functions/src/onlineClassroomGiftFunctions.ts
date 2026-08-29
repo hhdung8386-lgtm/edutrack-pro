@@ -100,6 +100,7 @@ export const sendOnlineClassroomGift = onCall({
   // Gift writes are lightweight and intentionally low-volume in the pilot.
   // Fractional CPU preserves regional deployment headroom for classroom calls.
   cpu: 'gcf_gen1',
+  maxInstances: 3,
 }, async (request) => {
   const bookingId = request.data?.bookingId
   const giftType = request.data?.giftType
