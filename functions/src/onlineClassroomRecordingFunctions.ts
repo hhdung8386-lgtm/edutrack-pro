@@ -498,6 +498,9 @@ export const respondOnlineClassroomRecordingConsent = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  // This is a small consent transaction for the limited pilot. Fractional CPU
+  // avoids exhausting the regional Cloud Run CPU quota during safe revisions.
+  cpu: 'gcf_gen1',
 }, async (request) => {
   const bookingId = request.data?.bookingId
   const requestId = request.data?.requestId

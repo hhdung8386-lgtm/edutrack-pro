@@ -97,6 +97,9 @@ export const sendOnlineClassroomGift = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 30,
   memory: '256MiB',
+  // Gift writes are lightweight and intentionally low-volume in the pilot.
+  // Fractional CPU preserves regional deployment headroom for classroom calls.
+  cpu: 'gcf_gen1',
 }, async (request) => {
   const bookingId = request.data?.bookingId
   const giftType = request.data?.giftType
