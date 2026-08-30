@@ -117,6 +117,11 @@ test('moving accounting items preserves existing role visibility', () => {
 })
 
 test('classroom operations is visible only to system Admin', () => {
+  const adminGroups = getVisibleAdminNavigation('admin')
+  const trialRoomItem = adminGroups
+    .flatMap((group) => group.items)
+    .find((item) => item.to === '/admin/online-classrooms')
+  assert.equal(trialRoomItem?.label, 'Phòng học thử')
   assert.ok(visiblePaths('admin').includes('/admin/online-classrooms'))
   assert.equal(visiblePaths('student_manager').includes('/admin/online-classrooms'), false)
   assert.equal(visiblePaths('teacher_manager').includes('/admin/online-classrooms'), false)

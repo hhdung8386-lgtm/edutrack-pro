@@ -54,6 +54,7 @@ type JitsiClassroomProps = {
   manageWaitingRoom?: boolean
   scheduledDurationSeconds?: number
   scheduledElapsedSeconds?: number
+  endedDescription?: string
   onApiReady?: (api: JitsiExternalApi | null) => void
   onConferenceJoined?: (participantId: string) => void
   onParticipantJoined?: (participantId: string) => void
@@ -206,6 +207,7 @@ export function JitsiClassroom({
   manageWaitingRoom = false,
   scheduledDurationSeconds = 0,
   scheduledElapsedSeconds = 0,
+  endedDescription = 'Bảng học vẫn được giữ theo buổi. Bạn có thể vào lại cuộc gọi nếu lớp chưa kết thúc.',
   onApiReady,
   onConferenceJoined,
   onParticipantJoined,
@@ -784,7 +786,7 @@ export function JitsiClassroom({
           <div className="max-w-md text-center">
             <Video className="mx-auto h-10 w-10 text-amber-300" aria-hidden="true" />
             <p className="mt-4 text-base font-extrabold">Bạn đã rời cuộc gọi</p>
-            <p className="mt-2 text-sm leading-6 text-slate-300">Bảng học vẫn được giữ theo buổi. Bạn có thể vào lại cuộc gọi nếu lớp chưa kết thúc.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{endedDescription}</p>
             <button
               type="button"
               onClick={retryConference}

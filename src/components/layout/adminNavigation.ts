@@ -95,7 +95,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     items: [
       { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
       { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
-      { to: '/admin/online-classrooms', icon: MonitorUp, label: 'Phòng học trực tuyến' },
+      { to: '/admin/online-classrooms', icon: MonitorUp, label: 'Phòng học thử' },
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
     ],

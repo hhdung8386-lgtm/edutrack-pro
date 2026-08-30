@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import ts from 'typescript'
+import {
+  isTrialScreenCaptureCurrent,
+  nextTrialScreenHistoryVersion,
+  resolveTrialScreenShareTransition,
+} from '../src/lib/trialScreenShare.ts'
 
 type ContainRect = { left: number; top: number; width: number; height: number }
 type StageModule = {
@@ -77,4 +82,38 @@ test('contain rect trả vùng rỗng với kích thước không hợp lệ', (
   assert.deepEqual(computeContainRect(0, 720, 1_920, 1_080), empty)
   assert.deepEqual(computeContainRect(1_280, Number.NaN, 1_920, 1_080), empty)
   assert.deepEqual(computeContainRect(1_280, 720, -1, 1_080), empty)
+})
+
+test('giữ presenter ổn định qua nhịp rỗng và nhận ra người share kế tiếp', () => {
+  const pendingPresenter = resolveTrialScreenShareTransition(false, '', true, [])
+  assert.deepEqual(pendingPresenter, { stablePresenterId: '', newShare: true })
+
+  const started = resolveTrialScreenShareTransition(true, pendingPresenter.stablePresenterId, true, ['presenter-a'])
+  assert.deepEqual(started, { stablePresenterId: 'presenter-a', newShare: false })
+
+  const transientGap = resolveTrialScreenShareTransition(true, started.stablePresenterId, true, [])
+  assert.deepEqual(transientGap, { stablePresenterId: 'presenter-a', newShare: false })
+
+  const handoff = resolveTrialScreenShareTransition(true, transientGap.stablePresenterId, true, ['presenter-b'])
+  assert.deepEqual(handoff, { stablePresenterId: 'presenter-b', newShare: true })
+
+  const stopped = resolveTrialScreenShareTransition(true, handoff.stablePresenterId, false, [])
+  assert.deepEqual(stopped, { stablePresenterId: '', newShare: false })
+})
+
+test('bỏ kết quả chụp cũ sau khi share dừng hoặc epoch đã đổi', () => {
+  assert.equal(isTrialScreenCaptureCurrent(7, 7, true), true)
+  assert.equal(isTrialScreenCaptureCurrent(7, 8, true), false)
+  assert.equal(isTrialScreenCaptureCurrent(7, 7, false), false)
+})
+
+test('undo sau khi xóa không được hạ generation của màn hình chú thích', () => {
+  assert.deepEqual(nextTrialScreenHistoryVersion(12, 2, 1), {
+    version: 13,
+    generation: 2,
+  })
+  assert.deepEqual(nextTrialScreenHistoryVersion(13, 2, 2), {
+    version: 14,
+    generation: 2,
+  })
 })

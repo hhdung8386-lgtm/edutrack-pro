@@ -43,6 +43,9 @@ type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error'
 export type CollaborativeWhiteboardProps = {
   snapshot: ValidatedBoardSnapshot
   role: OnlineClassroomRole
+  backgroundImageUrl?: string | null
+  backgroundImageAlt?: string
+  backgroundImageFit?: 'contain' | 'fill'
   canUndo: boolean
   canRedo: boolean
   saveStatus: SaveStatus
@@ -55,6 +58,7 @@ export type CollaborativeWhiteboardProps = {
   onSave: () => void
   variant?: 'board' | 'overlay'
   headerActions?: React.ReactNode
+  saveActionLabel?: string
 }
 
 type CanvasSize = { width: number; height: number; dpr: number }
@@ -251,6 +255,9 @@ function OverlayToolButton({
 export function CollaborativeWhiteboard({
   snapshot,
   role,
+  backgroundImageUrl = null,
+  backgroundImageAlt = 'Ảnh bài học được dán lên bảng trắng',
+  backgroundImageFit = 'contain',
   canUndo,
   canRedo,
   saveStatus,
@@ -263,6 +270,7 @@ export function CollaborativeWhiteboard({
   onSave,
   variant = 'board',
   headerActions,
+  saveActionLabel = 'Lưu bảng ngay',
 }: CollaborativeWhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasShellRef = useRef<HTMLDivElement>(null)
@@ -882,7 +890,7 @@ export function CollaborativeWhiteboard({
                   </button>
                 </div>
               )}
-              <ToolButton label="Lưu bảng ngay" onClick={onSave}>
+              <ToolButton label={saveActionLabel} onClick={onSave}>
                 {saveStatus === 'saving' ? <RotateCcw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               </ToolButton>
             </div>
@@ -892,9 +900,17 @@ export function CollaborativeWhiteboard({
       </header>
 
       <div ref={canvasShellRef} className="relative min-h-0 flex-1 overflow-hidden bg-white">
+        {backgroundImageUrl && (
+          <img
+            src={backgroundImageUrl}
+            alt={backgroundImageAlt}
+            className={`pointer-events-none absolute inset-0 z-0 h-full w-full select-none ${backgroundImageFit === 'fill' ? 'object-fill' : 'object-contain'}`}
+            draggable={false}
+          />
+        )}
         <canvas
           ref={canvasRef}
-          className={`block h-full w-full select-none ${canDraw ? 'cursor-crosshair touch-none' : 'cursor-not-allowed'}`}
+          className={`relative z-10 block h-full w-full select-none ${canDraw ? 'cursor-crosshair touch-none' : 'cursor-not-allowed'}`}
           aria-label={canDraw ? 'Vùng vẽ bảng học' : 'Bảng học đang ở chế độ chỉ xem'}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -902,7 +918,7 @@ export function CollaborativeWhiteboard({
           onPointerCancel={cancelStroke}
         />
 
-        {snapshot.operations.length === 0 && !isDrawing && !pendingText && (
+        {!backgroundImageUrl && snapshot.operations.length === 0 && !isDrawing && !pendingText && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
             <div>
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-100">

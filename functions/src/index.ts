@@ -77,6 +77,13 @@ export { cleanupOnlineClassroomEphemeralData } from './onlineClassroomEphemeralC
 
 export { onlineClassroomJaasSettingsProvisioning } from './onlineClassroomProvisioningFunctions'
 
+export {
+  createOnlineTrialClass,
+  endOnlineTrialClass,
+  getOnlineTrialClassAccess,
+  listOnlineTrialClasses,
+} from './onlineTrialClassFunctions'
+
 initializeApp()
 
 const db = new Firestore()

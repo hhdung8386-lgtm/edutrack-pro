@@ -98,6 +98,7 @@ const boardMessageSchema = z.discriminatedUnion('type', [
     ...envelopeFields,
     type: z.literal('operation'),
     boardVersion: z.number().int().nonnegative(),
+    boardGeneration: z.number().int().nonnegative().optional(),
     operation: boardOperationSchema,
   }).strict(),
   z.object({
@@ -119,12 +120,22 @@ const boardMessageSchema = z.discriminatedUnion('type', [
     surface: z.literal('screen'),
     type: z.literal('frame-refresh'),
   }).strict(),
-])
+]).superRefine((message, context) => {
+  if (message.surface === 'screen'
+    && message.type === 'operation'
+    && message.boardGeneration === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['boardGeneration'],
+      message: 'Screen operations require an explicit board generation.',
+    })
+  }
+})
 
 export type BoardWireMessage = z.infer<typeof boardMessageSchema>
 export type BoardMessagePayload =
   | { type: 'hello' }
-  | { type: 'operation'; boardVersion: number; operation: BoardOperation }
+  | { type: 'operation'; boardVersion: number; boardGeneration?: number; operation: BoardOperation }
   | { type: 'snapshot'; snapshot: ValidatedBoardSnapshot }
   | { type: 'snapshot-request' }
   | { type: 'snapshot-refresh'; boardVersion: number }
@@ -213,6 +224,15 @@ export function makeBoardMessage(
 
 export function boardMessageSurface(message: BoardWireMessage): BoardSurface {
   return message.surface === 'screen' ? 'screen' : 'board'
+}
+
+export function isBoardOperationGenerationCurrent(
+  message: BoardWireMessage,
+  currentGeneration: number,
+): boolean {
+  if (message.type !== 'operation') return false
+  return boardMessageSurface(message) === 'board'
+    || message.boardGeneration === currentGeneration
 }
 
 export function serializeBoardMessage(message: BoardWireMessage): string | null {

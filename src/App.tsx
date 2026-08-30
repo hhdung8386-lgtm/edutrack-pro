@@ -65,6 +65,7 @@ const PublicTeacherProfilePage = lazy(() => import('@/pages/PublicTeacherProfile
 const PublicTeachersPage = lazy(() => import('@/pages/PublicTeachersPage').then(m => ({ default: m.PublicTeachersPage })))
 const PublicEvaluationPage = lazy(() => import('@/pages/PublicEvaluationPage'))
 const OnlineClassroomPage = lazy(() => import('@/pages/OnlineClassroomPage').then(m => ({ default: m.OnlineClassroomPage })))
+const TrialClassroomPage = lazy(() => import('@/pages/TrialClassroomPage').then(m => ({ default: m.TrialClassroomPage })))
 const ClassroomRecordingPage = lazy(() => import('@/pages/ClassroomRecordingPage').then(m => ({ default: m.ClassroomRecordingPage })))
 
 const RootRedirect = () => {
@@ -126,6 +127,7 @@ function App() {
           <Route path="/waiting" element={<WaitingApprovalPage />} />
           <Route path="/evaluation/:id" element={<PublicEvaluationPage />} />
           <Route path="/lop-hoc/:bookingId" element={<OnlineClassroomPage />} />
+          <Route path="/lop-hoc-thu/:trialClassId" element={<TrialClassroomPage />} />
           <Route path="/xem-lai-buoi-hoc/:recordingId" element={<ClassroomRecordingPage />} />
 
           {/* Parent Routes - public auth via student code + phone */}

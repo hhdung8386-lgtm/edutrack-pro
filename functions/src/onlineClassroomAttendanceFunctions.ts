@@ -1,4 +1,4 @@
-import { FieldValue, Firestore, Timestamp } from 'firebase-admin/firestore'
+import { FieldValue, Firestore, Timestamp, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { defineSecret } from 'firebase-functions/params'
 import { onRequest } from 'firebase-functions/v2/https'
@@ -30,6 +30,11 @@ import {
   type OnlineClassroomAttendanceRoomBinding,
   type OnlineClassroomJaasAttendanceEvent,
 } from './onlineClassroomAttendance'
+import {
+  ONLINE_TRIAL_CLASSES_COLLECTION,
+  isSafeOnlineTrialClassId,
+  validateOnlineTrialClassWebhookBinding,
+} from './onlineTrialClass'
 
 const db = new Firestore()
 const jaasWebhookSigningSecret = defineSecret('JAAS_WEBHOOK_SIGNING_SECRET')
@@ -167,6 +172,68 @@ function assertFreshBinding(
   return parsed.binding
 }
 
+async function acknowledgeTrialClassAttendanceEvent(
+  roomSnapshot: QueryDocumentSnapshot,
+  event: OnlineClassroomJaasAttendanceEvent,
+): Promise<{ handled: boolean; duplicate: boolean }> {
+  const preliminaryRoom = roomSnapshot.data()
+  if (preliminaryRoom.scopeType !== 'trial') return { handled: false, duplicate: false }
+  if (!isSafeOnlineTrialClassId(preliminaryRoom.trialClassId)) {
+    throw new AttendanceWebhookError('invalid-room-binding')
+  }
+  const trialRef = db.collection(ONLINE_TRIAL_CLASSES_COLLECTION).doc(preliminaryRoom.trialClassId)
+  const eventKey = onlineClassroomJaasAttendanceEventDocumentId(event.idempotencyKey)
+  const result = await db.runTransaction(async (transaction) => {
+    const [freshRoomSnapshot, trialSnapshot] = await Promise.all([
+      transaction.get(roomSnapshot.ref),
+      transaction.get(trialRef),
+    ])
+    if (!freshRoomSnapshot.exists || !trialSnapshot.exists) {
+      throw new AttendanceWebhookError('invalid-room-binding')
+    }
+    const room = freshRoomSnapshot.data() || {}
+    const trial = trialSnapshot.data() || {}
+    if (!validateOnlineTrialClassWebhookBinding({
+      roomDocumentId: freshRoomSnapshot.id,
+      expectedRoomName: event.roomAlias,
+      roomScopeType: room.scopeType,
+      roomScopeId: room.scopeId,
+      roomTrialClassId: room.trialClassId,
+      roomSessionKey: room.sessionKey,
+      roomName: room.roomName,
+      roomAccountingImpact: room.accountingImpact,
+      trialDocumentId: trialSnapshot.id,
+      trialKind: trial.kind,
+      trialClassId: trial.trialClassId,
+      trialRoomSessionKey: trial.roomSessionKey,
+      trialRoomName: trial.roomName,
+      trialAccountingImpact: trial.accountingImpact,
+    })) {
+      throw new AttendanceWebhookError('invalid-room-binding')
+    }
+
+    const currentAtMs = Number.isSafeInteger(trial.lastJaasEventAtMs)
+      ? Number(trial.lastJaasEventAtMs)
+      : -1
+    const currentKey = typeof trial.lastJaasEventKey === 'string' ? trial.lastJaasEventKey : ''
+    const duplicate = currentAtMs === event.timestamp && currentKey === eventKey
+    const shouldAdvance = event.timestamp > currentAtMs
+      || (event.timestamp === currentAtMs && eventKey > currentKey)
+    if (shouldAdvance) {
+      transaction.update(trialRef, {
+        lastJaasEventAtMs: event.timestamp,
+        lastJaasEventAt: Timestamp.fromMillis(event.timestamp),
+        lastJaasEventKey: eventKey,
+        lastJaasEventType: event.eventType,
+        lastProviderActivityAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    }
+    return { duplicate }
+  })
+  return { handled: true, duplicate: result.duplicate }
+}
+
 /**
  * Authenticated JaaS history receiver. This endpoint records provider evidence
  * only: it never writes lessons, booking state, diamonds, approvals or payroll.
@@ -255,6 +322,18 @@ export const onlineClassroomJaasAttendanceWebhook = onRequest({
     }
 
     const roomSnapshot = roomCandidates.docs[0]
+    const trialResult = await acknowledgeTrialClassAttendanceEvent(roomSnapshot, event)
+    if (trialResult.handled) {
+      // Trial Class is a standalone meeting aggregate. A signed event is ACKed
+      // after its room↔trial binding is revalidated, without reading or writing
+      // booking, lesson, minutes, diamonds, salary, or payroll data.
+      response.status(200).json({
+        received: true,
+        duplicate: trialResult.duplicate,
+        scope: 'trial',
+      })
+      return
+    }
     const preliminaryRoom = parseOnlineClassroomAttendanceRoomBinding({
       roomDocumentId: roomSnapshot.id,
       roomData: roomSnapshot.data(),

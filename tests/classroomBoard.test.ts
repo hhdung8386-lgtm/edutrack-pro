@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   boardMessageSurface,
+  isBoardOperationGenerationCurrent,
   makeBoardMessage,
   parseBoardMessage,
   sanitizeBoardSnapshot,
@@ -79,6 +80,30 @@ test('message chú thích màn hình dùng surface riêng nhưng message bảng 
   assert.equal(boardMessageSurface(parseBoardMessage(serializeBoardMessage(screen), 'booking-a')!), 'screen')
   assert.equal(parseBoardMessage(serializeBoardMessage(frameRefresh), 'booking-a')?.type, 'frame-refresh')
   assert.equal(parseBoardMessage(JSON.stringify({ ...frameRefresh, surface: undefined }), 'booking-a'), null)
+})
+
+test('operation màn hình cũ không được chui sang generation của lần share mới', () => {
+  const delayedScreenOperation = makeBoardMessage('booking-a', 'student', {
+    type: 'operation',
+    boardVersion: 8,
+    boardGeneration: 1,
+    operation: { ...rectangle, id: 'shape-delayed-screen', authorRole: 'student' },
+  }, 'screen')
+  const legacyBoardOperation = makeBoardMessage('booking-a', 'student', {
+    type: 'operation',
+    boardVersion: 8,
+    operation: { ...rectangle, id: 'shape-current-board', authorRole: 'student' },
+  })
+
+  assert.equal(boardMessageSurface(delayedScreenOperation), 'screen')
+  assert.equal(isBoardOperationGenerationCurrent(delayedScreenOperation, 2), false)
+  assert.equal(isBoardOperationGenerationCurrent(delayedScreenOperation, 1), true)
+  assert.equal(isBoardOperationGenerationCurrent(legacyBoardOperation, 999), true)
+  assert.throws(() => makeBoardMessage('booking-a', 'student', {
+    type: 'operation',
+    boardVersion: 8,
+    operation: rectangle,
+  }, 'screen'))
 })
 
 test('lọc session chú thích màn hình không hợp lệ và giữ snapshot hợp lệ', () => {

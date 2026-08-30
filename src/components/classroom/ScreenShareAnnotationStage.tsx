@@ -67,6 +67,8 @@ export type ScreenShareAnnotationStageProps = Omit<CollaborativeWhiteboardProps,
   canRefreshFrame: boolean
   onRefresh: () => void | Promise<void>
   onReturnToLive: () => void
+  showReturnToLiveOnDesktop?: boolean
+  returnToLiveLabel?: string
 }
 
 type Dimensions = { width: number; height: number }
@@ -82,6 +84,8 @@ export function ScreenShareAnnotationStage({
   canRefreshFrame,
   onRefresh,
   onReturnToLive,
+  showReturnToLiveOnDesktop = false,
+  returnToLiveLabel = 'Xem camera',
   snapshot,
   role,
   canUndo,
@@ -241,10 +245,10 @@ export function ScreenShareAnnotationStage({
           <button
             type="button"
             onClick={onReturnToLive}
-            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-amber-300 px-3 text-xs font-black text-slate-950 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950 md:hidden"
+            className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-amber-300 px-3 text-xs font-black text-slate-950 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950 ${showReturnToLiveOnDesktop ? '' : 'md:hidden'}`}
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Xem camera
+            {returnToLiveLabel}
           </button>
         </div>
       </header>

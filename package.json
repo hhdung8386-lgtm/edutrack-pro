@@ -19,6 +19,9 @@
     "test:admin-navigation": "node --experimental-strip-types --test tests/adminNavigation.test.ts",
     "test:student-list": "node --experimental-strip-types --test tests/studentList.test.ts",
     "test:online-classroom": "node --experimental-strip-types --test tests/classroomBoard.test.ts",
+    "test:screen-share-annotation": "node --experimental-strip-types --test tests/screenShareAnnotationStage.test.ts",
+    "test:online-trial-class": "node --experimental-strip-types --test tests/onlineTrialClass.test.ts",
+    "test:trial-board-image": "node --experimental-strip-types --test tests/trialBoardImage.test.ts",
     "test:firestore-rules": "npx firebase-tools emulators:exec --only firestore --project demo-edutrack-pro-rules \"node --test tests/firestoreRules.security.test.cjs\"",
     "preview": "vite preview"
   },
