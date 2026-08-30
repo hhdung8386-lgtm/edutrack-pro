@@ -13,6 +13,7 @@ export const ONLINE_CLASSROOM_PUBLIC_JITSI_DOMAIN = 'meet.jit.si'
 // reconnects. The token is still constrained to one literal room, while the
 // application continues to revalidate booking/pilot access independently.
 export const ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS = 3 * 60 * 60
+export const ONLINE_CLASSROOM_JAAS_ADMIN_JWT_TTL_SECONDS = 2 * 60
 export const ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS = Object.freeze({
   lobbyEnabled: true as const,
   lobbyType: 'WAIT_FOR_APPROVAL' as const,
@@ -61,6 +62,7 @@ export type OnlineClassroomJaasConfigurationReason =
   | 'JAAS_PRIVATE_KEY_INVALID'
   | 'JAAS_ROOM_ALIAS_INVALID'
   | 'JAAS_VIEWER_ID_INVALID'
+  | 'JAAS_TOKEN_EXPIRY_INVALID'
 
 export class OnlineClassroomJaasConfigurationError extends Error {
   constructor(public readonly reason: OnlineClassroomJaasConfigurationReason) {
@@ -215,6 +217,13 @@ export function onlineClassroomJaasRoomName(config: OnlineClassroomJaasConfig, r
   return `${config.appId}/${validatedRoomAlias(roomAlias)}`
 }
 
+export function onlineClassroomJaasConferenceFullName(
+  config: OnlineClassroomJaasConfig,
+  roomAlias: string,
+): string {
+  return `${validatedRoomAlias(roomAlias)}@conference.${config.appId}.8x8.vc`
+}
+
 function normalizedDisplayName(value: string, role: OnlineClassroomMeetingRole): string {
   const normalized = value
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -227,7 +236,7 @@ function normalizedDisplayName(value: string, role: OnlineClassroomMeetingRole):
   return 'Admin 123English'
 }
 
-function pseudonymousJaasUserId(appId: string, roomAlias: string, viewerId: string): string {
+export function pseudonymousJaasUserId(appId: string, roomAlias: string, viewerId: string): string {
   const normalizedViewerId = viewerId.trim()
   if (!normalizedViewerId || normalizedViewerId.length > 300) {
     throw new OnlineClassroomJaasConfigurationError('JAAS_VIEWER_ID_INVALID')
@@ -242,6 +251,37 @@ function base64UrlJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
 
+/** Short-lived admin credential used only by the backend room-destroy worker. */
+export function createOnlineClassroomJaasAdminJwt(input: {
+  config: OnlineClassroomJaasConfig
+  nowMs?: number
+  tokenId?: string
+}): string {
+  const nowSeconds = Math.floor((input.nowMs ?? Date.now()) / 1000)
+  const tokenId = input.tokenId && /^[A-Za-z0-9_-]{16,160}$/.test(input.tokenId)
+    ? input.tokenId
+    : randomBytes(18).toString('base64url')
+  const header = {
+    alg: 'RS256',
+    kid: input.config.kid,
+    typ: 'JWT',
+  }
+  const payload = {
+    aud: 'jitsi',
+    iss: 'chat',
+    sub: input.config.appId,
+    admin: true,
+    iat: nowSeconds,
+    nbf: nowSeconds - ONLINE_CLASSROOM_JAAS_CLOCK_SKEW_SECONDS,
+    exp: nowSeconds + ONLINE_CLASSROOM_JAAS_ADMIN_JWT_TTL_SECONDS,
+    jti: tokenId,
+  }
+  const signingInput = `${base64UrlJson(header)}.${base64UrlJson(payload)}`
+  const signature = sign('RSA-SHA256', Buffer.from(signingInput, 'utf8'), input.config.privateKey)
+    .toString('base64url')
+  return `${signingInput}.${signature}`
+}
+
 /**
  * Generate a short-lived RS256 token that is valid for one literal JaaS room.
  * Paid/provider-side features remain disabled because 123English implements
@@ -253,12 +293,22 @@ export function createOnlineClassroomJaasJwt(input: {
   role: OnlineClassroomMeetingRole
   displayName: string
   viewerId: string
+  expiresAtMs?: number
   nowMs?: number
   tokenId?: string
 }): string {
   const roomAlias = validatedRoomAlias(input.roomAlias)
   const nowSeconds = Math.floor((input.nowMs ?? Date.now()) / 1000)
   const moderator = input.role === 'admin' || input.role === 'teacher'
+  const defaultExpiresAtSeconds = nowSeconds + ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS
+  const requestedExpiresAtSeconds = Number.isSafeInteger(input.expiresAtMs)
+    && Number(input.expiresAtMs) > 0
+    ? Math.floor(Number(input.expiresAtMs) / 1000)
+    : defaultExpiresAtSeconds
+  const expiresAtSeconds = Math.min(defaultExpiresAtSeconds, requestedExpiresAtSeconds)
+  if (expiresAtSeconds <= nowSeconds) {
+    throw new OnlineClassroomJaasConfigurationError('JAAS_TOKEN_EXPIRY_INVALID')
+  }
   const tokenId = input.tokenId && /^[A-Za-z0-9_-]{16,160}$/.test(input.tokenId)
     ? input.tokenId
     : randomBytes(18).toString('base64url')
@@ -274,7 +324,10 @@ export function createOnlineClassroomJaasJwt(input: {
     room: roomAlias,
     iat: nowSeconds,
     nbf: nowSeconds - ONLINE_CLASSROOM_JAAS_CLOCK_SKEW_SECONDS,
-    exp: nowSeconds + ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS,
+    // A room-bound token must never outlive the booking's effective hard end.
+    // Backend access checks remain authoritative; this is defense in depth for
+    // copied credentials and reconnect attempts.
+    exp: expiresAtSeconds,
     jti: tokenId,
     context: {
       user: {

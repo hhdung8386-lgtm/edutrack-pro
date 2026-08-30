@@ -16,15 +16,20 @@ const {
   onlineClassroomBookingBlockReason,
   onlineClassroomCredentialMutationMatches,
   onlineClassroomCredentialRotationFence,
+  onlineClassroomInviteExpiresAt,
   onlineClassroomJoinWindow,
   onlineClassroomInviteMatches,
   onlineClassroomInvitePredatesGeneration,
   onlineClassroomPilotReminderDeliveryId,
   onlineClassroomSessionKey,
+  onlineClassroomSessionExtensionAvailable,
+  onlineClassroomSessionTiming,
   onlineClassroomStudentJoinUrl,
   onlineClassroomTokenHash,
   parseVietnamBookingTime,
+  normalizeOnlineClassroomExtensionMinutes,
   partitionOnlineClassroomReminderBookings,
+  resolveOnlineClassroomBookingExtensionState,
   resolveOnlineClassroomTrustedActor,
   sanitizeOnlineClassroomDomain,
   validateOnlineClassroomBoardDraft,
@@ -257,11 +262,82 @@ test('chỉ booking 1 kèm 1 đã xác nhận và chưa điểm danh được m�
   assert.equal(onlineClassroomBookingBlockReason({ ...confirmed, groupClassId: 'group-a' }), 'GROUP_CLASS_NOT_SUPPORTED')
 })
 
-test('cửa sổ pilot mở từ 12 giờ trước đến 6 giờ sau buổi học', () => {
+test('cửa sổ pilot đóng chính xác theo lịch và hỗ trợ đúng một mốc gia hạn tối đa 10 phút', () => {
   assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-26T22:59:00Z')), false)
   assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-26T23:00:00Z')), true)
-  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T17:49:00Z')), true)
-  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T17:51:00Z')), false)
+  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T11:49:59Z')), true)
+  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T11:50:00Z')), false)
+  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T11:59:59Z'), 10), true)
+  assert.equal(isInsideOnlineClassroomJoinWindow(confirmed, Date.parse('2026-08-27T12:00:00Z'), 10), false)
+  assert.equal(onlineClassroomSessionTiming(confirmed, 10)?.hardEndsAt.toISOString(), '2026-08-27T12:00:00.000Z')
+  assert.equal(onlineClassroomInviteExpiresAt(confirmed)?.toISOString(), '2026-08-27T12:00:00.000Z')
+  assert.equal(normalizeOnlineClassroomExtensionMinutes(10), 10)
+  assert.equal(normalizeOnlineClassroomExtensionMinutes(11), 0)
+  assert.equal(normalizeOnlineClassroomExtensionMinutes(-1), 0)
+})
+
+test('chỉ cho dùng lượt gia hạn sau giờ bắt đầu và trước hard end', () => {
+  const timing = onlineClassroomSessionTiming(confirmed, 0)
+  assert.ok(timing)
+  assert.equal(onlineClassroomSessionExtensionAvailable(
+    timing,
+    false,
+    timing.scheduledStartsAt.getTime() - 1,
+  ), false)
+  assert.equal(onlineClassroomSessionExtensionAvailable(
+    timing,
+    false,
+    timing.scheduledStartsAt.getTime(),
+  ), true)
+  assert.equal(onlineClassroomSessionExtensionAvailable(
+    timing,
+    true,
+    timing.scheduledStartsAt.getTime(),
+  ), false)
+  assert.equal(onlineClassroomSessionExtensionAvailable(
+    timing,
+    false,
+    timing.hardEndsAt.getTime(),
+  ), false)
+})
+
+test('booking control giữ quyền gia hạn qua mọi room generation và fail closed khi xung đột', () => {
+  assert.deepEqual(resolveOnlineClassroomBookingExtensionState(undefined, undefined), {
+    extensionMinutes: 0,
+    extensionUsed: false,
+  })
+  assert.deepEqual(resolveOnlineClassroomBookingExtensionState(undefined, {
+    extensionMinutes: 10,
+    extensionUsed: true,
+  }), {
+    extensionMinutes: 10,
+    extensionUsed: true,
+  })
+  assert.deepEqual(resolveOnlineClassroomBookingExtensionState({
+    extensionMinutes: 10,
+    extensionUsed: true,
+  }, {
+    extensionMinutes: 0,
+    extensionUsed: false,
+  }), {
+    extensionMinutes: 10,
+    extensionUsed: true,
+  })
+  assert.equal(resolveOnlineClassroomBookingExtensionState({
+    extensionMinutes: 5,
+    extensionUsed: true,
+  }, {
+    extensionMinutes: 10,
+    extensionUsed: true,
+  }), null)
+  assert.equal(resolveOnlineClassroomBookingExtensionState({
+    extensionMinutes: 11,
+    extensionUsed: true,
+  }, undefined), null)
+  assert.equal(resolveOnlineClassroomBookingExtensionState({
+    extensionMinutes: 0,
+    extensionUsed: true,
+  }, undefined), null)
 })
 
 test('không tự sửa ngày giờ booking sai thành một lịch hợp lệ khác', () => {

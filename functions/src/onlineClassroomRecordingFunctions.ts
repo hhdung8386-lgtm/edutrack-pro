@@ -6,9 +6,11 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import {
   ONLINE_CLASSROOM_ACCESS_COLLECTION,
+  ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES,
   ONLINE_CLASSROOM_ROOMS_COLLECTION,
   isInsideOnlineClassroomJoinWindow,
   isSafeClassroomId,
+  normalizeOnlineClassroomExtensionMinutes,
   onlineClassroomAccessGeneration,
   onlineClassroomAccessId,
   onlineClassroomBookingBlockReason,
@@ -188,10 +190,6 @@ async function loadRecordingManagerContext(uid: string | undefined, bookingId: s
   const booking = { id: bookingSnapshot.id, ...bookingSnapshot.data() } as Booking
   const blockReason = onlineClassroomBookingBlockReason(booking)
   if (blockReason) throw recordingError('Buổi học không còn đủ điều kiện ghi hình.', blockReason)
-  if (!isInsideOnlineClassroomJoinWindow(booking, Date.now())) {
-    throw recordingError('Chỉ được ghi trong thời gian phòng học đang mở.', 'OUTSIDE_JOIN_WINDOW')
-  }
-
   const actorRole = actor?.role === 'admin'
     ? 'admin'
     : actor?.role === 'teacher' && actor.teacherId === booking.teacherId
@@ -232,15 +230,31 @@ async function loadRecordingManagerContext(uid: string | undefined, bookingId: s
 
   const studentPilotGeneration = onlineClassroomAccessGeneration(studentAccess.data()?.generation)
   const teacherPilotGeneration = onlineClassroomAccessGeneration(teacherAccess.data()?.generation)
+  const sessionKey = onlineClassroomSessionKey(
+    booking,
+    studentPilotGeneration,
+    teacherPilotGeneration,
+  )
+  const roomSnapshot = await db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(sessionKey).get()
+  if (!roomSnapshot.exists) {
+    throw recordingError('Phòng học chưa được tạo hoặc đã được thay thế.', 'CLASSROOM_NOT_READY')
+  }
+  const rawExtensionMinutes = roomSnapshot.data()?.extensionMinutes
+  const extensionMinutes = normalizeOnlineClassroomExtensionMinutes(rawExtensionMinutes)
+  if (rawExtensionMinutes !== undefined
+    && (!Number.isSafeInteger(rawExtensionMinutes)
+      || Number(rawExtensionMinutes) < 0
+      || Number(rawExtensionMinutes) > ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES)) {
+    throw recordingError('Dữ liệu thời lượng phòng học không hợp lệ.', 'CLASSROOM_TIMING_STATE_INVALID')
+  }
+  if (!isInsideOnlineClassroomJoinWindow(booking, Date.now(), extensionMinutes)) {
+    throw recordingError('Chỉ được ghi trong thời gian phòng học đang mở.', 'OUTSIDE_JOIN_WINDOW')
+  }
   return {
     actorUid: uid,
     actorRole,
     booking,
-    sessionKey: onlineClassroomSessionKey(
-      booking,
-      studentPilotGeneration,
-      teacherPilotGeneration,
-    ),
+    sessionKey,
     teacherPilotGeneration,
   }
 }

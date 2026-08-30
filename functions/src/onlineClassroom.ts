@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto'
 
 export const ONLINE_CLASSROOM_ACCESS_COLLECTION = 'onlineClassroomPilotAccess'
 export const ONLINE_CLASSROOM_ROOMS_COLLECTION = 'onlineClassrooms'
+export const ONLINE_CLASSROOM_BOOKING_CONTROLS_COLLECTION = 'onlineClassroomBookingControls'
 export const ONLINE_CLASSROOM_TOKENS_COLLECTION = 'onlineClassroomTokens'
 export const ONLINE_CLASSROOM_TOKEN_BYTES = 24
 export const ONLINE_CLASSROOM_JOIN_EARLY_MS = 12 * 60 * 60 * 1000
-export const ONLINE_CLASSROOM_JOIN_LATE_MS = 6 * 60 * 60 * 1000
+export const ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES = 10
+export const ONLINE_CLASSROOM_MAX_EXTENSION_MS = ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES * 60 * 1000
 export const ONLINE_CLASSROOM_BOARD_OPERATION_MAX_BYTES = 48_000
 export const ONLINE_CLASSROOM_BOARD_MAX_BYTES = 500_000
 export const ONLINE_CLASSROOM_BOARD_MAX_OPERATIONS = 1_500
@@ -28,6 +30,18 @@ export type OnlineClassroomInviteIssuanceDecision =
   | 'untrusted-actor'
   | 'teacher-not-assigned'
   | 'outside-join-window'
+
+export type OnlineClassroomSessionTiming = {
+  scheduledStartsAt: Date
+  scheduledEndsAt: Date
+  hardEndsAt: Date
+  extensionMinutes: number
+}
+
+export type OnlineClassroomBookingExtensionState = {
+  extensionMinutes: number
+  extensionUsed: boolean
+}
 
 export type OnlineClassroomBoardPoint = {
   x: number
@@ -276,11 +290,12 @@ export function decideOnlineClassroomInviteIssuance(
   actor: OnlineClassroomTrustedActor | null,
   booking: OnlineClassroomBookingLike,
   nowMs: number,
+  extensionMinutes = 0,
 ): OnlineClassroomInviteIssuanceDecision {
   if (!actor) return 'untrusted-actor'
   if (actor.role === 'admin') return 'allowed'
   if (actor.teacherId !== booking.teacherId) return 'teacher-not-assigned'
-  return isInsideOnlineClassroomJoinWindow(booking, nowMs)
+  return isInsideOnlineClassroomJoinWindow(booking, nowMs, extensionMinutes)
     ? 'allowed'
     : 'outside-join-window'
 }
@@ -396,14 +411,109 @@ export function parseVietnamBookingTime(dateISO?: string, time?: string): Date |
   return new Date(Date.UTC(year, month - 1, day + dayOffset, hourOfDay - 7, minuteOfHour))
 }
 
-export function onlineClassroomJoinWindow(booking: OnlineClassroomBookingLike): { opensAt: Date; closesAt: Date } | null {
+export function normalizeOnlineClassroomExtensionMinutes(value: unknown): number {
+  return Number.isSafeInteger(value)
+    && Number(value) >= 0
+    && Number(value) <= ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES
+    ? Number(value)
+    : 0
+}
+
+function parseOnlineClassroomExtensionState(
+  value: { extensionMinutes?: unknown; extensionUsed?: unknown } | null | undefined,
+): OnlineClassroomBookingExtensionState | null {
+  if (!value) return { extensionMinutes: 0, extensionUsed: false }
+  if (value.extensionMinutes !== undefined
+    && (!Number.isSafeInteger(value.extensionMinutes)
+      || Number(value.extensionMinutes) < 0
+      || Number(value.extensionMinutes) > ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES)) {
+    return null
+  }
+  if (value.extensionUsed !== undefined && typeof value.extensionUsed !== 'boolean') return null
+  const extensionMinutes = normalizeOnlineClassroomExtensionMinutes(value.extensionMinutes)
+  const extensionUsed = value.extensionUsed === true || extensionMinutes > 0
+  // `used` without a duration cannot enforce the effective hard end and is a
+  // partial/corrupt write, so callers must fail closed rather than guessing.
+  if (extensionUsed && extensionMinutes === 0) return null
+  return { extensionMinutes, extensionUsed }
+}
+
+/**
+ * Resolve the booking-scoped control together with a generation-scoped room.
+ * Either side may be absent during rollout, but two different non-zero values
+ * are a corruption signal. This lets a legacy extended room seed the central
+ * control once without allowing a later pilot generation to reset it to zero.
+ */
+export function resolveOnlineClassroomBookingExtensionState(
+  bookingControl: { extensionMinutes?: unknown; extensionUsed?: unknown } | null | undefined,
+  room: { extensionMinutes?: unknown; extensionUsed?: unknown } | null | undefined,
+): OnlineClassroomBookingExtensionState | null {
+  const controlState = parseOnlineClassroomExtensionState(bookingControl)
+  const roomState = parseOnlineClassroomExtensionState(room)
+  if (!controlState || !roomState) return null
+  if (controlState.extensionMinutes > 0
+    && roomState.extensionMinutes > 0
+    && controlState.extensionMinutes !== roomState.extensionMinutes) {
+    return null
+  }
+  const extensionMinutes = Math.max(
+    controlState.extensionMinutes,
+    roomState.extensionMinutes,
+  )
+  return {
+    extensionMinutes,
+    extensionUsed: controlState.extensionUsed || roomState.extensionUsed || extensionMinutes > 0,
+  }
+}
+
+export function onlineClassroomSessionTiming(
+  booking: OnlineClassroomBookingLike,
+  extensionMinutes: unknown = 0,
+): OnlineClassroomSessionTiming | null {
   const start = parseVietnamBookingTime(booking.requestedDate, booking.requestedStart)
   const end = parseVietnamBookingTime(booking.requestedDate, booking.requestedEnd)
   if (!start || !end || end.getTime() <= start.getTime()) return null
+  const normalizedExtension = normalizeOnlineClassroomExtensionMinutes(extensionMinutes)
   return {
-    opensAt: new Date(start.getTime() - ONLINE_CLASSROOM_JOIN_EARLY_MS),
-    closesAt: new Date(end.getTime() + ONLINE_CLASSROOM_JOIN_LATE_MS),
+    scheduledStartsAt: start,
+    scheduledEndsAt: end,
+    hardEndsAt: new Date(end.getTime() + normalizedExtension * 60_000),
+    extensionMinutes: normalizedExtension,
   }
+}
+
+export function onlineClassroomSessionExtensionAvailable(
+  timing: OnlineClassroomSessionTiming,
+  extensionUsed: boolean,
+  nowMs: number,
+): boolean {
+  return !extensionUsed
+    && timing.extensionMinutes === 0
+    && Number.isFinite(nowMs)
+    && nowMs >= timing.scheduledStartsAt.getTime()
+    && nowMs < timing.hardEndsAt.getTime()
+}
+
+export function onlineClassroomJoinWindow(
+  booking: OnlineClassroomBookingLike,
+  extensionMinutes: unknown = 0,
+): { opensAt: Date; closesAt: Date } | null {
+  const timing = onlineClassroomSessionTiming(booking, extensionMinutes)
+  if (!timing) return null
+  return {
+    opensAt: new Date(timing.scheduledStartsAt.getTime() - ONLINE_CLASSROOM_JOIN_EARLY_MS),
+    closesAt: timing.hardEndsAt,
+  }
+}
+
+/**
+ * Invitation credentials are issued against the maximum possible hard end so
+ * a pre-existing student link remains usable if a manager grants the single
+ * extension. Actual room access still checks the persisted extension and
+ * therefore fails closed at the scheduled end until that grant exists.
+ */
+export function onlineClassroomInviteExpiresAt(booking: OnlineClassroomBookingLike): Date | null {
+  return onlineClassroomJoinWindow(booking, ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES)?.closesAt || null
 }
 
 export function onlineClassroomBookingBlockReason(booking: OnlineClassroomBookingLike): string | null {
@@ -415,9 +525,15 @@ export function onlineClassroomBookingBlockReason(booking: OnlineClassroomBookin
   return null
 }
 
-export function isInsideOnlineClassroomJoinWindow(booking: OnlineClassroomBookingLike, nowMs: number): boolean {
-  const window = onlineClassroomJoinWindow(booking)
-  return Boolean(window && nowMs >= window.opensAt.getTime() && nowMs <= window.closesAt.getTime())
+export function isInsideOnlineClassroomJoinWindow(
+  booking: OnlineClassroomBookingLike,
+  nowMs: number,
+  extensionMinutes: unknown = 0,
+): boolean {
+  const window = onlineClassroomJoinWindow(booking, extensionMinutes)
+  // The exact hard-end instant is already closed. This makes the boundary
+  // consistent for access, writes, rejoin and the client-side end timer.
+  return Boolean(window && nowMs >= window.opensAt.getTime() && nowMs < window.closesAt.getTime())
 }
 
 export function sanitizeOnlineClassroomDomain(value: unknown): string {

@@ -115,3 +115,10 @@ test('moving accounting items preserves existing role visibility', () => {
   assert.equal(bookingAssistantPaths.includes('/admin/evaluations'), false)
   assert.equal(bookingAssistantPaths.includes('/admin/student-alerts'), false)
 })
+
+test('classroom operations is visible only to system Admin', () => {
+  assert.ok(visiblePaths('admin').includes('/admin/online-classrooms'))
+  assert.equal(visiblePaths('student_manager').includes('/admin/online-classrooms'), false)
+  assert.equal(visiblePaths('teacher_manager').includes('/admin/online-classrooms'), false)
+  assert.equal(visiblePaths('student_manager', 'booking_only').includes('/admin/online-classrooms'), false)
+})

@@ -3,9 +3,12 @@ const { generateKeyPairSync, verify } = require('node:crypto')
 const test = require('node:test')
 const {
   ONLINE_CLASSROOM_JAAS_JWT_TTL_SECONDS,
+  ONLINE_CLASSROOM_JAAS_ADMIN_JWT_TTL_SECONDS,
   ONLINE_CLASSROOM_JAAS_PROVISIONED_SETTINGS,
   OnlineClassroomJaasConfigurationError,
+  createOnlineClassroomJaasAdminJwt,
   createOnlineClassroomJaasJwt,
+  onlineClassroomJaasConferenceFullName,
   onlineClassroomJaasRoomName,
   onlineClassroomJaasWebhookAuthorizationMatches,
   resolveOnlineClassroomJaasSettingsProvisioning,
@@ -209,4 +212,56 @@ test('teacher and admin JWTs receive moderator permission while identities stay 
   assert.equal(adminPayload.context.user.moderator, true)
   assert.equal(studentPayload.context.user.moderator, false)
   assert.notEqual(teacherPayload.context.user.id, adminPayload.context.user.id)
+})
+
+test('JWT expiry is capped at the classroom hard end', () => {
+  const config = resolveOnlineClassroomMeetingConfig({ appId: APP_ID, kid: KID, privateKey })
+  const nowMs = Date.UTC(2026, 7, 29, 8, 0, 0)
+  const hardEndMs = nowMs + 25 * 60 * 1000
+  const payload = decodedPart(createOnlineClassroomJaasJwt({
+    config,
+    roomAlias: ROOM_ALIAS,
+    role: 'teacher',
+    displayName: 'Gia sư A',
+    viewerId: 'teacher:teacher-a',
+    nowMs,
+    expiresAtMs: hardEndMs,
+    tokenId: 'fixed-hard-end-token-123',
+  }).split('.')[1])
+  assert.equal(payload.exp, Math.floor(hardEndMs / 1000))
+})
+
+test('backend hard-end JWT is short-lived, admin-only, and signs the exact conference command identity', () => {
+  const config = resolveOnlineClassroomMeetingConfig({ appId: APP_ID, kid: KID, privateKey })
+  const nowMs = Date.UTC(2026, 7, 29, 8, 0, 0)
+  const token = createOnlineClassroomJaasAdminJwt({
+    config,
+    nowMs,
+    tokenId: 'fixed-admin-close-token-123',
+  })
+  const [encodedHeader, encodedPayload, encodedSignature] = token.split('.')
+  const payload = decodedPart(encodedPayload)
+  const nowSeconds = Math.floor(nowMs / 1000)
+
+  assert.equal(payload.admin, true)
+  assert.equal(payload.aud, 'jitsi')
+  assert.equal(payload.iss, 'chat')
+  assert.equal(payload.sub, APP_ID)
+  assert.equal(payload.room, undefined)
+  assert.equal(payload.nbf, nowSeconds - 10)
+  assert.equal(payload.exp, nowSeconds + ONLINE_CLASSROOM_JAAS_ADMIN_JWT_TTL_SECONDS)
+  assert.equal(payload.jti, 'fixed-admin-close-token-123')
+  assert.equal(
+    onlineClassroomJaasConferenceFullName(config, ROOM_ALIAS),
+    `${ROOM_ALIAS}@conference.${APP_ID}.8x8.vc`,
+  )
+  assert.equal(
+    verify(
+      'RSA-SHA256',
+      Buffer.from(`${encodedHeader}.${encodedPayload}`, 'utf8'),
+      publicKey,
+      Buffer.from(encodedSignature, 'base64url'),
+    ),
+    true,
+  )
 })

@@ -34,6 +34,7 @@ export {
   appendOnlineClassroomBoardOperation,
   beginOnlineClassroomScreenAnnotation,
   endOnlineClassroomScreenAnnotation,
+  extendOnlineClassroomSession,
   getOnlineClassroomAccess,
   getOnlineClassroomPilotStatus,
   issueOnlineClassroomInvite,
@@ -42,6 +43,15 @@ export {
   saveOnlineClassroomScreenAnnotation,
   setOnlineClassroomPilotAccess,
 } from './onlineClassroomFunctions'
+
+export { getOnlineClassroomOperations } from './onlineClassroomOperationsFunctions'
+
+export { onlineClassroomJaasAttendanceWebhook } from './onlineClassroomAttendanceFunctions'
+
+export {
+  closeOnlineClassroomAtHardEnd,
+  sweepOnlineClassroomHardEnds,
+} from './onlineClassroomLifecycleFunctions'
 
 export {
   abandonOnlineClassroomRecording,

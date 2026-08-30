@@ -63,6 +63,7 @@ import {
   appendOnlineClassroomScreenAnnotationOperation,
   beginOnlineClassroomScreenAnnotation,
   endOnlineClassroomScreenAnnotation,
+  extendOnlineClassroomSession,
   readClassroomToken,
   rememberClassroomToken,
   removeClassroomTokenFromAddressBar,
@@ -147,6 +148,8 @@ const MAX_HISTORY_ENTRIES = 50
 const MAX_RECORDING_DURATION_MS = 3 * 60 * 60 * 1000
 const RECORDING_HEARTBEAT_INTERVAL_MS = 60_000
 const RECORDING_HEARTBEAT_BYTE_STEP = 8 * 1024 * 1024
+const CLASSROOM_TIMING_REFRESH_SIGNAL = '123english:classroom-timing-refresh:v1'
+const CLASSROOM_ACCESS_REFRESH_SIGNAL = '123english:classroom-access-refresh:v1'
 const EMPTY_SCREEN_SHARE_STATE: ClassroomScreenShareState = { active: false, local: false, participantIds: [] }
 
 function errorCode(error: unknown): string {
@@ -207,6 +210,18 @@ function formatConsentExpiry(raw: string | null | undefined): string {
   return Number.isFinite(date.getTime())
     ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
     : ''
+}
+
+function formatVietnamClock(raw: string): string {
+  const date = new Date(raw)
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleTimeString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    : '--:--'
 }
 
 function roleLabel(role: OnlineClassroomAccess['role']): string {
@@ -291,6 +306,26 @@ function ClassroomErrorPage({ message, onRetry }: { message: string; onRetry: ()
   )
 }
 
+function ClassroomEndedPage() {
+  return (
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6f8fb] px-4 font-[var(--font-quicksand)] text-[#10213a]">
+      <main className="w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-[0_28px_80px_-52px_rgba(16,33,58,0.6)] sm:p-10">
+        <Logo clickable={false} className="mx-auto h-9 w-auto" />
+        <span className="mx-auto mt-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+          <CheckCircle2 className="h-7 w-7" />
+        </span>
+        <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">Buổi học đã kết thúc</h1>
+        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
+          Phòng đã đóng theo lịch và không thể vào lại. Nếu có ghi hình, hệ thống tiếp tục hoàn tất bản ghi riêng tư và giữ tối đa 72 giờ.
+        </p>
+        <Link to="/" className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#ffc107] px-5 text-sm font-black text-[#10213a] hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300">
+          Về trang chính
+        </Link>
+      </main>
+    </div>
+  )
+}
+
 export function OnlineClassroomPage() {
   const { bookingId = '' } = useParams<{ bookingId: string }>()
   // The object identity is the route epoch. Unlike a booking-id-only check it
@@ -312,6 +347,10 @@ export function OnlineClassroomPage() {
   const [issuingStudentInvite, setIssuingStudentInvite] = useState(false)
   const [knockingParticipants, setKnockingParticipants] = useState<JitsiKnockingParticipant[]>([])
   const [scheduledMeetingTimer, setScheduledMeetingTimer] = useState({ durationSeconds: 0, elapsedSeconds: 0 })
+  const [hardEndRemainingSeconds, setHardEndRemainingSeconds] = useState(0)
+  const [sessionHardEnded, setSessionHardEnded] = useState(false)
+  const [extensionBusy, setExtensionBusy] = useState(false)
+  const [showExtensionConfirm, setShowExtensionConfirm] = useState(false)
   const [activePanel, setActivePanel] = useState<ActivePanel>('video')
   const [revalidationWarning, setRevalidationWarning] = useState('')
   const [syncWarning, setSyncWarning] = useState('')
@@ -409,6 +448,10 @@ export function OnlineClassroomPage() {
   const screenFrameUrlRef = useRef('')
   const screenShareStateRef = useRef<ClassroomScreenShareState>(EMPTY_SCREEN_SHARE_STATE)
   const screenShareEpochRef = useRef(0)
+  const serverClockOffsetRef = useRef(0)
+  const hardEndHandledRef = useRef(false)
+  const hardEndVerificationInFlightRef = useRef(false)
+  const gracefulHardEndRef = useRef<() => void>(() => undefined)
 
   useLayoutEffect(() => {
     bookingIdRef.current = bookingId
@@ -503,6 +546,17 @@ export function OnlineClassroomPage() {
     setHistoryState({ canUndo: true, canRedo: false })
   }, [])
 
+  const applyAccessTiming = useCallback((nextAccess: OnlineClassroomAccess) => {
+    const serverNowMs = Date.parse(nextAccess.serverNow)
+    const trustedNowMs = Number.isFinite(serverNowMs) ? serverNowMs : Date.now()
+    serverClockOffsetRef.current = trustedNowMs - Date.now()
+    setScheduledMeetingTimer(onlineClassroomMeetingTimer(nextAccess, trustedNowMs))
+    const hardEndMs = Date.parse(nextAccess.hardEndsAt)
+    setHardEndRemainingSeconds(Number.isFinite(hardEndMs)
+      ? Math.max(0, Math.ceil((hardEndMs - trustedNowMs) / 1_000))
+      : 0)
+  }, [])
+
   const loadClassroom = useCallback(async () => {
     const loadEpoch = ++classroomLoadEpochRef.current
     const targetBookingId = bookingId
@@ -533,6 +587,13 @@ export function OnlineClassroomPage() {
     recordingConsentBusyRef.current = null
     setRecordingSetupConfirmed(false)
     setRecordingState('idle')
+    setSessionHardEnded(false)
+    setExtensionBusy(false)
+    setShowExtensionConfirm(false)
+    setHardEndRemainingSeconds(0)
+    hardEndHandledRef.current = false
+    hardEndVerificationInFlightRef.current = false
+    serverClockOffsetRef.current = 0
     setScreenShareState(EMPTY_SCREEN_SHARE_STATE)
     screenShareStateRef.current = EMPTY_SCREEN_SHARE_STATE
     screenShareEpochRef.current += 1
@@ -595,7 +656,7 @@ export function OnlineClassroomPage() {
       removeClassroomTokenFromAddressBar()
       const initialBoard = sanitizeBoardSnapshot(result.boardSnapshot)
       const initialScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
-      setScheduledMeetingTimer(onlineClassroomMeetingTimer(result, Date.now()))
+      applyAccessTiming(result)
       accessRef.current = result
       boardRef.current = initialBoard
       savedVersionRef.current = initialBoard.version
@@ -614,7 +675,7 @@ export function OnlineClassroomPage() {
       setPageError(onlineClassroomErrorMessage(error))
       setLoadState('error')
     }
-  }, [bookingId, replaceScreenAnnotationSession, resetHistory, resetScreenAnnotationHistory, routeEpoch])
+  }, [applyAccessTiming, bookingId, replaceScreenAnnotationSession, resetHistory, resetScreenAnnotationHistory, routeEpoch])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadClassroom(), 0)
@@ -2135,6 +2196,7 @@ export function OnlineClassroomPage() {
         setRevalidationWarning('')
         accessRef.current = result
         setAccess(result)
+        applyAccessTiming(result)
 
         const remoteBoard = sanitizeBoardSnapshot(result.boardSnapshot)
         const remoteScreenAnnotation = sanitizeScreenAnnotationSession(result.screenAnnotationSession)
@@ -2145,6 +2207,10 @@ export function OnlineClassroomPage() {
         if (remoteBoard.version > savedVersionRef.current || screenAnnotationChanged) await refreshBoardFromServer()
       } catch (error) {
         if (disposed || !isRouteScopeActive(scope)) return
+        if (errorReason(error) === 'OUTSIDE_JOIN_WINDOW') {
+          gracefulHardEndRef.current()
+          return
+        }
         consecutiveRevalidationFailuresRef.current += 1
         const message = onlineClassroomErrorMessage(error)
         if (isHardAccessFailure(error)) {
@@ -2171,7 +2237,7 @@ export function OnlineClassroomPage() {
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [captureRouteScope, fatalAccessError, flushPendingBoardOperations, isRouteScopeActive, loadState, refreshBoardFromServer])
+  }, [applyAccessTiming, captureRouteScope, fatalAccessError, flushPendingBoardOperations, isRouteScopeActive, loadState, refreshBoardFromServer])
 
   useEffect(() => {
     if (loadState !== 'ready' || fatalAccessError) return
@@ -2209,6 +2275,11 @@ export function OnlineClassroomPage() {
       if (!isRouteScopeActive(scope)) return
       applyRecordingConsent(recordingConsent)
       await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: boardRef.current.version })
+      await broadcastJitsiTextMessage(
+        jitsiApiRef.current,
+        `${CLASSROOM_ACCESS_REFRESH_SIGNAL}:${Date.now()}`,
+        localParticipantIdRef.current,
+      ).catch(() => 0)
       if (!isRouteScopeActive(scope)) return
       toast.success('Đã gửi yêu cầu. Học viên cần bấm đồng ý ngay trên màn hình lớp học.')
     } catch (error) {
@@ -2220,6 +2291,38 @@ export function OnlineClassroomPage() {
       if (isRouteScopeActive(scope)) setRecordingConsentBusy(false)
     }
   }, [applyRecordingConsent, captureRouteScope, isRouteScopeActive, sendBoardPayload])
+
+  useEffect(() => {
+    const current = accessRef.current
+    if (!current
+      || sessionHardEnded
+      || !isBoardManager(current.role)
+      || remoteParticipantCount < 1
+      || !conferenceJoined
+      || connectionState !== 'connected'
+      || recordingHydrationState !== 'ready'
+      || existingRecording
+      || recordingState !== 'idle'
+      || recordingConsentBusy
+      || current.recordingConsent) return
+    // Free browser recording cannot open the screen-share picker without a
+    // manager gesture. The system still starts the consent workflow as soon as
+    // another participant enters, then surfaces the one required "choose tab"
+    // action immediately after the student accepts.
+    void handleRequestRecordingConsent()
+  }, [conferenceJoined, connectionState, existingRecording, handleRequestRecordingConsent, recordingConsentBusy, recordingHydrationState, recordingState, remoteParticipantCount, sessionHardEnded])
+
+  useEffect(() => {
+    const current = accessRef.current
+    if (!current
+      || sessionHardEnded
+      || !isBoardManager(current.role)
+      || remoteParticipantCount < 1
+      || current.recordingConsent?.status !== 'accepted'
+      || recordingState !== 'idle'
+      || existingRecording) return
+    setShowRecordingConsent(true)
+  }, [access?.recordingConsent, existingRecording, recordingState, remoteParticipantCount, sessionHardEnded])
 
   const handleRespondRecordingConsent = useCallback(async (accepted: boolean) => {
     const scope = captureRouteScope()
@@ -2247,6 +2350,11 @@ export function OnlineClassroomPage() {
       if (!isRouteScopeActive(scope)) return
       applyRecordingConsent(recordingConsent)
       await sendBoardPayload({ type: 'snapshot-refresh', boardVersion: boardRef.current.version })
+      await broadcastJitsiTextMessage(
+        jitsiApiRef.current,
+        `${CLASSROOM_ACCESS_REFRESH_SIGNAL}:${Date.now()}`,
+        localParticipantIdRef.current,
+      ).catch(() => 0)
       if (!isRouteScopeActive(scope)) return
       toast.success(accepted ? 'Bạn đã đồng ý ghi hình buổi học này.' : 'Bạn đã từ chối ghi hình buổi học này.')
     } catch (error) {
@@ -2307,6 +2415,141 @@ export function OnlineClassroomPage() {
     if (!recorder) return
     stopRecordingInstance(scope, recorder)
   }, [captureRouteScope, stopRecordingInstance])
+
+  const refreshClassroomTiming = useCallback(async () => {
+    const scope = captureRouteScope()
+    if (!isRouteScopeActive(scope)) return null
+    const result = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
+    if (!isRouteScopeActive(scope) || result.bookingId !== scope.bookingId) return null
+    accessRef.current = result
+    setAccess(result)
+    applyAccessTiming(result)
+    return result
+  }, [applyAccessTiming, captureRouteScope, isRouteScopeActive])
+
+  const handleGracefulHardEnd = useCallback(() => {
+    if (hardEndHandledRef.current) return
+    hardEndHandledRef.current = true
+    setHardEndRemainingSeconds(0)
+    setSessionHardEnded(true)
+    setRevalidationWarning('')
+    setKnockingParticipants([])
+
+    const scope = captureRouteScope()
+    const recorder = recorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      stopRecordingInstance(scope, recorder)
+    } else if (recordingStartLockRef.current) {
+      recordingAttemptRef.current += 1
+      recordingStartLockRef.current = false
+      void recordingCaptureRef.current?.cleanup()
+      const pendingSession = recordingSessionRef.current
+      if (pendingSession) void abandonOnlineClassroomRecording(pendingSession.recordingId).catch(() => undefined)
+      setRecordingState('idle')
+    }
+
+    const api = jitsiApiRef.current
+    if (api) {
+      try {
+        if (isBoardManager(accessRef.current?.role || 'student')) api.executeCommand('endConference')
+        else api.executeCommand('hangup')
+      } catch {
+        try {
+          api.executeCommand('hangup')
+        } catch {
+          // Backend đã khóa tái truy cập; UI kết thúc vẫn là lớp dự phòng.
+        }
+      }
+      window.setTimeout(() => {
+        try {
+          api.executeCommand('hangup')
+        } catch {
+          // Cuộc gọi có thể đã được endConference đóng trước đó.
+        }
+      }, 750)
+    }
+    toast.info('Đã hết thời lượng theo lịch. Phòng học đã đóng và không thể vào lại.')
+  }, [captureRouteScope, stopRecordingInstance])
+
+  useEffect(() => {
+    gracefulHardEndRef.current = handleGracefulHardEnd
+    return () => {
+      if (gracefulHardEndRef.current === handleGracefulHardEnd) {
+        gracefulHardEndRef.current = () => undefined
+      }
+    }
+  }, [handleGracefulHardEnd])
+
+  const verifyThenHandleHardEnd = useCallback(async () => {
+    if (hardEndHandledRef.current || hardEndVerificationInFlightRef.current) return
+    hardEndVerificationInFlightRef.current = true
+    try {
+      const refreshed = await refreshClassroomTiming()
+      if (refreshed) {
+        const refreshedHardEnd = Date.parse(refreshed.hardEndsAt)
+        const estimatedServerNow = Date.now() + serverClockOffsetRef.current
+        if (Number.isFinite(refreshedHardEnd) && refreshedHardEnd > estimatedServerNow) return
+      }
+    } catch {
+      // Fail closed at the previously authorized hard end. If a last-second
+      // extension cannot be verified, the participant leaves instead of
+      // overrunning the booking.
+    } finally {
+      hardEndVerificationInFlightRef.current = false
+    }
+    handleGracefulHardEnd()
+  }, [handleGracefulHardEnd, refreshClassroomTiming])
+
+  useEffect(() => {
+    if (!accessMatchesRoute || !access || sessionHardEnded) return
+    const hardEndMs = Date.parse(access.hardEndsAt)
+    if (!Number.isFinite(hardEndMs)) return
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((hardEndMs - (Date.now() + serverClockOffsetRef.current)) / 1_000),
+      )
+      setHardEndRemainingSeconds(remaining)
+      if (remaining === 0) void verifyThenHandleHardEnd()
+    }
+    tick()
+    const interval = window.setInterval(tick, 1_000)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [access, accessMatchesRoute, sessionHardEnded, verifyThenHandleHardEnd])
+
+  const handleExtendSession = useCallback(async () => {
+    const scope = captureRouteScope()
+    const current = accessRef.current
+    if (!isRouteScopeActive(scope)
+      || !current
+      || !isBoardManager(current.role)
+      || !current.extensionAvailable
+      || extensionBusy) return
+    setExtensionBusy(true)
+    try {
+      await extendOnlineClassroomSession(scope.bookingId, 10)
+      const refreshed = await refreshClassroomTiming()
+      if (!refreshed || !isRouteScopeActive(scope)) return
+      await broadcastJitsiTextMessage(
+        jitsiApiRef.current,
+        `${CLASSROOM_TIMING_REFRESH_SIGNAL}:${Date.now()}`,
+        localParticipantIdRef.current,
+      ).catch(() => 0)
+      setShowExtensionConfirm(false)
+      toast.success('Đã gia hạn buổi học thêm 10 phút. Link hiện tại vẫn dùng được.')
+    } catch (error) {
+      if (isRouteScopeActive(scope)) toast.error(onlineClassroomErrorMessage(error))
+    } finally {
+      if (isRouteScopeActive(scope)) setExtensionBusy(false)
+    }
+  }, [captureRouteScope, extensionBusy, isRouteScopeActive, refreshClassroomTiming])
 
   const startRecording = useCallback(async () => {
     const scope = captureRouteScope()
@@ -2632,6 +2875,7 @@ export function OnlineClassroomPage() {
   if (loadState === 'error') return <ClassroomErrorPage message={pageError} onRetry={() => void loadClassroom()} />
   if (!accessMatchesRoute) return <ClassroomPageSkeleton />
   if (!access) return <ClassroomErrorPage message="Không tìm thấy thông tin lớp học." onRetry={() => void loadClassroom()} />
+  if (sessionHardEnded && recordingState === 'idle') return <ClassroomEndedPage />
   if (fatalAccessError && recordingState === 'idle') {
     return <ClassroomErrorPage message={fatalAccessError} onRetry={() => void loadClassroom()} />
   }
@@ -2666,6 +2910,10 @@ export function OnlineClassroomPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 font-mono text-xs font-black tabular-nums ${hardEndRemainingSeconds <= 300 ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-900'}`} aria-label={`Thời gian còn lại ${formatClassroomElapsed(hardEndRemainingSeconds)}`}>
+              <CalendarClock className="h-4 w-4" />
+              Còn {formatClassroomElapsed(hardEndRemainingSeconds)}
+            </span>
             {conferenceJoined && (
               <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" aria-label={`Thời gian trong lớp ${formatClassroomElapsed(classroomElapsedSeconds)}`}>
                 <Clock3 className="h-4 w-4 text-amber-300" />
@@ -2694,6 +2942,25 @@ export function OnlineClassroomPage() {
                 <Copy className="h-4 w-4" />
                 <span className="hidden sm:inline">Sao chép link học viên</span>
               </Button>
+            )}
+            {manager && access.extensionAvailable && (
+              <Button
+                variant="outline"
+                size="sm"
+                loading={extensionBusy}
+                disabled={sessionHardEnded || hardEndRemainingSeconds === 0}
+                onClick={() => setShowExtensionConfirm(true)}
+                title="Mỗi buổi chỉ được gia hạn một lần, tối đa 10 phút"
+                className="border-amber-300 bg-amber-50 text-amber-900 focus:ring-amber-300"
+              >
+                <Clock3 className="h-4 w-4" />
+                Gia hạn +10 phút
+              </Button>
+            )}
+            {access.extensionMinutes > 0 && (
+              <span className="inline-flex min-h-10 items-center rounded-xl bg-amber-100 px-3 text-xs font-black text-amber-900">
+                Đã gia hạn +{access.extensionMinutes} phút
+              </span>
             )}
             {manager && recordingState === 'idle' && recordingHydrationState === 'ready' && !existingRecording && (
               <Button
@@ -2773,7 +3040,10 @@ export function OnlineClassroomPage() {
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
             <CalendarClock className="h-4 w-4 text-amber-700" />
-            <span>{formatSessionDate(access.requestedDate)} · {access.requestedStart || '--:--'} đến {access.requestedEnd || '--:--'}</span>
+            <span>
+              {formatSessionDate(access.requestedDate)} · {access.requestedStart || '--:--'} đến {formatVietnamClock(access.hardEndsAt)}
+              {access.extensionMinutes > 0 ? ` (+${access.extensionMinutes} phút)` : ''}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
             <ShieldCheck className="h-4 w-4 text-emerald-700" />
@@ -2793,8 +3063,14 @@ export function OnlineClassroomPage() {
           )}
         </section>
 
-        {(access.publicPilotProvider || revalidationWarning || syncWarning || recordingHydrationError || recordingState !== 'idle' || access.recordingNotice?.active || serverRecordingConsent || recordingConsentError || readyRecording || recordingError) && (
+        {(sessionHardEnded || access.publicPilotProvider || revalidationWarning || syncWarning || recordingHydrationError || recordingState !== 'idle' || access.recordingNotice?.active || serverRecordingConsent || recordingConsentError || readyRecording || recordingError) && (
           <div className="mb-4 grid gap-2 lg:grid-cols-2">
+            {sessionHardEnded && (
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-950" role="status">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Đã hết giờ. Cuộc gọi đang đóng; nếu có ghi hình, vui lòng chờ hệ thống hoàn tất tải và lưu video.</p>
+              </div>
+            )}
             {access.publicPilotProvider && (
               <div className="flex items-start gap-3 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-semibold leading-5 text-sky-950">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -3145,6 +3421,11 @@ export function OnlineClassroomPage() {
                 }}
                 onDataChannelOpened={handleDataChannelOpened}
                 onTextMessage={(text, senderId) => {
+                  if (text.startsWith(CLASSROOM_TIMING_REFRESH_SIGNAL)
+                    || text.startsWith(CLASSROOM_ACCESS_REFRESH_SIGNAL)) {
+                    void refreshClassroomTiming().catch(() => undefined)
+                    return
+                  }
                   if (classroomGifts.handleRealtimeMessage(text)) return
                   handleBoardTextMessage(text, senderId)
                 }}
@@ -3304,9 +3585,48 @@ export function OnlineClassroomPage() {
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] font-semibold leading-5 text-slate-500">
           <p className="inline-flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Bảng được lưu theo buổi học bởi gia sư hoặc Admin.</p>
-          <p>Trang này không tự ghi điểm danh, điểm thưởng hoặc dữ liệu tính lương.</p>
+          <p>Hệ thống lưu thời điểm vào/rời để Admin đối soát; không tự động sửa điểm thưởng hoặc khấu trừ lương.</p>
         </div>
       </main>
+
+      <Modal
+        open={showExtensionConfirm}
+        onClose={() => {
+          if (!extensionBusy) setShowExtensionConfirm(false)
+        }}
+        title="Xác nhận gia hạn buổi học"
+        size="sm"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="ghost"
+              disabled={extensionBusy}
+              onClick={() => setShowExtensionConfirm(false)}
+            >
+              Giữ giờ kết thúc cũ
+            </Button>
+            <Button
+              loading={extensionBusy}
+              disabled={sessionHardEnded || hardEndRemainingSeconds === 0}
+              onClick={() => void handleExtendSession()}
+              className="bg-amber-400 text-slate-950 hover:bg-amber-300 focus:ring-amber-300"
+            >
+              <Clock3 className="h-4 w-4" />
+              Gia hạn đúng 10 phút
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-3 text-sm font-semibold leading-6 text-slate-600">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+            <p className="font-black">Quyền này chỉ dùng được một lần cho cả buổi học.</p>
+            <p className="mt-1 text-xs leading-5">
+              Giờ đóng lớp, link học viên, đồng hồ và quyền truy cập của hai bên sẽ cùng được kéo dài thêm 10 phút.
+            </p>
+          </div>
+          <p>Sau khi xác nhận, hệ thống không thể hoàn lại lượt gia hạn cho buổi này.</p>
+        </div>
+      </Modal>
 
       <Modal
         open={showRecordingConsent}

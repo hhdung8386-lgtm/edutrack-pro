@@ -3,6 +3,7 @@ export interface BookingIntervalLike {
   requestedStart?: string
   requestedEnd?: string
   requestedMinutes?: number
+  extensionMinutes?: number
 }
 
 const MINUTES_PER_DAY = 24 * 60
@@ -107,8 +108,13 @@ export function onlineClassroomMeetingTimer(
   }
 
   const scheduledStartMs = (startMinutes - VIETNAM_OFFSET_MINUTES) * 60_000
+  const extensionMinutes = Number.isSafeInteger(booking.extensionMinutes)
+    && Number(booking.extensionMinutes) >= 0
+    && Number(booking.extensionMinutes) <= 10
+    ? Number(booking.extensionMinutes)
+    : 0
   return {
-    durationSeconds: Math.floor((endMinutes - startMinutes) * 60),
+    durationSeconds: Math.floor((endMinutes - startMinutes + extensionMinutes) * 60),
     elapsedSeconds: Math.max(0, Math.floor((nowMs - scheduledStartMs) / 1_000)),
   }
 }

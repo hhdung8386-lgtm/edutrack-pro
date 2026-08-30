@@ -53,6 +53,12 @@ export type OnlineClassroomAccess = {
   requestedDate: string
   requestedStart: string
   requestedEnd: string
+  scheduledStartsAt: string
+  scheduledEndsAt: string
+  hardEndsAt: string
+  extensionMinutes: number
+  extensionAvailable: boolean
+  serverNow: string
   curriculumLink: string
   boardSnapshot: ClassroomBoardSnapshot
   screenAnnotationSession: OnlineClassroomScreenAnnotationSession | null
@@ -91,6 +97,19 @@ const getAccessCallable = httpsCallable<
   { bookingId: string; token?: string },
   OnlineClassroomAccess
 >(functions, 'getOnlineClassroomAccess')
+
+const extendSessionCallable = httpsCallable<
+  { bookingId: string; minutes: number },
+  {
+    success: boolean
+    extensionMinutes: number
+    scheduledEndsAt: string
+    hardEndsAt: string
+    extensionAvailable: false
+    revision: number
+    serverNow: string
+  }
+>(functions, 'extendOnlineClassroomSession')
 
 const saveBoardCallable = httpsCallable<
   { bookingId: string; token?: string; expectedVersion: number; boardSnapshot: ClassroomBoardDraft },
@@ -167,6 +186,10 @@ export async function issueOnlineClassroomInvite(bookingId: string): Promise<str
 
 export async function requestOnlineClassroomAccess(bookingId: string, token?: string): Promise<OnlineClassroomAccess> {
   return (await getAccessCallable({ bookingId, ...(token ? { token } : {}) })).data
+}
+
+export async function extendOnlineClassroomSession(bookingId: string, minutes = 10) {
+  return (await extendSessionCallable({ bookingId, minutes })).data
 }
 
 export async function saveOnlineClassroomBoard(
@@ -256,7 +279,7 @@ export function classroomRoute(bookingId: string): string {
 
 const VIETNAM_OFFSET_MINUTES = 7 * 60
 const CLASSROOM_OPEN_BEFORE_MINUTES = 12 * 60
-const CLASSROOM_CLOSE_AFTER_MINUTES = 6 * 60
+const CLASSROOM_CLOSE_AFTER_MINUTES = 0
 
 export type OnlineClassroomJoinWindow = {
   isOpen: boolean
@@ -282,7 +305,7 @@ export function onlineClassroomJoinWindow(
   const opensAt = startsAt - CLASSROOM_OPEN_BEFORE_MINUTES * 60_000
   const endsAt = (vietnamWallClockEndMinutes - VIETNAM_OFFSET_MINUTES) * 60_000
   const closesAt = endsAt + CLASSROOM_CLOSE_AFTER_MINUTES * 60_000
-  return { isOpen: nowMs >= opensAt && nowMs <= closesAt, opensAt, closesAt }
+  return { isOpen: nowMs >= opensAt && nowMs < closesAt, opensAt, closesAt }
 }
 
 export function readClassroomToken(bookingId: string): string {

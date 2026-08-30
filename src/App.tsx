@@ -28,6 +28,7 @@ const SubjectsPage = lazy(() => import('@/pages/admin/SubjectsPage').then(m => (
 const ApprovalsPage = lazy(() => import('@/pages/admin/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })))
 const BookingRequestsPage = lazy(() => import('@/pages/admin/BookingRequestsPage').then(m => ({ default: m.BookingRequestsPage })))
 const BookingSchedulesPage = lazy(() => import('@/pages/admin/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
+const OnlineClassroomOperationsPage = lazy(() => import('@/pages/admin/OnlineClassroomOperationsPage').then(m => ({ default: m.OnlineClassroomOperationsPage })))
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then(m => ({ default: m.ReportsPage })))
 const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ default: m.PayrollPage })))
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })))
@@ -159,6 +160,7 @@ function App() {
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
+            <Route path="online-classrooms" element={<OnlineClassroomOperationsPage />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="overdue-bookings" element={<OverdueBookingsPage />} />
             <Route path="site-content" element={<SiteContentPage />} />

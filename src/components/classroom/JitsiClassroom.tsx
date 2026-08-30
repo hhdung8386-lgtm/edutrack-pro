@@ -240,10 +240,26 @@ export function JitsiClassroom({
   const [errorMessage, setErrorMessage] = useState('')
   const [mediaWarnings, setMediaWarnings] = useState<MediaWarnings>({})
   const meetingJwtRef = useRef(meetingJwt)
+  const apiRef = useRef<JitsiExternalApi | null>(null)
+  const meetingTimerRef = useRef({ scheduledDurationSeconds, scheduledElapsedSeconds })
 
   useEffect(() => {
     meetingJwtRef.current = meetingJwt
   }, [meetingJwt])
+
+  useEffect(() => {
+    meetingTimerRef.current = { scheduledDurationSeconds, scheduledElapsedSeconds }
+    const api = apiRef.current
+    if (!api || state !== 'connected' || scheduledDurationSeconds <= 0) return
+    try {
+      api.executeCommand('setMeetingTimer', {
+        duration: Math.floor(scheduledDurationSeconds),
+        elapsed: Math.max(0, Math.floor(scheduledElapsedSeconds)),
+      })
+    } catch {
+      // Đồng hồ ngoài iframe vẫn là nguồn hiển thị dự phòng.
+    }
+  }, [scheduledDurationSeconds, scheduledElapsedSeconds, state])
 
   useEffect(() => {
     callbackRef.current = {
@@ -396,6 +412,7 @@ export function JitsiClassroom({
       removeListeners()
       const currentApi = api
       api = null
+      if (apiRef.current === currentApi) apiRef.current = null
       try {
         currentApi?.dispose()
       } catch {
@@ -538,6 +555,7 @@ export function JitsiClassroom({
             toolbarButtons,
           },
         })
+        apiRef.current = api
 
         const iframe = api.getIFrame?.()
         if (iframe) {
@@ -562,11 +580,12 @@ export function JitsiClassroom({
           localParticipantId = participantId(payload)
           emitScreenShareState()
           callbackRef.current.onConferenceJoined?.(localParticipantId)
-          if (scheduledDurationSeconds > 0) {
+          const timer = meetingTimerRef.current
+          if (timer.scheduledDurationSeconds > 0) {
             try {
               api?.executeCommand('setMeetingTimer', {
-                duration: Math.floor(scheduledDurationSeconds),
-                elapsed: Math.max(0, Math.floor(scheduledElapsedSeconds)),
+                duration: Math.floor(timer.scheduledDurationSeconds),
+                elapsed: Math.max(0, Math.floor(timer.scheduledElapsedSeconds)),
               })
             } catch {
               // Đồng hồ ngoài iframe vẫn hoạt động nếu deployment chưa hỗ trợ.
@@ -661,7 +680,7 @@ export function JitsiClassroom({
       clearLoadTimeout()
       disposeConference()
     }
-  }, [attempt, canShareScreen, displayName, hasStarted, manageWaitingRoom, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName, scheduledDurationSeconds, scheduledElapsedSeconds])
+  }, [attempt, canShareScreen, displayName, hasStarted, manageWaitingRoom, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
 
   const startConference = () => {
     setErrorMessage('')

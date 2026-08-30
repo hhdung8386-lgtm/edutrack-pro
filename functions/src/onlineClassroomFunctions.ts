@@ -5,6 +5,8 @@ import { defineSecret } from 'firebase-functions/params'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
   ONLINE_CLASSROOM_ACCESS_COLLECTION,
+  ONLINE_CLASSROOM_BOOKING_CONTROLS_COLLECTION,
+  ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES,
   ONLINE_CLASSROOM_ROOMS_COLLECTION,
   ONLINE_CLASSROOM_SCREEN_ANNOTATION_SURFACE_DOCUMENT,
   ONLINE_CLASSROOM_TOKENS_COLLECTION,
@@ -20,10 +22,13 @@ import {
   onlineClassroomAccessGeneration,
   onlineClassroomAccessId,
   onlineClassroomBookingBlockReason,
-  onlineClassroomJoinWindow,
   onlineClassroomInviteMatches,
+  onlineClassroomInviteExpiresAt,
   onlineClassroomInvitePredatesGeneration,
+  resolveOnlineClassroomBookingExtensionState,
   onlineClassroomSessionKey,
+  onlineClassroomSessionExtensionAvailable,
+  onlineClassroomSessionTiming,
   onlineClassroomStudentJoinUrl,
   onlineClassroomTokenHash,
   resolveOnlineClassroomTrustedActor,
@@ -35,6 +40,7 @@ import {
   type OnlineClassroomBoardSnapshot,
   type OnlineClassroomBookingLike,
   type OnlineClassroomScreenAnnotationSession,
+  type OnlineClassroomSessionTiming,
   type OnlineClassroomTargetType,
   type OnlineClassroomTrustedActor,
 } from './onlineClassroom'
@@ -44,6 +50,7 @@ import {
   onlineClassroomJaasRoomName,
   resolveOnlineClassroomMeetingConfig,
 } from './onlineClassroomJaas'
+import { enqueueOnlineClassroomHardEndTask } from './onlineClassroomLifecycleFunctions'
 
 const db = new Firestore()
 const CLASSROOM_ORIGIN = 'https://www.123english.edu.vn'
@@ -82,9 +89,26 @@ type Teacher = {
 
 type PrivateRoom = {
   roomName?: string
+  bookingId?: unknown
+  scheduledStartsAt?: unknown
+  scheduledEndsAt?: unknown
+  hardEndsAt?: unknown
+  extensionMinutes?: unknown
+  extensionUsed?: unknown
+  state?: unknown
   boardSnapshot?: unknown
   recordingNotice?: unknown
   recordingConsent?: unknown
+}
+
+type BookingControl = {
+  bookingId?: unknown
+  scheduledStartsAt?: unknown
+  scheduledEndsAt?: unknown
+  hardEndsAt?: unknown
+  extensionMinutes?: unknown
+  extensionUsed?: unknown
+  revision?: unknown
 }
 
 type ClassroomRecordingNotice = {
@@ -110,6 +134,8 @@ export type AccessContext = {
   teacher: Teacher
   sessionKey: string
   roomName: string
+  timing: OnlineClassroomSessionTiming
+  extensionUsed: boolean
   boardSnapshot: ReturnType<typeof validateOnlineClassroomBoardSnapshot>
   screenAnnotationSession: OnlineClassroomScreenAnnotationSession | null
   recordingNotice: ClassroomRecordingNotice | null
@@ -178,7 +204,7 @@ function classroomError(code: string): HttpsError {
     TEACHER_NOT_ACTIVE: 'Gia sư không còn ở trạng thái đang dạy.',
     STUDENT_NOT_ACTIVE: 'Học viên đang bảo lưu, hết hạn hoặc chưa hoạt động.',
     OFFLINE_CLASS_NOT_SUPPORTED: 'Pilot phòng học trực tuyến không áp dụng cho lớp offline.',
-    OUTSIDE_JOIN_WINDOW: 'Phòng mở từ 12 giờ trước buổi học đến 6 giờ sau giờ kết thúc.',
+    OUTSIDE_JOIN_WINDOW: 'Phòng mở từ 12 giờ trước buổi học và tự đóng đúng giờ kết thúc (hoặc sau phần gia hạn tối đa 10 phút).',
     INVITE_INVALID: 'Link học viên không hợp lệ hoặc đã hết hạn.',
   }
   return new HttpsError('failed-precondition', messages[code] || 'Phòng học hiện chưa sẵn sàng.', { reason: code })
@@ -197,8 +223,9 @@ function assertOnlineClassroomInviteIssuanceAllowed(
   actor: OnlineClassroomTrustedActor | null,
   booking: Booking,
   nowMs: number = Date.now(),
+  extensionMinutes = 0,
 ): void {
-  const decision = decideOnlineClassroomInviteIssuance(actor, booking, nowMs)
+  const decision = decideOnlineClassroomInviteIssuance(actor, booking, nowMs, extensionMinutes)
   if (decision === 'allowed') return
   if (decision === 'outside-join-window') throw classroomError('OUTSIDE_JOIN_WINDOW')
   throw new HttpsError(
@@ -244,27 +271,98 @@ async function ensurePrivateRoom(
   booking: Booking,
   studentPilotGeneration: number,
   teacherPilotGeneration: number,
-): Promise<{ sessionKey: string; roomName: string }> {
+): Promise<{ sessionKey: string; roomName: string; extensionMinutes: number; extensionUsed: boolean }> {
   const sessionKey = onlineClassroomSessionKey(booking, studentPilotGeneration, teacherPilotGeneration)
   const roomRef = db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(sessionKey)
-  const roomName = await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(roomRef)
+  const controlRef = db.collection(ONLINE_CLASSROOM_BOOKING_CONTROLS_COLLECTION).doc(booking.id)
+  const room = await db.runTransaction(async (transaction) => {
+    const [snapshot, controlSnapshot] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(controlRef),
+    ])
     const existing = snapshot.data() as PrivateRoom | undefined
-    if (typeof existing?.roomName === 'string' && existing.roomName.length >= 32) return existing.roomName
-    const generated = `123EnglishPilot${randomBytes(24).toString('hex')}`
+    const control = controlSnapshot.data() as BookingControl | undefined
+    if (controlSnapshot.exists && control?.bookingId !== booking.id) {
+      throw new HttpsError('failed-precondition', 'Dữ liệu điều khiển buổi học không khớp lịch. Admin cần kiểm tra trước khi tiếp tục.', {
+        reason: 'CLASSROOM_BOOKING_CONTROL_INVALID',
+      })
+    }
+    const extensionState = resolveOnlineClassroomBookingExtensionState(control, existing)
+    if (!extensionState) {
+      throw new HttpsError('failed-precondition', 'Dữ liệu thời lượng phòng học không hợp lệ. Admin cần kiểm tra trước khi tiếp tục.', {
+        reason: 'CLASSROOM_TIMING_STATE_INVALID',
+      })
+    }
+    const generated = typeof existing?.roomName === 'string' && existing.roomName.length >= 32
+      ? existing.roomName
+      : `123EnglishPilot${randomBytes(24).toString('hex')}`
+    const { extensionMinutes, extensionUsed } = extensionState
+    const roomState = existing?.state === 'ending'
+      || existing?.state === 'ended'
+      || existing?.state === 'close_failed'
+      ? existing.state
+      : 'scheduled'
+    const timing = onlineClassroomSessionTiming(booking, extensionMinutes)
+    if (!timing) throw classroomError('BOOKING_TIME_INVALID')
+    const controlAlreadyPersisted = controlSnapshot.exists
+      && control?.bookingId === booking.id
+      && control.scheduledStartsAt instanceof Timestamp
+      && control.scheduledStartsAt.toMillis() === timing.scheduledStartsAt.getTime()
+      && control.scheduledEndsAt instanceof Timestamp
+      && control.scheduledEndsAt.toMillis() === timing.scheduledEndsAt.getTime()
+      && control.hardEndsAt instanceof Timestamp
+      && control.hardEndsAt.toMillis() === timing.hardEndsAt.getTime()
+      && control.extensionMinutes === extensionMinutes
+      && control.extensionUsed === extensionUsed
+    const timingAlreadyPersisted = snapshot.exists
+      && existing?.bookingId === booking.id
+      && existing.scheduledStartsAt instanceof Timestamp
+      && existing.scheduledStartsAt.toMillis() === timing.scheduledStartsAt.getTime()
+      && existing.scheduledEndsAt instanceof Timestamp
+      && existing.scheduledEndsAt.toMillis() === timing.scheduledEndsAt.getTime()
+      && existing.hardEndsAt instanceof Timestamp
+      && existing.hardEndsAt.toMillis() === timing.hardEndsAt.getTime()
+      && typeof existing.extensionUsed === 'boolean'
+      && (existing.state === 'scheduled'
+        || existing.state === 'ending'
+        || existing.state === 'ended'
+        || existing.state === 'close_failed')
+    if (!controlAlreadyPersisted) {
+      transaction.set(controlRef, {
+        bookingId: booking.id,
+        scheduledStartsAt: Timestamp.fromDate(timing.scheduledStartsAt),
+        scheduledEndsAt: Timestamp.fromDate(timing.scheduledEndsAt),
+        hardEndsAt: Timestamp.fromDate(timing.hardEndsAt),
+        extensionMinutes,
+        extensionUsed,
+        revision: Number.isSafeInteger(control?.revision) ? Number(control?.revision) : 0,
+        ...(controlSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    }
+    if (timingAlreadyPersisted && generated === existing?.roomName) {
+      return { roomName: generated, extensionMinutes, extensionUsed }
+    }
     transaction.set(roomRef, {
       roomName: generated,
       sessionKey,
+      bookingId: booking.id,
       studentId: booking.studentId,
       teacherId: booking.teacherId,
       subjectId: booking.subjectId || '',
       requestedDate: booking.requestedDate,
-      createdAt: FieldValue.serverTimestamp(),
+      scheduledStartsAt: Timestamp.fromDate(timing.scheduledStartsAt),
+      scheduledEndsAt: Timestamp.fromDate(timing.scheduledEndsAt),
+      hardEndsAt: Timestamp.fromDate(timing.hardEndsAt),
+      extensionMinutes,
+      extensionUsed,
+      state: roomState,
+      ...(snapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-    return generated
+    return { roomName: generated, extensionMinutes, extensionUsed }
   })
-  return { sessionKey, roomName }
+  return { sessionKey, ...room }
 }
 
 export async function loadEligibleContext(bookingId: string): Promise<AccessContext> {
@@ -311,7 +409,7 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
     throw classroomError('OFFLINE_CLASS_NOT_SUPPORTED')
   }
 
-  const { sessionKey, roomName } = await ensurePrivateRoom(
+  const { sessionKey, roomName, extensionMinutes, extensionUsed } = await ensurePrivateRoom(
     booking,
     studentAccess.generation,
     teacherAccess.generation,
@@ -326,12 +424,16 @@ export async function loadEligibleContext(bookingId: string): Promise<AccessCont
   )
   const recordingNotice = validatedRecordingNotice(roomSnapshot.data()?.recordingNotice)
   const recordingConsent = validatedRecordingConsent(roomSnapshot.data()?.recordingConsent)
+  const timing = onlineClassroomSessionTiming(booking, extensionMinutes)
+  if (!timing) throw classroomError('BOOKING_TIME_INVALID')
   return {
     booking,
     student,
     teacher,
     sessionKey,
     roomName,
+    timing,
+    extensionUsed,
     boardSnapshot,
     screenAnnotationSession,
     recordingNotice,
@@ -358,10 +460,16 @@ async function createStudentInvite(
   if (actor) {
     // Re-check against the freshly loaded booking. This closes the race where
     // a booking is reassigned after the callable's first permission check.
-    assertOnlineClassroomInviteIssuanceAllowed(actor, context.booking, nowMs)
+    assertOnlineClassroomInviteIssuanceAllowed(
+      actor,
+      context.booking,
+      nowMs,
+      context.timing.extensionMinutes,
+    )
   }
-  const window = onlineClassroomJoinWindow(context.booking)
-  if (!window || window.closesAt.getTime() <= nowMs) throw classroomError('OUTSIDE_JOIN_WINDOW')
+  if (nowMs >= context.timing.hardEndsAt.getTime()) throw classroomError('OUTSIDE_JOIN_WINDOW')
+  const inviteExpiresAt = onlineClassroomInviteExpiresAt(context.booking)
+  if (!inviteExpiresAt || inviteExpiresAt.getTime() <= nowMs) throw classroomError('OUTSIDE_JOIN_WINDOW')
   const token = randomBytes(ONLINE_CLASSROOM_TOKEN_BYTES).toString('base64url')
   await db.collection(ONLINE_CLASSROOM_TOKENS_COLLECTION).doc(onlineClassroomTokenHash(token)).set({
     bookingId: context.booking.id,
@@ -372,7 +480,10 @@ async function createStudentInvite(
     teacherPilotGeneration: context.teacherPilotGeneration,
     issuedBy,
     createdAt: FieldValue.serverTimestamp(),
-    expiresAt: Timestamp.fromDate(window.closesAt),
+    // Keep one stable link through the only allowed extension. The callable
+    // access check below remains authoritative and blocks the link at the
+    // scheduled end unless a manager has actually granted that extension.
+    expiresAt: Timestamp.fromDate(inviteExpiresAt),
   })
   return {
     joinUrl: onlineClassroomStudentJoinUrl(CLASSROOM_ORIGIN, context.booking.id, token),
@@ -677,7 +788,14 @@ export const issueOnlineClassroomInvite = onCall({
   const snapshot = await db.collection('bookingRequests').doc(bookingId).get()
   if (!snapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy buổi học.')
   const booking = { id: snapshot.id, ...snapshot.data() } as Booking
-  assertOnlineClassroomInviteIssuanceAllowed(actor, booking)
+  // Reject an unrelated teacher before any room write. The authoritative
+  // timing check runs again after the room (and its persisted extension) is
+  // loaded inside createStudentInvite.
+  if (actor.role === 'teacher' && actor.teacherId !== booking.teacherId) {
+    throw new HttpsError('permission-denied', 'Gia sư chỉ được tạo link cho buổi học được phân công cho mình.', {
+      reason: 'TEACHER_NOT_ASSIGNED',
+    })
+  }
   const invite = await createStudentInvite(booking, `${actor.role}:${actorUid}`, actor)
   await db.collection('adminLogs').add({
     // Keep adminId for compatibility with the existing audit viewer while
@@ -695,6 +813,184 @@ export const issueOnlineClassroomInvite = onCall({
   return { joinUrl: invite.joinUrl }
 })
 
+export const extendOnlineClassroomSession = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+}, async (request) => {
+  const actorUid = request.auth?.uid
+  if (!actorUid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại.')
+  const actor = await resolveTrustedClassroomActor(actorUid)
+  if (!actor) {
+    throw new HttpsError('permission-denied', 'Chỉ Admin hệ thống hoặc gia sư được phân công mới được gia hạn lớp.')
+  }
+  const bookingId = request.data?.bookingId
+  const requestedMinutes = request.data?.minutes ?? ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES
+  if (!isSafeClassroomId(bookingId)
+    || !Number.isSafeInteger(requestedMinutes)
+    || Number(requestedMinutes) < 1
+    || Number(requestedMinutes) > ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES) {
+    throw new HttpsError('invalid-argument', `Chỉ được gia hạn từ 1 đến ${ONLINE_CLASSROOM_MAX_EXTENSION_MINUTES} phút.`)
+  }
+
+  const bookingRef = db.collection('bookingRequests').doc(bookingId)
+  const preflightBookingSnapshot = await bookingRef.get()
+  if (!preflightBookingSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy buổi học.')
+  const preflightBooking = { id: preflightBookingSnapshot.id, ...preflightBookingSnapshot.data() } as Booking
+  if (actor.role === 'teacher' && actor.teacherId !== preflightBooking.teacherId) {
+    throw new HttpsError('permission-denied', 'Gia sư chỉ được gia hạn buổi học được phân công cho mình.')
+  }
+  const context = await loadEligibleContext(bookingId)
+  const preflightNowMs = Date.now()
+  if (preflightNowMs < context.timing.scheduledStartsAt.getTime()) {
+    throw new HttpsError('failed-precondition', 'Chỉ có thể gia hạn sau khi buổi học đã bắt đầu.', {
+      reason: 'CLASSROOM_EXTENSION_NOT_STARTED',
+    })
+  }
+
+  const roomRef = db.collection(ONLINE_CLASSROOM_ROOMS_COLLECTION).doc(context.sessionKey)
+  const controlRef = db.collection(ONLINE_CLASSROOM_BOOKING_CONTROLS_COLLECTION).doc(bookingId)
+  const studentAccessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION)
+    .doc(onlineClassroomAccessId('student', context.booking.studentId!))
+  const teacherAccessRef = db.collection(ONLINE_CLASSROOM_ACCESS_COLLECTION)
+    .doc(onlineClassroomAccessId('teacher', context.booking.teacherId!))
+  const intendedTiming = onlineClassroomSessionTiming(context.booking, Number(requestedMinutes))
+  if (!intendedTiming) throw classroomError('BOOKING_TIME_INVALID')
+  try {
+    await enqueueOnlineClassroomHardEndTask(context.sessionKey, intendedTiming.hardEndsAt.getTime())
+  } catch (error) {
+    logger.error('Online classroom extension hard-end task could not be registered', {
+      bookingId,
+      reason: error instanceof Error ? error.message : 'UNKNOWN',
+    })
+    throw new HttpsError('unavailable', 'Chưa thể bảo đảm mốc đóng phòng mới. Vui lòng thử gia hạn lại.', {
+      reason: 'HARD_END_TASK_NOT_SCHEDULED',
+    })
+  }
+  const auditRef = db.collection('adminLogs').doc()
+  const result = await db.runTransaction(async (transaction) => {
+    const [snapshot, controlSnapshot, freshBookingSnapshot, freshStudentAccess, freshTeacherAccess] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(controlRef),
+      transaction.get(bookingRef),
+      transaction.get(studentAccessRef),
+      transaction.get(teacherAccessRef),
+    ])
+    if (!snapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy phòng học cần gia hạn.')
+    if (!freshBookingSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy buổi học.')
+    const freshBooking = { id: freshBookingSnapshot.id, ...freshBookingSnapshot.data() } as Booking
+    const bookingBlock = onlineClassroomBookingBlockReason(freshBooking)
+    if (bookingBlock) throw classroomError(bookingBlock)
+    if (actor.role === 'teacher' && actor.teacherId !== freshBooking.teacherId) {
+      throw new HttpsError('permission-denied', 'Gia sư chỉ được gia hạn buổi học được phân công cho mình.')
+    }
+    const freshStudentGeneration = onlineClassroomAccessGeneration(freshStudentAccess.data()?.generation)
+    const freshTeacherGeneration = onlineClassroomAccessGeneration(freshTeacherAccess.data()?.generation)
+    if (freshStudentAccess.data()?.enabled !== true
+      || freshStudentGeneration !== context.studentPilotGeneration
+      || freshTeacherGeneration !== context.teacherPilotGeneration
+      || onlineClassroomSessionKey(freshBooking, freshStudentGeneration, freshTeacherGeneration) !== context.sessionKey) {
+      throw new HttpsError('failed-precondition', 'Quyền pilot hoặc phân công lớp vừa thay đổi. Vui lòng tải lại trước khi gia hạn.', {
+        reason: 'CLASSROOM_CONTEXT_CHANGED',
+      })
+    }
+    const room = snapshot.data() as PrivateRoom
+    const control = controlSnapshot.data() as BookingControl | undefined
+    if (room.bookingId !== freshBooking.id) {
+      throw new HttpsError('failed-precondition', 'Liên kết phòng học không còn khớp lịch hiện tại.', {
+        reason: 'CLASSROOM_CONTEXT_CHANGED',
+      })
+    }
+    if (controlSnapshot.exists && control?.bookingId !== freshBooking.id) {
+      throw new HttpsError('failed-precondition', 'Dữ liệu điều khiển buổi học không khớp lịch hiện tại.', {
+        reason: 'CLASSROOM_BOOKING_CONTROL_INVALID',
+      })
+    }
+    const extensionState = resolveOnlineClassroomBookingExtensionState(control, room)
+    if (!extensionState) {
+      throw new HttpsError('failed-precondition', 'Dữ liệu thời lượng phòng học không hợp lệ. Admin cần kiểm tra trước khi gia hạn.', {
+        reason: 'CLASSROOM_TIMING_STATE_INVALID',
+      })
+    }
+    const currentExtension = extensionState.extensionMinutes
+    const currentTiming = onlineClassroomSessionTiming(freshBooking, currentExtension)
+    if (!currentTiming) throw classroomError('BOOKING_TIME_INVALID')
+    const nowMs = Date.now()
+    if (nowMs < currentTiming.scheduledStartsAt.getTime()) {
+      throw new HttpsError('failed-precondition', 'Chỉ có thể gia hạn sau khi buổi học đã bắt đầu.', {
+        reason: 'CLASSROOM_EXTENSION_NOT_STARTED',
+      })
+    }
+    if (room.state === 'ending' || room.state === 'ended' || nowMs >= currentTiming.hardEndsAt.getTime()) {
+      throw new HttpsError('failed-precondition', 'Lớp đã kết thúc nên không thể gia hạn.', {
+        reason: 'CLASSROOM_ALREADY_ENDED',
+      })
+    }
+    if (extensionState.extensionUsed) {
+      throw new HttpsError('failed-precondition', 'Buổi học này đã dùng quyền gia hạn một lần.', {
+        reason: 'CLASSROOM_EXTENSION_ALREADY_USED',
+      })
+    }
+
+    const extensionMinutes = Number(requestedMinutes)
+    const nextTiming = onlineClassroomSessionTiming(freshBooking, extensionMinutes)!
+    const revision = Number.isSafeInteger(control?.revision)
+      ? Number(control?.revision) + 1
+      : 1
+    transaction.set(controlRef, {
+      bookingId,
+      scheduledStartsAt: Timestamp.fromDate(nextTiming.scheduledStartsAt),
+      scheduledEndsAt: Timestamp.fromDate(nextTiming.scheduledEndsAt),
+      hardEndsAt: Timestamp.fromDate(nextTiming.hardEndsAt),
+      extensionMinutes,
+      extensionUsed: true,
+      extensionGrantedAt: FieldValue.serverTimestamp(),
+      extensionGrantedBy: actorUid,
+      extensionGrantedByRole: actor.role,
+      revision,
+      ...(controlSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    transaction.set(roomRef, {
+      extensionMinutes,
+      extensionUsed: true,
+      hardEndsAt: Timestamp.fromDate(nextTiming.hardEndsAt),
+      extensionGrantedAt: FieldValue.serverTimestamp(),
+      extensionGrantedBy: actorUid,
+      extensionGrantedByRole: actor.role,
+      revision,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    transaction.set(auditRef, {
+      adminId: actorUid,
+      actorUid,
+      actorRole: actor.role,
+      ...(actor.role === 'teacher' ? { actorTeacherId: actor.teacherId } : {}),
+      action: 'EXTEND_ONLINE_CLASSROOM_SESSION',
+      targetType: 'booking',
+      targetId: bookingId,
+      changes: {
+        extensionMinutes: { from: currentExtension, to: extensionMinutes },
+        hardEndsAt: nextTiming.hardEndsAt.toISOString(),
+      },
+      createdAt: FieldValue.serverTimestamp(),
+    })
+    return {
+      extensionMinutes,
+      scheduledEndsAt: nextTiming.scheduledEndsAt.toISOString(),
+      hardEndsAt: nextTiming.hardEndsAt.toISOString(),
+      revision,
+    }
+  })
+
+  return {
+    success: true,
+    ...result,
+    extensionAvailable: false,
+    serverNow: new Date().toISOString(),
+  }
+})
+
 export async function resolveViewer(
   request: { auth?: { uid: string } | null; data?: Record<string, unknown> },
   context: AccessContext,
@@ -702,9 +998,20 @@ export async function resolveViewer(
   const uid = request.auth?.uid
   if (uid) {
     const actor = await resolveTrustedClassroomActor(uid)
-    if (actor?.role === 'admin') return { role: 'admin', displayName: 'Admin 123English' }
+    if (actor?.role === 'admin') {
+      if (!isInsideOnlineClassroomJoinWindow(
+        context.booking,
+        Date.now(),
+        context.timing.extensionMinutes,
+      )) throw classroomError('OUTSIDE_JOIN_WINDOW')
+      return { role: 'admin', displayName: 'Admin 123English' }
+    }
     if (actor?.role === 'teacher' && actor.teacherId === context.booking.teacherId) {
-      if (!isInsideOnlineClassroomJoinWindow(context.booking, Date.now())) throw classroomError('OUTSIDE_JOIN_WINDOW')
+      if (!isInsideOnlineClassroomJoinWindow(
+        context.booking,
+        Date.now(),
+        context.timing.extensionMinutes,
+      )) throw classroomError('OUTSIDE_JOIN_WINDOW')
       return {
         role: 'teacher',
         displayName: context.teacher.code || context.teacher.name || 'Gia sư 123English',
@@ -733,7 +1040,11 @@ export async function resolveViewer(
     )
     || invite.revoked === true
     || expiresAt <= Date.now()) throw classroomError('INVITE_INVALID')
-  if (!isInsideOnlineClassroomJoinWindow(context.booking, Date.now())) throw classroomError('OUTSIDE_JOIN_WINDOW')
+  if (!isInsideOnlineClassroomJoinWindow(
+    context.booking,
+    Date.now(),
+    context.timing.extensionMinutes,
+  )) throw classroomError('OUTSIDE_JOIN_WINDOW')
   return {
     role: 'student',
     displayName: context.student.name || context.booking.studentName || context.student.code || 'Học viên 123English',
@@ -782,6 +1093,20 @@ export const getOnlineClassroomAccess = onCall({
         publicPilotProvider: true,
       }
     } else {
+      try {
+        await enqueueOnlineClassroomHardEndTask(
+          context.sessionKey,
+          context.timing.hardEndsAt.getTime(),
+        )
+      } catch (error) {
+        logger.error('Online classroom hard-end task could not be registered', {
+          bookingId,
+          reason: error instanceof Error ? error.message : 'UNKNOWN',
+        })
+        throw new HttpsError('unavailable', 'Phòng học chưa thể bảo đảm tự đóng theo lịch. Vui lòng thử lại.', {
+          reason: 'HARD_END_TASK_NOT_SCHEDULED',
+        })
+      }
       const viewerId = viewer.role === 'admin'
         ? `admin:${request.auth?.uid || ''}`
         : viewer.role === 'teacher'
@@ -797,12 +1122,14 @@ export const getOnlineClassroomAccess = onCall({
           role: viewer.role,
           displayName: viewer.displayName,
           viewerId,
+          expiresAtMs: context.timing.hardEndsAt.getTime(),
         }),
         roomName: onlineClassroomJaasRoomName(meetingConfig, context.roomName),
         publicPilotProvider: false,
       }
     }
   } catch (error) {
+    if (error instanceof HttpsError) throw error
     // Never log the JWT or key material. A partially configured provider must
     // fail closed instead of silently moving a private class to meet.jit.si.
     logger.error('Online classroom meeting provider configuration rejected', {
@@ -816,6 +1143,7 @@ export const getOnlineClassroomAccess = onCall({
       { reason: 'MEETING_PROVIDER_NOT_CONFIGURED' },
     )
   }
+  const responseNowMs = Date.now()
   return {
     bookingId,
     ...meetingAccess,
@@ -827,6 +1155,16 @@ export const getOnlineClassroomAccess = onCall({
     requestedDate: context.booking.requestedDate || '',
     requestedStart: context.booking.requestedStart || '',
     requestedEnd: context.booking.requestedEnd || '',
+    scheduledStartsAt: context.timing.scheduledStartsAt.toISOString(),
+    scheduledEndsAt: context.timing.scheduledEndsAt.toISOString(),
+    hardEndsAt: context.timing.hardEndsAt.toISOString(),
+    extensionMinutes: context.timing.extensionMinutes,
+    extensionAvailable: onlineClassroomSessionExtensionAvailable(
+      context.timing,
+      context.extensionUsed,
+      responseNowMs,
+    ),
+    serverNow: new Date().toISOString(),
     curriculumLink: context.booking.curriculumLink || subjectPackage?.curriculumLink || '',
     boardSnapshot: context.boardSnapshot || { version: 0, generation: 0, studentCanWrite: true, operations: [] },
     screenAnnotationSession: context.screenAnnotationSession,
