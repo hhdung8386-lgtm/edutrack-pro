@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, RotateCcw, Video } from 'lucide-react'
 import type { JitsiEventHandler, JitsiExternalApi } from '@/lib/jitsiExternalApi'
 import {
+  jitsiClassroomInitialMediaMuted,
   jitsiClassroomToolbarButtons,
   parseJitsiKnockingParticipant,
   type JitsiKnockingParticipant,
@@ -50,6 +51,7 @@ type JitsiClassroomProps = {
   roomName: string
   displayName: string
   observerMode?: boolean
+  startMuted?: boolean
   canShareScreen?: boolean
   manageWaitingRoom?: boolean
   scheduledDurationSeconds?: number
@@ -203,6 +205,7 @@ export function JitsiClassroom({
   roomName,
   displayName,
   observerMode = false,
+  startMuted = true,
   canShareScreen = false,
   manageWaitingRoom = false,
   scheduledDurationSeconds = 0,
@@ -521,6 +524,7 @@ export function JitsiClassroom({
         }
 
         const toolbarButtons = jitsiClassroomToolbarButtons(canShareScreen)
+        const initialMediaMuted = jitsiClassroomInitialMediaMuted(observerMode, startMuted)
 
         api = new ExternalApi(launch.constructorDomain, {
           roomName: launch.roomName,
@@ -545,8 +549,8 @@ export function JitsiClassroom({
             enableWelcomePage: false,
             desktopSharingFrameRate: { min: 5, max: 15 },
             resolution: 720,
-            startWithAudioMuted: observerMode,
-            startWithVideoMuted: observerMode,
+            startWithAudioMuted: initialMediaMuted,
+            startWithVideoMuted: initialMediaMuted,
             participantsPane: {
               hideModeratorSettingsTab: true,
               hideMoreActionsButton: true,
@@ -682,7 +686,7 @@ export function JitsiClassroom({
       clearLoadTimeout()
       disposeConference()
     }
-  }, [attempt, canShareScreen, displayName, hasStarted, manageWaitingRoom, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName])
+  }, [attempt, canShareScreen, displayName, hasStarted, manageWaitingRoom, meetingAppId, meetingDomain, meetingProvider, observerMode, roomName, startMuted])
 
   const startConference = () => {
     setErrorMessage('')
@@ -712,7 +716,7 @@ export function JitsiClassroom({
             </span>
             <h2 className="mt-4 text-lg font-extrabold">Sẵn sàng vào lớp?</h2>
             <p id="jitsi-start-help" className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-300">
-              Sau khi bấm, phòng học sẽ mở màn hình kiểm tra thiết bị. Hãy cho phép camera, micro và bấm Vào lớp trong khung cuộc gọi.
+              Sau khi bấm, phòng học sẽ mở màn hình kiểm tra thiết bị ở trạng thái tắt an toàn. Bạn có thể bật camera, micro rồi bấm Vào lớp trong khung cuộc gọi.
             </p>
             <button
               type="button"
@@ -721,7 +725,7 @@ export function JitsiClassroom({
               className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffc107] px-5 text-sm font-extrabold text-[#10213a] shadow-[0_12px_30px_-18px_rgba(255,193,7,0.9)] transition hover:bg-[#ffd54f] focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-[#070b12] active:translate-y-px sm:w-auto"
             >
               <Video className="h-5 w-5" aria-hidden="true" />
-              Vào lớp và bật camera, micro
+              Mở kiểm tra camera, micro
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  jitsiClassroomInitialMediaMuted,
   jitsiClassroomToolbarButtons,
   parseJitsiKnockingParticipant,
 } from '../src/lib/jitsiClassroomControls.ts'
@@ -8,6 +9,12 @@ import {
 test('screen sharing is only exposed in the manager toolbar', () => {
   assert.equal(jitsiClassroomToolbarButtons(false).includes('desktop'), false)
   assert.equal(jitsiClassroomToolbarButtons(true).includes('desktop'), true)
+})
+
+test('device preview starts muted unless a future caller explicitly opts out', () => {
+  assert.equal(jitsiClassroomInitialMediaMuted(false), true)
+  assert.equal(jitsiClassroomInitialMediaMuted(false, false), false)
+  assert.equal(jitsiClassroomInitialMediaMuted(true, false), true)
 })
 
 test('lobby participant events are normalized and unsafe payloads are ignored', () => {

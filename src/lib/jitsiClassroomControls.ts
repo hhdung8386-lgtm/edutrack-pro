@@ -32,3 +32,15 @@ export function jitsiClassroomToolbarButtons(canShareScreen: boolean): string[] 
     'hangup',
   ]
 }
+
+/**
+ * Enter device preview muted by default so a denied or slow media permission
+ * cannot block the prejoin screen. Users can still enable either device from
+ * Jitsi before joining, while observer/admin mode remains force-muted.
+ */
+export function jitsiClassroomInitialMediaMuted(
+  observerMode: boolean,
+  startMuted = true,
+): boolean {
+  return observerMode || startMuted
+}
