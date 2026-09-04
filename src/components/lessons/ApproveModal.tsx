@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
-import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
@@ -100,6 +100,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
       })
+      assertBookingTimeRangeIntegrity(matchedBookings)
 
       await runTransaction(
         db,
@@ -127,6 +128,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
@@ -361,6 +363,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       const code = err?.code || ''
       if (err?.message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (err?.message === 'BOOKING_TIME_RANGE_INVALID') {
+        toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
       } else if (err?.message === 'BOOKING_MATCH_AMBIGUOUS' || err?.message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Vui lòng kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (err?.message === 'NOT_ENOUGH_POINTS') {
