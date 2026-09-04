@@ -19,7 +19,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
-import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
@@ -310,9 +310,18 @@ export function ApprovalsPage() {
   }
 
   const pendingCount = totalCounts.pending
+  const approvalHasTimeRangeMismatch = Boolean(
+    approvingLesson
+    && approveAudit?.lessonId === approvingLesson.id
+    && approveAudit.audit.schedule.status === 'time_mismatch',
+  )
 
   const handleApprove = async () => {
     if (!approvingLesson || !approveSubjectId) return
+    if (approvalHasTimeRangeMismatch) {
+      toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+      return
+    }
     setApproving(true)
     try {
       const chosenSubjectPkg = approveStudentSubjects.find(s => s.subjectId === approveSubjectId)
@@ -332,6 +341,7 @@ export function ApprovalsPage() {
         minutes: approvingLesson.minutes,
         subjectId: approvingLesson.subjectId,
       })
+      assertBookingTimeRangeIntegrity(matchedBookings)
 
       await runTransaction(
         db,
@@ -361,6 +371,7 @@ export function ApprovalsPage() {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
@@ -588,6 +599,8 @@ export function ApprovalsPage() {
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
         setApprovingLesson(null)
+      } else if (message === 'BOOKING_TIME_RANGE_INVALID') {
+        toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
@@ -884,6 +897,7 @@ export function ApprovalsPage() {
           title="Xác nhận duyệt buổi dạy?"
           confirmLabel="Duyệt buổi dạy"
           loading={approving}
+          confirmDisabled={auditLoading || approvalHasTimeRangeMismatch}
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-3">
             {/* Đối chiếu tươi ngay trước khi trừ kim cương: lịch đã sắp + buổi trùng ngày */}

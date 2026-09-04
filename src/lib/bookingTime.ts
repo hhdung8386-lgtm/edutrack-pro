@@ -16,6 +16,19 @@ export type OnlineClassroomMeetingTimer = {
   elapsedSeconds: number
 }
 
+/**
+ * So sánh thời lượng được lưu với khoảng giờ thực tế trên lịch.
+ *
+ * `requestedMinutes` vẫn là nguồn chuẩn cho các bản ghi cũ thiếu/sai giờ kết
+ * thúc, nên chỉ kết luận `mismatch` khi cả hai mốc giờ đều đọc được và khoảng
+ * giờ thực tế hợp lệ. Điều này chặn bản ghi đã chứng minh là mâu thuẫn mà không
+ * làm hỏng dữ liệu legacy chưa thể đối chiếu.
+ */
+export type BookingTimeRangeConsistency =
+  | { status: 'consistent'; actualMinutes: number; requestedMinutes: number }
+  | { status: 'mismatch'; actualMinutes: number; requestedMinutes: number }
+  | { status: 'unverifiable' }
+
 export function bookingTimeToMinutes(value?: string) {
   if (!value) return Number.NaN
   const match = /^(\d{1,2}):([0-5]\d)$/.exec(value)
@@ -25,6 +38,32 @@ export function bookingTimeToMinutes(value?: string) {
   const minutes = Number(match[2])
   if (!Number.isInteger(hours) || hours < 0 || hours > 49) return Number.NaN
   return hours * 60 + minutes
+}
+
+export function checkBookingTimeRangeConsistency(
+  booking: BookingIntervalLike,
+): BookingTimeRangeConsistency {
+  const requestedMinutes = Number(booking.requestedMinutes)
+  const start = bookingTimeToMinutes(booking.requestedStart)
+  const end = bookingTimeToMinutes(booking.requestedEnd)
+  if (
+    !Number.isInteger(requestedMinutes)
+    || !VALID_BOOKING_MINUTES.has(requestedMinutes)
+    || !Number.isFinite(start)
+    || !Number.isFinite(end)
+  ) {
+    return { status: 'unverifiable' }
+  }
+
+  let actualMinutes = end - start
+  if (actualMinutes <= 0) actualMinutes += MINUTES_PER_DAY
+  if (!Number.isInteger(actualMinutes) || actualMinutes <= 0 || actualMinutes > MAX_BOOKING_MINUTES) {
+    return { status: 'unverifiable' }
+  }
+
+  return actualMinutes === requestedMinutes
+    ? { status: 'consistent', actualMinutes, requestedMinutes }
+    : { status: 'mismatch', actualMinutes, requestedMinutes }
 }
 
 function bookingDateStartInMinutes(dateISO?: string) {

@@ -13,6 +13,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   confirmVariant?: 'primary' | 'danger'
   loading?: boolean
+  confirmDisabled?: boolean
   children?: ReactNode
 }
 
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   confirmLabel = 'Xác nhận',
   confirmVariant = 'primary',
   loading = false,
+  confirmDisabled = false,
   children,
 }: ConfirmDialogProps) {
   return (
@@ -38,7 +40,7 @@ export function ConfirmDialog({
           <Button variant="ghost" onClick={onClose} disabled={loading}>
             Hủy
           </Button>
-          <Button variant={confirmVariant} onClick={onConfirm} loading={loading}>
+          <Button variant={confirmVariant} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
             {confirmLabel}
           </Button>
         </div>

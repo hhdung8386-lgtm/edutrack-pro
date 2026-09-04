@@ -1,9 +1,34 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  checkBookingTimeRangeConsistency,
   formatClassroomElapsed,
   onlineClassroomMeetingTimer,
 } from '../src/lib/bookingTime.ts'
+
+test('detects a stored duration that disagrees with the displayed time range', () => {
+  assert.deepEqual(checkBookingTimeRangeConsistency({
+    requestedStart: '20:30',
+    requestedEnd: '20:55',
+    requestedMinutes: 50,
+  }), {
+    status: 'mismatch',
+    actualMinutes: 25,
+    requestedMinutes: 50,
+  })
+})
+
+test('accepts a matching time range including the 24:xx convention', () => {
+  assert.deepEqual(checkBookingTimeRangeConsistency({
+    requestedStart: '24:00',
+    requestedEnd: '24:50',
+    requestedMinutes: 50,
+  }), {
+    status: 'consistent',
+    actualMinutes: 50,
+    requestedMinutes: 50,
+  })
+})
 
 test('meeting timer uses Vietnam booking time and keeps seconds when joining late', () => {
   const nowMs = Date.UTC(2026, 7, 29, 12, 5, 9) // 19:05:09 tại Việt Nam

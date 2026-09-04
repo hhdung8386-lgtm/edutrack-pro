@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Teacher } from '@/types'
+import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getBookingPoints } from '@/lib/points'
 import {
   LessonBookingReference,
@@ -33,6 +34,19 @@ export function bookingHoldPoints(
  * Giá trị trả về là KIM CƯƠNG đang giữ, không phải thời lượng của ca học.
  */
 export const bookingHoldMinutes = bookingHoldPoints
+
+/**
+ * Không cho duyệt/tính lương một booking có khoảng giờ đã chứng minh là khác
+ * với thời lượng được lưu. Bản ghi legacy thiếu giờ kết thúc được giữ tương
+ * thích vì không thể kết luận chính xác là sai.
+ */
+export function assertBookingTimeRangeIntegrity(bookings: BookingRequest[]): void {
+  for (const booking of bookings) {
+    if (checkBookingTimeRangeConsistency(booking).status === 'mismatch') {
+      throw new Error('BOOKING_TIME_RANGE_INVALID')
+    }
+  }
+}
 
 export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
   const bookingIds = Array.from(new Set([

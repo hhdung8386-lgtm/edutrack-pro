@@ -22,7 +22,7 @@ import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
-import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
@@ -525,6 +525,7 @@ export function TeacherDetailPage() {
           minutes: lesson.minutes,
           subjectId: lesson.subjectId,
         })
+        assertBookingTimeRangeIntegrity(matchedBookings)
         await runTransaction(db, async (tx) => {
           const lessonRef = doc(db, 'lessons', lesson.id)
           const studentRef = doc(db, 'students', lesson.studentId)
@@ -559,6 +560,7 @@ export function TeacherDetailPage() {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
           const lessonPoints = isAbsenceLesson
@@ -996,6 +998,8 @@ export function TeacherDetailPage() {
         toast.error('Học viên không tồn tại')
       } else if (message === 'LESSON_ALREADY_PROCESSED') {
         toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (message === 'BOOKING_TIME_RANGE_INVALID') {
+        toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
       } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {
@@ -1080,7 +1084,7 @@ export function TeacherDetailPage() {
         else failed++
       }
       if (failed === 0) toast.success(`Đã duyệt ${ok} buổi dạy`)
-      else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi lỗi (có thể học viên hết buổi) — vui lòng kiểm tra lại`)
+      else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi lỗi (có thể lịch/số phút không khớp hoặc học viên hết buổi) — vui lòng kiểm tra lại`)
       setSelectedLessonIds(new Set())
     } finally {
       setBulkApproving(false)

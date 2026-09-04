@@ -1,6 +1,7 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { isActiveBooking } from '@/lib/bookingConflicts'
+import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import type { BookingRequest, Lesson, LessonScheduleCheckSnapshot } from '@/types'
 
 /**
@@ -128,15 +129,37 @@ export function evaluateLessonSchedule(
       ? sameDayOwn
       : []
     const matched = exact || combined[0] || sameDayOwn[0]
+    const matchedBookings = combined.length > 0 ? combined : [matched]
+    let timeRangeMismatch: {
+      booking: BookingRequest
+      actualMinutes: number
+      requestedMinutes: number
+    } | null = null
+    for (const booking of matchedBookings) {
+      const consistency = checkBookingTimeRangeConsistency(booking)
+      if (consistency.status === 'mismatch') {
+        timeRangeMismatch = {
+          booking,
+          actualMinutes: consistency.actualMinutes,
+          requestedMinutes: consistency.requestedMinutes,
+        }
+        break
+      }
+    }
+    const displayBooking = timeRangeMismatch?.booking || matched
     return {
       ...base,
-      status: 'matched',
+      status: timeRangeMismatch ? 'time_mismatch' : 'matched',
       scheduledDates: [lesson.date],
       ...(exact || combined.length > 0 ? { bookingId: matched.id } : {}),
       ...(combined.length > 1 ? { bookingIds: combined.map((booking) => booking.id) } : {}),
       // Chỉ set khi có giá trị: buổi được ghi vào Firestore, field undefined sẽ làm hỏng lệnh ghi.
-      ...(matched.requestedStart ? { bookingStart: matched.requestedStart } : {}),
-      ...(matched.requestedEnd ? { bookingEnd: matched.requestedEnd } : {}),
+      ...(displayBooking.requestedStart ? { bookingStart: displayBooking.requestedStart } : {}),
+      ...(displayBooking.requestedEnd ? { bookingEnd: displayBooking.requestedEnd } : {}),
+      ...(timeRangeMismatch ? {
+        timeRangeActualMinutes: timeRangeMismatch.actualMinutes,
+        timeRangeExpectedMinutes: timeRangeMismatch.requestedMinutes,
+      } : {}),
       ...(lesson.minutes && combined.length === 0 && matched.requestedMinutes !== lesson.minutes
         ? { minutesMismatch: matched.requestedMinutes }
         : {}),
@@ -244,6 +267,21 @@ export function describeSchedule(check: LessonScheduleCheck | undefined, lang: '
   if (!check) return null
   const vi = lang === 'vi'
   switch (check.status) {
+    case 'time_mismatch': {
+      const actualMinutes = check.timeRangeActualMinutes ?? 0
+      const expectedMinutes = check.timeRangeExpectedMinutes ?? 0
+      return {
+        tone: 'danger',
+        title: vi ? 'Giờ lịch không khớp thời lượng đã lưu' : 'The scheduled time does not match the stored duration',
+        detail: check.bookingStart && check.bookingEnd
+          ? (vi
+              ? `Ca ${check.bookingStart} - ${check.bookingEnd} chỉ ${actualMinutes} phút, nhưng lịch đang lưu ${expectedMinutes} phút. Hãy sửa lịch trước khi duyệt.`
+              : `${check.bookingStart} - ${check.bookingEnd} is ${actualMinutes} minutes, but the booking stores ${expectedMinutes} minutes. Fix the schedule before approving.`)
+          : (vi
+              ? 'Khoảng giờ của lịch không khớp thời lượng đã lưu. Hãy sửa lịch trước khi duyệt.'
+              : 'The scheduled time range does not match the stored duration. Fix the schedule before approving.'),
+      }
+    }
     case 'matched':
       return {
         tone: check.minutesMismatch ? 'warning' : 'ok',
