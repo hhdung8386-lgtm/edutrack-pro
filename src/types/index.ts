@@ -146,6 +146,8 @@ export interface Teacher {
   pointsPer25Minutes?: number
   bookingPriority?: number
   totalApprovedMinutes?: number
+  /** Dấu thời gian admin đã đánh dấu tính lương theo từng kỳ yyyy-MM. */
+  payrollCalculatedAtByMonth?: Record<string, Timestamp>
   // Interview fields
   yob?: number
   livingArea?: string

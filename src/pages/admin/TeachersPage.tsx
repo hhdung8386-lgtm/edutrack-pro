@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch, FieldPath } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher, TeacherDirectoryCategory } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -10,7 +10,7 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, Calculator, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
@@ -18,11 +18,23 @@ import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/tea
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { useAuthStore } from '@/stores/authStore'
 import { normalizeTeacherCountryCode, teacherCountryLabel } from '@/lib/teacherCountries'
+import { getCurrentMonth } from '@/lib/constants'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
+type PayrollCalculationFilter = 'calculated' | 'not_calculated'
 interface Branch { id: string; name: string; status: string }
 type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
+
+function formatPayrollCalculationMonth(month: string) {
+  const [year, monthNumber] = month.split('-')
+  const numericMonth = Number(monthNumber)
+  return year && Number.isFinite(numericMonth) ? `Tháng ${numericMonth} / ${year}` : month
+}
+
+function hasPayrollCalculationMark(teacher: Teacher, month: string) {
+  return Boolean(teacher.payrollCalculatedAtByMonth?.[month])
+}
 
 async function commitTeacherUpdates(teacherIds: string[], values: Record<string, unknown>) {
   const batchSize = values.isTester === true ? 225 : 450
@@ -210,6 +222,45 @@ function CertificateComplianceCell({ teacher, onEdit, compact = false }: { teach
   )
 }
 
+function PayrollCalculationCell({
+  teacher,
+  month,
+  disabled,
+  onMark,
+}: {
+  teacher: Teacher
+  month: string
+  disabled: boolean
+  onMark: (teacher: Teacher) => void
+}) {
+  const calculated = hasPayrollCalculationMark(teacher, month)
+
+  return (
+    <div className="flex min-w-[150px] flex-col items-start gap-1.5">
+      <span className={`inline-flex items-center rounded-lg px-2 py-1 text-[11px] font-extrabold ring-1 ${calculated ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-amber-50 text-amber-800 ring-amber-200'}`}>
+        {calculated ? 'Đã tính lương' : 'Chưa tính lương'}
+      </span>
+      <span className="text-[10px] font-semibold text-slate-400">{formatPayrollCalculationMonth(month)}</span>
+      {!calculated && (
+        <button
+          type="button"
+          aria-label={`Đánh dấu đã tính lương ${formatPayrollCalculationMonth(month)} cho ${teacher.name}`}
+          title={`Đánh dấu đã tính lương ${formatPayrollCalculationMonth(month)}`}
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation()
+            onMark(teacher)
+          }}
+          className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-brand-50 px-2.5 py-1 text-[11px] font-extrabold text-brand-900 ring-1 ring-brand-200 transition hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:cursor-wait disabled:opacity-60"
+        >
+          <Calculator className="h-3.5 w-3.5" />
+          Đánh dấu đã tính
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function TeachersPage({ category = 'online' }: { category?: TeacherDirectoryView }) {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -222,6 +273,14 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
   const [profileFilter, setProfileFilter] = useState<ProfileFilter>(() => (sessionStorage.getItem('teachers_profileFilter') as ProfileFilter) || 'all')
+  const [calculationMonth, setCalculationMonth] = useState(() => {
+    const stored = sessionStorage.getItem('teachers_calculationMonth') || ''
+    return /^\d{4}-\d{2}$/.test(stored) ? stored : getCurrentMonth()
+  })
+  const [calculationFilter, setCalculationFilter] = useState<PayrollCalculationFilter>(() => {
+    const stored = sessionStorage.getItem('teachers_calculationFilter')
+    return stored === 'calculated' ? 'calculated' : 'not_calculated'
+  })
   const [sortBy, setSortBy] = useState<TeacherSort>(() => {
     const stored = sessionStorage.getItem('teachers_sortBy')
     return stored === 'minutes_desc' || stored === 'minutes_asc' ? stored : 'newest'
@@ -240,16 +299,11 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [savingPoints, setSavingPoints] = useState(false)
   const [bulkCategories, setBulkCategories] = useState<TeacherDirectoryCategory[]>([])
   const [savingCategories, setSavingCategories] = useState(false)
+  const [savingPayrollCalculation, setSavingPayrollCalculation] = useState(false)
   const [limitVal, setLimitVal] = useState<number>(() => {
     const stored = sessionStorage.getItem('teachers_limitVal')
     return stored ? Number(stored) : 20
   })
-
-  useEffect(() => {
-    if (category === 'resigned' && statusFilter !== 'all') {
-      setStatusFilter('all')
-    }
-  }, [category, statusFilter])
 
   // Sync filters to sessionStorage
   useEffect(() => {
@@ -258,9 +312,11 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     sessionStorage.setItem('teachers_statusFilter', statusFilter)
     sessionStorage.setItem('teachers_branchFilter', branchFilter)
     sessionStorage.setItem('teachers_profileFilter', profileFilter)
+    sessionStorage.setItem('teachers_calculationMonth', calculationMonth)
+    sessionStorage.setItem('teachers_calculationFilter', calculationFilter)
     sessionStorage.setItem('teachers_sortBy', sortBy)
     sessionStorage.setItem('teachers_limitVal', String(limitVal))
-  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, sortBy, limitVal])
+  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, calculationMonth, calculationFilter, sortBy, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -286,7 +342,6 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
 
   useEffect(() => {
     const q = query(collection(db, 'teachers'))
-    setLoading(true)
 
     const unsub = onSnapshot(
       q,
@@ -386,7 +441,10 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       || (profileFilter === 'missing_pedagogical' && !certificates.hasPedagogicalImage)
       || (profileFilter === 'missing_both' && !certificates.hasForeignLanguageImage && !certificates.hasPedagogicalImage)
       || (profileFilter === 'missing_basic_profile' && missingTeacherFields(t).length > 0)
-    return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile
+    const payrollCalculated = hasPayrollCalculationMark(t, calculationMonth)
+    const matchCalculation = category !== 'online'
+      || (calculationFilter === 'calculated' ? payrollCalculated : !payrollCalculated)
+    return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile && matchCalculation
   })
 
   const getApprovedMinutes = (teacher: Teacher) => (
@@ -402,6 +460,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       })
 
   const visibleTeachers = limitVal > 0 ? sortedTeachers.slice(0, limitVal) : sortedTeachers
+  const selectedPayrollCalculationCount = category === 'online'
+    ? visibleTeachers.filter((teacher) => selectedTeacherIds.includes(teacher.id) && !hasPayrollCalculationMark(teacher, calculationMonth)).length
+    : 0
 
   const profileCounts = directoryTeachers.reduce((counts, teacher) => {
     const compliance = getTeacherCertificateCompliance(teacher)
@@ -411,6 +472,12 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     if (!compliance.hasForeignLanguageImage && !compliance.hasPedagogicalImage) counts.missingBoth += 1
     return counts
   }, { complete: 0, missingForeign: 0, missingPedagogical: 0, missingBoth: 0 })
+
+  const payrollCalculationCounts = directoryTeachers.reduce((counts, teacher) => {
+    if (hasPayrollCalculationMark(teacher, calculationMonth)) counts.calculated += 1
+    else counts.notCalculated += 1
+    return counts
+  }, { calculated: 0, notCalculated: 0 })
 
   const directoryCounts: Record<TeacherDirectoryView, number> = {
     online: teachers.filter((t) => t.status !== 'resigned' && (t.teachingFormats?.includes('online') || ((t.teachingFormats || []).length === 0 && !t.isTester))).length,
@@ -438,8 +505,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       await batch.commit()
       setTeachers((prev) => prev.map((t) => (t.id === teacher.id ? { ...t, isTester: next } : t)))
       toast.success(next ? `Đã thêm ${teacher.name} vào nhóm Tester` : `Đã bỏ ${teacher.name} khỏi nhóm Tester`)
-    } catch (err: any) {
-      toast.error('Không thể chuyển đổi: ' + (err?.message || ''))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      toast.error('Không thể chuyển đổi: ' + message)
     }
   }
 
@@ -453,8 +521,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       await batch.commit()
       toast.success('Xóa gia sư thành công')
       setDeleteTeacher(null)
-    } catch (err: any) {
-      toast.error('Lỗi khi xóa gia sư: ' + err.message)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Lỗi không xác định'
+      toast.error('Lỗi khi xóa gia sư: ' + message)
     } finally {
       setDeleting(false)
     }
@@ -529,6 +598,81 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       toast.error('Không cập nhật được nhóm gia sư hàng loạt')
     } finally {
       setSavingCategories(false)
+    }
+  }
+
+  const commitPayrollCalculationMarks = async (selectedTeachers: Teacher[]) => {
+    const batchSize = 450
+    for (let index = 0; index < selectedTeachers.length; index += batchSize) {
+      const batch = writeBatch(db)
+      const batchTeachers = selectedTeachers.slice(index, index + batchSize)
+      batchTeachers.forEach((teacher) => {
+        batch.update(
+          doc(db, 'teachers', teacher.id),
+          new FieldPath('payrollCalculatedAtByMonth', calculationMonth),
+          serverTimestamp(),
+          'updatedAt',
+          serverTimestamp(),
+        )
+      })
+      batch.set(doc(collection(db, 'adminLogs')), {
+        adminId: user?.uid || '',
+        action: 'MARK_PAYROLL_CALCULATED',
+        targetType: 'teacher',
+        targetId: batchTeachers.length === 1 ? batchTeachers[0].id : 'bulk',
+        changes: {
+          month: calculationMonth,
+          teacherIds: batchTeachers.map((teacher) => teacher.id),
+          teacherCount: batchTeachers.length,
+        },
+        createdAt: serverTimestamp(),
+      })
+      await batch.commit()
+    }
+  }
+
+  const handleMarkPayrollCalculated = async (teacher: Teacher) => {
+    if (savingPayrollCalculation || hasPayrollCalculationMark(teacher, calculationMonth)) return
+    if (!window.confirm(
+      `Xác nhận đánh dấu đã tính lương cho ${teacher.name} — ${formatPayrollCalculationMonth(calculationMonth)}?\n\nThao tác chỉ lưu trạng thái theo tháng, không thay đổi tiền lương, buổi học hay hồ sơ gia sư.`,
+    )) return
+
+    setSavingPayrollCalculation(true)
+    try {
+      await commitPayrollCalculationMarks([teacher])
+      setSelectedTeacherIds((current) => current.filter((id) => id !== teacher.id))
+      toast.success(`Đã đánh dấu ${teacher.name} đã tính lương ${formatPayrollCalculationMonth(calculationMonth)}`)
+    } catch (error) {
+      console.error('Unable to mark teacher payroll as calculated:', error)
+      toast.error('Không thể lưu trạng thái đã tính lương. Dữ liệu gia sư chưa bị thay đổi.')
+    } finally {
+      setSavingPayrollCalculation(false)
+    }
+  }
+
+  const handleBulkPayrollCalculation = async () => {
+    if (savingPayrollCalculation || selectedTeacherIds.length === 0) return
+    const selectedTeachers = visibleTeachers.filter((teacher) => (
+      selectedTeacherIds.includes(teacher.id) && !hasPayrollCalculationMark(teacher, calculationMonth)
+    ))
+    if (selectedTeachers.length === 0) {
+      toast.warning(`Các gia sư đã chọn đều đã tính lương ${formatPayrollCalculationMonth(calculationMonth)}`)
+      return
+    }
+    if (!window.confirm(
+      `Xác nhận đánh dấu đã tính lương cho ${selectedTeachers.length} gia sư — ${formatPayrollCalculationMonth(calculationMonth)}?\n\nThao tác chỉ lưu trạng thái theo tháng, không thay đổi tiền lương, buổi học hay hồ sơ gia sư.`,
+    )) return
+
+    setSavingPayrollCalculation(true)
+    try {
+      await commitPayrollCalculationMarks(selectedTeachers)
+      setSelectedTeacherIds([])
+      toast.success(`Đã đánh dấu ${selectedTeachers.length} gia sư đã tính lương ${formatPayrollCalculationMonth(calculationMonth)}`)
+    } catch (error) {
+      console.error('Unable to mark selected teacher payrolls as calculated:', error)
+      toast.error('Không thể lưu trạng thái đã tính lương. Dữ liệu gia sư chưa bị thay đổi.')
+    } finally {
+      setSavingPayrollCalculation(false)
     }
   }
 
@@ -660,11 +804,44 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
           placeholder="Tìm theo tên hoặc mã gia sư..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setSelectedTeacherIds([])
+          }}
           className="w-full lg:max-w-md"
         />
 
         <div className="flex gap-3 items-center flex-wrap">
+          {category === 'online' && (
+            <>
+              <label className="flex min-h-10 items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 text-sm font-bold text-slate-700">
+                <span className="whitespace-nowrap">Kỳ tính lương</span>
+                <input
+                  type="month"
+                  value={calculationMonth}
+                  onChange={(event) => {
+                    if (!/^\d{4}-\d{2}$/.test(event.target.value)) return
+                    setCalculationMonth(event.target.value)
+                    setSelectedTeacherIds([])
+                  }}
+                  className="min-w-[142px] bg-transparent outline-none"
+                  aria-label="Chọn tháng tính lương"
+                />
+              </label>
+              <select
+                value={calculationFilter}
+                onChange={(event) => {
+                  setCalculationFilter(event.target.value as PayrollCalculationFilter)
+                  setSelectedTeacherIds([])
+                }}
+                className="min-h-[40px] rounded-xl border border-brand-200 bg-brand-50 px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+                aria-label="Lọc trạng thái tính lương"
+              >
+                <option value="not_calculated">Chưa tính lương ({payrollCalculationCounts.notCalculated})</option>
+                <option value="calculated">Đã tính lương ({payrollCalculationCounts.calculated})</option>
+              </select>
+            </>
+          )}
           <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <span className="whitespace-nowrap">Số gia sư</span>
             <select
@@ -757,6 +934,18 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       {selectedTeacherIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3">
           <span className="text-sm font-bold text-sky-900">Đã chọn {selectedTeacherIds.length} gia sư</span>
+          {category === 'online' && (
+            <Button
+              size="sm"
+              onClick={handleBulkPayrollCalculation}
+              loading={savingPayrollCalculation}
+              disabled={selectedPayrollCalculationCount === 0}
+              title={`Đánh dấu đã tính lương ${formatPayrollCalculationMonth(calculationMonth)} cho các gia sư đã chọn`}
+            >
+              <Calculator className="h-4 w-4" />
+              Đánh dấu đã tính ({selectedPayrollCalculationCount})
+            </Button>
+          )}
           <div className="flex flex-wrap items-center gap-1 rounded-xl border border-sky-200 bg-white p-1" aria-label="Chọn nhóm gia sư cần áp dụng hàng loạt">
             {(['online', 'offline', 'tester'] as TeacherDirectoryCategory[]).map((item) => {
               const checked = bulkCategories.includes(item)
@@ -810,7 +999,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', ...(category === 'online' ? ['Tính lương'] : []), 'Hành động'].map((h) => h === 'Tổng phút' ? (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
@@ -894,6 +1083,11 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <StatusSelector teacher={teacher} onRetire={setRetiringTeacher} />
                       </td>
+                      {category === 'online' && (
+                        <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                          <PayrollCalculationCell teacher={teacher} month={calculationMonth} disabled={savingPayrollCalculation} onMark={handleMarkPayrollCalculated} />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button
@@ -982,6 +1176,11 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                         <span className="flex items-center gap-1 text-sky-700"><DiamondPointsIcon className="h-4 w-4 text-violet-600" />/25 phút</span>
                       </label>
                     </div>
+                    {category === 'online' && (
+                      <div className="mt-2" onClick={(event) => event.stopPropagation()}>
+                        <PayrollCalculationCell teacher={teacher} month={calculationMonth} disabled={savingPayrollCalculation} onMark={handleMarkPayrollCalculated} />
+                      </div>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleTester(teacher) }}
                       className={`mt-2 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 bg-emerald-50' : 'text-violet-600 bg-violet-50'}`}
