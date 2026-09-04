@@ -32,7 +32,7 @@ function booking(id: string, start: string, overrides: Partial<BookingRequest> =
   }
 }
 
-function lesson(minutes: number): LessonBookingReference {
+function lesson(minutes: number, overrides: Partial<LessonBookingReference> = {}): LessonBookingReference {
   return {
     id: 'lesson-1',
     studentId: 'student-1',
@@ -40,6 +40,7 @@ function lesson(minutes: number): LessonBookingReference {
     subjectId: 'subject-1',
     date: '2026-08-10',
     minutes,
+    ...overrides,
   }
 }
 
@@ -79,6 +80,24 @@ test('ignores released bookings when using the legacy fallback matcher', () => {
   const active = booking('active', '20:00', { requestedMinutes: 50 })
   const released = booking('released', '20:30', { requestedMinutes: 50, status: 'released' })
   assert.deepEqual(selectLessonBookingMatches([released, active], lesson(50)).map((item) => item.id), ['active'])
+})
+
+test('matches one scheduled booking to a zero-minute excused absence when the legacy booking reference is missing', () => {
+  const scheduled = booking('scheduled', '20:00')
+  const absentLesson = lesson(0, { isZeroMinuteExcusedAbsence: true })
+
+  assert.deepEqual(selectLessonBookingMatches([scheduled], absentLesson).map((item) => item.id), ['scheduled'])
+})
+
+test('fails closed for non-excused or ambiguous zero-minute attendance', () => {
+  assert.throws(() => selectLessonBookingMatches([booking('scheduled', '20:00')], lesson(0)), /BOOKING_MATCH_AMBIGUOUS/)
+  assert.throws(
+    () => selectLessonBookingMatches([
+      booking('first', '20:00'),
+      booking('second', '20:30'),
+    ], lesson(0, { isZeroMinuteExcusedAbsence: true })),
+    /BOOKING_MATCH_AMBIGUOUS/,
+  )
 })
 
 test('distinguishes scheduled bookings from attended and cancellable bookings', () => {

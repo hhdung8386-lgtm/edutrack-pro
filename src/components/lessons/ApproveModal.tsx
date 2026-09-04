@@ -8,6 +8,7 @@ import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
@@ -99,6 +100,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         date: lesson.date,
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
+        isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
       })
 
       await runTransaction(
@@ -134,7 +136,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             chosenSubjectPkg,
             teacherData?.country || 'VN',
           )
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
+            || lessonNow.attendanceStatus === 'without_permission'
+            || isZeroMinuteExcusedAbsence(lessonNow)
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
             : bookingNows.length > 1
@@ -401,6 +405,12 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <span className="text-slate-500">Thời lượng</span>
           <span className="text-slate-700 font-medium">{lesson.minutes} phút</span>
         </div>
+        {isZeroMinuteExcusedAbsence(lesson) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-bold">Học viên vắng có phép · 0 phút</p>
+            <p className="mt-0.5">Duyệt để chốt lịch và nhả phần kim cương đang giữ; không trừ quỹ học, không cộng giờ hay lương gia sư.</p>
+          </div>
+        )}
         {lesson.book && (
           <div className="flex justify-between gap-4">
             <span className="text-slate-500 flex-shrink-0">Sách học</span>

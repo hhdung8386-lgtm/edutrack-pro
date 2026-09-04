@@ -10,6 +10,8 @@ export type LessonBookingReference = {
   date: string
   minutes: number
   subjectId: string
+  /** Chỉ bật với buổi vắng có phép 0 phút; không dùng để đoán lịch thông thường. */
+  isZeroMinuteExcusedAbsence?: boolean
 }
 
 /** Booking đã có báo cáo điểm danh hoặc đã được duyệt hoàn tất. */
@@ -125,6 +127,14 @@ export function selectLessonBookingMatches(
 ): BookingRequest[] {
   const active = matches.filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status) && sameLessonIdentity(booking, lesson))
   if (active.length === 0) return []
+
+  // Buổi vắng có phép được lưu 0 phút, còn ca đã xếp vẫn là 25/50 phút.
+  // Với dữ liệu cũ thiếu bookingRequestId, chỉ tự nối khi có ĐÚNG MỘT ca cùng
+  // học viên, gia sư, ngày và môn; nhiều ca vẫn chặn để tránh duyệt nhầm.
+  if (Number(lesson.minutes) === 0 && lesson.isZeroMinuteExcusedAbsence) {
+    if (active.length === 1) return active
+    throw new Error('BOOKING_MATCH_AMBIGUOUS')
+  }
 
   const exact = active.filter((booking) => Number(booking.requestedMinutes) === Number(lesson.minutes))
   if (exact.length === 1) return exact

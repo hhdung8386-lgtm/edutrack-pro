@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getCompletedLearningMinutes, isCompletedLearningLesson } from '../src/lib/lessonAttendance.ts'
+import { getCompletedLearningMinutes, isCompletedLearningLesson, isZeroMinuteExcusedAbsence } from '../src/lib/lessonAttendance.ts'
 
 test('counts one approved present attendance regardless of its positive duration', () => {
   assert.equal(isCompletedLearningLesson({ status: 'approved', attendanceStatus: 'present', minutes: 25 }), true)
@@ -14,6 +14,13 @@ test('does not count zero-minute or absent attendances as learned sessions', () 
   assert.equal(isCompletedLearningLesson({ status: 'approved', attendanceStatus: 'with_permission', minutes: 0 }), false)
   assert.equal(isCompletedLearningLesson({ status: 'approved', attendanceStatus: 'without_permission', minutes: 25 }), false)
   assert.equal(getCompletedLearningMinutes({ status: 'approved', attendanceStatus: 'without_permission', minutes: 25 }), 0)
+})
+
+test('recognizes current and legacy zero-minute excused absences without accepting other zero-minute reports', () => {
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'with_permission' }), true)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, book: 'Học viên vắng' }), true)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'without_permission', book: 'Học viên vắng' }), false)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 25, attendanceStatus: 'with_permission' }), false)
 })
 
 test('does not count pending, rejected, or cancelled attendances', () => {

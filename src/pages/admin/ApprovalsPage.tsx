@@ -21,6 +21,7 @@ import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
@@ -331,6 +332,7 @@ export function ApprovalsPage() {
         date: approvingLesson.date,
         minutes: approvingLesson.minutes,
         subjectId: approvingLesson.subjectId,
+        isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(approvingLesson),
       })
 
       await runTransaction(
@@ -369,7 +371,9 @@ export function ApprovalsPage() {
             teacherData?.country || 'VN',
           )
           const lessonMinutes = Number(approvingLesson.minutes) || 0
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
+            || lessonNow.attendanceStatus === 'without_permission'
+            || isZeroMinuteExcusedAbsence(lessonNow)
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
             : bookingNows.length > 1
@@ -915,6 +919,12 @@ export function ApprovalsPage() {
               <span className="text-slate-500">Thời lượng buổi này</span>
               <span className="text-slate-700 font-medium">{approvingLesson.minutes} phút</span>
             </div>
+            {isZeroMinuteExcusedAbsence(approvingLesson) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="font-bold">Học viên vắng có phép · 0 phút</p>
+                <p className="mt-0.5">Duyệt để chốt lịch và nhả phần kim cương đang giữ; không trừ quỹ học, không cộng giờ hay lương gia sư.</p>
+              </div>
+            )}
             
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-slate-600">Chọn môn học áp dụng *</label>

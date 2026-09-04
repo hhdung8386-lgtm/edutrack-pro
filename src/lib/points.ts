@@ -29,6 +29,10 @@ export function getLessonPoints(
   lesson: Pick<Lesson, 'minutes'> & Partial<Pick<Lesson, 'points' | 'pointsPer25Minutes'>>,
   teacher?: Partial<Teacher> | null,
 ): number {
+  // 0 phút là buổi vắng có phép, không được dùng số kim cương cũ còn sót lại
+  // trên bản ghi legacy để trừ quỹ học viên khi admin duyệt/mở lại buổi.
+  if (Number(lesson.minutes) <= 0) return 0
+
   // The rate snapshot is the canonical price for a lesson. Some historical
   // 50-minute lessons were saved with the 25-minute point total, so trusting
   // `points` first permanently under-counted the student's used fund.

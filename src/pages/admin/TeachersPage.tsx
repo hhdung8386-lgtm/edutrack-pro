@@ -22,7 +22,7 @@ import { getCurrentMonth } from '@/lib/constants'
 
 type ProfileFilter = 'all' | 'certificate_complete' | 'missing_certificate' | 'missing_foreign_language' | 'missing_pedagogical' | 'missing_both' | 'missing_basic_profile'
 type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
-type PayrollCalculationFilter = 'calculated' | 'not_calculated'
+type PayrollCalculationFilter = 'all' | 'calculated' | 'not_calculated'
 interface Branch { id: string; name: string; status: string }
 type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
 
@@ -279,7 +279,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   })
   const [calculationFilter, setCalculationFilter] = useState<PayrollCalculationFilter>(() => {
     const stored = sessionStorage.getItem('teachers_calculationFilter')
-    return stored === 'calculated' ? 'calculated' : 'not_calculated'
+    return stored === 'all' || stored === 'calculated' ? stored : 'not_calculated'
   })
   const [sortBy, setSortBy] = useState<TeacherSort>(() => {
     const stored = sessionStorage.getItem('teachers_sortBy')
@@ -443,6 +443,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       || (profileFilter === 'missing_basic_profile' && missingTeacherFields(t).length > 0)
     const payrollCalculated = hasPayrollCalculationMark(t, calculationMonth)
     const matchCalculation = category !== 'online'
+      || calculationFilter === 'all'
       || (calculationFilter === 'calculated' ? payrollCalculated : !payrollCalculated)
     return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile && matchCalculation
   })
@@ -837,6 +838,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 className="min-h-[40px] rounded-xl border border-brand-200 bg-brand-50 px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
                 aria-label="Lọc trạng thái tính lương"
               >
+                <option value="all">Tất cả tính lương ({payrollCalculationCounts.calculated + payrollCalculationCounts.notCalculated})</option>
                 <option value="not_calculated">Chưa tính lương ({payrollCalculationCounts.notCalculated})</option>
                 <option value="calculated">Đã tính lương ({payrollCalculationCounts.calculated})</option>
               </select>

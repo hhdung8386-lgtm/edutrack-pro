@@ -24,6 +24,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
 import { bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
@@ -524,6 +525,7 @@ export function TeacherDetailPage() {
           date: lesson.date,
           minutes: lesson.minutes,
           subjectId: lesson.subjectId,
+          isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
         })
         await runTransaction(db, async (tx) => {
           const lessonRef = doc(db, 'lessons', lesson.id)
@@ -560,7 +562,9 @@ export function TeacherDetailPage() {
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
           const bookingNow = bookingNows[0] || null
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
+            || lessonNow.attendanceStatus === 'without_permission'
+            || isZeroMinuteExcusedAbsence(lessonNow)
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
             : bookingNows.length > 1
@@ -782,6 +786,7 @@ export function TeacherDetailPage() {
               date: lesson.date,
               minutes: lesson.minutes,
               subjectId: lesson.subjectId,
+              isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
             })
           : []
         const payrollSnap = await getDocs(
