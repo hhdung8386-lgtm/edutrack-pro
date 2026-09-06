@@ -18,11 +18,14 @@ test('does not count zero-minute or absent attendances as learned sessions', () 
 
 test('recognizes only current or explicitly labelled legacy zero-minute excused absences', () => {
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'with_permission' }), true)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'absent_excused' }), true)
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, book: 'Học viên vắng' }), true)
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'without_permission', book: 'Học viên vắng' }), false)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, attendanceStatus: 'absent_unexcused' }), false)
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, book: 'Học viên vắng không phép' }), false)
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 0, book: 'Nộp bổ sung' }), false)
   assert.equal(isZeroMinuteExcusedAbsence({ minutes: 25, attendanceStatus: 'with_permission' }), false)
+  assert.equal(isZeroMinuteExcusedAbsence({ minutes: 25, attendanceStatus: 'absent_excused' }), false)
 })
 
 test('does not count pending, rejected, or cancelled attendances', () => {

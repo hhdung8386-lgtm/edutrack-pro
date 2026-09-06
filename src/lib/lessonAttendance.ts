@@ -3,24 +3,32 @@ import type { Lesson } from '@/types'
 type LearningLesson = Pick<Lesson, 'status' | 'minutes' | 'attendanceStatus'>
   & Partial<Pick<Lesson, 'book' | 'comment' | 'absenceFollowUpOf'>>
 
+// Firestore contains records written before the current attendance-status
+// vocabulary. Keep this compatibility boundary local: application code still
+// writes only the current `Lesson` union, while old persisted strings can be
+// interpreted safely when an administrator reviews them.
+type ZeroMinuteAbsenceLesson = Pick<Lesson, 'minutes'>
+  & Partial<Pick<Lesson, 'book' | 'comment'>>
+  & { attendanceStatus?: string }
+
 const LEGACY_ABSENCE_TEXT = /học viên vắng|vắng không phép|student (?:was )?absent/i
 const LEGACY_ZERO_MINUTE_EXCUSED_TEXT = /học viên vắng|student (?:was )?absent/i
 const LEGACY_ZERO_MINUTE_UNEXCUSED_TEXT = /không phép|without permission/i
 
 /**
  * A permitted absence never consumes lesson fund: it is recorded as zero
- * minutes. Older records did not have `attendanceStatus`, but the attendance
- * form has consistently stored the stable "Học viên vắng" label. This narrow
- * legacy fallback excludes an explicit unexcused marker, and never treats an
- * arbitrary zero-minute report as an absence.
+ * minutes. Older records can have either no `attendanceStatus` or the legacy
+ * `absent_excused` value. The text fallback excludes an explicit unexcused
+ * marker, and never treats an arbitrary zero-minute report as an absence.
  */
 export function isZeroMinuteExcusedAbsence(
-  lesson: Pick<Lesson, 'minutes' | 'attendanceStatus'> & Partial<Pick<Lesson, 'book' | 'comment'>>,
+  lesson: ZeroMinuteAbsenceLesson,
 ): boolean {
   const minutes = Number(lesson.minutes)
   if (!Number.isFinite(minutes) || minutes !== 0) return false
-  if (lesson.attendanceStatus === 'with_permission') return true
-  if (lesson.attendanceStatus) return false
+  const attendanceStatus = String(lesson.attendanceStatus || '')
+  if (attendanceStatus === 'with_permission' || attendanceStatus === 'absent_excused') return true
+  if (attendanceStatus) return false
   const legacyText = `${lesson.book || ''}\n${lesson.comment || ''}`
   return LEGACY_ZERO_MINUTE_EXCUSED_TEXT.test(legacyText)
     && !LEGACY_ZERO_MINUTE_UNEXCUSED_TEXT.test(legacyText)

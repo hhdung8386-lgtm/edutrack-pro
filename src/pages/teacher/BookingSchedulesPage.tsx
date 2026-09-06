@@ -251,6 +251,7 @@ export function BookingSchedulesPage() {
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
   const [attendanceSubmissionDelayed, setAttendanceSubmissionDelayed] = useState(false)
   const attendanceSubmissionInFlightRef = useRef(false)
+  const attendanceSubmissionAttemptRef = useRef(0)
   const [attendanceNow, setAttendanceNow] = useState(() => Date.now())
 
   const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
@@ -677,18 +678,26 @@ export function BookingSchedulesPage() {
       }
     }
 
+    const submissionAttempt = attendanceSubmissionAttemptRef.current + 1
+    attendanceSubmissionAttemptRef.current = submissionAttempt
     attendanceSubmissionInFlightRef.current = true
     setAttendanceSubmissionDelayed(false)
     setSubmittingAttendance(true)
     const slowSubmissionTimer = window.setTimeout(() => {
-      if (!attendanceSubmissionInFlightRef.current) return
+      if (
+        !attendanceSubmissionInFlightRef.current
+        || attendanceSubmissionAttemptRef.current !== submissionAttempt
+      ) return
       // Firestore cannot safely cancel a transaction that may already commit.
-      // Release only the spinner; the single-flight guard remains in force.
+      // This path is backed by booking.lessonId inside the transaction, so a
+      // retry cannot create a duplicate lesson: one transaction wins and all
+      // others read the linked booking and fail closed.
+      attendanceSubmissionInFlightRef.current = false
       setSubmittingAttendance(false)
       setAttendanceSubmissionDelayed(true)
       toast.warning(lang === 'vi'
-        ? 'Hệ thống đang xác nhận điểm danh lâu hơn bình thường. Không bấm gửi lại; hãy chờ kết quả hoặc kiểm tra lại lịch trước khi thử ở nơi khác.'
-        : 'Attendance confirmation is taking longer than usual. Do not submit again; wait for the result or check the schedule before trying elsewhere.')
+        ? 'Hệ thống đang xác nhận điểm danh lâu hơn bình thường. Bạn có thể kiểm tra hoặc gửi lại an toàn; mỗi ca chỉ được ghi nhận một lần.'
+        : 'Attendance confirmation is taking longer than usual. You can check or safely retry; each session can be recorded only once.')
     }, ATTENDANCE_SUBMISSION_SLOW_MS)
     try {
       const studentId = primaryBooking.studentId
@@ -890,6 +899,8 @@ export function BookingSchedulesPage() {
         }
       })
 
+      if (attendanceSubmissionAttemptRef.current !== submissionAttempt) return
+
       toast.success(followUpBookings.length > 0
         ? `Đã ghi vắng cho ca này và ${followUpBookings.length} ca còn lại trong ngày — chỉ tính tiền 1 lần 25 phút.`
         : attendanceBookings.length > 1
@@ -908,6 +919,7 @@ export function BookingSchedulesPage() {
       setSelectedBatchBookingIds([])
     } catch (error) {
       console.error('Submit calendar attendance failed:', error)
+      if (attendanceSubmissionAttemptRef.current !== submissionAttempt) return
       const errorCode = typeof error === 'object' && error !== null && 'code' in error
         ? String(error.code)
         : ''
@@ -930,6 +942,7 @@ export function BookingSchedulesPage() {
       toast.error(failureMessage)
     } finally {
       window.clearTimeout(slowSubmissionTimer)
+      if (attendanceSubmissionAttemptRef.current !== submissionAttempt) return
       attendanceSubmissionInFlightRef.current = false
       setSubmittingAttendance(false)
       setAttendanceSubmissionDelayed(false)
@@ -1374,11 +1387,10 @@ export function BookingSchedulesPage() {
               <Button
                 variant="primary"
                 loading={submittingAttendance}
-                disabled={attendanceSubmissionDelayed}
                 onClick={submitAttendance}
               >
                 {attendanceSubmissionDelayed
-                  ? (lang === 'vi' ? 'Đang xác nhận trạng thái…' : 'Confirming status…')
+                  ? (lang === 'vi' ? 'Kiểm tra / gửi lại an toàn' : 'Check / safely retry')
                   : t('attendance.submit')}
               </Button>
             </div>
@@ -1388,7 +1400,7 @@ export function BookingSchedulesPage() {
             {attendanceSubmissionDelayed && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                 <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
-                <p className="mt-1 text-xs leading-5">Đừng gửi lại vì giao dịch cũ có thể đã được ghi. Khi có kết quả, lịch sẽ tự cập nhật; nếu cần rời trang, hãy kiểm tra trạng thái ca học trước khi thao tác lại.</p>
+                <p className="mt-1 text-xs leading-5">Bạn có thể kiểm tra hoặc gửi lại an toàn. Hệ thống khóa theo từng ca học nên chỉ một báo cáo được tạo; nếu ca đã được ghi từ lần trước, lịch sẽ yêu cầu tải lại thay vì tạo trùng.</p>
               </div>
             )}
             {/* Student Code and Class Details */}
