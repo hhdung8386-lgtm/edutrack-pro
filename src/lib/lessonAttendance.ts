@@ -4,6 +4,27 @@ type LearningLesson = Pick<Lesson, 'status' | 'minutes' | 'attendanceStatus'>
   & Partial<Pick<Lesson, 'book' | 'comment' | 'absenceFollowUpOf'>>
 
 const LEGACY_ABSENCE_TEXT = /học viên vắng|vắng không phép|student (?:was )?absent/i
+const LEGACY_ZERO_MINUTE_EXCUSED_TEXT = /học viên vắng|student (?:was )?absent/i
+const LEGACY_ZERO_MINUTE_UNEXCUSED_TEXT = /không phép|without permission/i
+
+/**
+ * A permitted absence never consumes lesson fund: it is recorded as zero
+ * minutes. Older records did not have `attendanceStatus`, but the attendance
+ * form has consistently stored the stable "Học viên vắng" label. This narrow
+ * legacy fallback excludes an explicit unexcused marker, and never treats an
+ * arbitrary zero-minute report as an absence.
+ */
+export function isZeroMinuteExcusedAbsence(
+  lesson: Pick<Lesson, 'minutes' | 'attendanceStatus'> & Partial<Pick<Lesson, 'book' | 'comment'>>,
+): boolean {
+  const minutes = Number(lesson.minutes)
+  if (!Number.isFinite(minutes) || minutes !== 0) return false
+  if (lesson.attendanceStatus === 'with_permission') return true
+  if (lesson.attendanceStatus) return false
+  const legacyText = `${lesson.book || ''}\n${lesson.comment || ''}`
+  return LEGACY_ZERO_MINUTE_EXCUSED_TEXT.test(legacyText)
+    && !LEGACY_ZERO_MINUTE_UNEXCUSED_TEXT.test(legacyText)
+}
 
 /**
  * Một "buổi đã học" phải là báo cáo đã duyệt, có thời lượng thực học và học

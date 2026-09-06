@@ -113,7 +113,6 @@ export function StudentDetailPage() {
   const [deleteCourseEntryContext, setDeleteCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
   const [reconciling, setReconciling] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
-  const [reApprovingLesson, setReApprovingLesson] = useState<Lesson | null>(null)
   const [actioning, setActioning] = useState(false)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
   const [cancellingSpecific, setCancellingSpecific] = useState(false)
@@ -123,7 +122,6 @@ export function StudentDetailPage() {
   const [showSubjectPkg, setShowSubjectPkg] = useState(false)
   const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null)
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all')
-  const [reApproveSubjectId, setReApproveSubjectId] = useState<string>('')
   const [changingSubjectLessonId, setChangingSubjectLessonId] = useState<string | null>(null)
   const [selectedHistoryLessonIds, setSelectedHistoryLessonIds] = useState<Set<string>>(new Set())
   const [bulkSubjectId, setBulkSubjectId] = useState('')
@@ -961,209 +959,11 @@ export function StudentDetailPage() {
     }
   }
 
-  // ─── Re-approve a rejected lesson: rejected → approved, deduct minutes again ──
-  const handleReApprove = async () => {
-    if (!reApprovingLesson || !student || !reApproveSubjectId) return
-    setActioning(true)
-    try {
-      const chosenSubjectPkg = activeSubjects.find(s => s.subjectId === reApproveSubjectId)
-      if (!chosenSubjectPkg) {
-        toast.error('Môn học được chọn không hợp lệ')
-        return
-      }
-
-      await runTransaction(
-        db,
-        async (tx) => {
-          const studentRef = doc(db, 'students', student.id)
-          const lessonRef = doc(db, 'lessons', reApprovingLesson.id)
-          const [studentSnap, lessonSnap] = await Promise.all([
-            tx.get(studentRef),
-            tx.get(lessonRef),
-          ])
-          if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
-          if (!lessonSnap.exists() || !['pending', 'rejected'].includes(lessonSnap.data().status)) {
-            throw new Error('LESSON_ALREADY_PROCESSED')
-          }
-          const s = studentSnap.data()!
-          const lessonNow = lessonSnap.data() as Lesson
-
-          const tSnap = await tx.get(doc(db, 'teachers', reApprovingLesson.teacherId))
-          const tData = tSnap.data()
-          const teacherLevel = (reApprovingLesson.teacherLevel ?? tData?.level ?? 1) || 1
-          const teacherCountry = tData?.country || 'VN'
-          const lessonPoints = getLessonPoints(reApprovingLesson, tData)
-
-          const { price: pricePerMinute, currency } = getCountryRate(
-            chosenSubjectPkg,
-            teacherCountry,
-          )
-          const salary = calculateSalary(reApprovingLesson.minutes, pricePerMinute, teacherLevel, currency)
-          const month = reApprovingLesson.date.slice(0, 7)
-
-          // Initialize subjects array for backward compatibility if needed
-          let updatedSubjects = s.subjects && s.subjects.length > 0
-            ? [...s.subjects]
-            : s.subjectId
-              ? [{
-                  subjectId: s.subjectId,
-                  subjectName: s.subjectName || 'Chưa rõ',
-                  totalSessions: s.totalSessions || 0,
-                  usedSessions: s.usedSessions || 0,
-                  remainingSessions: s.remainingSessions || 0,
-                  minutesPerSession: s.minutesPerSession || 50,
-                  totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
-                  usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
-                  remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
-                  pricePerMinute: pricePerMinute,
-                  pricePerMinuteVN: chosenSubjectPkg.pricePerMinuteVN || pricePerMinute,
-                  pricePerMinutePH: chosenSubjectPkg.pricePerMinutePH || pricePerMinute,
-                  pricePerMinuteNative: chosenSubjectPkg.pricePerMinuteNative || pricePerMinute,
-                  currency: chosenSubjectPkg.currency || 'VND',
-                }]
-              : []
-
-          // Deduct from the selected subject package
-          const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === reApproveSubjectId)
-          if (sIdx === -1) {
-            throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
-          }
-
-          const subPkg = updatedSubjects[sIdx]
-          if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
-            throw new Error('NOT_ENOUGH_POINTS')
-          }
-          const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
-          const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
-          const subMps = subPkg.minutesPerSession || 50
-          const subUsedSessionsRaw = subMps > 0 ? newSubUsedMinutes / subMps : 0
-          const newSubUsedSessions = Math.abs(subUsedSessionsRaw - Math.round(subUsedSessionsRaw)) < 0.001
-            ? Math.round(subUsedSessionsRaw)
-            : Math.round(subUsedSessionsRaw * 100) / 100
-          const newSubRemainingSessions = Math.floor(newSubRemainingMinutes / subMps)
-
-          updatedSubjects[sIdx] = {
-            ...subPkg,
-            usedMinutes: newSubUsedMinutes,
-            remainingMinutes: newSubRemainingMinutes,
-            usedSessions: newSubUsedSessions,
-            remainingSessions: newSubRemainingSessions
-          }
-
-          // Recalculate student aggregates
-          const aggTotalSessions = updatedSubjects.reduce((sum, sub) => sum + sub.totalSessions, 0)
-          const aggUsedSessions = updatedSubjects.reduce((sum, sub) => sum + sub.usedSessions, 0)
-          const aggRemainingSessions = updatedSubjects.reduce((sum, sub) => sum + sub.remainingSessions, 0)
-          const aggTotalMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.totalMinutes, 0)
-          const aggUsedMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.usedMinutes, 0)
-          const aggRemainingMinutes = updatedSubjects.reduce((sum, sub) => sum + sub.remainingMinutes, 0)
-
-          const primarySubject = updatedSubjects[0] || null
-
-          tx.update(lessonRef, {
-            status: 'approved',
-            approvedAt: serverTimestamp(),
-            approvedBy: user?.uid,
-            rejectedReason: '',
-            salary,
-            teacherLevel,
-            pricePerMinute,
-            currency,
-            points: lessonPoints,
-            pointsPer25Minutes: Number(reApprovingLesson.pointsPer25Minutes ?? tData?.pointsPer25Minutes) || 25,
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
-            sessionsBeforeApproval: subPkg.remainingSessions,
-            sessionsAfterApproval: newSubRemainingSessions,
-            minutesBeforeApproval: subPkg.remainingMinutes,
-            minutesAfterApproval: newSubRemainingMinutes,
-            updatedAt: serverTimestamp(),
-          })
-
-          tx.update(studentRef, {
-            subjects: updatedSubjects,
-            totalSessions: aggTotalSessions,
-            usedSessions: aggUsedSessions,
-            remainingSessions: aggRemainingSessions,
-            totalMinutes: aggTotalMinutes,
-            usedMinutes: aggUsedMinutes,
-            remainingMinutes: aggRemainingMinutes,
-            // Legacy fields mapping to primary subject
-            subjectId: primarySubject ? primarySubject.subjectId : '',
-            subjectName: primarySubject ? primarySubject.subjectName : '',
-            minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
-            status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
-            updatedAt: serverTimestamp(),
-          })
-
-          const publicLessonRef = doc(db, 'publicLessons', reApprovingLesson.id)
-          tx.set(publicLessonRef, {
-            id: reApprovingLesson.id,
-            studentId: reApprovingLesson.studentId,
-            studentCode: reApprovingLesson.studentCode,
-            studentName: reApprovingLesson.studentName,
-            teacherId: reApprovingLesson.teacherId,
-            teacherCode: reApprovingLesson.teacherCode ?? '',
-            teacherName: reApprovingLesson.teacherName ?? '',
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
-            date: reApprovingLesson.date,
-            minutes: reApprovingLesson.minutes,
-            points: lessonPoints,
-            pointsPer25Minutes: Number(reApprovingLesson.pointsPer25Minutes ?? tData?.pointsPer25Minutes) || 25,
-            comment: reApprovingLesson.comment || '',
-            homework: reApprovingLesson.homework || '',
-            homeworkItems: reApprovingLesson.homeworkItems || [],
-            book: reApprovingLesson.book || '',
-            pages: reApprovingLesson.pages || '',
-            report: reApprovingLesson.report || null,
-            rating: reApprovingLesson.rating ?? null,
-            imageURLs: reApprovingLesson.imageURLs || [],
-            ...(lessonNow.attendanceStatus ? { attendanceStatus: lessonNow.attendanceStatus } : {}),
-            ...(lessonNow.absenceFollowUpOf ? { absenceFollowUpOf: lessonNow.absenceFollowUpOf } : {}),
-            status: 'approved',
-            createdAt: reApprovingLesson.createdAt || serverTimestamp(),
-            approvedAt: serverTimestamp(),
-          })
-
-          const payrollRef = doc(db, 'payroll', reApprovingLesson.id)
-          tx.set(payrollRef, {
-            teacherId: reApprovingLesson.teacherId,
-            teacherName: reApprovingLesson.teacherName,
-            lessonId: reApprovingLesson.id,
-            minutes: reApprovingLesson.minutes,
-            pricePerMinute,
-            level: teacherLevel,
-            month,
-            ...buildPayrollApprovalFields(lessonNow, salary, currency),
-            createdAt: serverTimestamp(),
-          })
-        },
-        { maxAttempts: 3 },
-      )
-
-      await addDoc(collection(db, 'adminLogs'), {
-        adminId: user?.uid || '',
-        action: 'RE_APPROVE_LESSON',
-        targetType: 'lesson',
-        targetId: reApprovingLesson.id,
-        changes: {
-          lessonDate: reApprovingLesson.date,
-          deductedPoints: lessonFundPoints(reApprovingLesson),
-          subjectId: chosenSubjectPkg.subjectId,
-          subjectName: chosenSubjectPkg.subjectName,
-        },
-        createdAt: serverTimestamp(),
-      })
-
-      toast.success(`Đã duyệt lại môn ${chosenSubjectPkg.subjectName}, trừ ${lessonFundPoints(reApprovingLesson)} kim cương`)
-      setReApprovingLesson(null)
-    } catch (err) {
-      console.error(err)
-      toast.error('Duyệt lại thất bại')
-    } finally {
-      setActioning(false)
-    }
+  // Re-approval from a student profile used to skip the booking, hold, and
+  // time-integrity transaction. Keep one authoritative approval path instead.
+  const handleReApprove = (lesson: Lesson) => {
+    toast.warning('Mở hồ sơ gia sư để duyệt lại: hệ thống sẽ đối chiếu lịch, phần kim cương giữ chỗ và lương trong cùng một giao dịch.')
+    navigate(`/admin/teachers/${lesson.teacherId}`)
   }
 
   // ─── Values used for display (always actual, not stored) ──
@@ -2135,12 +1935,12 @@ export function StudentDetailPage() {
                         })()}
                         {lesson.status === 'rejected' && (
                           <button
-                            onClick={() => setReApprovingLesson(lesson)}
+                            onClick={() => handleReApprove(lesson)}
                             className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md border border-indigo-200 transition-colors"
-                            title="Duyệt lại: trừ phút và tính lương"
+                            title="Mở hồ sơ gia sư để duyệt lại qua luồng kiểm tra lịch an toàn"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            Duyệt lại
+                            Duyệt lại an toàn
                           </button>
                         )}
                         {lesson.status === 'pending' && (
@@ -2227,7 +2027,7 @@ export function StudentDetailPage() {
             </div>
           </div>
           <p className="text-xs text-slate-500 mt-3">
-            Lưu ý: hành động này được ghi log. Nếu cần dùng lại buổi này, bấm "Duyệt lại" trên dòng "Từ chối".
+            Lưu ý: hành động này được ghi log. Nếu cần dùng lại buổi này, mở "Duyệt lại an toàn" để kiểm tra lịch, phần giữ chỗ và lương.
           </p>
         </ConfirmDialog>
       )}
@@ -2284,60 +2084,6 @@ export function StudentDetailPage() {
         </ConfirmDialog>
       )}
 
-      {/* Re-approve confirm */}
-      {reApprovingLesson && (
-        <ConfirmDialog
-          open
-          onClose={() => setReApprovingLesson(null)}
-          onConfirm={handleReApprove}
-          title="Duyệt lại buổi học?"
-          description={`Buổi ngày ${reApprovingLesson.date} với ${reApprovingLesson.teacherName}`}
-          confirmLabel="Duyệt lại"
-          loading={actioning}
-        >
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 text-sm space-y-3">
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-600">Chọn môn học áp dụng *</label>
-              <select
-                value={reApproveSubjectId}
-                onChange={(e) => setReApproveSubjectId(e.target.value)}
-                className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                {activeSubjects.map((sub) => {
-                  const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
-                  return (
-                    <option key={sub.subjectId} value={sub.subjectId}>
-                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
-            
-            <div className="space-y-1.5 border-t border-indigo-200/50 pt-2.5">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Trừ quỹ phút</span>
-                <span className="text-rose-600 font-semibold">− {reApprovingLesson.minutes} phút</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Lương gia sư (tính theo môn đã chọn)</span>
-                <span className="text-emerald-600 font-semibold">
-                  {(() => {
-                    const chosen = activeSubjects.find(s => s.subjectId === reApproveSubjectId)
-                    const price = chosen?.pricePerMinute ?? 0
-                    const teacherLevel = reApprovingLesson.teacherLevel ?? 1
-                    return '+ ' + formatMoney(calculateSalary(reApprovingLesson.minutes, price, teacherLevel, chosen?.currency || 'VND'), chosen?.currency || 'VND')
-                  })()}
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-indigo-200/30 pt-1.5 mt-1.5">
-                <span className="text-slate-600">Trạng thái mới</span>
-                <span className="text-slate-700 font-medium">Đã duyệt</span>
-              </div>
-            </div>
-          </div>
-        </ConfirmDialog>
-      )}
     </div>
   )
 }

@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 import { resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -260,6 +261,7 @@ export function PayrollPage() {
         date: lesson.date,
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
+        isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
       })
       const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
       const lessonTeacher = teachers.find((teacher) => teacher.id === lesson.teacherId)

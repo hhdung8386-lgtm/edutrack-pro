@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, ListChecks } from 'lucide-react'
@@ -47,6 +47,7 @@ const isAttendanceAllowed = (booking: BookingRequest, nowMs = Date.now()) => {
 }
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
 const DAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
   tue: 'Thứ 3',
@@ -248,6 +249,8 @@ export function BookingSchedulesPage() {
   const [absence, setAbsence] = useState<AbsenceReportDraft>(emptyAbsenceReport())
   const [images, setImages] = useState<ImageUpload[]>([])
   const [submittingAttendance, setSubmittingAttendance] = useState(false)
+  const [attendanceSubmissionDelayed, setAttendanceSubmissionDelayed] = useState(false)
+  const attendanceSubmissionInFlightRef = useRef(false)
   const [attendanceNow, setAttendanceNow] = useState(() => Date.now())
 
   const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
@@ -590,6 +593,12 @@ export function BookingSchedulesPage() {
   // Submit attendance from calendar booking slot
   const submitAttendance = async () => {
     if (!selectedBooking || !teacherId) return
+    if (attendanceSubmissionInFlightRef.current) {
+      toast.warning(lang === 'vi'
+        ? 'Điểm danh trước đó vẫn đang được xác nhận. Vui lòng không gửi lại để tránh tạo buổi trùng.'
+        : 'The previous attendance is still being confirmed. Do not submit again to avoid a duplicate lesson.')
+      return
+    }
     // Chặn gửi khi còn ảnh đang tải — trước đây ảnh đang tải bị âm thầm bỏ khỏi điểm danh
     if (images.some((i) => i.uploading)) {
       toast.warning(lang === 'vi'
@@ -632,6 +641,13 @@ export function BookingSchedulesPage() {
     }
 
     const primaryBooking = confirmedBookings.find((booking) => booking.id === selectedBooking.id) || selectedBooking
+    const expectedSubjectId = primaryBooking.subjectId || ''
+    if (!expectedSubjectId) {
+      toast.error(lang === 'vi'
+        ? 'Ca học thiếu thông tin môn học. Vui lòng báo giáo vụ kiểm tra lịch trước khi điểm danh.'
+        : 'This session is missing its subject. Ask the academic team to check the schedule before submitting attendance.')
+      return
+    }
     const requestedBatchIds = attendanceStatus === 'present'
       ? Array.from(new Set(selectedBatchBookingIds.length > 0 ? selectedBatchBookingIds : [selectedBooking.id]))
       : [selectedBooking.id]
@@ -661,7 +677,19 @@ export function BookingSchedulesPage() {
       }
     }
 
+    attendanceSubmissionInFlightRef.current = true
+    setAttendanceSubmissionDelayed(false)
     setSubmittingAttendance(true)
+    const slowSubmissionTimer = window.setTimeout(() => {
+      if (!attendanceSubmissionInFlightRef.current) return
+      // Firestore cannot safely cancel a transaction that may already commit.
+      // Release only the spinner; the single-flight guard remains in force.
+      setSubmittingAttendance(false)
+      setAttendanceSubmissionDelayed(true)
+      toast.warning(lang === 'vi'
+        ? 'Hệ thống đang xác nhận điểm danh lâu hơn bình thường. Không bấm gửi lại; hãy chờ kết quả hoặc kiểm tra lại lịch trước khi thử ở nơi khác.'
+        : 'Attendance confirmation is taking longer than usual. Do not submit again; wait for the result or check the schedule before trying elsewhere.')
+    }, ATTENDANCE_SUBMISSION_SLOW_MS)
     try {
       const studentId = primaryBooking.studentId
       const combinedMinutes = attendanceBookings.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0)
@@ -674,16 +702,19 @@ export function BookingSchedulesPage() {
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const teacherRef = doc(db, 'teachers', teacherId)
+        const subjectRef = doc(db, 'subjects', expectedSubjectId)
         const allAttendanceBookings = [...attendanceBookings, ...followUpBookings]
         const bookingRefs = allAttendanceBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
 
-        const [studentSnap, teacherSnap, ...bookingSnaps] = await Promise.all([
+        const [studentSnap, teacherSnap, subjectSnap, ...bookingSnaps] = await Promise.all([
           tx.get(studentRef),
           tx.get(teacherRef),
+          tx.get(subjectRef),
           ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
         ])
 
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
+        if (!teacherSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
         const studentData = { id: studentSnap.id, ...studentSnap.data() } as Student
         const teacherData = teacherSnap.data()!
         bookingSnaps.forEach((bookingSnap, index) => {
@@ -705,8 +736,11 @@ export function BookingSchedulesPage() {
           .slice(0, attendanceBookings.length)
           .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
         const freshPrimaryBooking = freshAttendanceBookings[0]
-        const subjectId = freshPrimaryBooking?.subjectId || primaryBooking.subjectId || ''
-        if (!freshAttendanceBookings.every((booking) => (booking.subjectId || '') === subjectId)) {
+        const subjectId = freshPrimaryBooking?.subjectId || expectedSubjectId
+        if (
+          subjectId !== expectedSubjectId
+          || !freshAttendanceBookings.every((booking) => (booking.subjectId || '') === subjectId)
+        ) {
           throw new Error('BOOKING_CLASS_CHANGED')
         }
 
@@ -736,14 +770,13 @@ export function BookingSchedulesPage() {
           const rate = getCountryRate(activeSub, teacherCountry)
           pricePerMinute = rate.price
           currency = rate.currency
-        } else {
-          // fallback to main subject price
-          const subSnap = await getDoc(doc(db, 'subjects', subjectId))
-          if (subSnap.exists()) {
-            const rate = getCountryRate(subSnap.data() as Subject, teacherCountry)
+        } else if (subjectSnap.exists()) {
+          // Keep every Firestore read inside this transaction. An unrelated
+          // getDoc here used to leave the submit button spinning on a stalled
+          // network while the transaction itself could not settle.
+          const rate = getCountryRate(subjectSnap.data() as Subject, teacherCountry)
             pricePerMinute = rate.price
             currency = rate.currency
-          }
         }
 
         const mps = studentData.minutesPerSession || 50
@@ -891,10 +924,15 @@ export function BookingSchedulesPage() {
                 ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
               : errorMessage === 'STUDENT_EXPIRED'
                 ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
+                : errorMessage === 'TEACHER_NOT_FOUND'
+                  ? (lang === 'vi' ? 'Không tìm thấy hồ sơ gia sư. Vui lòng báo giáo vụ kiểm tra tài khoản.' : 'The teacher profile could not be found. Ask the academic team to check the account.')
                 : t('attendance.submit_fail')
       toast.error(failureMessage)
     } finally {
+      window.clearTimeout(slowSubmissionTimer)
+      attendanceSubmissionInFlightRef.current = false
       setSubmittingAttendance(false)
+      setAttendanceSubmissionDelayed(false)
     }
   }
 
@@ -1333,13 +1371,26 @@ export function BookingSchedulesPage() {
           footer={
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" onClick={() => setShowAttendanceModal(false)}>{t('sched.cancel')}</Button>
-              <Button variant="primary" loading={submittingAttendance} onClick={submitAttendance}>
-                {t('attendance.submit')}
+              <Button
+                variant="primary"
+                loading={submittingAttendance}
+                disabled={attendanceSubmissionDelayed}
+                onClick={submitAttendance}
+              >
+                {attendanceSubmissionDelayed
+                  ? (lang === 'vi' ? 'Đang xác nhận trạng thái…' : 'Confirming status…')
+                  : t('attendance.submit')}
               </Button>
             </div>
           }
         >
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+            {attendanceSubmissionDelayed && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
+                <p className="mt-1 text-xs leading-5">Đừng gửi lại vì giao dịch cũ có thể đã được ghi. Khi có kết quả, lịch sẽ tự cập nhật; nếu cần rời trang, hãy kiểm tra trạng thái ca học trước khi thao tác lại.</p>
+              </div>
+            )}
             {/* Student Code and Class Details */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
               <div>

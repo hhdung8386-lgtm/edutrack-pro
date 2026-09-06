@@ -24,6 +24,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
 import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
 import { recoverTeacherLoginAccount } from '@/lib/teacherLoginRecovery'
 import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
@@ -514,6 +515,7 @@ export function TeacherDetailPage() {
     try {
       if (targetStatus === 'approved') {
         // Luồng Duyệt buổi học (pending/rejected -> approved)
+        const zeroMinuteExcusedAbsence = isZeroMinuteExcusedAbsence(lesson)
         const matchedBookings = await resolveLessonBookings({
           id: lesson.id,
           bookingRequestId: lesson.bookingRequestId,
@@ -524,8 +526,9 @@ export function TeacherDetailPage() {
           date: lesson.date,
           minutes: lesson.minutes,
           subjectId: lesson.subjectId,
+          isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
         })
-        assertBookingTimeRangeIntegrity(matchedBookings)
+        if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
         await runTransaction(db, async (tx) => {
           const lessonRef = doc(db, 'lessons', lesson.id)
           const studentRef = doc(db, 'students', lesson.studentId)
@@ -560,9 +563,12 @@ export function TeacherDetailPage() {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-          assertBookingTimeRangeIntegrity(bookingNows)
+          const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
+          if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
+            || lessonNow.attendanceStatus === 'without_permission'
+            || zeroMinuteExcusedAbsenceNow
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
             : bookingNows.length > 1
@@ -763,6 +769,7 @@ export function TeacherDetailPage() {
               heldMinutesAfter: newHeldMinutes,
               heldMinutesReleased: heldMinutesToRelease,
               bookingRequestId: bookingNow?.id || null,
+              zeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
             },
             createdAt: serverTimestamp(),
           })
@@ -784,6 +791,7 @@ export function TeacherDetailPage() {
               date: lesson.date,
               minutes: lesson.minutes,
               subjectId: lesson.subjectId,
+              isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
             })
           : []
         const payrollSnap = await getDocs(

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -56,6 +56,7 @@ const schema = z.object({
     ),
 })
 type FormData = z.infer<typeof schema>
+const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
 
 export function AttendancePage() {
   const { teacherId } = useAuthStore()
@@ -70,6 +71,8 @@ export function AttendancePage() {
   const [selectedMinutes, setSelectedMinutes] = useState<number>(50)
   const [images, setImages] = useState<{ url: string; storageURL: string; uploading: boolean }[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [attendanceSubmissionDelayed, setAttendanceSubmissionDelayed] = useState(false)
+  const attendanceSubmissionInFlightRef = useRef(false)
   const [submitted, setSubmitted] = useState(false)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
@@ -213,6 +216,12 @@ export function AttendancePage() {
 
   const submitAttendance = async (data: FormData, opts: { audit?: AttendanceAudit } = {}) => {
     if (!student || !teacherId) return
+    if (attendanceSubmissionInFlightRef.current) {
+      toast.warning(lang === 'vi'
+        ? 'Điểm danh trước đó vẫn đang được xác nhận. Vui lòng không gửi lại để tránh tạo buổi trùng.'
+        : 'The previous attendance is still being confirmed. Do not submit again to avoid a duplicate lesson.')
+      return
+    }
     if (images.some((i) => i.uploading)) {
       toast.warning(t('attendance.uploading'))
       return
@@ -238,7 +247,19 @@ export function AttendancePage() {
       }
     }
 
+    attendanceSubmissionInFlightRef.current = true
+    setAttendanceSubmissionDelayed(false)
     setSubmitting(true)
+    const slowSubmissionTimer = window.setTimeout(() => {
+      if (!attendanceSubmissionInFlightRef.current) return
+      // Do not cancel a Firestore operation that could still commit. We only
+      // stop the indefinite spinner and keep the single-flight guard active.
+      setSubmitting(false)
+      setAttendanceSubmissionDelayed(true)
+      toast.warning(lang === 'vi'
+        ? 'Hệ thống đang xác nhận điểm danh lâu hơn bình thường. Không bấm gửi lại; hãy chờ kết quả hoặc kiểm tra lại lịch trước khi thử ở nơi khác.'
+        : 'Attendance confirmation is taking longer than usual. Do not submit again; wait for the result or check the schedule before trying elsewhere.')
+    }, ATTENDANCE_SUBMISSION_SLOW_MS)
     try {
       const subjects = student.subjects && student.subjects.length > 0
         ? student.subjects
@@ -445,7 +466,10 @@ export function AttendancePage() {
             : 'This subject package is exhausted or does not have enough diamonds for attendance.')
         : t('attendance.submit_fail'))
     } finally {
+      window.clearTimeout(slowSubmissionTimer)
+      attendanceSubmissionInFlightRef.current = false
       setSubmitting(false)
+      setAttendanceSubmissionDelayed(false)
     }
   }
 
@@ -788,8 +812,23 @@ export function AttendancePage() {
                 </p>
               </div>
 
-              <Button type="submit" fullWidth size="lg" loading={submitting} className="sticky bottom-4 mt-2 bg-[#3BB8EB] hover:bg-[#2da8db]">
-                {t('attendance.submit')}
+              {attendanceSubmissionDelayed && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
+                  <p className="mt-1 text-xs leading-5">Đừng gửi lại vì giao dịch cũ có thể đã được ghi. Khi có kết quả, trang sẽ tự cập nhật; nếu cần rời trang, hãy kiểm tra trạng thái trước khi thao tác lại.</p>
+                </div>
+              )}
+              <Button
+                type="submit"
+                fullWidth
+                size="lg"
+                loading={submitting}
+                disabled={attendanceSubmissionDelayed}
+                className="sticky bottom-4 mt-2 bg-[#3BB8EB] hover:bg-[#2da8db]"
+              >
+                {attendanceSubmissionDelayed
+                  ? (lang === 'vi' ? 'Đang xác nhận trạng thái…' : 'Confirming status…')
+                  : t('attendance.submit')}
               </Button>
             </form>
             )}
@@ -811,6 +850,7 @@ export function AttendancePage() {
               <Button
                 variant="primary"
                 loading={submitting}
+                disabled={attendanceSubmissionDelayed}
                 onClick={() => {
                   const payload = auditPrompt
                   setAuditPrompt(null)
@@ -823,6 +863,11 @@ export function AttendancePage() {
           }
         >
           <div className="space-y-3">
+            {attendanceSubmissionDelayed && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                Điểm danh vẫn đang được xác nhận. Không gửi lại để tránh tạo buổi trùng.
+              </div>
+            )}
             <p className="text-sm text-slate-600">
               {lang === 'vi'
                 ? 'Hệ thống phát hiện điểm chưa khớp giữa buổi điểm danh và lịch đã sắp:'

@@ -8,6 +8,7 @@ import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 
@@ -89,6 +90,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         return
       }
 
+      const zeroMinuteExcusedAbsence = isZeroMinuteExcusedAbsence(lesson)
       const matchedBookings = await resolveLessonBookings({
         id: lesson.id,
         bookingRequestId: lesson.bookingRequestId,
@@ -99,8 +101,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         date: lesson.date,
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
+        isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
       })
-      assertBookingTimeRangeIntegrity(matchedBookings)
+      if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
 
       await runTransaction(
         db,
@@ -128,7 +131,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-          assertBookingTimeRangeIntegrity(bookingNows)
+          const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
+          if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
 
@@ -136,7 +140,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             chosenSubjectPkg,
             teacherData?.country || 'VN',
           )
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission' || lessonNow.attendanceStatus === 'without_permission'
+          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
+            || lessonNow.attendanceStatus === 'without_permission'
+            || zeroMinuteExcusedAbsenceNow
           const lessonPoints = isAbsenceLesson
             ? getLessonPoints(lessonNow, teacherData)
             : bookingNows.length > 1
@@ -346,6 +352,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               salary,
               minutesDeducted: lesson.minutes,
               pointsDeducted: lessonPoints,
+              zeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
               heldPointsReleased: heldPointsToRelease,
               subjectId: chosenSubjectPkg.subjectId,
               subjectName: chosenSubjectPkg.subjectName,
@@ -405,6 +412,12 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <span className="text-slate-500">Thời lượng</span>
           <span className="text-slate-700 font-medium">{lesson.minutes} phút</span>
         </div>
+        {isZeroMinuteExcusedAbsence(lesson) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-bold">Học viên vắng có phép · 0 phút</p>
+            <p className="mt-0.5">Duyệt để chốt lịch và nhả phần kim cương đang giữ; không trừ quỹ học, không cộng giờ hay lương gia sư.</p>
+          </div>
+        )}
         {lesson.book && (
           <div className="flex justify-between gap-4">
             <span className="text-slate-500 flex-shrink-0">Sách học</span>

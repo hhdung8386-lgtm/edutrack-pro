@@ -10,6 +10,8 @@ export type LessonBookingReference = {
   date: string
   minutes: number
   subjectId: string
+  /** Only enabled for a zero-minute excused absence; never relax normal matching. */
+  isZeroMinuteExcusedAbsence?: boolean
 }
 
 /** Booking đã có báo cáo điểm danh hoặc đã được duyệt hoàn tất. */
@@ -125,6 +127,14 @@ export function selectLessonBookingMatches(
 ): BookingRequest[] {
   const active = matches.filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status) && sameLessonIdentity(booking, lesson))
   if (active.length === 0) return []
+
+  // An excused absence is saved as zero minutes while its arranged slot still
+  // has its normal 25/50-minute duration. For legacy lessons that do not keep
+  // a booking ID, join only when exactly one safe candidate remains.
+  if (Number(lesson.minutes) === 0 && lesson.isZeroMinuteExcusedAbsence) {
+    if (active.length === 1) return active
+    throw new Error('BOOKING_MATCH_AMBIGUOUS')
+  }
 
   const exact = active.filter((booking) => Number(booking.requestedMinutes) === Number(lesson.minutes))
   if (exact.length === 1) return exact

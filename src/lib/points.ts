@@ -29,6 +29,10 @@ export function getLessonPoints(
   lesson: Pick<Lesson, 'minutes'> & Partial<Pick<Lesson, 'points' | 'pointsPer25Minutes'>>,
   teacher?: Partial<Teacher> | null,
 ): number {
+  // A zero-minute attendance must never use a stale legacy `points` field to
+  // charge the student during approval, reversal, reporting, or payroll work.
+  if (Number(lesson.minutes) <= 0) return 0
+
   // The rate snapshot is the canonical price for a lesson. Some historical
   // 50-minute lessons were saved with the 25-minute point total, so trusting
   // `points` first permanently under-counted the student's used fund.
