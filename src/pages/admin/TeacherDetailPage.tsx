@@ -22,7 +22,7 @@ import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
-import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingsAvailableForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
@@ -563,6 +563,8 @@ export function TeacherDetailPage() {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
+          assertBookingsAvailableForApproval(bookingNows, lesson.id)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
@@ -1008,6 +1010,8 @@ export function TeacherDetailPage() {
         toast.warning('Buổi dạy đã được xử lý trước đó')
       } else if (message === 'BOOKING_TIME_RANGE_INVALID') {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+      } else if (message === 'BOOKING_STATE_CHANGED') {
+        toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
       } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {

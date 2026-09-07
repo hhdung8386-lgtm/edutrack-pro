@@ -331,6 +331,7 @@ export function AttendancePage() {
           audit = await auditTeacherAttendance({
             teacherId,
             studentId: student.id,
+            subjectId: selectedSubjectId,
             date: data.date,
             minutes: selectedMinutes,
           })

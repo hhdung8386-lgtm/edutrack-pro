@@ -21,4 +21,6 @@ test('completed courses keep a payment top-up action on desktop and mobile layou
   assert.match(completedSection, /onClick=\{\(\) => onAddRights\(row\.subject\.subjectId\)\}/)
   assert.match(completedSection, /aria-label=\{`Cộng thêm quyền học cho \$\{row\.subject\.subjectName\}`\}/)
   assert.match(completedSection, /grid-cols-2[^"\n]*sm:flex/)
+  assert.match(completedSection, />Đã học</)
+  assert.match(completedSection, /row\.learnedMinutes/)
 })

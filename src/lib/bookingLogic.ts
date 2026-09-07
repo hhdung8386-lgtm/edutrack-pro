@@ -4,7 +4,7 @@ export type LessonBookingReference = {
   id: string
   bookingRequestId?: string
   bookingRequestIds?: string[]
-  scheduleCheck?: Pick<LessonScheduleCheckSnapshot, 'bookingId' | 'bookingIds'>
+  scheduleCheck?: Pick<LessonScheduleCheckSnapshot, 'bookingId' | 'bookingIds' | 'bookingStart' | 'bookingEnd'>
   studentId: string
   teacherId: string
   date: string
@@ -101,11 +101,53 @@ export function findConsecutiveAttendanceBookings(
   return candidates.slice(start, end + 1).slice(0, maxBookings)
 }
 
+/**
+ * Returns one whole contiguous class block only when exactly one such block
+ * has the requested total. Callers must supply bookings for one attendance
+ * identity (student, teacher, subject and date); an adjacent extra booking
+ * makes the block ineligible rather than being silently split.
+ */
+export function selectUniqueContiguousBookingSet(
+  candidates: BookingRequest[],
+  requestedMinutes: number,
+): BookingRequest[] {
+  const target = Number(requestedMinutes)
+  if (![25, 50, 75, 100].includes(target)) return []
+
+  // A single booking whose persisted duration already equals the lesson is
+  // sufficient even for older records that never stored a display start time.
+  const exactSingles = candidates.filter((booking) => Number(booking.requestedMinutes) === target)
+  if (exactSingles.length === 1) return exactSingles
+  if (exactSingles.length > 1) return []
+
+  const sorted = candidates
+    .filter(hasValidAttendanceSlot)
+    .sort((left, right) => timeToMinutes(left.requestedStart) - timeToMinutes(right.requestedStart))
+  const blocks: BookingRequest[][] = []
+  for (const booking of sorted) {
+    const current = blocks[blocks.length - 1]
+    if (current && areConsecutiveBookings(current[current.length - 1], booking)) current.push(booking)
+    else blocks.push([booking])
+  }
+
+  const exactBlocks = blocks.filter((block) => totalBookingMinutes(block) === target)
+  return exactBlocks.length === 1 ? exactBlocks[0] : []
+}
+
 function sameLessonIdentity(booking: BookingRequest, lesson: LessonBookingReference): boolean {
   if (booking.studentId !== lesson.studentId) return false
   if (booking.teacherId !== lesson.teacherId) return false
   if (booking.requestedDate !== lesson.date) return false
-  return !lesson.subjectId || !booking.subjectId || booking.subjectId === lesson.subjectId
+  return matchesLessonBookingSubject(booking, lesson.subjectId)
+}
+
+/**
+ * Subject IDs became mandatory after early booking records existed. A missing
+ * legacy ID remains eligible for manual verification, but two explicit, unlike
+ * subjects must never be combined into one attendance lesson.
+ */
+export function matchesLessonBookingSubject(booking: BookingRequest, subjectId?: string): boolean {
+  return !subjectId || !booking.subjectId || booking.subjectId === subjectId
 }
 
 export function totalBookingMinutes(bookings: BookingRequest[]): number {
@@ -120,12 +162,92 @@ export function validateExplicitLessonBookings(
     && (Number(lesson.minutes) <= 0 || totalBookingMinutes(bookings) === Number(lesson.minutes))
 }
 
+/**
+ * Khôi phục duy nhất liên kết cũ của một buổi dài đã từng chỉ lưu ID của ô đầu.
+ *
+ * Chỉ nhận một cụm ca liền nhau, cùng học viên/gia sư/môn/ngày, đủ ĐÚNG số phút
+ * của lesson và không có ca nào đã thuộc một lesson khác. Không suy đoán khi có
+ * thêm một ô liền kề, lệch giờ, hoặc tổng số phút không khớp.
+ */
+export function recoverLegacySingleBookingReference(
+  candidates: BookingRequest[],
+  explicitBookings: BookingRequest[],
+  lesson: LessonBookingReference,
+): BookingRequest[] {
+  const lessonMinutes = Number(lesson.minutes)
+  if (explicitBookings.length !== 1 || ![25, 50, 75, 100].includes(lessonMinutes)) return []
+
+  const explicit = explicitBookings[0]
+  if (
+    !ACTIVE_BOOKING_STATUSES.has(explicit.status)
+    || !sameLessonIdentity(explicit, lesson)
+    || !hasValidAttendanceSlot(explicit)
+  ) return []
+
+  const eligible = candidates.filter((booking) => (
+    ACTIVE_BOOKING_STATUSES.has(booking.status)
+    && sameLessonIdentity(booking, lesson)
+    && (!booking.lessonId || booking.lessonId === lesson.id)
+    && hasValidAttendanceSlot(booking)
+  ))
+  if (!eligible.some((booking) => booking.id === explicit.id)) return []
+
+  // Ask for the whole uninterrupted block rather than only enough adjacent
+  // rows: otherwise a 50-minute lesson inside a longer block would be guessed.
+  const contiguous = selectUniqueContiguousBookingSet(eligible, lessonMinutes)
+  if (contiguous.length < 2 || !contiguous.some((booking) => booking.id === explicit.id)) return []
+
+  return contiguous
+}
+
+/**
+ * A legacy 0-minute excused absence has no duration with which to expand a
+ * booking group. It can only recover one exact booking if the saved schedule
+ * snapshot anchors both its start (and, when available, its end) uniquely.
+ */
+export function selectLegacyExcusedAbsenceBookingByScheduleCheck(
+  candidates: BookingRequest[],
+  lesson: LessonBookingReference,
+): BookingRequest[] {
+  if (Number(lesson.minutes) !== 0 || !lesson.isZeroMinuteExcusedAbsence) return []
+  const start = lesson.scheduleCheck?.bookingStart
+  const end = lesson.scheduleCheck?.bookingEnd
+  if (!start) return []
+
+  const anchored = candidates.filter((booking) => (
+    ACTIVE_BOOKING_STATUSES.has(booking.status)
+    && sameLessonIdentity(booking, lesson)
+    && (!booking.lessonId || booking.lessonId === lesson.id)
+    && booking.requestedStart === start
+    && (!end || booking.requestedEnd === end)
+  ))
+  return anchored.length === 1 ? anchored : []
+}
+
+function hasValidAttendanceSlot(booking: BookingRequest): boolean {
+  const match = /^(\d{1,2}):([0-5]\d)$/.exec(booking.requestedStart || '')
+  if (!match) return false
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  const duration = Number(booking.requestedMinutes)
+  return Number.isInteger(hours)
+    && hours >= 0
+    && hours <= 49
+    && Number.isInteger(minutes)
+    && Number.isInteger(duration)
+    && [25, 50, 75, 100].includes(duration)
+}
+
 /** Fallback chỉ được chọn khi kết quả duy nhất và khớp toàn bộ thời lượng. */
 export function selectLessonBookingMatches(
   matches: BookingRequest[],
   lesson: LessonBookingReference,
 ): BookingRequest[] {
-  const active = matches.filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status) && sameLessonIdentity(booking, lesson))
+  const active = matches.filter((booking) => (
+    ACTIVE_BOOKING_STATUSES.has(booking.status)
+    && sameLessonIdentity(booking, lesson)
+    && (!booking.lessonId || booking.lessonId === lesson.id)
+  ))
   if (active.length === 0) return []
 
   // An excused absence is saved as zero minutes while its arranged slot still

@@ -451,11 +451,15 @@ export function StudentCourseOverview({
         {completedRows.length > 0 ? (
           <div className="divide-y divide-slate-100">
             {completedRows.map((row) => (
-              <article key={row.subject.subjectId} className="grid gap-4 px-4 py-4 sm:grid-cols-[1.5fr_1fr_1fr_auto] sm:items-center sm:px-5">
+              <article key={row.subject.subjectId} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(175px,1.35fr)_minmax(105px,0.85fr)_minmax(90px,0.7fr)_minmax(100px,0.78fr)_auto] lg:items-center sm:px-5">
                 <CourseIdentity subject={row.subject} paymentCount={row.payments.length} />
                 <div>
                   <p className="text-[11px] font-bold text-slate-400">Tổng thời lượng</p>
                   <Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400">Đã học</p>
+                  <p className="mt-1 whitespace-nowrap text-sm font-extrabold tabular-nums text-emerald-700">{number(row.learnedMinutes)} phút</p>
                 </div>
                 <div>
                   <p className="text-[11px] font-bold text-slate-400">Hoàn thành</p>

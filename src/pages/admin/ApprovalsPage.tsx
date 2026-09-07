@@ -19,7 +19,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
-import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingsAvailableForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
@@ -121,6 +121,7 @@ export function ApprovalsPage() {
       id: lesson.id,
       teacherId: lesson.teacherId,
       studentId: lesson.studentId,
+      subjectId: lesson.subjectId,
       date: lesson.date,
       minutes: lesson.minutes,
     })
@@ -314,17 +315,19 @@ export function ApprovalsPage() {
   const approvalIsZeroMinuteExcusedAbsence = Boolean(
     approvingLesson && isZeroMinuteExcusedAbsence(approvingLesson),
   )
-  const approvalHasTimeRangeMismatch = Boolean(
+  const approvalHasBlockingScheduleIssue = Boolean(
     approvingLesson
     && approveAudit?.lessonId === approvingLesson.id
-    && approveAudit.audit.schedule.status === 'time_mismatch'
-    && !approvalIsZeroMinuteExcusedAbsence
+    && (
+      approveAudit.audit.schedule.status === 'ambiguous'
+      || (approveAudit.audit.schedule.status === 'time_mismatch' && !approvalIsZeroMinuteExcusedAbsence)
+    )
   )
 
   const handleApprove = async () => {
     if (!approvingLesson || !approveSubjectId) return
-    if (approvalHasTimeRangeMismatch) {
-      toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+    if (approvalHasBlockingScheduleIssue) {
+      toast.error('Chưa xác định được lịch an toàn để duyệt. Hãy kiểm tra cảnh báo lịch trước.')
       return
     }
     setApproving(true)
@@ -365,7 +368,7 @@ export function ApprovalsPage() {
           if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
           const lessonNow = lessonSnap.data() as any
-          if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
 
           const studentData = studentSnap.data() as Student
 
@@ -378,6 +381,8 @@ export function ApprovalsPage() {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
+          assertBookingsAvailableForApproval(bookingNows, approvingLesson.id)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
@@ -612,6 +617,8 @@ export function ApprovalsPage() {
         setApprovingLesson(null)
       } else if (message === 'BOOKING_TIME_RANGE_INVALID') {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+      } else if (message === 'BOOKING_STATE_CHANGED') {
+        toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
@@ -908,7 +915,7 @@ export function ApprovalsPage() {
           title="Xác nhận duyệt buổi dạy?"
           confirmLabel="Duyệt buổi dạy"
           loading={approving}
-          confirmDisabled={auditLoading || approvalHasTimeRangeMismatch}
+          confirmDisabled={auditLoading || approvalHasBlockingScheduleIssue}
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-3">
             {/* Đối chiếu tươi ngay trước khi trừ kim cương: lịch đã sắp + buổi trùng ngày */}

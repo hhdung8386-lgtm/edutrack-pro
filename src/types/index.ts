@@ -324,7 +324,7 @@ export interface Lesson {
 
 /** Ảnh chụp kết quả đối chiếu lịch, lưu kèm buổi dạy để giáo vụ xem lại không tốn truy vấn. */
 export interface LessonScheduleCheckSnapshot {
-  status: 'matched' | 'time_mismatch' | 'mismatch_day' | 'other_teacher' | 'no_booking'
+  status: 'matched' | 'ambiguous' | 'time_mismatch' | 'mismatch_day' | 'other_teacher' | 'no_booking'
   scheduledDates: string[]
   bookingId?: string
   /** Toàn bộ ca ghép vào một buổi dài (ví dụ 2 ca 25 phút cho buổi 50 phút). */

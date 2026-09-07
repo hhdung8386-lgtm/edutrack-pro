@@ -5,6 +5,8 @@ import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getBookingPoints } from '@/lib/points'
 import {
   LessonBookingReference,
+  recoverLegacySingleBookingReference,
+  selectLegacyExcusedAbsenceBookingByScheduleCheck,
   selectLessonBookingMatches,
   validateExplicitLessonBookings,
 } from '@/lib/bookingLogic'
@@ -48,6 +50,21 @@ export function assertBookingTimeRangeIntegrity(bookings: BookingRequest[]): voi
   }
 }
 
+/**
+ * The resolver reads booking candidates before an approval transaction. Re-read
+ * rows must still be active and either unclaimed or claimed by this exact
+ * lesson; otherwise a concurrent operation could charge funds without closing
+ * the intended booking.
+ */
+export function assertBookingsAvailableForApproval(bookings: BookingRequest[], lessonId: string): void {
+  for (const booking of bookings) {
+    if (
+      (booking.status !== 'pending' && booking.status !== 'confirmed')
+      || (booking.lessonId && booking.lessonId !== lessonId)
+    ) throw new Error('BOOKING_STATE_CHANGED')
+  }
+}
+
 export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
   const bookingIds = Array.from(new Set([
     ...(lesson.bookingRequestIds || []),
@@ -64,22 +81,38 @@ export async function resolveLessonBookings(lesson: LessonBookingReference): Pro
       .filter((snap) => snap.exists())
       .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
     if (resolved.length !== bookingIds.length) throw new Error('BOOKING_REFERENCE_INVALID')
-    if (!validateExplicitLessonBookings(resolved, lesson)) throw new Error('BOOKING_REFERENCE_INVALID')
+    if (!validateExplicitLessonBookings(resolved, lesson)) {
+      // Old attendance records could retain only the first 25-minute booking
+      // ID after a teacher reported a merged 50/75/100-minute lesson. Recover
+      // only a provably complete contiguous set; all ambiguous cases fail closed.
+      if (resolved.length === 1 && Number(lesson.minutes) > 0) {
+        const candidates = await fetchSameDayLessonBookingCandidates(lesson)
+        const recovered = recoverLegacySingleBookingReference(candidates, resolved, lesson)
+        if (recovered.length > 0) return recovered
+      }
+      throw new Error('BOOKING_REFERENCE_INVALID')
+    }
     return resolved
   }
 
+  const matches = await fetchSameDayLessonBookingCandidates(lesson)
+  if (matches.length === 0) return []
+
+  const anchoredExcusedAbsence = selectLegacyExcusedAbsenceBookingByScheduleCheck(matches, lesson)
+  if (anchoredExcusedAbsence.length > 0) return anchoredExcusedAbsence
+
+  return selectLessonBookingMatches(matches, lesson)
+}
+
+async function fetchSameDayLessonBookingCandidates(lesson: LessonBookingReference): Promise<BookingRequest[]> {
   const q = query(
     collection(db, 'bookingRequests'),
     where('studentId', '==', lesson.studentId),
     where('teacherId', '==', lesson.teacherId),
     where('requestedDate', '==', lesson.date),
   )
-  
   const snap = await getDocs(q)
-  if (snap.empty) return []
-
-  const matches = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
-  return selectLessonBookingMatches(matches, lesson)
+  return snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
 }
 
 export async function resolveLessonBooking(lesson: LessonBookingReference): Promise<BookingRequest | null> {

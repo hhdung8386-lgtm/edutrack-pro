@@ -4,7 +4,11 @@ import {
   findConsecutiveAttendanceBookings,
   isBookingAttended,
   isBookingCancellable,
+  matchesLessonBookingSubject,
+  recoverLegacySingleBookingReference,
+  selectLegacyExcusedAbsenceBookingByScheduleCheck,
   selectLessonBookingMatches,
+  selectUniqueContiguousBookingSet,
   validateExplicitLessonBookings,
   type LessonBookingReference,
 } from '../src/lib/bookingLogic.ts'
@@ -82,11 +86,82 @@ test('ignores released bookings when using the legacy fallback matcher', () => {
   assert.deepEqual(selectLessonBookingMatches([released, active], lesson(50)).map((item) => item.id), ['active'])
 })
 
+test('recovers one legacy 25-minute ID only when its full contiguous block proves a 50-minute lesson', () => {
+  const first = booking('b1', '20:00', { lessonId: 'lesson-1' })
+  const second = booking('b2', '20:30')
+
+  assert.deepEqual(
+    recoverLegacySingleBookingReference([first, second], [first], lesson(50)).map((item) => item.id),
+    ['b1', 'b2'],
+  )
+})
+
+test('does not guess a partial legacy link inside a longer contiguous block or another lesson', () => {
+  const first = booking('b1', '20:00', { lessonId: 'lesson-1' })
+  const second = booking('b2', '20:30')
+  const third = booking('b3', '21:00')
+
+  assert.deepEqual(
+    recoverLegacySingleBookingReference([first, second, third], [first], lesson(50)),
+    [],
+  )
+  assert.deepEqual(
+    recoverLegacySingleBookingReference([first, booking('other', '20:30', { lessonId: 'other-lesson' })], [first], lesson(50)),
+    [],
+  )
+})
+
+test('requires one whole contiguous block instead of choosing between multiple possible attendance groups', () => {
+  const morning = [booking('morning-a', '08:00'), booking('morning-b', '08:30')]
+  const evening = [booking('evening-a', '20:00'), booking('evening-b', '20:30')]
+  assert.deepEqual(selectUniqueContiguousBookingSet(morning, 50).map((item) => item.id), ['morning-a', 'morning-b'])
+  assert.deepEqual(selectUniqueContiguousBookingSet([...morning, ...evening], 50), [])
+  assert.deepEqual(selectUniqueContiguousBookingSet([...morning, booking('extra', '09:00')], 50), [])
+})
+
+test('keeps a uniquely matching legacy single booking even when its display start is absent', () => {
+  const legacy = booking('legacy', '', { requestedMinutes: 50, requestedEnd: '' })
+  assert.deepEqual(selectUniqueContiguousBookingSet([legacy], 50).map((item) => item.id), ['legacy'])
+})
+
+test('keeps legacy bookings eligible but never groups two explicit different subjects', () => {
+  assert.equal(matchesLessonBookingSubject(booking('english', '20:00'), 'subject-1'), true)
+  assert.equal(matchesLessonBookingSubject(booking('math', '20:00', { subjectId: 'subject-2' }), 'subject-1'), false)
+  assert.equal(matchesLessonBookingSubject(booking('legacy', '20:00', { subjectId: undefined }), 'subject-1'), true)
+})
+
 test('matches one scheduled booking to a zero-minute excused absence when a legacy booking reference is missing', () => {
   const scheduled = booking('scheduled', '20:00')
   const absentLesson = lesson(0, { isZeroMinuteExcusedAbsence: true })
 
   assert.deepEqual(selectLessonBookingMatches([scheduled], absentLesson).map((item) => item.id), ['scheduled'])
+})
+
+test('uses the saved schedule snapshot to recover exactly one 0-minute legacy absence from two slots', () => {
+  const first = booking('first', '20:00', { requestedEnd: '20:25' })
+  const second = booking('second', '20:30', { requestedEnd: '20:55' })
+  const absentLesson = lesson(0, {
+    isZeroMinuteExcusedAbsence: true,
+    scheduleCheck: { bookingStart: '20:00', bookingEnd: '20:25' },
+  })
+
+  assert.deepEqual(
+    selectLegacyExcusedAbsenceBookingByScheduleCheck([first, second], absentLesson).map((item) => item.id),
+    ['first'],
+  )
+})
+
+test('does not recover a 0-minute absence when its saved schedule snapshot does not prove one booking', () => {
+  const first = booking('first', '20:00', { requestedEnd: '20:25' })
+  const second = booking('second', '20:30', { requestedEnd: '20:55' })
+
+  assert.deepEqual(
+    selectLegacyExcusedAbsenceBookingByScheduleCheck([first, second], lesson(0, {
+      isZeroMinuteExcusedAbsence: true,
+      scheduleCheck: { bookingStart: '20:00', bookingEnd: '20:55' },
+    })),
+    [],
+  )
 })
 
 test('fails closed for non-excused or ambiguous zero-minute attendance', () => {

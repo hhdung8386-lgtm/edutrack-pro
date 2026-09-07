@@ -1,18 +1,21 @@
+import { getCompletedLearningMinutes } from './lessonAttendance.ts'
+import type { Lesson } from '../types'
+
 export type CourseProgressSubject = {
   subjectId: string
   registeredMinutes: number
 }
 
-export type CourseProgressLesson = {
-  subjectId?: string
-  status: string
-  minutes?: number
-}
+export type CourseProgressLesson = Pick<
+  Lesson,
+  'subjectId' | 'status' | 'minutes' | 'attendanceStatus' | 'book' | 'comment' | 'absenceFollowUpOf'
+>
 
 /**
- * Phân bổ phút học thực tế theo cùng nguyên tắc đối soát quỹ trên trang học viên:
- * khớp subjectId trước; lesson legacy/mất liên kết được lấp vào phần quyền học còn
- * trống theo thứ tự gói. Nếu đã học vượt, phần vượt thuộc gói đầu tiên để không mất số.
+ * Phân bổ phút học thực tế theo từng quyền học: chỉ ca đã duyệt mà học viên có mặt
+ * mới được tính. Khớp subjectId trước; lesson legacy/mất liên kết được lấp vào phần
+ * quyền học còn trống theo thứ tự gói. Nếu đã học vượt, phần vượt thuộc gói đầu tiên
+ * để không mất số.
  */
 export function allocateApprovedLearningMinutes(
   subjects: CourseProgressSubject[],
@@ -23,8 +26,8 @@ export function allocateApprovedLearningMinutes(
   let unmatchedMinutes = 0
 
   lessons.forEach((lesson) => {
-    if (lesson.status !== 'approved') return
-    const minutes = Math.max(0, Number(lesson.minutes || 0))
+    const minutes = getCompletedLearningMinutes(lesson)
+    if (minutes <= 0) return
     const index = lesson.subjectId ? subjectIndexes.get(lesson.subjectId) : undefined
     if (index === undefined) unmatchedMinutes += minutes
     else allocated[index] += minutes

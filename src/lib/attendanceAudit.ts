@@ -1,6 +1,7 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { isActiveBooking } from '@/lib/bookingConflicts'
+import { matchesLessonBookingSubject, selectUniqueContiguousBookingSet } from '@/lib/bookingLogic'
 import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import type { BookingRequest, Lesson, LessonScheduleCheckSnapshot } from '@/types'
 
@@ -109,7 +110,7 @@ export async function fetchStudentBookingsAround(
 
 export function evaluateLessonSchedule(
   bookings: BookingRequest[],
-  lesson: { teacherId: string; date: string; minutes?: number },
+  lesson: { id?: string; teacherId: string; studentId?: string; subjectId?: string; date: string; minutes?: number },
   windowDays: number = SCHEDULE_MATCH_WINDOW_DAYS,
 ): LessonScheduleCheck {
   const base: Pick<LessonScheduleCheck, 'checkedAt' | 'windowDays' | 'scheduledDates'> = {
@@ -119,17 +120,18 @@ export function evaluateLessonSchedule(
   }
 
   const active = bookings.filter((b) => isActiveBooking(b) && !!b.requestedDate)
-  const sameDayOwn = active.filter((b) => b.requestedDate === lesson.date && b.teacherId === lesson.teacherId)
+  const matchesLessonSubject = (booking: BookingRequest) => matchesLessonBookingSubject(booking, lesson.subjectId)
+  const sameDayOwn = active.filter((b) => (
+    b.requestedDate === lesson.date
+    && b.teacherId === lesson.teacherId
+    && matchesLessonSubject(b)
+  ))
 
   if (sameDayOwn.length > 0) {
-    const exactMatches = sameDayOwn.filter((b) => !lesson.minutes || b.requestedMinutes === lesson.minutes)
-    const exact = exactMatches.length === 1 ? exactMatches[0] : null
-    const combined = !exact && lesson.minutes && sameDayOwn.length > 1
-      && sameDayOwn.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0) === lesson.minutes
-      ? sameDayOwn
-      : []
-    const matched = exact || combined[0] || sameDayOwn[0]
-    const matchedBookings = combined.length > 0 ? combined : [matched]
+    const eligibleOwn = sameDayOwn.filter((booking) => !booking.lessonId || booking.lessonId === lesson.id)
+    const matchedBookings = selectUniqueContiguousBookingSet(eligibleOwn, Number(lesson.minutes))
+    const matched = matchedBookings[0] || sameDayOwn[0]
+    const hasAmbiguousBookingMatch = Number(lesson.minutes) > 0 && matchedBookings.length === 0
     let timeRangeMismatch: {
       booking: BookingRequest
       actualMinutes: number
@@ -149,10 +151,10 @@ export function evaluateLessonSchedule(
     const displayBooking = timeRangeMismatch?.booking || matched
     return {
       ...base,
-      status: timeRangeMismatch ? 'time_mismatch' : 'matched',
+      status: hasAmbiguousBookingMatch ? 'ambiguous' : (timeRangeMismatch ? 'time_mismatch' : 'matched'),
       scheduledDates: [lesson.date],
-      ...(exact || combined.length > 0 ? { bookingId: matched.id } : {}),
-      ...(combined.length > 1 ? { bookingIds: combined.map((booking) => booking.id) } : {}),
+      ...(matchedBookings.length > 0 ? { bookingId: matched.id } : {}),
+      ...(matchedBookings.length > 1 ? { bookingIds: matchedBookings.map((booking) => booking.id) } : {}),
       // Chỉ set khi có giá trị: buổi được ghi vào Firestore, field undefined sẽ làm hỏng lệnh ghi.
       ...(displayBooking.requestedStart ? { bookingStart: displayBooking.requestedStart } : {}),
       ...(displayBooking.requestedEnd ? { bookingEnd: displayBooking.requestedEnd } : {}),
@@ -160,14 +162,14 @@ export function evaluateLessonSchedule(
         timeRangeActualMinutes: timeRangeMismatch.actualMinutes,
         timeRangeExpectedMinutes: timeRangeMismatch.requestedMinutes,
       } : {}),
-      ...(lesson.minutes && combined.length === 0 && matched.requestedMinutes !== lesson.minutes
+      ...(lesson.minutes && matchedBookings.length === 0 && matched.requestedMinutes !== lesson.minutes
         ? { minutesMismatch: matched.requestedMinutes }
         : {}),
     }
   }
 
   const ownNearby = active
-    .filter((b) => b.teacherId === lesson.teacherId)
+    .filter((b) => b.teacherId === lesson.teacherId && matchesLessonSubject(b))
     .sort((a, b) => Math.abs(dayDiff(a.requestedDate!, lesson.date)) - Math.abs(dayDiff(b.requestedDate!, lesson.date)))
 
   if (ownNearby.length > 0) {
@@ -175,7 +177,7 @@ export function evaluateLessonSchedule(
     return { ...base, status: 'mismatch_day', scheduledDates }
   }
 
-  const sameDayOther = active.filter((b) => b.requestedDate === lesson.date)
+  const sameDayOther = active.filter((b) => b.requestedDate === lesson.date && matchesLessonSubject(b))
   if (sameDayOther.length > 0) {
     return {
       ...base,
@@ -219,6 +221,7 @@ export async function fetchStudentDayLessons(studentId: string, date: string): P
 export async function auditTeacherAttendance(input: {
   teacherId: string
   studentId: string
+  subjectId?: string
   date: string
   minutes?: number
 }): Promise<AttendanceAudit> {
@@ -239,6 +242,7 @@ export async function auditLessonForAdmin(lesson: {
   id?: string
   teacherId: string
   studentId: string
+  subjectId?: string
   date: string
   minutes?: number
 }): Promise<AttendanceAudit> {
@@ -267,6 +271,14 @@ export function describeSchedule(check: LessonScheduleCheck | undefined, lang: '
   if (!check) return null
   const vi = lang === 'vi'
   switch (check.status) {
+    case 'ambiguous':
+      return {
+        tone: 'danger',
+        title: vi ? 'Không xác định được đúng cụm lịch cho buổi này' : 'The exact booking group cannot be identified',
+        detail: vi
+          ? 'Có nhiều ca cùng ngày nhưng không tạo thành duy nhất một cụm liền nhau đủ số phút. Hãy kiểm tra lịch trước khi duyệt.'
+          : 'There are multiple same-day sessions, but no unique consecutive group with the required duration. Check the schedule before approving.',
+      }
     case 'time_mismatch': {
       const actualMinutes = check.timeRangeActualMinutes ?? 0
       const expectedMinutes = check.timeRangeExpectedMinutes ?? 0

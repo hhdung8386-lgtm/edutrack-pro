@@ -29,3 +29,18 @@ test('lesson đúng môn được ưu tiên, phần legacy lấp theo thứ tự
   )
   assert.deepEqual(result, [650, 500])
 })
+
+test('chỉ ca đã duyệt mà học viên có mặt mới tăng phút đã học', () => {
+  const result = allocateApprovedLearningMinutes(
+    [{ subjectId: 'english', registeredMinutes: 1_000 }],
+    [
+      { subjectId: 'english', status: 'approved', attendanceStatus: 'present', minutes: 50 },
+      { subjectId: 'english', status: 'approved', attendanceStatus: 'without_permission', minutes: 50 },
+      { subjectId: 'english', status: 'approved', attendanceStatus: 'with_permission', minutes: 0 },
+      { subjectId: 'english', status: 'approved', minutes: 25, book: 'Học viên vắng không phép' },
+      { subjectId: 'english', status: 'pending', attendanceStatus: 'present', minutes: 25 },
+    ],
+  )
+
+  assert.deepEqual(result, [50])
+})

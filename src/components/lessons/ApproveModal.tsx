@@ -6,7 +6,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
-import { assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingsAvailableForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
@@ -121,7 +121,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           const studentData = studentSnap.data() as Student
           const lessonNow = lessonSnap.data() as Lesson
-          if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
           const [teacherSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
@@ -131,6 +131,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
+          if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
+          assertBookingsAvailableForApproval(bookingNows, lesson.id)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
@@ -348,7 +350,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             targetType: 'lesson',
             targetId: lesson.id,
             changes: {
-              status: { from: 'pending', to: 'approved' },
+              status: { from: lessonNow.status, to: 'approved' },
               salary,
               minutesDeducted: lesson.minutes,
               pointsDeducted: lessonPoints,
@@ -372,6 +374,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         toast.warning('Buổi dạy đã được xử lý trước đó')
       } else if (err?.message === 'BOOKING_TIME_RANGE_INVALID') {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+      } else if (err?.message === 'BOOKING_STATE_CHANGED') {
+        toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (err?.message === 'BOOKING_MATCH_AMBIGUOUS' || err?.message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Vui lòng kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (err?.message === 'NOT_ENOUGH_POINTS') {
