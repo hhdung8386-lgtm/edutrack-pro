@@ -1,4 +1,4 @@
-import type { BookingRequest, LessonScheduleCheckSnapshot } from '@/types'
+import type { BookingRequest, LessonBookingSubjectReconciliation, LessonScheduleCheckSnapshot } from '@/types'
 
 export type LessonBookingReference = {
   id: string
@@ -10,8 +10,33 @@ export type LessonBookingReference = {
   date: string
   minutes: number
   subjectId: string
+  subjectName?: string
+  groupClassId?: string
+  bookingSubjectReconciliation?: LessonBookingSubjectReconciliation
   /** Only enabled for a zero-minute excused absence; never relax normal matching. */
   isZeroMinuteExcusedAbsence?: boolean
+}
+
+export type BookingSubjectReconciliationDraft = {
+  kind: 'prelinked_subject_mismatch'
+  bookingIds: string[]
+  bookingSubjectId: string
+  bookingSubjectName?: string
+  reportedSubjectId: string
+  reportedSubjectName?: string
+  settlementSubjectId: string
+  settlementSubjectName: string
+  reason: string
+  confirmed: boolean
+}
+
+export type PrelinkedSubjectMismatchCandidate = {
+  bookingIds: string[]
+  bookingSubjectId: string
+  bookingSubjectName?: string
+  bookingStart: string
+  bookingEnd: string
+  totalMinutes: number
 }
 
 /** Booking đã có báo cáo điểm danh hoặc đã được duyệt hoàn tất. */
@@ -176,6 +201,131 @@ export function matchesLessonBookingSubject(booking: BookingRequest, subjectId?:
 
 export function totalBookingMinutes(bookings: BookingRequest[]): number {
   return bookings.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0)
+}
+
+export function lessonReferencedBookingIds(lesson: LessonBookingReference): string[] {
+  return Array.from(new Set([
+    ...(lesson.bookingRequestIds || []),
+    ...(lesson.scheduleCheck?.bookingIds || []),
+    lesson.bookingRequestId,
+    lesson.scheduleCheck?.bookingId,
+  ].filter((id): id is string => Boolean(id))))
+}
+
+/**
+ * A stored reconciliation records an exceptional settlement that must be
+ * handled manually. Bulk actions and the generic rollback path must leave it
+ * alone until a dedicated, audited data-administration workflow exists.
+ */
+export function requiresIndividualSubjectReconciliation(
+  lesson: Pick<LessonBookingReference, 'bookingSubjectReconciliation'>,
+): boolean {
+  return Boolean(lesson.bookingSubjectReconciliation)
+}
+
+/**
+ * A generic status rollback cannot safely reverse an exceptional subject
+ * settlement: its exact booking set, point debit, payroll, and audit trail
+ * must be handled together by a dedicated data-administration workflow.
+ */
+export const RECONCILIATION_MANUAL_ROLLBACK_REQUIRED = 'RECONCILIATION_MANUAL_ROLLBACK_REQUIRED'
+
+export function assertAutomaticReconciliationRollbackAllowed(
+  lesson: Pick<LessonBookingReference, 'bookingSubjectReconciliation'>,
+): void {
+  if (requiresIndividualSubjectReconciliation(lesson)) {
+    throw new Error(RECONCILIATION_MANUAL_ROLLBACK_REQUIRED)
+  }
+}
+
+function sameBookingIdSet(left: string[], right: string[]) {
+  const leftSet = new Set(left)
+  const rightSet = new Set(right)
+  return leftSet.size === rightSet.size
+    && [...leftSet].every((id) => rightSet.has(id))
+}
+
+function samePrelinkedAttendanceIdentity(booking: BookingRequest, lesson: LessonBookingReference) {
+  if (booking.studentId !== lesson.studentId) return false
+  if (booking.teacherId !== lesson.teacherId) return false
+  if (booking.requestedDate !== lesson.date) return false
+  // The reconciliation exception must never turn an individual attendance
+  // row into a group-class booking (or the reverse) merely because the other
+  // identity fields happen to match.
+  if ((booking.groupClassId || '') !== (lesson.groupClassId || '')) return false
+  return booking.lessonId === lesson.id
+}
+
+function structurallyValidPrelinkedBookings(
+  bookings: BookingRequest[],
+  lesson: LessonBookingReference,
+  mode: 'approval' | 'rollback',
+) {
+  const referencedIds = lessonReferencedBookingIds(lesson)
+  const bookingIds = bookings.map((booking) => booking.id)
+  if (bookings.length === 0 || !sameBookingIdSet(referencedIds, bookingIds)) return false
+  if (Number(lesson.minutes) <= 0 || totalBookingMinutes(bookings) !== Number(lesson.minutes)) return false
+  if (!bookings.every((booking) => samePrelinkedAttendanceIdentity(booking, lesson))) return false
+
+  const groupClassIds = new Set(bookings.map((booking) => booking.groupClassId || ''))
+  if (groupClassIds.size !== 1) return false
+
+  const bookingSubjectIds = new Set(bookings.map((booking) => booking.subjectId || ''))
+  if (bookingSubjectIds.size !== 1 || bookingSubjectIds.has('')) return false
+
+  const stateIsValid = mode === 'approval'
+    ? bookings.every(isActiveAttendanceBooking)
+    : bookings.every((booking) => booking.status === 'completed' && booking.lessonId === lesson.id)
+  if (!stateIsValid) return false
+
+  const contiguous = selectUniqueContiguousBookingSet(bookings, Number(lesson.minutes))
+  return contiguous.length === bookings.length
+    && sameBookingIdSet(contiguous.map((booking) => booking.id), bookings.map((booking) => booking.id))
+}
+
+/**
+ * Returns a candidate only for the narrow, auditable legacy case where every
+ * booking is already linked to this lesson. It never searches nearby rows and
+ * therefore cannot guess which timetable block should be charged.
+ */
+export function getPrelinkedSubjectMismatchCandidate(
+  bookings: BookingRequest[],
+  lesson: LessonBookingReference,
+): PrelinkedSubjectMismatchCandidate | null {
+  if (!structurallyValidPrelinkedBookings(bookings, lesson, 'approval')) return null
+  const sorted = [...bookings].sort((left, right) => timeToMinutes(left.requestedStart) - timeToMinutes(right.requestedStart))
+  const last = sorted[sorted.length - 1]
+  return {
+    bookingIds: sorted.map((booking) => booking.id),
+    bookingSubjectId: sorted[0].subjectId || '',
+    bookingSubjectName: sorted[0].subjectName,
+    bookingStart: sorted[0].requestedStart,
+    bookingEnd: last.requestedEnd || '',
+    totalMinutes: totalBookingMinutes(sorted),
+  }
+}
+
+export function validatePrelinkedSubjectMismatchForApproval(
+  bookings: BookingRequest[],
+  lesson: LessonBookingReference,
+  draft: BookingSubjectReconciliationDraft | null | undefined,
+): boolean {
+  if (!draft || draft.kind !== 'prelinked_subject_mismatch' || draft.confirmed !== true) return false
+  const reason = draft.reason.trim()
+  if (reason.length < 12 || reason.length > 500) return false
+  if (!draft.settlementSubjectId || !draft.settlementSubjectName.trim()) return false
+  if (draft.reportedSubjectId !== (lesson.subjectId || '')) return false
+
+  const candidate = getPrelinkedSubjectMismatchCandidate(bookings, lesson)
+  if (!candidate) return false
+  if (!sameBookingIdSet(candidate.bookingIds, draft.bookingIds)) return false
+  if (candidate.bookingSubjectId !== draft.bookingSubjectId) return false
+
+  // The teacher-reported lesson subject is the only canonical settlement
+  // target. The exception repairs the old booking link; it never grants a
+  // browser operator permission to choose an unrelated third package.
+  return draft.settlementSubjectId === (lesson.subjectId || '')
+    && candidate.bookingSubjectId !== (lesson.subjectId || '')
 }
 
 export function validateExplicitLessonBookings(

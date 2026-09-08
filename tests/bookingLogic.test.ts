@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  RECONCILIATION_MANUAL_ROLLBACK_REQUIRED,
+  assertAutomaticReconciliationRollbackAllowed,
   findConsecutiveAttendanceBookings,
+  getPrelinkedSubjectMismatchCandidate,
   isBookingAttended,
   isBookingCancellable,
   matchesLessonBookingSubject,
   recoverLegacySingleBookingReference,
+  requiresIndividualSubjectReconciliation,
   selectLegacyExcusedAbsenceBookingByScheduleCheck,
   selectLessonBookingMatches,
   selectUniqueContiguousBookingSet,
   validateExplicitLessonBookings,
+  validatePrelinkedSubjectMismatchForApproval,
   type LessonBookingReference,
 } from '../src/lib/bookingLogic.ts'
 import type { BookingRequest } from '../src/types/index.ts'
@@ -238,4 +243,139 @@ test('distinguishes scheduled bookings from attended and cancellable bookings', 
   assert.equal(isBookingCancellable(attended), false)
   assert.equal(isBookingAttended(completed), true)
   assert.equal(isBookingCancellable(completed), false)
+})
+
+test('allows settlement only to the canonical lesson package for an exact prelinked legacy subject group', () => {
+  const bookings = [
+    booking('b1', '19:00', {
+      requestedEnd: '19:25',
+      lessonId: 'lesson-1',
+      subjectId: 'legacy-l3',
+      subjectName: 'VN-1S-L3',
+    }),
+    booking('b2', '19:30', {
+      requestedEnd: '19:55',
+      lessonId: 'lesson-1',
+      subjectId: 'legacy-l3',
+      subjectName: 'VN-1S-L3',
+    }),
+  ]
+  const currentLesson = lesson(50, {
+    subjectId: 'current-l2',
+    subjectName: 'VN-1S-L2',
+    bookingRequestIds: ['b1', 'b2'],
+  })
+  const candidate = getPrelinkedSubjectMismatchCandidate(bookings, currentLesson)
+  assert.deepEqual(candidate, {
+    bookingIds: ['b1', 'b2'],
+    bookingSubjectId: 'legacy-l3',
+    bookingSubjectName: 'VN-1S-L3',
+    bookingStart: '19:00',
+    bookingEnd: '19:55',
+    totalMinutes: 50,
+  })
+  assert.equal(validatePrelinkedSubjectMismatchForApproval(bookings, currentLesson, {
+    kind: 'prelinked_subject_mismatch',
+    bookingIds: ['b1', 'b2'],
+    bookingSubjectId: 'legacy-l3',
+    bookingSubjectName: 'VN-1S-L3',
+    reportedSubjectId: 'current-l2',
+    reportedSubjectName: 'VN-1S-L2',
+    settlementSubjectId: 'current-l2',
+    settlementSubjectName: 'VN-1S-L2',
+    reason: 'Đã xác nhận lịch cũ phải hạch toán sang gói VN-1S-L2.',
+    confirmed: true,
+  }), true)
+})
+
+test('rejects a third-package settlement for an otherwise exact prelinked subject mismatch', () => {
+  const bookings = [booking('legacy-booking', '19:00', {
+    requestedEnd: '19:50',
+    requestedMinutes: 50,
+    lessonId: 'lesson-1',
+    subjectId: 'legacy-l3',
+    subjectName: 'VN-1S-L3',
+  })]
+  const currentLesson = lesson(50, {
+    subjectId: 'current-l2',
+    subjectName: 'VN-1S-L2',
+    bookingRequestId: 'legacy-booking',
+  })
+
+  assert.equal(validatePrelinkedSubjectMismatchForApproval(bookings, currentLesson, {
+    kind: 'prelinked_subject_mismatch',
+    bookingIds: ['legacy-booking'],
+    bookingSubjectId: 'legacy-l3',
+    bookingSubjectName: 'VN-1S-L3',
+    reportedSubjectId: 'current-l2',
+    reportedSubjectName: 'VN-1S-L2',
+    settlementSubjectId: 'third-package-l1',
+    settlementSubjectName: 'VN-1S-L1',
+    reason: 'Đã đối chiếu lịch cũ nhưng không được hạch toán sang gói môn thứ ba.',
+    confirmed: true,
+  }), false)
+})
+
+test('fails closed when a subject reconciliation is not exact, contiguous, active and confirmed', () => {
+  const validBookings = [
+    booking('b1', '19:00', { requestedEnd: '19:25', lessonId: 'lesson-1', subjectId: 'legacy-l3' }),
+    booking('b2', '19:30', { requestedEnd: '19:55', lessonId: 'lesson-1', subjectId: 'legacy-l3' }),
+  ]
+  const currentLesson = lesson(50, { bookingRequestIds: ['b1', 'b2'] })
+  const draft = {
+    kind: 'prelinked_subject_mismatch' as const,
+    bookingIds: ['b1', 'b2'],
+    bookingSubjectId: 'legacy-l3',
+    reportedSubjectId: 'subject-1',
+    settlementSubjectId: 'current-l2',
+    settlementSubjectName: 'VN-1S-L2',
+    reason: 'Đã đối chiếu với giáo vụ và chọn đúng gói hiện tại.',
+    confirmed: true,
+  }
+
+  assert.equal(validatePrelinkedSubjectMismatchForApproval(validBookings, currentLesson, { ...draft, confirmed: false }), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval(validBookings, currentLesson, { ...draft, reason: 'ngắn' }), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval(validBookings, currentLesson, { ...draft, bookingIds: ['b1'] }), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval([
+    validBookings[0],
+    booking('b2', '21:00', { requestedEnd: '21:25', lessonId: 'lesson-1', subjectId: 'legacy-l3' }),
+  ], currentLesson, draft), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval([
+    validBookings[0],
+    { ...validBookings[1], status: 'released' },
+  ], currentLesson, draft), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval([
+    validBookings[0],
+    { ...validBookings[1], lessonId: 'another-lesson' },
+  ], currentLesson, draft), false)
+  assert.equal(validatePrelinkedSubjectMismatchForApproval([
+    { ...validBookings[0], groupClassId: 'group-1' },
+    { ...validBookings[1], groupClassId: 'group-1' },
+  ], currentLesson, draft), false)
+})
+
+test('a stored subject reconciliation is excluded from bulk and automatic rollback handling', () => {
+  const reconciledLesson = lesson(50, {
+    subjectId: 'current-l2',
+    bookingSubjectReconciliation: {
+      kind: 'prelinked_subject_mismatch',
+      bookingIds: ['b1', 'b2'],
+      bookingSubjectId: 'legacy-l3',
+      reportedSubjectId: 'legacy-l3',
+      settlementSubjectId: 'current-l2',
+      settlementSubjectName: 'VN-1S-L2',
+      reconciledAt: {} as never,
+    },
+  })
+
+  assert.equal(requiresIndividualSubjectReconciliation(reconciledLesson), true)
+  assert.equal(requiresIndividualSubjectReconciliation(lesson(50)), false)
+  assert.throws(
+    () => assertAutomaticReconciliationRollbackAllowed(reconciledLesson),
+    { message: RECONCILIATION_MANUAL_ROLLBACK_REQUIRED },
+  )
+  assert.doesNotThrow(() => assertAutomaticReconciliationRollbackAllowed(lesson(50)))
+  const automaticBulkTargets = [reconciledLesson, lesson(50, { id: 'ordinary-lesson' })]
+    .filter((item) => !requiresIndividualSubjectReconciliation(item))
+  assert.deepEqual(automaticBulkTargets.map((item) => item.id), ['ordinary-lesson'])
 })

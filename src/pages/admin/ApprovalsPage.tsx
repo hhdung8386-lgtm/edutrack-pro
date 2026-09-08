@@ -6,7 +6,7 @@ import {
   getCountFromServer, limit, getDoc,
 } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { BookingRequest, Lesson, Student, StudentSubject } from '@/types'
+import { BookingRequest, Lesson, Student, StudentSubject, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -35,6 +35,10 @@ import {
   getOnlineClassroomRecordingsForBookings,
   type OnlineClassroomRecordingSummary,
 } from '@/lib/onlineClassroomRecording'
+import {
+  SubjectMismatchReconciliationPanel,
+  type SubjectMismatchReconciliationState,
+} from '@/components/lessons/SubjectMismatchReconciliationPanel'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -100,6 +104,14 @@ export function ApprovalsPage() {
   // Đối chiếu lịch + số lần điểm danh trong ngày, chạy ngay khi mở hộp thoại duyệt
   const [approveAudit, setApproveAudit] = useState<{ lessonId: string; audit: AttendanceAudit } | null>(null)
   const [auditLoading, setAuditLoading] = useState(false)
+  const [reconciliation, setReconciliation] = useState<SubjectMismatchReconciliationState>({
+    candidateAvailable: false,
+    required: false,
+    draft: null,
+  })
+  const handleReconciliationStateChange = useCallback((next: SubjectMismatchReconciliationState) => {
+    setReconciliation(next)
+  }, [])
 
   const handleCopyLesson = async (lesson: Lesson) => {
     const ok = await copyTextToClipboard(buildLessonParentMessage(lesson))
@@ -119,6 +131,7 @@ export function ApprovalsPage() {
     setApproveStudentLoading(true)
     setApproveAudit(null)
     setAuditLoading(true)
+    setReconciliation({ candidateAvailable: false, required: false, draft: null })
     auditLessonForAdmin({
       id: lesson.id,
       teacherId: lesson.teacherId,
@@ -325,13 +338,13 @@ export function ApprovalsPage() {
     && approveAudit?.lessonId === approvingLesson.id
     && (
       approveAudit.audit.schedule.status === 'ambiguous'
-      || approveAudit.audit.schedule.status === 'subject_mismatch'
+      || (approveAudit.audit.schedule.status === 'subject_mismatch' && !reconciliation.draft)
       || (approveAudit.audit.schedule.status === 'time_mismatch' && !approvalIsZeroMinuteExcusedAbsence)
     )
   )
   const approvalHasLessonSubjectPackage = Boolean(
     approvingLesson
-    && approveStudentSubjects.some((subject) => subject.subjectId === approvingLesson.subjectId),
+    && approveStudentSubjects.filter((subject) => subject.subjectId === approvingLesson.subjectId).length === 1,
   )
   const approvalHasSubjectPackageMismatch = Boolean(
     approvingLesson
@@ -352,8 +365,17 @@ export function ApprovalsPage() {
         toast.error('Môn học được chọn không hợp lệ')
         return
       }
+      const reconciliationDraft = reconciliation.required ? reconciliation.draft : null
+      if (reconciliation.required && !reconciliationDraft) {
+        toast.error('Vui lòng hoàn tất lý do và xác nhận đối soát môn lịch cũ trước khi duyệt.')
+        return
+      }
+      if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
+        toast.error('Gói hạch toán vừa thay đổi. Vui lòng xác nhận lại phần đối soát.')
+        return
+      }
       if (approveSubjectId !== approvingLesson.subjectId || !approvalHasLessonSubjectPackage) {
-        toast.error('Môn của buổi điểm danh không còn khớp gói học viên. Không thể tự trừ sang gói còn buổi khác.')
+        toast.error('Chỉ được hạch toán vào đúng gói môn của buổi điểm danh. Không thể chọn một gói khác.')
         return
       }
 
@@ -368,8 +390,10 @@ export function ApprovalsPage() {
         date: approvingLesson.date,
         minutes: approvingLesson.minutes,
         subjectId: approvingLesson.subjectId,
+        subjectName: approvingLesson.subjectName,
+        groupClassId: approvingLesson.groupClassId,
         isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
-      })
+      }, { subjectMismatchReconciliation: reconciliationDraft })
       if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
 
       await runTransaction(
@@ -388,15 +412,32 @@ export function ApprovalsPage() {
 
           const lessonNow = lessonSnap.data() as any
           if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (
+            lessonNow.studentId !== approvingLesson.studentId
+            || lessonNow.teacherId !== approvingLesson.teacherId
+            || lessonNow.date !== approvingLesson.date
+            || Number(lessonNow.minutes) !== Number(approvingLesson.minutes)
+            || (lessonNow.groupClassId || '') !== (approvingLesson.groupClassId || '')
+          ) throw new Error('BOOKING_STATE_CHANGED')
+          if (approveSubjectId !== lessonNow.subjectId) {
+            throw new Error('BOOKING_SUBJECT_MISMATCH')
+          }
+          if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
+            throw new Error('BOOKING_RECONCILIATION_INVALID')
+          }
 
           const studentData = studentSnap.data() as Student
 
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
-          const [teacherSnap, ...bookingSnaps] = await Promise.all([
+          const [teacherSnap, subjectCatalogSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
+            tx.get(doc(db, 'subjects', approveSubjectId)),
             ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])
           const teacherData = teacherSnap.data()
+          const subjectCatalogData = subjectCatalogSnap.exists()
+            ? subjectCatalogSnap.data() as Subject
+            : null
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
@@ -405,22 +446,23 @@ export function ApprovalsPage() {
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           assertBookingsMatchLessonForApproval(bookingNows, {
             id: approvingLesson.id,
+            bookingRequestId: lessonNow.bookingRequestId,
+            bookingRequestIds: lessonNow.bookingRequestIds,
+            scheduleCheck: lessonNow.scheduleCheck,
             studentId: lessonNow.studentId,
             teacherId: lessonNow.teacherId,
             date: lessonNow.date,
             minutes: lessonNow.minutes,
             subjectId: lessonNow.subjectId,
+            subjectName: lessonNow.subjectName,
+            groupClassId: lessonNow.groupClassId,
             isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
-          })
+          }, reconciliationDraft)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
+          const teacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
 
-          const { price: pricePerMinute, currency } = getCountryRate(
-            chosenSubjectPkg,
-            teacherData?.country || 'VN',
-          )
-          const lessonMinutes = Number(approvingLesson.minutes) || 0
+          const lessonMinutes = Number(lessonNow.minutes) || 0
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
             || lessonNow.attendanceStatus === 'without_permission'
             || zeroMinuteExcusedAbsenceNow
@@ -431,11 +473,9 @@ export function ApprovalsPage() {
               : bookingNow
                 ? getBookingPoints(bookingNow, teacherData)
               : getLessonPoints(lessonNow, teacherData)
-          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
-          const month = (approvingLesson.date || '').slice(0, 7)
 
           // Initialize subjects array for backward compatibility if needed
-          let updatedSubjects = studentData.subjects && studentData.subjects.length > 0
+          const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
             ? [...studentData.subjects]
             : studentData.subjectId
               ? [{
@@ -448,16 +488,21 @@ export function ApprovalsPage() {
                   totalMinutes: studentData.totalMinutes ?? (studentData.totalSessions * (studentData.minutesPerSession || 50)),
                   usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
                   remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
-                  pricePerMinute: pricePerMinute,
-                  pricePerMinuteVN: chosenSubjectPkg.pricePerMinuteVN || pricePerMinute,
-                  pricePerMinutePH: chosenSubjectPkg.pricePerMinutePH || pricePerMinute,
-                  pricePerMinuteNative: chosenSubjectPkg.pricePerMinuteNative || pricePerMinute,
-                  currency: chosenSubjectPkg.currency || 'VND',
+                  pricePerMinute: subjectCatalogData?.pricePerMinute ?? chosenSubjectPkg.pricePerMinute ?? 0,
+                  pricePerMinuteVN: subjectCatalogData?.pricePerMinuteVN ?? chosenSubjectPkg.pricePerMinuteVN ?? 0,
+                  pricePerMinutePH: subjectCatalogData?.pricePerMinutePH ?? chosenSubjectPkg.pricePerMinutePH ?? 0,
+                  pricePerMinuteNative: subjectCatalogData?.pricePerMinuteNative ?? chosenSubjectPkg.pricePerMinuteNative ?? 0,
+                  currency: subjectCatalogData?.currency || chosenSubjectPkg.currency || 'VND',
+                  ...(chosenSubjectPkg.curriculumLink ? { curriculumLink: chosenSubjectPkg.curriculumLink } : {}),
                 }]
               : []
 
           // Deduct from the selected subject package
-          const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === approveSubjectId)
+          const matchingSubjectIndexes = updatedSubjects.flatMap((sub, index) => (
+            sub.subjectId === approveSubjectId ? [index] : []
+          ))
+          if (matchingSubjectIndexes.length !== 1) throw new Error('BOOKING_SUBJECT_PACKAGE_AMBIGUOUS')
+          const sIdx = matchingSubjectIndexes[0] ?? -1
           if (sIdx === -1) {
             throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
           }
@@ -466,6 +511,13 @@ export function ApprovalsPage() {
           if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
             throw new Error('NOT_ENOUGH_POINTS')
           }
+          const freshSubjectPkg = subPkg
+          const { price: pricePerMinute, currency } = getCountryRate(
+            freshSubjectPkg,
+            teacherData?.country || 'VN',
+          )
+          const salary = calculateSalary(Number(lessonNow.minutes) || 0, pricePerMinute, teacherLevel, currency)
+          const month = String(lessonNow.date || '').slice(0, 7)
           const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
@@ -510,8 +562,8 @@ export function ApprovalsPage() {
             currency,
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
+            subjectId: freshSubjectPkg.subjectId,
+            subjectName: freshSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
             sessionsAfterApproval: newSubRemainingSessions,
             minutesBeforeApproval: subPkg.remainingMinutes,
@@ -521,6 +573,19 @@ export function ApprovalsPage() {
               ...(bookingNows.length > 1 ? { bookingRequestIds: bookingNows.map((booking) => booking.id) } : {}),
             } : {}),
             bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
+            ...(reconciliationDraft ? {
+              bookingSubjectReconciliation: {
+                kind: reconciliationDraft.kind,
+                bookingIds: bookingNows.map((booking) => booking.id),
+                bookingSubjectId: bookingNow?.subjectId || '',
+                bookingSubjectName: bookingNow?.subjectName || '',
+                reportedSubjectId: lessonNow.subjectId || '',
+                reportedSubjectName: lessonNow.subjectName || '',
+                settlementSubjectId: freshSubjectPkg.subjectId,
+                settlementSubjectName: freshSubjectPkg.subjectName,
+                reconciledAt: serverTimestamp(),
+              },
+            } : {}),
           })
 
           bookingSnaps.forEach((bookingSnap) => {
@@ -567,8 +632,8 @@ export function ApprovalsPage() {
             teacherId: approvingLesson.teacherId,
             teacherCode: approvingLesson.teacherCode ?? '',
             teacherName: approvingLesson.teacherName ?? '',
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
+            subjectId: freshSubjectPkg.subjectId,
+            subjectName: freshSubjectPkg.subjectName,
             date: approvingLesson.date,
             minutes: lessonMinutes,
             points: lessonPoints,
@@ -612,8 +677,8 @@ export function ApprovalsPage() {
               studentName: approvingLesson.studentName,
               teacherId: approvingLesson.teacherId,
               teacherName: approvingLesson.teacherName,
-              subjectId: chosenSubjectPkg.subjectId,
-              subjectName: chosenSubjectPkg.subjectName,
+              subjectId: freshSubjectPkg.subjectId,
+              subjectName: freshSubjectPkg.subjectName,
               lessonDate: approvingLesson.date,
               lessonMinutes,
               lessonPoints,
@@ -622,6 +687,18 @@ export function ApprovalsPage() {
               pricePerMinute,
               teacherLevel,
               zeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+              ...(reconciliationDraft ? {
+                bookingSubjectReconciliation: {
+                  bookingIds: bookingNows.map((booking) => booking.id),
+                  bookingSubjectId: bookingNow?.subjectId || '',
+                  bookingSubjectName: bookingNow?.subjectName || '',
+                  reportedSubjectId: lessonNow.subjectId || '',
+                  reportedSubjectName: lessonNow.subjectName || '',
+                  settlementSubjectId: freshSubjectPkg.subjectId,
+                  settlementSubjectName: freshSubjectPkg.subjectName,
+                  reason: reconciliationDraft.reason,
+                },
+              } : {}),
             },
             createdAt: serverTimestamp(),
           })
@@ -649,6 +726,10 @@ export function ApprovalsPage() {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (message === 'BOOKING_SUBJECT_MISMATCH') {
         toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
+      } else if (message === 'BOOKING_RECONCILIATION_INVALID') {
+        toast.error('Dữ liệu lịch hoặc gói môn vừa thay đổi. Đối soát chưa được ghi; vui lòng mở lại và kiểm tra.')
+      } else if (message === 'BOOKING_SUBJECT_PACKAGE_AMBIGUOUS') {
+        toast.error('Không xác định duy nhất gói môn cần trừ. Chưa thay đổi dữ liệu; vui lòng đối soát hồ sơ học viên.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
@@ -945,7 +1026,7 @@ export function ApprovalsPage() {
           title="Xác nhận duyệt buổi dạy?"
           confirmLabel="Duyệt buổi dạy"
           loading={approving}
-          confirmDisabled={auditLoading || approveStudentLoading || approvalHasBlockingScheduleIssue || approvalHasSubjectPackageMismatch || !approveSubjectId}
+          confirmDisabled={auditLoading || approveStudentLoading || approvalHasBlockingScheduleIssue || !approveSubjectId || (reconciliation.required && !reconciliation.draft)}
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-3">
             {/* Đối chiếu tươi ngay trước khi trừ kim cương: lịch đã sắp + buổi trùng ngày */}
@@ -994,17 +1075,22 @@ export function ApprovalsPage() {
               >
                 {approveStudentLoading ? (
                   <option value="">Đang tải các gói môn học...</option>
-                ) : approvalHasSubjectPackageMismatch ? (
-                  <option value="">Không có gói môn trùng với buổi điểm danh</option>
                 ) : (
-                  approveStudentSubjects.filter((sub) => sub.subjectId === approvingLesson.subjectId).map((sub) => {
+                  <>
+                    <option value="">
+                      {approvalHasLessonSubjectPackage
+                        ? 'Chọn đúng gói môn của buổi điểm danh'
+                        : 'Không xác định duy nhất gói môn của buổi điểm danh'}
+                    </option>
+                    {approvalHasLessonSubjectPackage && approveStudentSubjects.filter((sub) => sub.subjectId === approvingLesson.subjectId).map((sub) => {
                     const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                     return (
                       <option key={sub.subjectId} value={sub.subjectId}>
                         {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
                       </option>
                     )
-                  })
+                    })}
+                  </>
                 )}
               </select>
             </div>
@@ -1012,8 +1098,17 @@ export function ApprovalsPage() {
             {approvalHasSubjectPackageMismatch && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                 <p className="font-bold">Không tự trừ vào gói còn buổi khác</p>
-                <p className="mt-0.5">Buổi điểm danh không còn có gói môn tương ứng. Cần giáo vụ xác nhận nghiệp vụ chuyển môn/lịch sử trước khi có thể duyệt an toàn.</p>
+                <p className="mt-0.5">Buổi điểm danh không có đúng một gói môn tương ứng. Cần đối soát hồ sơ hoặc lịch sử chuyển môn trước khi có thể duyệt an toàn.</p>
               </div>
+            )}
+
+            {!approveStudentLoading && (
+              <SubjectMismatchReconciliationPanel
+                lesson={approvingLesson}
+                selectedSubject={approveStudentSubjects.find((subject) => subject.subjectId === approveSubjectId) || null}
+                forceRequired={approvalHasSubjectPackageMismatch || approveAudit?.audit.schedule.status === 'subject_mismatch'}
+                onStateChange={handleReconciliationStateChange}
+              />
             )}
 
             {(() => {

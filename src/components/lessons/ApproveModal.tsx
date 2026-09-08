@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { runTransaction, doc, collection, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
-import { BookingRequest, Lesson, Student, StudentSubject } from '@/types'
+import { BookingRequest, Lesson, Student, StudentSubject, Subject } from '@/types'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { formatVND, formatMoney, formatPricePerMinute } from '@/lib/constants'
+import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
 import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import {
+  SubjectMismatchReconciliationPanel,
+  type SubjectMismatchReconciliationState,
+} from '@/components/lessons/SubjectMismatchReconciliationPanel'
 
 interface ApproveModalProps {
   lesson: Lesson
@@ -23,6 +27,16 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
   const [loadingStudent, setLoadingStudent] = useState(true)
+  const [reconciliation, setReconciliation] = useState<SubjectMismatchReconciliationState>({
+    candidateAvailable: false,
+    required: false,
+    draft: null,
+  })
+  const handleReconciliationStateChange = useCallback((next: SubjectMismatchReconciliationState) => {
+    setReconciliation(next)
+  }, [])
+  const lessonSubjectPackages = approveStudentSubjects.filter((subject) => subject.subjectId === lesson.subjectId)
+  const hasUniqueLessonSubjectPackage = lessonSubjectPackages.length === 1
 
   useEffect(() => {
     const fetchStudentSubjects = async () => {
@@ -63,8 +77,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           setApproveStudentSubjects(resolvedSubjects)
           
-          const hasLessonSub = resolvedSubjects.some(sub => sub.subjectId === lesson.subjectId)
-          if (hasLessonSub) {
+          const matchingLessonPackages = resolvedSubjects.filter(sub => sub.subjectId === lesson.subjectId)
+          if (matchingLessonPackages.length === 1) {
             setApproveSubjectId(lesson.subjectId)
           } else {
             // A different course may still have sessions, but it must never be
@@ -90,8 +104,17 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         toast.error('Môn học được chọn không hợp lệ')
         return
       }
+      const reconciliationDraft = reconciliation.required ? reconciliation.draft : null
+      if (reconciliation.required && !reconciliationDraft) {
+        toast.error('Vui lòng hoàn tất lý do và xác nhận đối soát môn lịch cũ trước khi duyệt.')
+        return
+      }
+      if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
+        toast.error('Gói hạch toán vừa thay đổi. Vui lòng xác nhận lại phần đối soát.')
+        return
+      }
       if (approveSubjectId !== lesson.subjectId) {
-        toast.error('Môn của buổi điểm danh không còn khớp gói học viên. Không thể tự trừ sang gói còn buổi khác.')
+        toast.error('Chỉ được hạch toán vào đúng gói môn của buổi điểm danh. Không thể chọn một gói khác.')
         return
       }
 
@@ -106,8 +129,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         date: lesson.date,
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
+        subjectName: lesson.subjectName,
+        groupClassId: lesson.groupClassId,
         isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
-      })
+      }, { subjectMismatchReconciliation: reconciliationDraft })
       if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
 
       await runTransaction(
@@ -127,12 +152,29 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const studentData = studentSnap.data() as Student
           const lessonNow = lessonSnap.data() as Lesson
           if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (
+            lessonNow.studentId !== lesson.studentId
+            || lessonNow.teacherId !== lesson.teacherId
+            || lessonNow.date !== lesson.date
+            || Number(lessonNow.minutes) !== Number(lesson.minutes)
+            || (lessonNow.groupClassId || '') !== (lesson.groupClassId || '')
+          ) throw new Error('BOOKING_STATE_CHANGED')
+          if (approveSubjectId !== lessonNow.subjectId) {
+            throw new Error('BOOKING_SUBJECT_MISMATCH')
+          }
+          if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
+            throw new Error('BOOKING_RECONCILIATION_INVALID')
+          }
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
-          const [teacherSnap, ...bookingSnaps] = await Promise.all([
+          const [teacherSnap, subjectCatalogSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
+            tx.get(doc(db, 'subjects', approveSubjectId)),
             ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])
           const teacherData = teacherSnap.data()
+          const subjectCatalogData = subjectCatalogSnap.exists()
+            ? subjectCatalogSnap.data() as Subject
+            : null
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
@@ -141,21 +183,22 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           assertBookingsMatchLessonForApproval(bookingNows, {
             id: lesson.id,
+            bookingRequestId: lessonNow.bookingRequestId,
+            bookingRequestIds: lessonNow.bookingRequestIds,
+            scheduleCheck: lessonNow.scheduleCheck,
             studentId: lessonNow.studentId,
             teacherId: lessonNow.teacherId,
             date: lessonNow.date,
             minutes: lessonNow.minutes,
             subjectId: lessonNow.subjectId,
+            subjectName: lessonNow.subjectName,
+            groupClassId: lessonNow.groupClassId,
             isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
-          })
+          }, reconciliationDraft)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
+          const teacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
 
-          const { price: pricePerMinute, currency } = getCountryRate(
-            chosenSubjectPkg,
-            teacherData?.country || 'VN',
-          )
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
             || lessonNow.attendanceStatus === 'without_permission'
             || zeroMinuteExcusedAbsenceNow
@@ -166,11 +209,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               : bookingNow
                 ? getBookingPoints(bookingNow, teacherData)
               : getLessonPoints(lessonNow, teacherData)
-          const salary = calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
-          const month = lesson.date.slice(0, 7)
 
           // Initialize subjects array for backward compatibility if needed
-          let updatedSubjects = studentData.subjects && studentData.subjects.length > 0
+          const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
             ? [...studentData.subjects]
             : studentData.subjectId
               ? [{
@@ -183,16 +224,21 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                   totalMinutes: studentData.totalMinutes ?? (studentData.totalSessions * (studentData.minutesPerSession || 50)),
                   usedMinutes: studentData.usedMinutes ?? ((studentData.usedSessions || 0) * (studentData.minutesPerSession || 50)),
                   remainingMinutes: studentData.remainingMinutes ?? ((studentData.remainingSessions || 0) * (studentData.minutesPerSession || 50)),
-                  pricePerMinute: pricePerMinute,
-                  pricePerMinuteVN: chosenSubjectPkg.pricePerMinuteVN || pricePerMinute,
-                  pricePerMinutePH: chosenSubjectPkg.pricePerMinutePH || pricePerMinute,
-                  pricePerMinuteNative: chosenSubjectPkg.pricePerMinuteNative || pricePerMinute,
-                  currency: chosenSubjectPkg.currency || 'VND',
+                  pricePerMinute: subjectCatalogData?.pricePerMinute ?? chosenSubjectPkg.pricePerMinute ?? 0,
+                  pricePerMinuteVN: subjectCatalogData?.pricePerMinuteVN ?? chosenSubjectPkg.pricePerMinuteVN ?? 0,
+                  pricePerMinutePH: subjectCatalogData?.pricePerMinutePH ?? chosenSubjectPkg.pricePerMinutePH ?? 0,
+                  pricePerMinuteNative: subjectCatalogData?.pricePerMinuteNative ?? chosenSubjectPkg.pricePerMinuteNative ?? 0,
+                  currency: subjectCatalogData?.currency || chosenSubjectPkg.currency || 'VND',
+                  ...(chosenSubjectPkg.curriculumLink ? { curriculumLink: chosenSubjectPkg.curriculumLink } : {}),
                 }]
               : []
 
           // Deduct from the selected subject package
-          const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === approveSubjectId)
+          const matchingSubjectIndexes = updatedSubjects.flatMap((sub, index) => (
+            sub.subjectId === approveSubjectId ? [index] : []
+          ))
+          if (matchingSubjectIndexes.length !== 1) throw new Error('BOOKING_SUBJECT_PACKAGE_AMBIGUOUS')
+          const sIdx = matchingSubjectIndexes[0] ?? -1
           if (sIdx === -1) {
             throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
           }
@@ -201,6 +247,13 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
             throw new Error('NOT_ENOUGH_POINTS')
           }
+          const freshSubjectPkg = subPkg
+          const { price: pricePerMinute, currency } = getCountryRate(
+            freshSubjectPkg,
+            teacherData?.country || 'VN',
+          )
+          const salary = calculateSalary(lessonNow.minutes, pricePerMinute, teacherLevel, currency)
+          const month = lessonNow.date.slice(0, 7)
           const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
           const subMps = subPkg.minutesPerSession || 50
@@ -245,10 +298,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             currency,
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
-            ...(chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink ? {
-              curriculumLink: chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink,
+            subjectId: freshSubjectPkg.subjectId,
+            subjectName: freshSubjectPkg.subjectName,
+            ...(freshSubjectPkg.curriculumLink || bookingNow?.curriculumLink ? {
+              curriculumLink: freshSubjectPkg.curriculumLink || bookingNow?.curriculumLink,
             } : {}),
             ...(bookingNow?.groupClassId || lessonNow.groupClassId ? {
               groupClassId: bookingNow?.groupClassId || lessonNow.groupClassId,
@@ -265,6 +318,19 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               ...(bookingNows.length > 1 ? { bookingRequestIds: bookingNows.map((booking) => booking.id) } : {}),
             } : {}),
             bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
+            ...(reconciliationDraft ? {
+              bookingSubjectReconciliation: {
+                kind: reconciliationDraft.kind,
+                bookingIds: bookingNows.map((booking) => booking.id),
+                bookingSubjectId: bookingNow?.subjectId || '',
+                bookingSubjectName: bookingNow?.subjectName || '',
+                reportedSubjectId: lessonNow.subjectId || '',
+                reportedSubjectName: lessonNow.subjectName || '',
+                settlementSubjectId: freshSubjectPkg.subjectId,
+                settlementSubjectName: freshSubjectPkg.subjectName,
+                reconciledAt: serverTimestamp(),
+              },
+            } : {}),
             updatedAt: serverTimestamp(),
           })
 
@@ -300,7 +366,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
 
           const currentMins = Number(teacherData?.totalApprovedMinutes) || 0
           tx.update(doc(db, 'teachers', lesson.teacherId), {
-            totalApprovedMinutes: currentMins + lesson.minutes
+            totalApprovedMinutes: currentMins + Number(lessonNow.minutes || 0)
           })
 
           const publicLessonRef = doc(db, 'publicLessons', lesson.id)
@@ -312,10 +378,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             teacherId: lesson.teacherId,
             teacherCode: lesson.teacherCode,
             teacherName: lesson.teacherName,
-            subjectId: chosenSubjectPkg.subjectId,
-            subjectName: chosenSubjectPkg.subjectName,
-            ...(chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink ? {
-              curriculumLink: chosenSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink,
+            subjectId: freshSubjectPkg.subjectId,
+            subjectName: freshSubjectPkg.subjectName,
+            ...(freshSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink ? {
+              curriculumLink: freshSubjectPkg.curriculumLink || bookingNow?.curriculumLink || lessonNow.curriculumLink,
             } : {}),
             ...(bookingNow?.groupClassId || lessonNow.groupClassId ? {
               groupClassId: bookingNow?.groupClassId || lessonNow.groupClassId,
@@ -370,8 +436,20 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               pointsDeducted: lessonPoints,
               zeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
               heldPointsReleased: heldPointsToRelease,
-              subjectId: chosenSubjectPkg.subjectId,
-              subjectName: chosenSubjectPkg.subjectName,
+              subjectId: freshSubjectPkg.subjectId,
+              subjectName: freshSubjectPkg.subjectName,
+              ...(reconciliationDraft ? {
+                bookingSubjectReconciliation: {
+                  bookingIds: bookingNows.map((booking) => booking.id),
+                  bookingSubjectId: bookingNow?.subjectId || '',
+                  bookingSubjectName: bookingNow?.subjectName || '',
+                  reportedSubjectId: lessonNow.subjectId || '',
+                  reportedSubjectName: lessonNow.subjectName || '',
+                  settlementSubjectId: freshSubjectPkg.subjectId,
+                  settlementSubjectName: freshSubjectPkg.subjectName,
+                  reason: reconciliationDraft.reason,
+                },
+              } : {}),
             },
             createdAt: serverTimestamp(),
           })
@@ -392,6 +470,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (err?.message === 'BOOKING_SUBJECT_MISMATCH') {
         toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
+      } else if (err?.message === 'BOOKING_RECONCILIATION_INVALID') {
+        toast.error('Dữ liệu lịch hoặc gói môn vừa thay đổi. Đối soát chưa được ghi; vui lòng mở lại và kiểm tra.')
+      } else if (err?.message === 'BOOKING_SUBJECT_PACKAGE_AMBIGUOUS') {
+        toast.error('Không xác định duy nhất gói môn cần trừ. Chưa thay đổi dữ liệu; vui lòng đối soát hồ sơ học viên.')
       } else if (err?.message === 'BOOKING_MATCH_AMBIGUOUS' || err?.message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Vui lòng kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (err?.message === 'NOT_ENOUGH_POINTS') {
@@ -414,7 +496,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       title="Xác nhận duyệt buổi dạy"
       confirmLabel="Duyệt buổi dạy"
       loading={loading}
-      confirmDisabled={loadingStudent || !approveSubjectId || !approveStudentSubjects.some((subject) => subject.subjectId === lesson.subjectId)}
+      confirmDisabled={loadingStudent || !approveSubjectId || (reconciliation.required && !reconciliation.draft)}
     >
       <div className="bg-white rounded-xl p-4 space-y-3 text-sm">
         <div className="flex justify-between">
@@ -466,12 +548,15 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             <select
               value={approveSubjectId}
               onChange={(e) => setApproveSubjectId(e.target.value)}
-              disabled={loadingStudent || !approveStudentSubjects.some((subject) => subject.subjectId === lesson.subjectId)}
+              disabled={loadingStudent || !hasUniqueLessonSubjectPackage}
               className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {!approveStudentSubjects.some((subject) => subject.subjectId === lesson.subjectId) ? (
-                <option value="">Không có gói môn trùng với buổi điểm danh</option>
-              ) : approveStudentSubjects.filter((sub) => sub.subjectId === lesson.subjectId).map((sub) => {
+              <option value="">
+                {hasUniqueLessonSubjectPackage
+                  ? 'Chọn đúng gói môn của buổi điểm danh'
+                  : 'Không xác định duy nhất gói môn của buổi điểm danh'}
+              </option>
+              {lessonSubjectPackages.length === 1 && lessonSubjectPackages.map((sub) => {
                 const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                 return (
                   <option key={sub.subjectId} value={sub.subjectId}>
@@ -483,11 +568,20 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           )}
         </div>
 
-        {!loadingStudent && !approveStudentSubjects.some((subject) => subject.subjectId === lesson.subjectId) && (
+        {!loadingStudent && !hasUniqueLessonSubjectPackage && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
             <p className="font-bold">Không tự trừ vào gói còn buổi khác</p>
-            <p className="mt-0.5">Buổi điểm danh không còn có gói môn tương ứng. Cần giáo vụ xác nhận nghiệp vụ chuyển môn/lịch sử trước khi có thể duyệt an toàn.</p>
+            <p className="mt-0.5">Buổi điểm danh không có đúng một gói môn tương ứng. Cần đối soát hồ sơ hoặc lịch sử chuyển môn trước khi có thể duyệt an toàn.</p>
           </div>
+        )}
+
+        {!loadingStudent && (
+          <SubjectMismatchReconciliationPanel
+            lesson={lesson}
+            selectedSubject={approveStudentSubjects.find((subject) => subject.subjectId === approveSubjectId) || null}
+            forceRequired={!hasUniqueLessonSubjectPackage}
+            onStateChange={handleReconciliationStateChange}
+          />
         )}
 
         {(() => {

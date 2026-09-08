@@ -33,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/teachers': 'Gia sư',
   '/admin/teacher-availability': 'Lịch gia sư',
   '/admin/booking-schedules': 'Lịch xếp lớp',
+  '/admin/class-hunting': 'CLASS HUNTING',
   '/admin/online-classrooms': 'Phòng học thử trực tuyến',
   '/admin/future-bookings': 'Lịch học đã đặt',
   '/admin/overdue-bookings': 'Ca học quá hạn',

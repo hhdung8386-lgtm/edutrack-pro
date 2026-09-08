@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { diagnoseOverdueBookings } from '../src/lib/overdueBookingDiagnosis.ts'
+import {
+  canReleaseDiagnosedOverdueBookingHold,
+  diagnoseOverdueBookings,
+} from '../src/lib/overdueBookingDiagnosis.ts'
 import type { BookingRequest, Lesson } from '../src/types/index.ts'
 
 function booking(overrides: Partial<BookingRequest> = {}): BookingRequest {
@@ -81,6 +84,70 @@ test('allows one unique same-teacher lesson only when duration also matches', ()
   assert.equal(result.matchKind, 'unique')
   assert.equal(result.canLink, true)
   assert.equal(result.daysOverdue, 6)
+})
+
+test('does not offer the ordinary overdue-link repair for a reconciled lesson', () => {
+  const result = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({
+      bookingRequestId: 'booking-1',
+      bookingSubjectReconciliation: {
+        kind: 'prelinked_subject_mismatch',
+        bookingIds: ['booking-1'],
+        bookingSubjectId: 'legacy-subject',
+        reportedSubjectId: 'subject-1',
+        settlementSubjectId: 'subject-1',
+        settlementSubjectName: 'Tiếng Anh 1 Kỹ Năng - Level 1',
+        reconciledAt: {} as Lesson['createdAt'],
+      },
+    })],
+    '2026-08-16',
+  )[0]
+
+  assert.equal(result.diagnosis, 'approved_lesson')
+  assert.equal(result.matchKind, 'explicit')
+  assert.equal(result.canLink, false)
+})
+
+test('only permits overdue-hold release for no-lesson or ordinary rejected attendance', () => {
+  const noLesson = diagnoseOverdueBookings([booking()], [], '2026-08-16')[0]
+  const rejected = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({ status: 'rejected', bookingRequestId: 'booking-1' })],
+    '2026-08-16',
+  )[0]
+  const approved = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({ bookingRequestId: 'booking-1' })],
+    '2026-08-16',
+  )[0]
+
+  assert.equal(canReleaseDiagnosedOverdueBookingHold(noLesson), true)
+  assert.equal(canReleaseDiagnosedOverdueBookingHold(rejected), true)
+  assert.equal(canReleaseDiagnosedOverdueBookingHold(approved), false)
+})
+
+test('never permits overdue-hold release from a reconciled attendance record', () => {
+  const result = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({
+      status: 'rejected',
+      bookingRequestId: 'booking-1',
+      bookingSubjectReconciliation: {
+        kind: 'prelinked_subject_mismatch',
+        bookingIds: ['booking-1'],
+        bookingSubjectId: 'legacy-subject',
+        reportedSubjectId: 'subject-1',
+        settlementSubjectId: 'subject-1',
+        settlementSubjectName: 'Tiếng Anh 1 Kỹ Năng - Level 1',
+        reconciledAt: {} as Lesson['createdAt'],
+      },
+    })],
+    '2026-08-16',
+  )[0]
+
+  assert.equal(result.diagnosis, 'rejected_lesson')
+  assert.equal(canReleaseDiagnosedOverdueBookingHold(result), false)
 })
 
 test('fails closed when a same-teacher lesson has a different duration', () => {

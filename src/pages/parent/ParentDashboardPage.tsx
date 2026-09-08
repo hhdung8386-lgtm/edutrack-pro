@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, Timestamp, documentId } from 'firebase/firestore'
+import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, documentId } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
 import {
@@ -30,7 +30,6 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 import { getHeldBookingMinutes, getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
-import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import { selectTopRewardStudents } from '@/lib/rewards'
 import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonReport } from '@/components/lessons/lessonReport'
 import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
@@ -41,6 +40,12 @@ import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { cachedClassroomJoinLink } from '@/lib/onlineClassroom'
+import {
+  createParentProfileBooking,
+  createParentProfileBookingClientRequestId,
+  parentProfileBookingErrorReason,
+  parentProfileBookingRequestKey,
+} from '@/lib/parentProfileBooking'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -235,7 +240,7 @@ export function ParentDashboardPage() {
       onBookingCreated={(booking, patch) => setResult((current) => current ? {
         ...current,
         student: { ...current.student, ...patch },
-        bookings: [...current.bookings, booking],
+        bookings: [...current.bookings.filter((currentBooking) => currentBooking.id !== booking.id), booking],
       } : current)}
     />
   )
@@ -1308,6 +1313,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const recommendationCacheKeyRef = useRef('')
   const recommendationRequestIdRef = useRef(0)
   const parentViewMountedRef = useRef(true)
+  const profileBookingRequestIdsRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
     parentViewMountedRef.current = true
@@ -2039,102 +2045,43 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         return
       }
 
-      const bookingRef = doc(collection(db, 'bookingRequests'))
-      const createdAt = Timestamp.now()
-      const teacherConfirmationDeadlineAt = Timestamp.fromMillis(createdAt.toMillis() + 3 * 60 * 60 * 1000)
-      const bookingPayload: BookingRequest = {
-        id: bookingRef.id,
-        status: 'pending' as const,
-        teacherResponse: 'pending',
-        teacherId: profileTeacherId,
-        teacherCode: teacher.code || '',
-        teacherName: teacher.name || teacher.code || 'Gia sư',
-        teacherPhotoURL: teacher.photoURL || '',
+      const callableInput = {
         studentId: student.id,
         studentCode: student.code,
-        studentName: student.name,
+        teacherId: profileTeacherId,
         subjectId: subjectPackage.subjectId,
-        subjectName: subjectPackage.subjectName,
         requestedDay: profileBookingSlot.weekDay,
         requestedDate: profileBookingSlot.dateISO,
         requestedWeekStart: profileBookingSlot.weekStartISO,
         requestedStart: profileBookingSlot.start,
-        requestedEnd,
         requestedMinutes: profileBookingDuration,
-        requestedPoints: profileBookingPoints,
-        pointsPer25Minutes: getTeacherPointsPer25Minutes(teacher),
-        availableMinutesAtRequest: profileAvailableMinutes,
-        heldMinutesAtRequest: profileSubjectHeldMinutes,
-        heldImmediately: true,
-        teacherConfirmationDeadlineAt,
-        note: '',
-        createdAt,
       }
-      const { heldAfterRequest, patch } = await runTransaction(db, async (tx) => {
-        const studentRef = doc(db, 'students', student.id)
-        const studentSnap = await tx.get(studentRef)
-        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
-        const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
-
-        // Nếu đang có nghĩa vụ đặt lại: buổi mới này DÙNG LẠI kim cương đã giữ, chỉ trừ thêm phần chênh lệch.
-        const rebookId = currentStudent.pendingRebookBookingId || ''
-        let reusablePoints = 0
-        if (rebookId) {
-          const rebookSnap = await tx.get(doc(db, 'bookingRequests', rebookId))
-          if (!rebookSnap.exists()) throw new Error('REBOOK_TARGET_MISSING')
-          reusablePoints = Number((rebookSnap.data() as BookingRequest).rebookHoldPoints || 0)
-        }
-
-        const currentFund = getStudentPackageMinuteSummary(currentStudent)
-        const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
-        const currentAvailable = Math.max(0, currentFund.remainingMinutes - currentHeld)
-        const extraNeeded = Math.max(0, profileBookingPoints - reusablePoints)
-        const currentSubjectFund = resolveStudentSubjectFund(currentStudent, subjectPackage.subjectId)
-        if (
-          currentStudent.status === 'reserved'
-          || currentStudent.status === 'expired'
-          || !currentSubjectFund
-          || currentSubjectFund.remainingMinutes <= 0
-          || currentSubjectFund.remainingMinutes < extraNeeded
-          || currentAvailable < extraNeeded
-        ) throw new Error('NOT_ENOUGH_POINTS')
-
-        const heldAfter = currentHeld + profileBookingPoints - reusablePoints
-        tx.update(studentRef, {
-          reservedMinutes: heldAfter,
-          heldMinutes: heldAfter,
-          lastBookingHoldRequestId: bookingRef.id,
-          ...(rebookId ? { pendingRebookBookingId: '', pendingRebookPoints: 0 } : {}),
-          updatedAt: serverTimestamp(),
-        })
-        tx.set(bookingRef, {
-          ...bookingPayload,
-          heldMinutesAfterRequest: heldAfter,
-          createdAt: serverTimestamp(),
-        })
-        if (rebookId) {
-          tx.update(doc(db, 'bookingRequests', rebookId), {
-            pendingRebook: false,
-            rebookedAt: serverTimestamp(),
-            rebookedByBookingId: bookingRef.id,
-          })
-        }
-        const nextPatch: Partial<Student> = { reservedMinutes: heldAfter, heldMinutes: heldAfter }
-        if (rebookId) { nextPatch.pendingRebookBookingId = ''; nextPatch.pendingRebookPoints = 0 }
-        return { heldAfterRequest: heldAfter, patch: nextPatch }
+      const requestKey = parentProfileBookingRequestKey(callableInput)
+      const clientRequestId = profileBookingRequestIdsRef.current[requestKey]
+        || createParentProfileBookingClientRequestId()
+      profileBookingRequestIdsRef.current[requestKey] = clientRequestId
+      const { booking: createdBooking, studentPatch: patch } = await createParentProfileBooking({
+        ...callableInput,
+        clientRequestId,
       })
-      const createdBooking = { ...bookingPayload, heldMinutesAfterRequest: heldAfterRequest }
+      delete profileBookingRequestIdsRef.current[requestKey]
       setTeacherScheduleBookings((current) => ({
         ...current,
-        [profileTeacherId]: [...(current[profileTeacherId] || []), createdBooking],
+        [profileTeacherId]: [
+          ...(current[profileTeacherId] || []).filter((currentBooking) => currentBooking.id !== createdBooking.id),
+          createdBooking,
+        ],
       }))
       onBookingCreated(createdBooking, patch)
       setProfileBookingSlot(null)
-      toast.success(lang === 'vi' ? `Đã giữ ${profileBookingPoints} kim cương và gửi lịch cho gia sư xác nhận.` : `${profileBookingPoints} diamonds are now held and the teacher has been asked to confirm.`)
+      const heldPoints = Number(createdBooking.requestedPoints || profileBookingPoints)
+      toast.success(lang === 'vi' ? `Đã giữ ${heldPoints} kim cương và gửi lịch cho gia sư xác nhận.` : `${heldPoints} diamonds are now held and the teacher has been asked to confirm.`)
     } catch (error) {
       console.error('Profile timetable booking failed:', error)
-      const code = error instanceof Error ? error.message : ''
-      toast.error(code === 'NOT_ENOUGH_POINTS'
+      const reason = parentProfileBookingErrorReason(error) || (error instanceof Error ? error.message : '')
+      if (['PARENT_BOOKING_CONFLICT', 'PARENT_BOOKING_AVAILABILITY_CHANGED', 'PARENT_BOOKING_SLOT_PAST'].includes(reason)) {
+        toast.warning(lang === 'vi' ? 'Khung giờ này vừa không còn khả dụng. Vui lòng chọn khung khác.' : 'This slot is no longer available. Please choose another one.')
+      } else toast.error(['PARENT_BOOKING_NOT_ENOUGH_POINTS', 'NOT_ENOUGH_POINTS'].includes(reason)
         ? (lang === 'vi' ? 'Quỹ kim cương khả dụng không đủ để đặt khung giờ này.' : 'Your available diamond balance is not enough for this slot.')
         : (lang === 'vi' ? 'Chưa thể gửi yêu cầu đặt lịch. Vui lòng thử lại.' : 'Could not send the booking request. Please try again.'))
     } finally {

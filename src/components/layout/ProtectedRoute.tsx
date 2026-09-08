@@ -171,6 +171,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     accessScope === 'booking_only'
     && location.pathname !== '/admin'
     && location.pathname !== '/admin/booking-schedules'
+    && location.pathname !== '/admin/class-hunting'
   ) {
     return <Navigate to="/admin/booking-schedules" replace />
   }
@@ -206,7 +207,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
   }
 
   if (role === 'teacher_manager') {
-    if (location.pathname.startsWith('/admin/students')) {
+    if (location.pathname.startsWith('/admin/students') || location.pathname === '/admin/class-hunting') {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center">
           <div className="text-center">

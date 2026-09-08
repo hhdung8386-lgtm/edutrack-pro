@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useId } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -30,17 +30,23 @@ export function ConfirmDialog({
   confirmDisabled = false,
   children,
 }: ConfirmDialogProps) {
+  const titleId = useId()
+  const descriptionId = useId()
+  const consequenceId = useId()
+  const describedBy = [description ? descriptionId : '', consequence ? consequenceId : ''].filter(Boolean).join(' ') || undefined
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={loading ? () => undefined : onClose}
       size="sm"
+      ariaLabelledBy={titleId}
+      ariaDescribedBy={describedBy}
       footer={
         <div className="flex gap-3 justify-end">
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={loading} data-modal-initial-focus>
             Hủy
           </Button>
-          <Button variant={confirmVariant} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
+          <Button type="button" variant={confirmVariant} onClick={onConfirm} loading={loading} disabled={confirmDisabled}>
             {confirmLabel}
           </Button>
         </div>
@@ -49,14 +55,14 @@ export function ConfirmDialog({
       <div className="space-y-4">
         <div className="flex items-start gap-3">
           {confirmVariant === 'danger' && (
-            <div className="flex-shrink-0 w-10 h-10 bg-rose-500/20 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-rose-400" />
+            <div className="flex-shrink-0 w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-rose-600" />
             </div>
           )}
           <div>
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+            <h3 id={titleId} className="text-base font-semibold text-slate-900">{title}</h3>
             {description && (
-              <p className="mt-1 text-sm text-slate-500">{description}</p>
+              <p id={descriptionId} className="mt-1 text-sm text-slate-600">{description}</p>
             )}
           </div>
         </div>
@@ -64,8 +70,8 @@ export function ConfirmDialog({
         {children}
 
         {consequence && (
-          <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
-            <p className="text-sm text-rose-300">{consequence}</p>
+          <div className={`rounded-lg border p-3 ${confirmVariant === 'danger' ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
+            <p id={consequenceId} className={`text-sm ${confirmVariant === 'danger' ? 'text-rose-800' : 'text-amber-900'}`}>{consequence}</p>
           </div>
         )}
       </div>

@@ -127,3 +127,17 @@ test('classroom operations is visible only to system Admin', () => {
   assert.equal(visiblePaths('teacher_manager').includes('/admin/online-classrooms'), false)
   assert.equal(visiblePaths('student_manager', 'booking_only').includes('/admin/online-classrooms'), false)
 })
+
+test('CLASS HUNTING is in schedules, activates that group, and preserves scoped access', () => {
+  const adminGroups = getVisibleAdminNavigation('admin')
+  const schedules = adminGroups.find((group) => group.id === 'schedules')
+
+  assert.ok(schedules)
+  assert.equal(schedules.items.filter((item) => item.to === '/admin/class-hunting').length, 1)
+  assert.equal(isAdminNavGroupActive(schedules, '/admin/class-hunting'), true)
+  assert.ok(visiblePaths('admin').includes('/admin/class-hunting'))
+  assert.ok(visiblePaths('student_manager').includes('/admin/class-hunting'))
+  assert.ok(visiblePaths('student_manager', 'booking_only').includes('/admin/class-hunting'))
+  assert.equal(visiblePaths('teacher_manager').includes('/admin/class-hunting'), false)
+  assert.equal(visiblePaths('teacher_manager', 'booking_only').includes('/admin/class-hunting'), false)
+})

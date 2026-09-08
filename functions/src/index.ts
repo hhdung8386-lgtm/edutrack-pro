@@ -433,7 +433,6 @@ async function collectCandidates(now: Date): Promise<Array<{ candidate: Reminder
 
 async function attachOnlineClassroomEmailInvites(
   candidate: ReminderCandidate,
-  _student: Student,
 ): Promise<ReminderCandidate> {
   if (!candidate.pilot) return candidate
 
@@ -487,7 +486,7 @@ export const sendClassReminders = onSchedule({
     }
 
     try {
-      const emailCandidate = await attachOnlineClassroomEmailInvites(candidate, student)
+      const emailCandidate = await attachOnlineClassroomEmailInvites(candidate)
       const messageId = await sendWithResend(emailCandidate, student, apiKey)
       await db.collection('emailReminderDeliveries').doc(candidate.deliveryId).set({
         status: 'sent',
@@ -1244,3 +1243,13 @@ export const getEmailReminderHistory = onCall({
     }),
   }
 })
+
+export {
+  previewClassHunt,
+  publishClassHunt,
+  listClassHunts,
+  cancelClassHunt,
+  claimClassHunt,
+} from './classHuntingFunctions'
+
+export { createParentProfileBooking } from './parentProfileBookingFunctions'

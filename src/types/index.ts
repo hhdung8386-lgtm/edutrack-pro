@@ -318,8 +318,26 @@ export interface Lesson {
   payrollPaidAt?: Timestamp
   /** Kết quả đối chiếu với lịch đã xếp tại thời điểm gia sư gửi điểm danh. */
   scheduleCheck?: LessonScheduleCheckSnapshot
+  /**
+   * Dấu vết cấu trúc tối thiểu khi giáo vụ hạch toán lịch cũ sang gói hiện tại.
+   * Giáo viên có thể đọc lesson của mình, nên lý do tự do và UID người xử lý chỉ
+   * được lưu trong adminLogs; record này không được sao chép sang publicLessons.
+   */
+  bookingSubjectReconciliation?: LessonBookingSubjectReconciliation
   /** Số buổi điểm danh của cùng học viên + cùng gia sư trong ngày, tính cả buổi này. */
   sameDayCount?: number
+}
+
+export interface LessonBookingSubjectReconciliation {
+  kind: 'prelinked_subject_mismatch'
+  bookingIds: string[]
+  bookingSubjectId: string
+  bookingSubjectName?: string
+  reportedSubjectId: string
+  reportedSubjectName?: string
+  settlementSubjectId: string
+  settlementSubjectName: string
+  reconciledAt: Timestamp
 }
 
 /** Ảnh chụp kết quả đối chiếu lịch, lưu kèm buổi dạy để giáo vụ xem lại không tốn truy vấn. */
@@ -422,6 +440,8 @@ export interface BookingRequest {
   /** Đã hoàn thành nghĩa vụ: đặt lại bằng buổi mới nào. */
   rebookedAt?: Timestamp
   rebookedByBookingId?: string
+  /** Lớp được tạo từ luồng CLASS HUNTING sau khi gia sư thắng lượt nhận. */
+  classHuntId?: string
 }
 
 export interface AdminLog {

@@ -17,7 +17,9 @@ import {
 } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { bookingHoldPoints } from '@/lib/lessonBooking'
+import { requiresIndividualSubjectReconciliation } from '@/lib/bookingLogic'
 import {
+  canReleaseDiagnosedOverdueBookingHold,
   diagnoseOverdueBookings,
   type DiagnosedOverdueBooking,
   type OverdueDiagnosis,
@@ -335,10 +337,21 @@ export function OverdueBookingsPage() {
   // ── Hành động: hoàn phút (nhả giữ chỗ) ──────────────────────────
   const releaseHolds = async (items: DiagnosedOverdueBooking[]) => {
     if (items.length === 0) return
+    const reconciliationBlocked = items.some((item) => (
+      item.matchedLesson && requiresIndividualSubjectReconciliation(item.matchedLesson)
+    ))
+    const safeItems = items.filter(canReleaseDiagnosedOverdueBookingHold)
+    if (safeItems.length === 0) {
+      toast.warning(reconciliationBlocked
+        ? 'Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.'
+        : 'Không có ca nào đủ điều kiện an toàn để hoàn kim cương.')
+      setConfirmRelease(null)
+      return
+    }
     setProcessing(true)
     try {
       const byStudent: Record<string, DiagnosedOverdueBooking[]> = {}
-      items.forEach((it) => {
+      safeItems.forEach((it) => {
         const sid = it.booking.studentId
         if (!sid) return
         if (!byStudent[sid]) byStudent[sid] = []
@@ -413,6 +426,9 @@ export function OverdueBookingsPage() {
 
       if (releasedCount > 0) {
         toast.success(`Đã hoàn kim cương giữ chỗ cho ${releasedCount} ca học.`)
+        if (reconciliationBlocked) {
+          toast.warning('Một số ca thuộc buổi đối soát cần quản trị dữ liệu thủ công và chưa thay đổi.')
+        }
       } else {
         toast.warning('Các ca đã được xử lý trước đó, hệ thống không hoàn trùng kim cương.')
       }
@@ -430,15 +446,28 @@ export function OverdueBookingsPage() {
 
   // ── Hành động: gắn ca đặt vào buổi dạy đã duyệt ─────────────────
   const linkToLesson = async (items: DiagnosedOverdueBooking[]) => {
-    const targets = items.filter((it) => it.canLink && it.diagnosis === 'approved_lesson' && it.matchedLesson)
+    const reconciliationBlocked = items.filter((it) => (
+      it.diagnosis === 'approved_lesson'
+      && it.matchedLesson
+      && requiresIndividualSubjectReconciliation(it.matchedLesson)
+    ))
+    const targets = items.filter((it) => (
+      it.canLink
+      && it.diagnosis === 'approved_lesson'
+      && it.matchedLesson
+      && !requiresIndividualSubjectReconciliation(it.matchedLesson)
+    ))
     if (targets.length === 0) {
-      toast.warning('Không có ca nào đủ bằng chứng an toàn để gắn tự động')
+      toast.warning(reconciliationBlocked.length > 0
+        ? 'Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.'
+        : 'Không có ca nào đủ bằng chứng an toàn để gắn tự động')
       return
     }
     setProcessing(true)
     setProgress({ done: 0, total: targets.length })
     let ok = 0
     let failed = 0
+    let reconciliationBlockedDuringTransaction = 0
     try {
       for (const it of targets) {
         const lesson = it.matchedLesson!
@@ -454,6 +483,9 @@ export function OverdueBookingsPage() {
             if (bookingData.status !== 'confirmed' && bookingData.status !== 'pending') throw new Error('BOOKING_NOT_HOLDING')
 
             const lessonData = lSnap.data() as Lesson
+            if (requiresIndividualSubjectReconciliation(lessonData)) {
+              throw new Error('RECONCILIATION_MANUAL_MUTATION_REQUIRED')
+            }
             if (
               lessonData.status !== 'approved'
               || lessonData.studentId !== bookingData.studentId
@@ -522,12 +554,17 @@ export function OverdueBookingsPage() {
           ok++
         } catch (e) {
           console.error('link lesson failed', it.booking.id, e)
+          if (e instanceof Error && e.message === 'RECONCILIATION_MANUAL_MUTATION_REQUIRED') {
+            reconciliationBlockedDuringTransaction++
+          }
           failed++
         }
         setProgress({ done: ok + failed, total: targets.length })
       }
       if (failed === 0) toast.success(`Đã gắn ${ok} ca vào buổi dạy tương ứng.`)
-      else toast.warning(`Đã gắn ${ok} ca; ${failed} ca đã dừng vì dữ liệu thay đổi hoặc không còn khớp.`)
+      else if (reconciliationBlockedDuringTransaction > 0) {
+        toast.warning(`Đã gắn ${ok} ca; ${reconciliationBlockedDuringTransaction} ca thuộc buổi đối soát cần quản trị dữ liệu thủ công và chưa thay đổi.`)
+      } else toast.warning(`Đã gắn ${ok} ca; ${failed} ca đã dừng vì dữ liệu thay đổi hoặc không còn khớp.`)
       setSelectedIds([])
     } finally {
       setProcessing(false)
@@ -563,10 +600,10 @@ export function OverdueBookingsPage() {
 
   if (loading || loadedBookingScope !== studentFilter) return <LoadingSpinner />
 
-  const selectedReleasable = selectedItems.filter((d) =>
-    d.diagnosis === 'no_lesson' || d.diagnosis === 'rejected_lesson',
-  )
-  const selectedLinkable = selectedItems.filter((d) => d.canLink)
+  const selectedReleasable = selectedItems.filter(canReleaseDiagnosedOverdueBookingHold)
+  const selectedLinkable = selectedItems.filter((d) => (
+    d.canLink && !requiresIndividualSubjectReconciliation(d.matchedLesson || {})
+  ))
 
   return (
     <div className="space-y-5 pt-2 lg:pt-6">
@@ -824,7 +861,7 @@ export function OverdueBookingsPage() {
                             <Link to="/admin/approvals" className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100">
                               <ExternalLink className="w-3 h-3" />Đi duyệt
                             </Link>
-                          ) : d.canLink ? (
+                          ) : d.canLink && !requiresIndividualSubjectReconciliation(d.matchedLesson || {}) ? (
                             <button
                               type="button"
                               disabled={processing}
@@ -833,8 +870,12 @@ export function OverdueBookingsPage() {
                             >
                               <Link2 className="w-3 h-3" />Gắn buổi dạy
                             </button>
+                          ) : d.matchedLesson && requiresIndividualSubjectReconciliation(d.matchedLesson) ? (
+                            <span className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">
+                              Buổi đối soát: xử lý thủ công
+                            </span>
                           ) : null}
-                          {d.diagnosis !== 'pending_lesson' && d.diagnosis !== 'conflicting_link' && (
+                          {canReleaseDiagnosedOverdueBookingHold(d) && (
                             <button
                               type="button"
                               disabled={processing}

@@ -16,6 +16,10 @@ import { useAuthStore } from '@/stores/authStore'
 import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 import { resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import {
+  assertAutomaticReconciliationRollbackAllowed,
+  requiresIndividualSubjectReconciliation,
+} from '@/lib/bookingLogic'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 
 export function PayrollPage() {
@@ -247,6 +251,10 @@ export function PayrollPage() {
       if (!lessonSnap.exists()) return false
       const lesson = { id: lessonSnap.id, ...lessonSnap.data() } as Lesson
       if (lesson.status !== 'approved') return false
+      if (requiresIndividualSubjectReconciliation(lesson)) {
+        toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+        return false
+      }
 
       const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
       const activePayrollRefs = payrollSnap.docs.filter((item) => !item.data().voided).map((item) => item.ref)
@@ -261,25 +269,39 @@ export function PayrollPage() {
         date: lesson.date,
         minutes: lesson.minutes,
         subjectId: lesson.subjectId,
+        subjectName: lesson.subjectName,
+        groupClassId: lesson.groupClassId,
+        bookingSubjectReconciliation: lesson.bookingSubjectReconciliation,
         isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
-      })
+      }, { purpose: 'rollback' })
       const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
-      const lessonTeacher = teachers.find((teacher) => teacher.id === lesson.teacherId)
 
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', lesson.studentId)
+        const teacherRef = doc(db, 'teachers', lesson.teacherId)
         const reads = await Promise.all([
           tx.get(lessonRef),
           tx.get(studentRef),
+          tx.get(teacherRef),
           ...activePayrollRefs.map((ref) => tx.get(ref)),
           ...bookingRefsToReopen.map((ref) => tx.get(ref)),
         ])
-        const [currentLessonSnap, studentSnap] = reads
-        const currentPayrollSnaps = reads.slice(2, 2 + activePayrollRefs.length)
-        const bookingSnapsToReopen = reads.slice(2 + activePayrollRefs.length)
+        const [currentLessonSnap, studentSnap, teacherSnap] = reads
+        const currentPayrollSnaps = reads.slice(3, 3 + activePayrollRefs.length)
+        const bookingSnapsToReopen = reads.slice(3 + activePayrollRefs.length)
         if (!currentLessonSnap.exists() || !studentSnap.exists()) throw new Error('Dữ liệu buổi học hoặc học viên không còn tồn tại')
         const currentLesson = currentLessonSnap.data() as Lesson
         if (currentLesson.status !== 'approved') throw new Error('Buổi học đã được xử lý trước đó')
+        if (
+          currentLesson.studentId !== lesson.studentId
+          || currentLesson.teacherId !== lesson.teacherId
+          || currentLesson.date !== lesson.date
+          || Number(currentLesson.minutes) !== Number(lesson.minutes)
+          || currentLesson.subjectId !== lesson.subjectId
+          || (currentLesson.groupClassId || '') !== (lesson.groupClassId || '')
+        ) throw new Error('BOOKING_STATE_CHANGED')
+        assertAutomaticReconciliationRollbackAllowed(currentLesson)
+        const teacherCurrent = teacherSnap.exists() ? teacherSnap.data() as Teacher : null
         const paidPayroll = currentPayrollSnaps.find(
           (payroll) => payroll.exists() && payroll.data()?.paid === true && !payroll.data()?.voided,
         )
@@ -289,13 +311,13 @@ export function PayrollPage() {
           const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
           return booking.status === 'completed' && booking.lessonId === lessonId ? [booking] : []
         })
-        const lessonPoints = getLessonPoints(currentLesson, lessonTeacher)
+        const lessonPoints = getLessonPoints(currentLesson, teacherCurrent)
         const heldPointsToRestore = currentLesson.bookingHoldConsumed === true
-          ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, lessonTeacher), 0)
+          ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, teacherCurrent), 0)
           : 0
 
         const studentData = studentSnap.data() as Student
-        let updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
+        const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
           ? studentData.subjects.map((subject) => ({ ...subject }))
           : studentData.subjectId
             ? [{
@@ -406,6 +428,9 @@ export function PayrollPage() {
       return true
     } catch (error) {
       console.error('Error returning lesson to pending:', error)
+      if (error instanceof Error && error.message === 'RECONCILIATION_MANUAL_ROLLBACK_REQUIRED') {
+        toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+      }
       return false
     }
   }
@@ -432,13 +457,24 @@ export function PayrollPage() {
     const selectedPayrolls = payrolls.filter((payroll) => selectedLessonPayrollIds.has(payroll.id))
     const lessonIds = Array.from(new Set(selectedPayrolls.map((payroll) => payroll.lessonId).filter(Boolean)))
     if (lessonIds.length === 0) return
-    if (!window.confirm(`Chuyển ${lessonIds.length} buổi đã duyệt về chờ duyệt? Hệ thống sẽ hoàn lại phút cho học viên và bỏ các dòng lương chưa thanh toán.`)) return
+    const protectedLessonIds = new Set(
+      lessons
+        .filter((lesson) => requiresIndividualSubjectReconciliation(lesson))
+        .map((lesson) => lesson.id),
+    )
+    const safeLessonIds = lessonIds.filter((lessonId) => !protectedLessonIds.has(lessonId))
+    const protectedCount = lessonIds.length - safeLessonIds.length
+    if (safeLessonIds.length === 0) {
+      toast.warning('Các buổi đã chọn có đối soát môn lịch cũ cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+      return
+    }
+    if (!window.confirm(`Chuyển ${safeLessonIds.length} buổi đã duyệt về chờ duyệt? Hệ thống sẽ hoàn lại phút cho học viên và bỏ các dòng lương chưa thanh toán.`)) return
 
     setReturningToPending(true)
     let changed = 0
     let skipped = 0
     try {
-      for (const lessonId of lessonIds) {
+      for (const lessonId of safeLessonIds) {
         if (await moveApprovedLessonToPending(lessonId)) changed += 1
         else skipped += 1
       }
@@ -448,12 +484,13 @@ export function PayrollPage() {
           action: 'BULK_RETURN_LESSONS_TO_PENDING',
           targetType: 'payroll',
           targetId: month,
-          changes: { month, lessonIds: lessonIds.slice(0, 100), count: changed },
+          changes: { month, lessonIds: safeLessonIds.slice(0, 100), count: changed, protectedReconciliationCount: protectedCount },
           createdAt: serverTimestamp(),
         })
         toast.success(`Đã chuyển ${changed} buổi về chờ duyệt`)
       }
       if (skipped > 0) toast.warning(`${skipped} buổi không thể chuyển vì dữ liệu đã thay đổi hoặc không còn hợp lệ`)
+      if (protectedCount > 0) toast.warning(`Đã bỏ qua ${protectedCount} buổi có đối soát; cần quản trị dữ liệu thủ công.`)
       setSelectedLessonPayrollIds(new Set())
     } catch (error) {
       console.error('Error bulk returning lessons to pending:', error)

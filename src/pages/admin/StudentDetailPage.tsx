@@ -25,6 +25,10 @@ import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
+import {
+  assertAutomaticReconciliationRollbackAllowed,
+  requiresIndividualSubjectReconciliation,
+} from '@/lib/bookingLogic'
 
 /**
  * Quy đổi "buổi" sang PHÚT học để giáo vụ đọc nhanh.
@@ -800,6 +804,11 @@ export function StudentDetailPage() {
   // ─── Reverse approval: approved → rejected, restore minutes, void payroll ──
   const handleReverseApproval = async () => {
     if (!reversingLesson || !student) return
+    if (requiresIndividualSubjectReconciliation(reversingLesson)) {
+      toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+      setReversingLesson(null)
+      return
+    }
     setActioning(true)
     try {
       const payrollSnap = await getDocs(
@@ -820,6 +829,7 @@ export function StudentDetailPage() {
         ])
         if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
         if (!lessonSnap.exists() || lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
+        assertAutomaticReconciliationRollbackAllowed(lessonSnap.data() as Lesson)
         const paidPayroll = payrollSnaps.find(
           (payroll) => payroll.exists() && payroll.data().paid === true && !payroll.data().voided,
         )
@@ -953,7 +963,11 @@ export function StudentDetailPage() {
       setReversingLesson(null)
     } catch (err) {
       console.error(err)
-      toast.error('Huỷ duyệt thất bại')
+      if (err instanceof Error && err.message === 'RECONCILIATION_MANUAL_ROLLBACK_REQUIRED') {
+        toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+      } else {
+        toast.error('Huỷ duyệt thất bại')
+      }
     } finally {
       setActioning(false)
     }
@@ -1003,6 +1017,20 @@ export function StudentDetailPage() {
 
   const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string, silent = false): Promise<boolean> => {
     if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return false
+    if (lesson.bookingSubjectReconciliation) {
+      if (!silent) toast.warning('Buổi đã có đối soát môn lịch cũ nên không thể đổi gói bằng công cụ sửa nhanh.')
+      return false
+    }
+    const hasLinkedBooking = Boolean(
+      lesson.bookingRequestId
+      || lesson.bookingRequestIds?.length
+      || lesson.scheduleCheck?.bookingId
+      || lesson.scheduleCheck?.bookingIds?.length,
+    )
+    if ((lesson.status === 'pending' || lesson.status === 'rejected') && hasLinkedBooking) {
+      if (!silent) toast.warning('Buổi đang gắn với lịch đặt. Hãy dùng luồng duyệt/đối soát để tránh đổi môn nhưng giữ booking cũ.')
+      return false
+    }
     const nextSubject = activeSubjects.find((subject) => subject.subjectId === nextSubjectId)
     if (!nextSubject) {
       if (!silent) toast.error('Môn học được chọn không hợp lệ')
@@ -1028,9 +1056,29 @@ export function StudentDetailPage() {
       await runTransaction(db, async (tx) => {
         const lessonRef = doc(db, 'lessons', lesson.id)
         const studentRef = doc(db, 'students', student.id)
-        const studentSnap = await tx.get(studentRef)
+        const [studentSnap, lessonSnap] = await Promise.all([
+          tx.get(studentRef),
+          tx.get(lessonRef),
+        ])
         const studentData = studentSnap.data()
         if (!studentData) throw new Error('Không tìm thấy học viên')
+        if (!lessonSnap.exists()) throw new Error('Không tìm thấy buổi học')
+        const currentLesson = lessonSnap.data() as Lesson
+        if (currentLesson.status !== lesson.status || currentLesson.subjectId !== lesson.subjectId) {
+          throw new Error('Buổi học vừa thay đổi; vui lòng tải lại trước khi đổi môn')
+        }
+        if (currentLesson.bookingSubjectReconciliation) {
+          throw new Error('Buổi đã có đối soát môn lịch cũ; không thể đổi bằng công cụ sửa nhanh')
+        }
+        const currentHasLinkedBooking = Boolean(
+          currentLesson.bookingRequestId
+          || currentLesson.bookingRequestIds?.length
+          || currentLesson.scheduleCheck?.bookingId
+          || currentLesson.scheduleCheck?.bookingIds?.length,
+        )
+        if ((currentLesson.status === 'pending' || currentLesson.status === 'rejected') && currentHasLinkedBooking) {
+          throw new Error('Buổi đang gắn lịch đặt; hãy dùng luồng duyệt/đối soát')
+        }
 
         let updatedSubjects: StudentSubject[] = studentData.subjects?.length
           ? studentData.subjects.map((subject: StudentSubject) => ({ ...subject }))

@@ -27,11 +27,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variants = {
       primary:
-        'bg-indigo-500 hover:bg-indigo-600 text-white focus:ring-indigo-500 shadow-sm',
+        'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-600 shadow-sm',
       secondary:
         'bg-slate-100 hover:bg-slate-600 text-slate-900 focus:ring-slate-500',
       danger:
-        'bg-rose-500 hover:bg-rose-600 text-white focus:ring-rose-500 shadow-sm',
+        'bg-rose-600 hover:bg-rose-700 text-white focus:ring-rose-600 shadow-sm',
       ghost:
         'text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:ring-slate-500',
       outline:

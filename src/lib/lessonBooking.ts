@@ -4,12 +4,18 @@ import { BookingRequest, Teacher } from '@/types'
 import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getBookingPoints } from '@/lib/points'
 import {
-  LessonBookingReference,
+  assertAutomaticReconciliationRollbackAllowed,
+  type BookingSubjectReconciliationDraft,
+  type LessonBookingReference,
+  type PrelinkedSubjectMismatchCandidate,
+  getPrelinkedSubjectMismatchCandidate,
   isActiveAttendanceBooking,
+  lessonReferencedBookingIds,
   recoverLegacySingleBookingReference,
   selectLegacyExcusedAbsenceBookingByScheduleCheck,
   selectLessonBookingMatches,
   validateExplicitLessonBookings,
+  validatePrelinkedSubjectMismatchForApproval,
 } from '@/lib/bookingLogic'
 
 export { selectLessonBookingMatches } from '@/lib/bookingLogic'
@@ -74,9 +80,17 @@ export function assertBookingsAvailableForApproval(bookings: BookingRequest[], l
 export function assertBookingsMatchLessonForApproval(
   bookings: BookingRequest[],
   lesson: LessonBookingReference,
+  subjectMismatchReconciliation?: BookingSubjectReconciliationDraft | null,
 ): void {
   if (bookings.length === 0) return
   if (!bookings.every(isActiveAttendanceBooking)) throw new Error('BOOKING_STATE_CHANGED')
+
+  if (subjectMismatchReconciliation) {
+    if (!validatePrelinkedSubjectMismatchForApproval(bookings, lesson, subjectMismatchReconciliation)) {
+      throw new Error('BOOKING_RECONCILIATION_INVALID')
+    }
+    return
+  }
 
   const hasExplicitSubjectMismatch = bookings.some((booking) => (
     booking.studentId === lesson.studentId
@@ -90,13 +104,35 @@ export function assertBookingsMatchLessonForApproval(
   if (!validateExplicitLessonBookings(bookings, lesson)) throw new Error('BOOKING_STATE_CHANGED')
 }
 
-export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
-  const bookingIds = Array.from(new Set([
-    ...(lesson.bookingRequestIds || []),
-    ...(lesson.scheduleCheck?.bookingIds || []),
-    lesson.bookingRequestId,
-    lesson.scheduleCheck?.bookingId,
-  ].filter((id): id is string => Boolean(id))))
+export type ResolveLessonBookingsOptions = {
+  subjectMismatchReconciliation?: BookingSubjectReconciliationDraft | null
+  purpose?: 'approval' | 'rollback'
+}
+
+export async function resolvePrelinkedSubjectMismatchCandidate(
+  lesson: LessonBookingReference,
+): Promise<PrelinkedSubjectMismatchCandidate | null> {
+  const bookingIds = lessonReferencedBookingIds(lesson)
+  if (bookingIds.length === 0) return null
+  const bookingSnaps = await Promise.all(
+    bookingIds.map((bookingId) => getDoc(doc(db, 'bookingRequests', bookingId))),
+  )
+  if (bookingSnaps.some((snapshot) => !snapshot.exists())) return null
+  const bookings = bookingSnaps.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as BookingRequest))
+  const candidate = getPrelinkedSubjectMismatchCandidate(bookings, lesson)
+  if (!candidate) return null
+  assertBookingTimeRangeIntegrity(bookings)
+  return candidate
+}
+
+export async function resolveLessonBookings(
+  lesson: LessonBookingReference,
+  options: ResolveLessonBookingsOptions = {},
+): Promise<BookingRequest[]> {
+  if (options.purpose === 'rollback') assertAutomaticReconciliationRollbackAllowed(lesson)
+  const bookingIds = options.subjectMismatchReconciliation
+    ? [...options.subjectMismatchReconciliation.bookingIds]
+    : lessonReferencedBookingIds(lesson)
 
   if (bookingIds.length > 0) {
     const bookingSnaps = await Promise.all(
@@ -106,6 +142,19 @@ export async function resolveLessonBookings(lesson: LessonBookingReference): Pro
       .filter((snap) => snap.exists())
       .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
     if (resolved.length !== bookingIds.length) throw new Error('BOOKING_REFERENCE_INVALID')
+
+    if (options.subjectMismatchReconciliation) {
+      // The draft may only repeat IDs already owned by the lesson. Never let a
+      // browser-supplied reconciliation replace or expand that authoritative
+      // set, even during this preflight; the transaction performs the same
+      // validation again against a fresh lesson snapshot.
+      if (!validatePrelinkedSubjectMismatchForApproval(resolved, lesson, options.subjectMismatchReconciliation)) {
+        throw new Error('BOOKING_RECONCILIATION_INVALID')
+      }
+      assertBookingTimeRangeIntegrity(resolved)
+      return resolved
+    }
+
     if (!validateExplicitLessonBookings(resolved, lesson)) {
       const hasExplicitSubjectMismatch = resolved.some((booking) => (
         booking.studentId === lesson.studentId

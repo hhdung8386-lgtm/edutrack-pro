@@ -28,6 +28,7 @@ const SubjectsPage = lazy(() => import('@/pages/admin/SubjectsPage').then(m => (
 const ApprovalsPage = lazy(() => import('@/pages/admin/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })))
 const BookingRequestsPage = lazy(() => import('@/pages/admin/BookingRequestsPage').then(m => ({ default: m.BookingRequestsPage })))
 const BookingSchedulesPage = lazy(() => import('@/pages/admin/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
+const ClassHuntingPage = lazy(() => import('@/pages/admin/ClassHuntingPage').then(m => ({ default: m.ClassHuntingPage })))
 const OnlineClassroomOperationsPage = lazy(() => import('@/pages/admin/OnlineClassroomOperationsPage').then(m => ({ default: m.OnlineClassroomOperationsPage })))
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then(m => ({ default: m.ReportsPage })))
 const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ default: m.PayrollPage })))
@@ -47,6 +48,7 @@ const AttendancePage = lazy(() => import('@/pages/teacher/AttendancePage').then(
 const LessonHistoryPage = lazy(() => import('@/pages/teacher/LessonHistoryPage').then(m => ({ default: m.LessonHistoryPage })))
 const TeacherSchedulesPage = lazy(() => import('@/pages/teacher/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
 const TeacherBookingRequestsPage = lazy(() => import('@/pages/teacher/BookingRequestsPage').then(m => ({ default: m.TeacherBookingRequestsPage })))
+const TeacherClassHuntingPage = lazy(() => import('@/pages/teacher/ClassHuntingPage').then(m => ({ default: m.TeacherClassHuntingPage })))
 const ProfilePage = lazy(() => import('@/pages/teacher/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const TeacherEvaluationsPage = lazy(() => import('@/pages/teacher/TeacherEvaluationsPage'))
 const TeacherAvailabilityEditPage = lazy(() => import('@/pages/teacher/AvailabilityPage').then(m => ({ default: m.AvailabilityPage })))
@@ -162,6 +164,7 @@ function App() {
             <Route path="teachers/:id" element={<TeacherDetailPage />} />
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
+            <Route path="class-hunting" element={<ClassHuntingPage />} />
             <Route path="online-classrooms" element={<OnlineClassroomOperationsPage />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="overdue-bookings" element={<OverdueBookingsPage />} />
@@ -205,6 +208,7 @@ function App() {
             <Route path="history" element={<LessonHistoryPage />} />
             <Route path="schedules" element={<TeacherSchedulesPage />} />
             <Route path="booking-requests" element={<TeacherBookingRequestsPage />} />
+            <Route path="class-hunting" element={<TeacherClassHuntingPage />} />
             <Route path="evaluations" element={<TeacherEvaluationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="availability" element={<TeacherAvailabilityEditPage />} />

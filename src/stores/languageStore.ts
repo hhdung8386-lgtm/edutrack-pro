@@ -16,6 +16,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'nav.ranking': { vi: 'Xếp hạng gia sư', en: 'Teacher ranking' },
   'nav.history': { vi: 'Lịch sử', en: 'History' },
   'nav.booking_requests': { vi: 'Yêu cầu lớp', en: 'Requests' },
+  'nav.class_hunting': { vi: 'CLASS HUNTING', en: 'Class hunting' },
   'nav.contract': { vi: 'Hợp đồng', en: 'Contract' },
   'nav.availability': { vi: 'Lịch rảnh', en: 'Availability' },
   'nav.schedules': { vi: 'Lịch dạy của tôi', en: 'My Schedules' },

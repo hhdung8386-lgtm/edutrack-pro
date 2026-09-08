@@ -23,6 +23,10 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
 import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import {
+  assertAutomaticReconciliationRollbackAllowed,
+  requiresIndividualSubjectReconciliation,
+} from '@/lib/bookingLogic'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
@@ -392,11 +396,25 @@ export function TeacherDetailPage() {
 
       const lessonUpdates: Promise<any>[] = []
       const payrollUpdates: Promise<any>[] = []
+      let protectedLessonCount = 0
 
       lessonsSnap.docs.forEach((lessonDoc, index) => {
         const lessonId = lessonDoc.id
         const lesson = lessonDoc.data()
         const payrollSnap = payrollSnaps[index]
+        const hasLinkedBooking = Boolean(
+          lesson.bookingSubjectReconciliation
+          || lesson.bookingRequestId
+          || (Array.isArray(lesson.bookingRequestIds) && lesson.bookingRequestIds.length > 0)
+          || lesson.scheduleCheck?.bookingId
+          || (Array.isArray(lesson.scheduleCheck?.bookingIds) && lesson.scheduleCheck.bookingIds.length > 0),
+        )
+        if (hasLinkedBooking) {
+          // Changing a student's current setup must not rewrite immutable
+          // booking history or invalidate a stored subject reconciliation.
+          protectedLessonCount += 1
+          return
+        }
         
         const isPaid = payrollSnap.docs.some((pDoc: any) => pDoc.data().paid === true)
         if (isPaid) {
@@ -457,6 +475,9 @@ export function TeacherDetailPage() {
       ])
 
       toast.success('Đã cập nhật môn học và đồng bộ dữ liệu thành công!')
+      if (protectedLessonCount > 0) {
+        toast.warning(`Đã giữ nguyên ${protectedLessonCount} buổi có lịch đặt/đối soát để không làm lệch lịch sử.`)
+      }
       setEditingStudentId(null)
     } catch (err) {
       console.error(err)
@@ -503,6 +524,16 @@ export function TeacherDetailPage() {
   ): Promise<boolean> => {
     const currentStatus = lesson.status
     if (currentStatus === targetStatus) return true
+    if (
+      currentStatus === 'approved'
+      && (targetStatus === 'pending' || targetStatus === 'rejected')
+      && requiresIndividualSubjectReconciliation(lesson)
+    ) {
+      if (!options?.silent) {
+        toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
+      }
+      return false
+    }
 
     if (targetStatus === 'approved') {
       setApproving(true)
@@ -541,8 +572,19 @@ export function TeacherDetailPage() {
           if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
           if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
 
-          const lessonNow = lessonSnap.data() as any
+          const lessonNow = lessonSnap.data() as Lesson
           if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
+          if (
+            lessonNow.studentId !== lesson.studentId
+            || lessonNow.teacherId !== lesson.teacherId
+            || lessonNow.date !== lesson.date
+            || Number(lessonNow.minutes) !== Number(lesson.minutes)
+            || lessonNow.subjectId !== lesson.subjectId
+            || (lessonNow.groupClassId || '') !== (lesson.groupClassId || '')
+          ) throw new Error('BOOKING_STATE_CHANGED')
+          if (options?.silent && lessonNow.bookingSubjectReconciliation) {
+            throw new Error('RECONCILIATION_REQUIRES_INDIVIDUAL_APPROVAL')
+          }
 
           const student = studentSnap.data() as Student
           const subjectId = lessonNow.subjectId || lesson.subjectId
@@ -568,11 +610,16 @@ export function TeacherDetailPage() {
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           assertBookingsMatchLessonForApproval(bookingNows, {
             id: lesson.id,
+            bookingRequestId: lessonNow.bookingRequestId,
+            bookingRequestIds: lessonNow.bookingRequestIds,
+            scheduleCheck: lessonNow.scheduleCheck,
             studentId: lessonNow.studentId,
             teacherId: lessonNow.teacherId,
             date: lessonNow.date,
             minutes: lessonNow.minutes,
             subjectId: lessonNow.subjectId,
+            subjectName: lessonNow.subjectName,
+            groupClassId: lessonNow.groupClassId,
             isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
           })
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
@@ -588,7 +635,7 @@ export function TeacherDetailPage() {
                 ? getBookingPoints(bookingNow, teacherData)
               : getLessonPoints(lessonNow, teacherData)
 
-          let updatedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
+          const updatedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
             ? student.subjects.map((item) => ({ ...item }))
             : student.subjectId
               ? [{
@@ -790,7 +837,6 @@ export function TeacherDetailPage() {
         setApprovingLesson(null)
       } else if (currentStatus === 'approved') {
         // Luồng hoàn tác duyệt (approved -> pending hoặc approved -> rejected)
-        const lessonPointsToRestore = getLessonPoints(lesson, teacher)
         const bookingsToReopen = targetStatus === 'pending'
           ? await resolveLessonBookings({
               id: lesson.id,
@@ -802,8 +848,11 @@ export function TeacherDetailPage() {
               date: lesson.date,
               minutes: lesson.minutes,
               subjectId: lesson.subjectId,
+              subjectName: lesson.subjectName,
+              groupClassId: lesson.groupClassId,
+              bookingSubjectReconciliation: lesson.bookingSubjectReconciliation,
               isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
-            })
+            }, { purpose: 'rollback' })
           : []
         const payrollSnap = await getDocs(
           query(collection(db, 'payroll'), where('lessonId', '==', lesson.id))
@@ -814,17 +863,19 @@ export function TeacherDetailPage() {
         const restoredHeldPoints = await runTransaction(db, async (tx) => {
           const studentRef = doc(db, 'students', lesson.studentId)
           const lessonRef = doc(db, 'lessons', lesson.id)
+          const teacherRef = doc(db, 'teachers', lesson.teacherId)
           const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
 
           const reads = await Promise.all([
             tx.get(lessonRef),
             tx.get(studentRef),
+            tx.get(teacherRef),
             ...bookingRefsToReopen.map((bookingRef) => tx.get(bookingRef)),
             ...payrollRefs.map((payrollRef) => tx.get(payrollRef)),
           ])
-          const [lessonSnap, studentSnap] = reads
-          const bookingSnapsToReopen = reads.slice(2, 2 + bookingRefsToReopen.length)
-          const payrollSnaps = reads.slice(2 + bookingRefsToReopen.length)
+          const [lessonSnap, studentSnap, teacherSnap] = reads
+          const bookingSnapsToReopen = reads.slice(3, 3 + bookingRefsToReopen.length)
+          const payrollSnaps = reads.slice(3 + bookingRefsToReopen.length)
 
           if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
           if (lessonSnap.data().status !== 'approved') throw new Error('LESSON_ALREADY_PROCESSED')
@@ -836,13 +887,25 @@ export function TeacherDetailPage() {
           const hasStudent = studentSnap.exists()
           if (targetStatus === 'pending' && !hasStudent) throw new Error('STUDENT_NOT_FOUND')
           const lessonCurrent = lessonSnap.data() as Lesson
-          const bookingsEligibleToReopen = bookingSnapsToReopen.flatMap((bookingSnap) => {
+          if (
+            lessonCurrent.studentId !== lesson.studentId
+            || lessonCurrent.teacherId !== lesson.teacherId
+            || lessonCurrent.date !== lesson.date
+            || Number(lessonCurrent.minutes) !== Number(lesson.minutes)
+            || lessonCurrent.subjectId !== lesson.subjectId
+            || (lessonCurrent.groupClassId || '') !== (lesson.groupClassId || '')
+          ) throw new Error('BOOKING_STATE_CHANGED')
+          assertAutomaticReconciliationRollbackAllowed(lessonCurrent)
+          const teacherCurrent = teacherSnap.exists() ? teacherSnap.data() as Teacher : teacher
+          const lessonPointsToRestore = getLessonPoints(lessonCurrent, teacherCurrent)
+          const currentBookingsToReopen = bookingSnapsToReopen.flatMap((bookingSnap) => {
             if (!bookingSnap.exists()) return []
             const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
             return booking.status === 'completed' && booking.lessonId === lesson.id ? [booking] : []
           })
+          const bookingsEligibleToReopen = currentBookingsToReopen
           const heldPointsToRestore = targetStatus === 'pending' && lessonCurrent.bookingHoldConsumed === true
-            ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, teacher), 0)
+            ? bookingsEligibleToReopen.reduce((sum, booking) => sum + getBookingPoints(booking, teacherCurrent), 0)
             : 0
 
           tx.update(lessonRef, {
@@ -878,7 +941,7 @@ export function TeacherDetailPage() {
           if (hasStudent) {
             const s = studentSnap.data()!
             // Initialize subjects array for backward compatibility if needed
-            let updatedSubjects = s.subjects && s.subjects.length > 0
+            const updatedSubjects = s.subjects && s.subjects.length > 0
               ? [...s.subjects]
               : s.subjectId
                 ? [{
@@ -891,12 +954,12 @@ export function TeacherDetailPage() {
                     totalMinutes: s.totalMinutes ?? (s.totalSessions * (s.minutesPerSession || 50)),
                     usedMinutes: s.usedMinutes ?? ((s.usedSessions || 0) * (s.minutesPerSession || 50)),
                     remainingMinutes: s.remainingMinutes ?? ((s.remainingSessions || 0) * (s.minutesPerSession || 50)),
-                    pricePerMinute: lesson.pricePerMinute || 0,
+                    pricePerMinute: lessonCurrent.pricePerMinute || 0,
                   }]
                 : []
 
             // Find the matching subject package
-            const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === lesson.subjectId)
+            const sIdx = updatedSubjects.findIndex(sub => sub.subjectId === lessonCurrent.subjectId)
             if (sIdx !== -1) {
               const subPkg = updatedSubjects[sIdx]
               const subUsedMinutes = Math.max(0, subPkg.usedMinutes - lessonPointsToRestore)
@@ -969,7 +1032,7 @@ export function TeacherDetailPage() {
               })
             }
           }
-          return heldPointsToRestore
+          return { heldPointsToRestore, lessonPointsToRestore }
         })
 
         await addDoc(collection(db, 'adminLogs'), {
@@ -980,15 +1043,15 @@ export function TeacherDetailPage() {
           changes: {
             status: { from: 'approved', to: targetStatus },
             lessonDate: lesson.date,
-            restoredPoints: lessonPointsToRestore,
-            restoredHeldPoints,
+            restoredPoints: restoredHeldPoints.lessonPointsToRestore,
+            restoredHeldPoints: restoredHeldPoints.heldPointsToRestore,
             voidedPayrolls: payrollIds.length,
             voidedSalary: lesson.salary || 0,
           },
           createdAt: serverTimestamp(),
         })
 
-        if (!options?.silent) toast.success(`Đã huỷ duyệt, trả lại ${lessonPointsToRestore} kim cương cho học viên`)
+        if (!options?.silent) toast.success(`Đã huỷ duyệt, trả lại ${restoredHeldPoints.lessonPointsToRestore} kim cương cho học viên`)
         setRevertingLesson(null)
         setRejectingLesson(null)
         setRejectReason('')
@@ -1025,6 +1088,8 @@ export function TeacherDetailPage() {
         toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
+      } else if (message === 'RECONCILIATION_MANUAL_ROLLBACK_REQUIRED') {
+        toast.warning('Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.')
       } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {
         toast.error('Không thể mở lại lịch vì phần kim cương cần giữ vượt quỹ còn lại. Hãy đối soát quỹ học viên trước.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
@@ -1064,9 +1129,13 @@ export function TeacherDetailPage() {
   // luồng hoàn tác an toàn (trả phút cho học viên, vô hiệu bản ghi lương, gỡ
   // buổi công khai, ghi admin log) để không lệch dữ liệu.
   const handleBulkRevertToPending = async () => {
-    const targets = lessons.filter((l) => selectedLessonIds.has(l.id) && l.status === 'approved')
+    const selectedTargets = lessons.filter((l) => selectedLessonIds.has(l.id) && l.status === 'approved')
+    const targets = selectedTargets.filter((lesson) => !requiresIndividualSubjectReconciliation(lesson))
+    const protectedCount = selectedTargets.length - targets.length
     if (targets.length === 0) {
-      toast.warning('Không có buổi "Đã duyệt" nào trong số đã chọn')
+      toast.warning(protectedCount > 0
+        ? 'Các buổi đã chọn có đối soát môn lịch cũ cần quản trị dữ liệu thủ công, chưa thay đổi gì.'
+        : 'Không có buổi "Đã duyệt" nào trong số đã chọn')
       setShowBulkRevert(false)
       return
     }
@@ -1081,6 +1150,7 @@ export function TeacherDetailPage() {
       }
       if (failed === 0) toast.success(`Đã chuyển ${ok} buổi về "Chờ duyệt"`)
       else toast.warning(`Đã chuyển ${ok} buổi; ${failed} buổi lỗi — vui lòng kiểm tra lại`)
+      if (protectedCount > 0) toast.warning(`Đã bỏ qua ${protectedCount} buổi có đối soát; vui lòng hoàn tác từng buổi.`)
       setSelectedLessonIds(new Set())
     } finally {
       setBulkReverting(false)
@@ -1091,9 +1161,13 @@ export function TeacherDetailPage() {
   // Duyệt hàng loạt: chạy TUẦN TỰ qua đúng luồng duyệt an toàn (trừ phút học viên,
   // ghi bản ghi lương, cộng điểm thưởng…). Chỉ áp dụng buổi Chờ duyệt/Từ chối.
   const handleBulkApprove = async () => {
-    const targets = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected'))
+    const selectedTargets = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected'))
+    const targets = selectedTargets.filter((lesson) => !requiresIndividualSubjectReconciliation(lesson))
+    const protectedCount = selectedTargets.length - targets.length
     if (targets.length === 0) {
-      toast.warning('Không có buổi "Chờ duyệt" nào trong số đã chọn')
+      toast.warning(protectedCount > 0
+        ? 'Các buổi đã chọn có đối soát môn lịch cũ phải duyệt từng buổi để xác nhận lại.'
+        : 'Không có buổi "Chờ duyệt" nào trong số đã chọn')
       setShowBulkApprove(false)
       return
     }
@@ -1108,6 +1182,7 @@ export function TeacherDetailPage() {
       }
       if (failed === 0) toast.success(`Đã duyệt ${ok} buổi dạy`)
       else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi lỗi (có thể lịch/số phút không khớp hoặc học viên hết buổi) — vui lòng kiểm tra lại`)
+      if (protectedCount > 0) toast.warning(`Đã bỏ qua ${protectedCount} buổi có đối soát; vui lòng duyệt từng buổi.`)
       setSelectedLessonIds(new Set())
     } finally {
       setBulkApproving(false)

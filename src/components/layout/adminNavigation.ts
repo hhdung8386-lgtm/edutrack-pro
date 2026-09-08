@@ -19,6 +19,7 @@ import {
   MapPin,
   MonitorUp,
   Settings,
+  Target,
   TestTube2,
   UserX,
   Users,
@@ -88,6 +89,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     activePrefixes: [
       '/admin/teacher-availability',
       '/admin/booking-schedules',
+      '/admin/class-hunting',
       '/admin/online-classrooms',
       '/admin/future-bookings',
       '/admin/bookings',
@@ -95,6 +97,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     items: [
       { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
       { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
+      { to: '/admin/class-hunting', icon: Target, label: 'CLASS HUNTING' },
       { to: '/admin/online-classrooms', icon: MonitorUp, label: 'Phòng học thử' },
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
@@ -153,11 +156,14 @@ export function canAccessAdminNavItem(
   role: string | null | undefined,
   accessScope?: string | null,
 ) {
-  if (accessScope === 'booking_only') return item.to === '/admin/booking-schedules'
+  if (accessScope === 'booking_only') {
+    return item.to === '/admin/booking-schedules'
+      || (item.to === '/admin/class-hunting' && role !== 'teacher_manager')
+  }
   if (item.to === '/admin/notifications' && role !== 'admin') return false
   if (item.to === '/admin/online-classrooms' && role !== 'admin') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
-  if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/offline-classes') || item.to.startsWith('/admin/student-alerts'))) return false
+  if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/offline-classes') || item.to.startsWith('/admin/student-alerts') || item.to === '/admin/class-hunting')) return false
   return true
 }
 

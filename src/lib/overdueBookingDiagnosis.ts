@@ -22,6 +22,19 @@ export interface DiagnosedOverdueBooking {
   teacherWorkedThatDay: boolean
 }
 
+/**
+ * A held booking may only be released when no approved attendance owns it and
+ * the matching record is not an exceptional subject-reconciliation settlement.
+ * Keep this predicate shared by the bulk and row-level actions so a stale UI
+ * state cannot make the row action broader than the bulk action.
+ */
+export function canReleaseDiagnosedOverdueBookingHold(item: DiagnosedOverdueBooking): boolean {
+  return (
+    (item.diagnosis === 'no_lesson' || item.diagnosis === 'rejected_lesson')
+    && !item.matchedLesson?.bookingSubjectReconciliation
+  )
+}
+
 const ACTIVE_LESSON_STATUSES = new Set<Lesson['status']>(['pending', 'approved', 'rejected'])
 
 function lessonBookingIds(lesson: Lesson): string[] {
@@ -118,7 +131,9 @@ export function diagnoseOverdueBookings(
         matchedLesson: lesson,
         relatedLessons: exactReferences,
         matchKind: 'explicit' as const,
-        canLink: diagnosis === 'approved_lesson',
+        // A subject-reconciled approval owns an immutable, exceptional
+        // settlement. The ordinary overdue-link repair must not append to it.
+        canLink: diagnosis === 'approved_lesson' && !lesson.bookingSubjectReconciliation,
       }
     }
 
@@ -153,7 +168,7 @@ export function diagnoseOverdueBookings(
         matchedLesson: lesson,
         relatedLessons: [lesson],
         matchKind: 'unique' as const,
-        canLink: diagnosis === 'approved_lesson',
+        canLink: diagnosis === 'approved_lesson' && !lesson.bookingSubjectReconciliation,
       }
     }
 

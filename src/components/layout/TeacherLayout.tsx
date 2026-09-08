@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { Suspense, useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole, Trophy, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole, Target, Trophy, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { doc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -57,20 +57,21 @@ export function TeacherLayout() {
     {
       title: { vi: 'Xếp hạng gia sư', en: 'Teacher ranking' },
       items: [
-        { to: '/teacher/ranking', icon: Trophy, labelKey: 'nav.ranking', shortLabel: { vi: 'Xếp hạng', en: 'Ranking' } },
+        { to: '/teacher/ranking', icon: Trophy, labelKey: 'nav.ranking', shortLabel: { vi: 'Hạng', en: 'Rank' } },
       ],
     },
     {
       title: { vi: 'Lịch dạy', en: 'Teaching schedule' },
       items: [
-        { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Thời khóa biểu', en: 'Schedule' } },
+        { to: '/teacher/schedules', icon: CalendarClock, labelKey: 'nav.schedules', shortLabel: { vi: 'Lịch', en: 'Schedule' } },
         { to: '/teacher/availability', icon: CalendarRange, labelKey: 'nav.availability', shortLabel: { vi: 'Lịch rảnh', en: 'Availability' } },
       ],
     },
     {
       title: { vi: 'Lớp học', en: 'Classes' },
       items: [
-        { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Nhận lớp', en: 'Find classes' }, badge: pendingBookingCount },
+        { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Nhận', en: 'Requests' }, badge: pendingBookingCount },
+        { to: '/teacher/class-hunting', icon: Target, labelKey: 'nav.class_hunting', shortLabel: { vi: 'Săn', en: 'Hunt' } },
         { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá thử', en: 'Trial reviews' } },
         { to: '/teacher/history', icon: History, labelKey: 'nav.history', shortLabel: { vi: 'Lịch sử buổi dạy', en: 'Lesson history' } },
       ],
@@ -82,7 +83,7 @@ export function TeacherLayout() {
           to: '/teacher/attendance',
           icon: !loadingAttendanceFeature && !teacherAttendanceEnabled ? LockKeyhole : PenLine,
           labelKey: 'nav.makeup_attendance',
-          shortLabel: { vi: 'Điểm danh bù', en: 'Make-up attendance' },
+          shortLabel: { vi: 'Điểm danh', en: 'Attendance' },
           locked: !loadingAttendanceFeature && !teacherAttendanceEnabled,
         },
       ],
@@ -90,7 +91,7 @@ export function TeacherLayout() {
     {
       title: { vi: 'Tài khoản', en: 'Account' },
       items: [
-        { to: '/teacher/profile', icon: User, labelKey: 'nav.profile', shortLabel: { vi: 'Hồ sơ cá nhân', en: 'Personal profile' } },
+        { to: '/teacher/profile', icon: User, labelKey: 'nav.profile', shortLabel: { vi: 'Hồ sơ', en: 'Profile' } },
         { to: '/teacher/contract', icon: FileText, labelKey: 'nav.contract', shortLabel: { vi: 'Hợp đồng', en: 'Contract' } },
       ],
     },
@@ -100,6 +101,7 @@ export function TeacherLayout() {
     navItems.find((item) => item.to === '/teacher/ranking'),
     navItems.find((item) => item.to === '/teacher/schedules'),
     navItems.find((item) => item.to === '/teacher/booking-requests'),
+    navItems.find((item) => item.to === '/teacher/class-hunting'),
     navItems.find((item) => item.to === '/teacher/attendance'),
     navItems.find((item) => item.to === '/teacher/profile'),
   ].filter((item): item is TeacherNavItem => Boolean(item))
@@ -440,7 +442,7 @@ export function TeacherLayout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium relative whitespace-nowrap
+                `min-w-0 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium relative whitespace-nowrap
                 ${isActive ? 'text-brand-700' : 'text-slate-400 hover:text-slate-600'}`
               }
             >
@@ -448,7 +450,7 @@ export function TeacherLayout() {
                 <>
                   <item.icon className={`w-5 h-5 ${isActive ? 'text-brand-600' : ''}`} />
                   {!!item.badge && <span className="absolute right-1 top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{item.badge}</span>}
-                  <span className="leading-none">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
+                  <span className="max-w-full truncate px-0.5 leading-none">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
                   {isActive && (
                     <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-500 rounded-full" />
                   )}
