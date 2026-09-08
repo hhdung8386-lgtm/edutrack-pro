@@ -402,7 +402,7 @@ export function ClassHuntingPage() {
                       }
                     }}
                     className={`${formFieldClass()} font-mono font-bold uppercase`}
-                    placeholder="VD: HS59SJBJ"
+                    placeholder="VD: HS12AB34"
                     autoComplete="off"
                     aria-describedby="class-hunt-code-hint"
                   />

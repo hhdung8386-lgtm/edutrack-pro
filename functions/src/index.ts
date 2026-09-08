@@ -1253,3 +1253,5 @@ export {
 } from './classHuntingFunctions'
 
 export { createParentProfileBooking } from './parentProfileBookingFunctions'
+export { cancelParentBooking, getParentBookingState } from './parentBookingAccessFunctions'
+export { getTeacherAttendanceAuditData, respondToBookingRequest } from './teacherBookingSecurityFunctions'

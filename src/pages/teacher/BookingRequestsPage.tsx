@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { CalendarClock, CheckCircle2, Clock3, Search, UserRoundCheck, XCircle } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayOfWeek } from '@/types'
@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
-import { bookingConflictMessage, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { respondToBookingRequest } from '@/lib/teacherBookingActions'
 
 type TeacherResponseFilter = 'pending' | 'accepted' | 'declined' | 'all'
 
@@ -35,7 +35,7 @@ function createdAtLabel(request: BookingRequest, lang: string) {
 }
 
 export function TeacherBookingRequestsPage() {
-  const { teacherId, user } = useAuthStore()
+  const { teacherId } = useAuthStore()
   const { lang } = useLanguageStore()
   const [requests, setRequests] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,33 +91,7 @@ export function TeacherBookingRequestsPage() {
     if (!teacherId || request.teacherId !== teacherId || request.status !== 'pending') return
     setActioningId(request.id)
     try {
-      if (response === 'accepted') {
-        const conflicts = await checkBookingCandidates([{
-          id: request.id,
-          teacherId: request.teacherId,
-          teacherName: request.teacherName,
-          studentId: request.studentId,
-          studentName: request.studentName,
-          requestedDate: request.requestedDate,
-          requestedStart: request.requestedStart,
-          requestedEnd: request.requestedEnd,
-          requestedMinutes: request.requestedMinutes,
-        }], {
-          ignoreBookingIds: [request.id],
-          includePending: false,
-        })
-
-        if (conflicts.length > 0) {
-          toast.error(bookingConflictMessage(conflicts[0], lang === 'vi' ? 'vi' : 'en'))
-          return
-        }
-      }
-
-      await updateDoc(doc(db, 'bookingRequests', request.id), {
-        teacherResponse: response,
-        teacherRespondedAt: serverTimestamp(),
-        teacherRespondedBy: user?.uid || teacherId,
-      })
+      await respondToBookingRequest(request.id, response)
       toast.success(response === 'accepted'
         ? (lang === 'vi' ? 'Đã xác nhận nhận lớp. Học vụ đã thấy phản hồi.' : 'Class accepted. Academic staff can now see your response.')
         : (lang === 'vi' ? 'Đã gửi phản hồi từ chối đến học vụ.' : 'Decline response sent to academic staff.'))

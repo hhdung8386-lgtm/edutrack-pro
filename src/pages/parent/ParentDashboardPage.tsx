@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { addDoc, collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, runTransaction, setDoc, limit, orderBy, updateDoc, documentId } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, setDoc, limit, orderBy, updateDoc, documentId } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
 import {
@@ -32,7 +32,7 @@ import {
 import { getHeldBookingMinutes, getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { selectTopRewardStudents } from '@/lib/rewards'
 import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonReport } from '@/components/lessons/lessonReport'
-import { bookingConflictMessage, bookingIntervalsOverlap, checkBookingCandidates } from '@/lib/bookingConflicts'
+import { bookingIntervalsOverlap } from '@/lib/bookingConflicts'
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
 import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
@@ -46,6 +46,11 @@ import {
   parentProfileBookingErrorReason,
   parentProfileBookingRequestKey,
 } from '@/lib/parentProfileBooking'
+import {
+  cancelParentBooking,
+  getParentBookingState,
+  parentBookingAccessErrorReason,
+} from '@/lib/parentBookingAccess'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -76,6 +81,7 @@ export function ParentDashboardPage() {
   const [autoLoading, setAutoLoading] = useState(true)
   const { lang, setLang } = useLanguageStore()
   const liveStudentId = result?.student.id
+  const liveStudentCode = result?.student.code
   const liveGroupClassIdsKey = normalizeGroupClassIds(result?.student.groupClassIds).join('|')
 
   useEffect(() => {
@@ -114,15 +120,7 @@ export function ParentDashboardPage() {
       console.error('Keep student diamond balance in sync failed:', snapshotError)
     })
 
-    const bookingSources = new Map<string, BookingRequest[]>()
     const lessonSources = new Map<string, Lesson[]>()
-    const publishBookings = () => {
-      const byId = new Map<string, BookingRequest>()
-      bookingSources.forEach((items) => items.forEach((item) => byId.set(item.id, item)))
-      setResult((current) => current && current.student.id === studentId
-        ? { ...current, bookings: Array.from(byId.values()) }
-        : current)
-    }
     const publishLessons = () => {
       const byId = new Map<string, Lesson>()
       lessonSources.forEach((items) => items.forEach((item) => byId.set(item.id, item)))
@@ -131,14 +129,26 @@ export function ParentDashboardPage() {
         ? { ...current, lessons: nextLessons }
         : current)
     }
-    const unsubscribeBookings = recordIds.map((recordId) => onSnapshot(query(
-      collection(db, 'bookingRequests'),
-      where('studentId', '==', recordId),
-      where('status', 'in', ['confirmed', 'pending']),
-    ), (snapshot) => {
-      bookingSources.set(recordId, snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest)))
-      publishBookings()
-    }, (snapshotError) => console.error('Keep student bookings in sync failed:', snapshotError)))
+    let bookingRefreshActive = true
+    const refreshBookings = async () => {
+      if (!liveStudentCode) return
+      try {
+        const state = await getParentBookingState({ studentId, studentCode: liveStudentCode })
+        if (!bookingRefreshActive) return
+        setResult((current) => current && current.student.id === studentId
+          ? {
+              ...current,
+              student: { ...current.student, ...state.studentPatch },
+              bookings: state.bookings,
+            }
+          : current)
+      } catch (snapshotError) {
+        console.error('Keep student bookings in sync failed:', snapshotError)
+      }
+    }
+    const refreshOnFocus = () => { void refreshBookings() }
+    window.addEventListener('focus', refreshOnFocus)
+    const bookingRefreshInterval = window.setInterval(refreshBookings, 30_000)
     const unsubscribeLessons = recordIds.map((recordId) => onSnapshot(query(
       collection(db, 'publicLessons'),
       where('studentId', '==', recordId),
@@ -149,11 +159,13 @@ export function ParentDashboardPage() {
     }, (snapshotError) => console.error('Keep student lessons in sync failed:', snapshotError)))
 
     return () => {
+      bookingRefreshActive = false
       unsubscribeStudent()
-      unsubscribeBookings.forEach((unsubscribe) => unsubscribe())
       unsubscribeLessons.forEach((unsubscribe) => unsubscribe())
+      window.removeEventListener('focus', refreshOnFocus)
+      window.clearInterval(bookingRefreshInterval)
     }
-  }, [liveStudentId, liveGroupClassIdsKey])
+  }, [liveStudentId, liveStudentCode, liveGroupClassIdsKey])
 
   const handleLogin = async (code?: string, cachedStudentId?: string) => {
     setError('')
@@ -178,17 +190,16 @@ export function ParentDashboardPage() {
       }
 
       const recordIds = learningRecordIds(student)
-      const [lessonSnaps, bookingSnaps] = await Promise.all([
+      const [lessonSnaps, bookingState] = await Promise.all([
         Promise.all(recordIds.map((recordId) => getDocs(query(collection(db, 'publicLessons'), where('studentId', '==', recordId), where('status', '==', 'approved'))))),
-        Promise.all(recordIds.map((recordId) => getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', recordId), where('status', 'in', ['confirmed', 'pending']))))),
+        getParentBookingState({ studentId: student.id, studentCode: student.code }),
       ])
       const lessonsById = new Map<string, Lesson>()
       lessonSnaps.forEach((snapshot) => snapshot.docs.forEach((item) => lessonsById.set(item.id, { id: item.id, ...item.data() } as Lesson)))
       const lessons = Array.from(lessonsById.values())
       lessons.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
-      const bookingsById = new Map<string, BookingRequest>()
-      bookingSnaps.forEach((snapshot) => snapshot.docs.forEach((item) => bookingsById.set(item.id, { id: item.id, ...item.data() } as BookingRequest)))
-      const bookings = Array.from(bookingsById.values())
+      const bookings = bookingState.bookings
+      student = { ...student, ...bookingState.studentPatch }
 
       saveSession(finalCode, student.id)
       setResult({ student, lessons, bookings })
@@ -1423,13 +1434,25 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   }
 
   useEffect(() => {
-    const requestQuery = query(collection(db, 'bookingCancellationRequests'), where('studentId', '==', student.id))
-    return onSnapshot(requestQuery, (snap) => {
-      setCancellationRequests(snap.docs.map((item) => ({ id: item.id, ...item.data() } as BookingCancellationRequest)))
-    }, (error) => {
-      console.error('Load cancellation requests failed:', error)
-    })
-  }, [student.id])
+    let active = true
+    const refresh = async () => {
+      try {
+        const state = await getParentBookingState({ studentId: student.id, studentCode: student.code })
+        if (active) setCancellationRequests(state.cancellationRequests)
+      } catch (error) {
+        console.error('Load cancellation requests failed:', error)
+      }
+    }
+    const refreshOnFocus = () => { void refresh() }
+    void refresh()
+    window.addEventListener('focus', refreshOnFocus)
+    const interval = window.setInterval(refresh, 30_000)
+    return () => {
+      active = false
+      window.removeEventListener('focus', refreshOnFocus)
+      window.clearInterval(interval)
+    }
+  }, [student.id, student.code])
 
   useEffect(() => {
     const reviewQuery = query(collection(db, 'teacherLessonReviews'), where('studentId', '==', student.id))
@@ -1488,58 +1511,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
     setSubmittingCancellation(true)
     try {
-      const pendingRequest = cancellationRequests.find((item) => item.bookingId === booking.id && item.status === 'pending')
-      const nextPatch = await runTransaction(db, async (tx): Promise<Partial<Student>> => {
-        const bookingRef = doc(db, 'bookingRequests', booking.id)
-        const studentRef = doc(db, 'students', student.id)
-        const [bookingSnap, studentSnap] = await Promise.all([tx.get(bookingRef), tx.get(studentRef)])
-
-        if (!bookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
-        if (!studentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
-
-        const currentBooking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
-        const currentStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
-        if (!['pending', 'confirmed'].includes(currentBooking.status) || currentBooking.lessonId) throw new Error('BOOKING_ALREADY_PROCESSED')
-        if (currentBooking.studentId !== student.id || currentBooking.studentCode !== student.code) throw new Error('STUDENT_MISMATCH')
-        // Chặn huỷ liên tục ở server: còn nghĩa vụ đặt lại thì không cho huỷ buổi khác.
-        if (currentStudent.pendingRebookBookingId) throw new Error('REBOOK_REQUIRED')
-
-        const currentStartsAt = bookingStartTime(currentBooking)
-        if (currentBooking.status === 'confirmed' && (!currentStartsAt || currentStartsAt.getTime() - Date.now() < 60 * 60 * 1000)) throw new Error('CANCELLATION_WINDOW_CLOSED')
-
-        const points = getBookingPoints(currentBooking, teacherMap[currentBooking.teacherId])
-        const currentHeld = currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0
-        if (points <= 0) throw new Error('INVALID_HELD_POINTS')
-        const wasHolding = currentBooking.status === 'confirmed' || currentBooking.heldImmediately === true
-        if (!wasHolding || currentHeld < points) throw new Error('INVALID_HELD_POINTS')
-
-        // GIỮ nguyên kim cương đã đặt (reserved không đổi) và ghi nhận nghĩa vụ đặt lại.
-        tx.update(bookingRef, {
-          status: 'released',
-          releasedAt: serverTimestamp(),
-          releasedBy: `student:${student.code}`,
-          heldMinutesAfterRelease: currentHeld,
-          selfServiceCancelled: true,
-          cancellationPolicyMinutes: currentBooking.status === 'confirmed' ? 60 : 0,
-          cancellationReason: cancelReason.trim(),
-          cancelledMinutes: currentBooking.requestedMinutes,
-          pendingRebook: true,
-          rebookHoldPoints: points,
-        })
-        tx.update(studentRef, {
-          pendingRebookBookingId: currentBooking.id,
-          pendingRebookPoints: points,
-          updatedAt: serverTimestamp(),
-        })
-        if (pendingRequest) {
-          tx.update(doc(db, 'bookingCancellationRequests', pendingRequest.id), {
-            status: 'approved',
-            reviewedAt: serverTimestamp(),
-            reviewedBy: `student:${student.code}`,
-          })
-        }
-
-        return { reservedMinutes: currentHeld, heldMinutes: currentHeld, pendingRebookBookingId: currentBooking.id, pendingRebookPoints: points }
+      const nextPatch = await cancelParentBooking({
+        studentId: student.id,
+        studentCode: student.code,
+        bookingId: booking.id,
+        reason: cancelReason.trim(),
       })
 
       onBookingCancelled(booking.id, nextPatch)
@@ -1551,7 +1527,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       setTab('booking')
     } catch (error) {
       console.error('Automatic cancellation failed:', error)
-      const code = error instanceof Error ? error.message : ''
+      const code = parentBookingAccessErrorReason(error) || (error instanceof Error ? error.message : '')
       if (code === 'CANCELLATION_WINDOW_CLOSED') {
         setCancellationDialog({ booking, mode: 'blocked' })
       } else if (code === 'REBOOK_REQUIRED') {
@@ -1652,14 +1628,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     if (!profileTeacherId) return
     let active = true
     setTeacherScheduleLoading((current) => ({ ...current, [profileTeacherId]: true }))
-    const teacherBookingQuery = query(collection(db, 'bookingRequests'), where('teacherId', '==', profileTeacherId))
-    getDocs(teacherBookingQuery)
-      .then((snapshot) => {
+    getParentBookingState({
+      studentId: student.id,
+      studentCode: student.code,
+      teacherIds: [profileTeacherId],
+    })
+      .then((state) => {
         if (!active) return
-        const activeBookings = snapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
-          .filter((booking) => ['pending', 'confirmed'].includes(booking.status))
-        setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: activeBookings }))
+        setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: state.busySlots }))
       })
       .catch((error) => {
         console.error('Load teacher timetable bookings failed:', error)
@@ -1669,7 +1645,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         if (active) setTeacherScheduleLoading((current) => ({ ...current, [profileTeacherId]: false }))
       })
     return () => { active = false }
-  }, [profileTeacherId])
+  }, [profileTeacherId, student.id, student.code])
 
   // ─── Minute fund stats ───────────────────────────────────────────
   const packageMinuteSummary = getStudentPackageMinuteSummary(student)
@@ -1829,32 +1805,35 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
         // Gom tối đa 30 gia sư mỗi truy vấn thay vì tạo 2 yêu cầu cho từng người.
         // Số document cần đọc không tăng, nhưng số round-trip giảm từ tối đa 96 xuống 4.
         const candidateIds = candidates.map((teacher) => teacher.id)
+        const recommendationDates = getRecommendationRollingDates()
+          .map(({ date }) => getLocalISODate(date))
         const candidateChunks: string[][] = []
         for (let index = 0; index < candidateIds.length; index += 30) {
           candidateChunks.push(candidateIds.slice(index, index + 30))
         }
-        const [availabilitySnapshots, bookingSnapshots] = await Promise.all([
+        const [availabilitySnapshots, bookingState] = await Promise.all([
           Promise.all(candidateChunks.map((ids) => getDocs(query(
             collection(db, 'teacherAvailability'),
             where(documentId(), 'in', ids),
           )))),
-          Promise.all(candidateChunks.map((ids) => getDocs(query(
-            collection(db, 'bookingRequests'),
-            where('teacherId', 'in', ids),
-          )))),
+          getParentBookingState({
+            studentId: student.id,
+            studentCode: student.code,
+            teacherIds: candidateIds,
+            busyFromDate: recommendationDates[0],
+            busyToDate: recommendationDates[recommendationDates.length - 1],
+          }),
         ])
         const availabilityByTeacher = new Map<string, TeacherAvailability>()
         availabilitySnapshots.forEach((snapshot) => snapshot.docs.forEach((item) => {
           availabilityByTeacher.set(item.id, { id: item.id, ...item.data() } as TeacherAvailability)
         }))
         const bookingsByTeacher = new Map<string, BookingRequest[]>()
-        bookingSnapshots.forEach((snapshot) => snapshot.docs.forEach((item) => {
-          const booking = { id: item.id, ...item.data() } as BookingRequest
-          if (!['pending', 'confirmed'].includes(booking.status)) return
+        bookingState.busySlots.forEach((booking) => {
           const current = bookingsByTeacher.get(booking.teacherId) || []
           current.push(booking)
           bookingsByTeacher.set(booking.teacherId, current)
-        }))
+        })
 
         const enriched = candidates.map((teacher) => {
           const availability = availabilityByTeacher.get(teacher.id) || null
@@ -2009,10 +1988,14 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
     setSubmittingProfileBooking(true)
     try {
-      const latestSnapshot = await getDocs(query(collection(db, 'bookingRequests'), where('teacherId', '==', profileTeacherId)))
-      const latestBookings = latestSnapshot.docs
-        .map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
-        .filter((booking) => ['pending', 'confirmed'].includes(booking.status))
+      const latestState = await getParentBookingState({
+        studentId: student.id,
+        studentCode: student.code,
+        teacherIds: [profileTeacherId],
+        busyFromDate: profileBookingSlot.dateISO,
+        busyToDate: profileBookingSlot.dateISO,
+      })
+      const latestBookings = latestState.busySlots
       setTeacherScheduleBookings((current) => ({ ...current, [profileTeacherId]: latestBookings }))
 
       const stillAvailable = isProfileSlotInsideAvailability(
@@ -2025,23 +2008,6 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
       if (!stillAvailable) {
         toast.warning(lang === 'vi' ? 'Khung giờ này vừa được người khác đặt. Vui lòng chọn khung khác.' : 'This time was just booked. Please choose another slot.')
-        return
-      }
-
-      const requestedEnd = profileMinutesToTime(profileTimeToMinutes(profileBookingSlot.start) + profileBookingDuration)
-      const conflicts = await checkBookingCandidates([{
-        teacherId: profileTeacherId,
-        teacherName: teacher.name,
-        studentId: student.id,
-        studentName: student.name,
-        studentCode: student.code,
-        requestedDate: profileBookingSlot.dateISO,
-        requestedStart: profileBookingSlot.start,
-        requestedEnd,
-        requestedMinutes: profileBookingDuration,
-      }])
-      if (conflicts.length > 0) {
-        toast.error(bookingConflictMessage(conflicts[0], lang === 'vi' ? 'vi' : 'en'))
         return
       }
 

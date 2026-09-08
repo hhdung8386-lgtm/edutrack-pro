@@ -7,12 +7,17 @@ const {
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing')
 const {
+  collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } = require('firebase/firestore')
 
@@ -122,6 +127,174 @@ beforeEach(async () => {
 after(async () => {
   await testEnvironment?.cleanup()
 })
+
+async function seedBookingSecurityFixtures() {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore()
+    const common = {
+      studentId: 'student-a',
+      studentCode: 'HS12AB34',
+      subjectId: 'subject-a',
+      requestedDate: '2026-09-09',
+      requestedStart: '19:00',
+      requestedEnd: '19:50',
+      requestedMinutes: 50,
+      requestedPoints: 50,
+      pointsPer25Minutes: 25,
+    }
+    await Promise.all([
+      setDoc(doc(db, 'bookingRequests', 'booking-response'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'pending',
+        teacherResponse: 'pending',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-response-tamper'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'pending',
+        teacherResponse: 'pending',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-link'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-link-tamper'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-link-batch'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-link-merged'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-unlink'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+        lessonId: 'lesson-cancelled',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-unlink-active'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+        lessonId: 'lesson-active',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-unlink-no-ref'), {
+        ...common,
+        teacherId: 'teacher-a',
+        status: 'confirmed',
+        teacherResponse: 'accepted',
+        lessonId: 'lesson-cancelled-no-ref',
+      }),
+      setDoc(doc(db, 'bookingRequests', 'booking-foreign'), {
+        ...common,
+        teacherId: 'teacher-b',
+        status: 'pending',
+        teacherResponse: 'pending',
+      }),
+      setDoc(doc(db, 'bookingCancellationRequests', 'cancel-a'), {
+        bookingId: 'booking-response',
+        studentId: 'student-a',
+        studentCode: 'HS12AB34',
+        status: 'pending',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-cancelled'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        status: 'cancelled',
+        bookingRequestId: 'booking-unlink',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-active'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        status: 'pending',
+        bookingRequestId: 'booking-unlink-active',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-new'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'booking-link',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-forged'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'some-other-booking',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-wrong-teacher'), {
+        teacherId: 'teacher-b',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'booking-link-tamper',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-wrong-student'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-b',
+        subjectId: 'subject-a',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'booking-link-tamper',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-wrong-subject'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        subjectId: 'subject-b',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'booking-link-tamper',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-wrong-date'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        date: '2026-09-10',
+        status: 'pending',
+        bookingRequestId: 'booking-link-tamper',
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-merged'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        date: '2026-09-09',
+        status: 'pending',
+        bookingRequestId: 'booking-primary',
+        bookingRequestIds: ['booking-primary', 'booking-link-merged'],
+      }),
+      setDoc(doc(db, 'lessons', 'lesson-cancelled-no-ref'), {
+        teacherId: 'teacher-a',
+        studentId: 'student-a',
+        status: 'cancelled',
+        bookingRequestId: 'some-other-booking',
+      }),
+      setDoc(doc(db, 'students', 'student-a'), {
+        code: 'HS12AB34',
+        status: 'active',
+        remainingMinutes: 100,
+      }),
+    ])
+  })
+}
 
 test('gia sư chuẩn chỉ được đồng bộ metadata đăng nhập không cấp quyền', async () => {
   const db = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
@@ -575,4 +748,205 @@ test('Admin hệ thống vẫn quản lý được toàn bộ vòng đời hồ 
   }))
   await assertSucceeds(updateDoc(target, { teacherId: 'teacher-b' }))
   await assertSucceeds(deleteDoc(target))
+})
+
+test('khách ẩn danh không thể đọc hoặc ghi booking và yêu cầu hủy thô', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.unauthenticatedContext().firestore()
+
+  await assertFails(getDoc(doc(db, 'bookingRequests', 'booking-response')))
+  await assertFails(getDocs(query(
+    collection(db, 'bookingRequests'),
+    where('teacherId', '==', 'teacher-a'),
+  )))
+  await assertFails(setDoc(doc(db, 'bookingRequests', 'anonymous-booking'), {
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    studentCode: 'HS12AB34',
+    status: 'pending',
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-response'), {
+    teacherResponse: 'accepted',
+    teacherRespondedAt: serverTimestamp(),
+    teacherRespondedBy: 'anonymous',
+  }))
+  await assertFails(deleteDoc(doc(db, 'bookingRequests', 'booking-response')))
+
+  await assertFails(getDoc(doc(db, 'bookingCancellationRequests', 'cancel-a')))
+  await assertFails(setDoc(doc(db, 'bookingCancellationRequests', 'cancel-anonymous'), {
+    bookingId: 'booking-response',
+    studentId: 'student-a',
+    studentCode: 'HS12AB34',
+    status: 'pending',
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingCancellationRequests', 'cancel-a'), { status: 'resolved' }))
+  await assertFails(deleteDoc(doc(db, 'bookingCancellationRequests', 'cancel-a')))
+})
+
+test('Admin quản lý booking đầy đủ và quản lý yêu cầu hủy nhưng không xóa ledger hủy', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.authenticatedContext(ADMIN_UID).firestore()
+
+  await assertSucceeds(getDoc(doc(db, 'bookingRequests', 'booking-response')))
+  await assertSucceeds(getDocs(collection(db, 'bookingRequests')))
+  const bookingRef = doc(db, 'bookingRequests', 'booking-admin')
+  await assertSucceeds(setDoc(bookingRef, {
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    studentCode: 'HS12AB34',
+    status: 'pending',
+  }))
+  await assertSucceeds(updateDoc(bookingRef, { status: 'confirmed' }))
+  await assertSucceeds(deleteDoc(bookingRef))
+
+  const cancellationRef = doc(db, 'bookingCancellationRequests', 'cancel-admin')
+  await assertSucceeds(setDoc(cancellationRef, {
+    bookingId: 'booking-response',
+    studentId: 'student-a',
+    studentCode: 'HS12AB34',
+    status: 'pending',
+  }))
+  await assertSucceeds(getDoc(cancellationRef))
+  await assertSucceeds(updateDoc(cancellationRef, { status: 'resolved' }))
+  await assertFails(deleteDoc(cancellationRef))
+})
+
+test('gia sư canonical chỉ đọc được booking của mình qua truy vấn có ràng buộc', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+
+  await assertSucceeds(getDoc(doc(db, 'bookingRequests', 'booking-response')))
+  await assertFails(getDoc(doc(db, 'bookingRequests', 'booking-foreign')))
+
+  const ownSnapshot = await assertSucceeds(getDocs(query(
+    collection(db, 'bookingRequests'),
+    where('teacherId', '==', 'teacher-a'),
+  )))
+  if (ownSnapshot.docs.some((row) => row.data().teacherId !== 'teacher-a')) {
+    throw new Error('Truy vấn booking của gia sư trả về dữ liệu ngoài phạm vi')
+  }
+  await assertFails(getDocs(query(
+    collection(db, 'bookingRequests'),
+    where('teacherId', '==', 'teacher-b'),
+  )))
+  await assertFails(getDocs(collection(db, 'bookingRequests')))
+  await assertFails(getDoc(doc(db, 'bookingCancellationRequests', 'cancel-a')))
+})
+
+test('gia sư canonical không thể né callable để phản hồi booking trực tiếp', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+  const responseRef = doc(db, 'bookingRequests', 'booking-response')
+
+  await assertFails(updateDoc(responseRef, {
+    teacherResponse: 'accepted',
+    teacherRespondedAt: serverTimestamp(),
+    teacherRespondedBy: TEACHER_UID,
+  }))
+  await assertFails(updateDoc(responseRef, {
+    teacherResponse: 'declined',
+    teacherRespondedAt: serverTimestamp(),
+    teacherRespondedBy: TEACHER_UID,
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-response-tamper'), {
+    teacherResponse: 'accepted',
+    teacherRespondedAt: serverTimestamp(),
+    teacherRespondedBy: TEACHER_UID,
+    studentId: 'student-b',
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-foreign'), {
+    teacherResponse: 'accepted',
+    teacherRespondedAt: serverTimestamp(),
+    teacherRespondedBy: TEACHER_UID,
+  }))
+})
+
+test('gia sư canonical chỉ gắn lessonId vào booking confirmed và không thể sửa tiền hoặc vòng đời', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+
+  await assertSucceeds(updateDoc(doc(db, 'bookingRequests', 'booking-link'), {
+    lessonId: 'lesson-new',
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-link-tamper'), {
+    lessonId: 'lesson-forged',
+  }))
+  for (const invalidLessonId of [
+    'lesson-missing',
+    'lesson-wrong-teacher',
+    'lesson-wrong-student',
+    'lesson-wrong-subject',
+    'lesson-wrong-date',
+  ]) {
+    await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-link-tamper'), {
+      lessonId: invalidLessonId,
+    }))
+  }
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-link-tamper'), {
+    lessonId: 'lesson-forged',
+    requestedPoints: 0,
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-link-tamper'), {
+    lessonId: 'x'.repeat(161),
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-response-tamper'), {
+    lessonId: 'lesson-on-pending-booking',
+  }))
+  await assertSucceeds(updateDoc(doc(db, 'bookingRequests', 'booking-link-merged'), {
+    lessonId: 'lesson-merged',
+  }))
+
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'lessons', 'lesson-created-with-link'), {
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    subjectId: 'subject-a',
+    date: '2026-09-09',
+    minutes: 50,
+    status: 'pending',
+    bookingRequestId: 'booking-link-batch',
+  })
+  batch.update(doc(db, 'bookingRequests', 'booking-link-batch'), {
+    lessonId: 'lesson-created-with-link',
+  })
+  await assertSucceeds(batch.commit())
+})
+
+test('gia sư canonical chỉ tháo lessonId khi lesson liên kết đã hủy và không thể tamper', async () => {
+  await seedBookingSecurityFixtures()
+  const db = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+
+  await assertSucceeds(updateDoc(doc(db, 'bookingRequests', 'booking-unlink'), {
+    lessonId: deleteField(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-unlink-active'), {
+    lessonId: deleteField(),
+    updatedAt: serverTimestamp(),
+  }))
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-unlink-no-ref'), {
+    lessonId: deleteField(),
+    updatedAt: serverTimestamp(),
+  }))
+
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore()
+    await setDoc(doc(adminDb, 'bookingRequests', 'booking-unlink-tamper'), {
+      teacherId: 'teacher-a',
+      studentId: 'student-a',
+      studentCode: 'HS12AB34',
+      requestedDate: '2026-09-09',
+      requestedStart: '19:00',
+      requestedEnd: '19:50',
+      requestedMinutes: 50,
+      requestedPoints: 50,
+      status: 'confirmed',
+      lessonId: 'lesson-cancelled',
+    })
+  })
+  await assertFails(updateDoc(doc(db, 'bookingRequests', 'booking-unlink-tamper'), {
+    lessonId: deleteField(),
+    updatedAt: serverTimestamp(),
+    requestedPoints: 0,
+  }))
 })

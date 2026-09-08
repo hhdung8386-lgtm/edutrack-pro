@@ -341,7 +341,9 @@ service cloud.firestore {
 
       allow read: if true; // Public read for lookup by student code on tracking page
       allow create: if isAdmin();
-      allow update: if isAdmin() || isPublicBookingHold() || isSelfCancellationMinuteRelease() || isPublicAvatarSelection() || isKeepHoldRebookMark() || isRebookBookingHold();
+      // Booking balances are mutated only by reviewed Admin SDK callables. The
+      // unauthenticated portal keeps the narrowly-scoped avatar preference only.
+      allow update: if isAdmin() || isPublicAvatarSelection();
       allow delete: if isAdmin();
     }
 
@@ -748,42 +750,71 @@ service cloud.firestore {
           && heldAfter == heldBefore + newPoints - oldPoints;
       }
 
-      allow create: if isAdmin() || isPublicBookingCreate() || isRebookBookingCreate();
-      allow read: if true;
+      // Attendance creation remains a client transaction. Besides limiting the
+      // changed field, bind the pointer to the lesson written by that same
+      // atomic operation. This prevents an arbitrary/missing lesson id from
+      // permanently locking a confirmed booking.
+      function isTeacherBookingLessonLink() {
+        let oldLessonId = resource.data.get('lessonId', '');
+        let newLessonId = request.resource.data.get('lessonId', '');
+        let linkedLesson = getAfter(/databases/$(database)/documents/lessons/$(newLessonId));
+        let linkedBookingIds = linkedLesson.data.get('bookingRequestIds', []);
+        return isTeacherFor(resource.data.teacherId)
+          && resource.data.status == 'confirmed'
+          && oldLessonId == ''
+          && newLessonId is string
+          && newLessonId.matches('^[A-Za-z0-9_-]{1,160}$')
+          && linkedLesson.data.status == 'pending'
+          && linkedLesson.data.teacherId == resource.data.teacherId
+          && linkedLesson.data.studentId == resource.data.studentId
+          && linkedLesson.data.get('subjectId', '') == resource.data.get('subjectId', '')
+          && linkedLesson.data.get('date', '') == resource.data.get('requestedDate', '')
+          && (
+            linkedLesson.data.get('bookingRequestId', '') == requestId
+            || (linkedBookingIds is list && linkedBookingIds.hasAny([requestId]))
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lessonId']);
+      }
+
+      // A teacher can reopen an own confirmed slot only after the linked own
+      // lesson has already been soft-cancelled. The lesson relation is checked
+      // against fresh server data before the pointer is removed.
+      function isTeacherBookingLessonUnlink() {
+        let oldLessonId = resource.data.get('lessonId', '');
+        let linkedLesson = get(/databases/$(database)/documents/lessons/$(oldLessonId));
+        let linkedBookingIds = linkedLesson.data.get('bookingRequestIds', []);
+        return isTeacherFor(resource.data.teacherId)
+          && resource.data.status == 'confirmed'
+          && oldLessonId is string
+          && oldLessonId.size() > 0
+          && request.resource.data.get('lessonId', '') == ''
+          && linkedLesson.data.status == 'cancelled'
+          && linkedLesson.data.teacherId == resource.data.teacherId
+          && linkedLesson.data.studentId == resource.data.studentId
+          && (
+            linkedLesson.data.get('bookingRequestId', '') == requestId
+            || (linkedBookingIds is list && linkedBookingIds.hasAny([requestId]))
+          )
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lessonId', 'updatedAt'
+          ]);
+      }
+
+      // Parent/Class Hunting writes now run through validated Admin SDK
+      // transactions. Raw Firestore access is operator/assigned-teacher only.
+      allow create: if isAdmin();
+      allow read: if isAdmin() || isTeacherFor(resource.data.teacherId);
       allow update: if isAdmin()
-        || isTeacherFor(resource.data.teacherId)
-        || isPublicSelfCancellation()
-        || isPublicPendingCancellation()
-        || isKeepHoldSelfCancel()
-        || isRebookCloseOldBooking();
+        || isTeacherBookingLessonLink()
+        || isTeacherBookingLessonUnlink();
       allow delete: if isAdmin();
     }
 
-    // A parent/student may request cancellation for a confirmed booking only.
-    // Admin is the only role allowed to approve/reject so releasing the teacher
-    // slot and held student minutes remains one atomic transaction.
+    // Parent cancellation is handled by cancelParentBooking. Raw request rows
+    // are operational records and are never exposed to the public client.
     match /bookingCancellationRequests/{requestId} {
-      allow read: if true;
-      allow create: if request.resource.data.status == 'pending'
-        && request.resource.data.bookingId is string
-        && request.resource.data.studentId is string
-        && request.resource.data.studentCode is string
-        && request.resource.data.teacherId is string
-        && request.resource.data.requestedMinutes is int
-        && request.resource.data.studentCode == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.code
-        && request.resource.data.studentId == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.studentId
-        && request.resource.data.teacherId == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.teacherId
-        && request.resource.data.requestedMinutes == get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.requestedMinutes
-        && get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data.status == 'confirmed';
-      allow update: if isAdmin() || (
-        resource.data.status == 'pending'
-        && request.resource.data.status == 'approved'
-        && request.resource.data.reviewedAt == request.time
-        && request.resource.data.reviewedBy == 'student:' + resource.data.studentCode
-        && getAfter(/databases/$(database)/documents/bookingRequests/$(resource.data.bookingId)).data.status == 'released'
-        && getAfter(/databases/$(database)/documents/bookingRequests/$(resource.data.bookingId)).data.selfServiceCancelled == true
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy'])
-      );
+      allow read, create, update: if isAdmin();
       allow delete: if false;
     }
 

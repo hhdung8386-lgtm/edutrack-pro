@@ -3,6 +3,7 @@ import { db } from '@/lib/firebase'
 import { isActiveBooking } from '@/lib/bookingConflicts'
 import { matchesLessonBookingSubject, selectUniqueContiguousBookingSet } from '@/lib/bookingLogic'
 import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
+import { getTeacherAttendanceAuditData } from '@/lib/teacherBookingActions'
 import type { BookingRequest, Lesson, LessonScheduleCheckSnapshot } from '@/types'
 
 /**
@@ -261,15 +262,12 @@ export async function auditTeacherAttendance(input: {
   date: string
   minutes?: number
 }): Promise<AttendanceAudit> {
-  const [bookings, dayLessons] = await Promise.all([
-    fetchStudentBookingsAround(input.studentId, input.date),
-    fetchTeacherDayLessons(input.teacherId, input.studentId, input.date),
-  ])
-  const sameDayLessons = dayLessons.filter(countsAsDailyAttendance)
+  const audit = await getTeacherAttendanceAuditData(input)
   return {
-    schedule: evaluateLessonSchedule(bookings, input),
-    sameDayLessons,
-    sameDayByTeacher: sameDayLessons.filter((l) => l.teacherId === input.teacherId).length,
+    schedule: evaluateLessonSchedule(audit.bookings, input),
+    // Teacher UI only consumes the count. Other teachers' lesson documents never leave the backend.
+    sameDayLessons: [],
+    sameDayByTeacher: audit.sameDayByTeacher,
   }
 }
 
