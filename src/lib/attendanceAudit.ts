@@ -120,16 +120,26 @@ export function evaluateLessonSchedule(
   }
 
   const active = bookings.filter((b) => isActiveBooking(b) && !!b.requestedDate)
+  const matchesLessonStudent = (booking: BookingRequest) => !lesson.studentId || booking.studentId === lesson.studentId
   const matchesLessonSubject = (booking: BookingRequest) => matchesLessonBookingSubject(booking, lesson.subjectId)
-  const sameDayOwn = active.filter((b) => (
-    b.requestedDate === lesson.date
+  const sameDaySameTutor = active.filter((b) => (
+    matchesLessonStudent(b)
+    && b.requestedDate === lesson.date
     && b.teacherId === lesson.teacherId
-    && matchesLessonSubject(b)
+  ))
+  const sameDayOwn = sameDaySameTutor.filter((b) => (
+    matchesLessonSubject(b)
   ))
 
   if (sameDayOwn.length > 0) {
     const eligibleOwn = sameDayOwn.filter((booking) => !booking.lessonId || booking.lessonId === lesson.id)
-    const matchedBookings = selectUniqueContiguousBookingSet(eligibleOwn, Number(lesson.minutes))
+    const uniqueContiguousBookings = selectUniqueContiguousBookingSet(eligibleOwn, Number(lesson.minutes))
+    // A fallback match is safe only when every eligible active row belongs to
+    // that one class block. A separate same-day row without an explicit saved
+    // reference remains ambiguous rather than being silently ignored.
+    const matchedBookings = uniqueContiguousBookings.length === eligibleOwn.length
+      ? uniqueContiguousBookings
+      : []
     const matched = matchedBookings[0] || sameDayOwn[0]
     const hasAmbiguousBookingMatch = Number(lesson.minutes) > 0 && matchedBookings.length === 0
     let timeRangeMismatch: {
@@ -168,8 +178,30 @@ export function evaluateLessonSchedule(
     }
   }
 
+  // Do not report a booked lesson as a harmless fixed-schedule case when the
+  // same student/tutor/day has an explicit booking for another subject. This
+  // is a protected course-transfer/reconciliation decision, not something an
+  // ordinary approval may silently charge to whichever package still has time.
+  const sameDayDifferentSubject = sameDaySameTutor.filter((booking) => (
+    Boolean(lesson.subjectId)
+    && Boolean(booking.subjectId)
+    && booking.subjectId !== lesson.subjectId
+  ))
+  if (sameDayDifferentSubject.length > 0) {
+    return {
+      ...base,
+      status: 'subject_mismatch',
+      scheduledDates: [lesson.date],
+      bookingSubjectNames: Array.from(new Set(
+        sameDayDifferentSubject
+          .map((booking) => booking.subjectName)
+          .filter((name): name is string => Boolean(name)),
+      )).slice(0, 3),
+    }
+  }
+
   const ownNearby = active
-    .filter((b) => b.teacherId === lesson.teacherId && matchesLessonSubject(b))
+    .filter((b) => matchesLessonStudent(b) && b.teacherId === lesson.teacherId && matchesLessonSubject(b))
     .sort((a, b) => Math.abs(dayDiff(a.requestedDate!, lesson.date)) - Math.abs(dayDiff(b.requestedDate!, lesson.date)))
 
   if (ownNearby.length > 0) {
@@ -177,7 +209,11 @@ export function evaluateLessonSchedule(
     return { ...base, status: 'mismatch_day', scheduledDates }
   }
 
-  const sameDayOther = active.filter((b) => b.requestedDate === lesson.date && matchesLessonSubject(b))
+  const sameDayOther = active.filter((b) => (
+    matchesLessonStudent(b)
+    && b.requestedDate === lesson.date
+    && matchesLessonSubject(b)
+  ))
   if (sameDayOther.length > 0) {
     return {
       ...base,
@@ -294,6 +330,18 @@ export function describeSchedule(check: LessonScheduleCheck | undefined, lang: '
               : 'The scheduled time range does not match the stored duration. Fix the schedule before approving.'),
       }
     }
+    case 'subject_mismatch':
+      return {
+        tone: 'danger',
+        title: vi ? 'Môn của lịch đặt không khớp môn buổi điểm danh' : 'The booking subject does not match the attendance subject',
+        detail: check.bookingSubjectNames?.length
+          ? (vi
+              ? `Lịch đang ghi môn: ${check.bookingSubjectNames.join(', ')}. Không tự trừ sang gói môn khác; cần giáo vụ xác nhận chuyển môn/lịch sử trước khi duyệt.`
+              : `The booking is recorded for: ${check.bookingSubjectNames.join(', ')}. Do not automatically charge a different course package; academic staff must confirm the historical course transfer first.`)
+          : (vi
+              ? 'Không tự trừ sang gói môn khác; cần giáo vụ xác nhận chuyển môn/lịch sử trước khi duyệt.'
+              : 'Do not automatically charge a different course package; academic staff must confirm the historical course transfer first.'),
+      }
     case 'matched':
       return {
         tone: check.minutesMismatch ? 'warning' : 'ok',

@@ -324,7 +324,7 @@ export interface Lesson {
 
 /** Ảnh chụp kết quả đối chiếu lịch, lưu kèm buổi dạy để giáo vụ xem lại không tốn truy vấn. */
 export interface LessonScheduleCheckSnapshot {
-  status: 'matched' | 'ambiguous' | 'time_mismatch' | 'mismatch_day' | 'other_teacher' | 'no_booking'
+  status: 'matched' | 'ambiguous' | 'time_mismatch' | 'subject_mismatch' | 'mismatch_day' | 'other_teacher' | 'no_booking'
   scheduledDates: string[]
   bookingId?: string
   /** Toàn bộ ca ghép vào một buổi dài (ví dụ 2 ca 25 phút cho buổi 50 phút). */
@@ -336,6 +336,8 @@ export interface LessonScheduleCheckSnapshot {
   /** Thời lượng booking đang lưu khi nó mâu thuẫn với khoảng giờ hiển thị. */
   timeRangeExpectedMinutes?: number
   minutesMismatch?: number
+  /** Explicit booking subjects found for the same student/tutor/date but not for this lesson's subject. */
+  bookingSubjectNames?: string[]
   otherTeacherNames?: string[]
   checkedAt: string
   windowDays: number

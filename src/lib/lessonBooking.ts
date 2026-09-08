@@ -5,6 +5,7 @@ import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getBookingPoints } from '@/lib/points'
 import {
   LessonBookingReference,
+  isActiveAttendanceBooking,
   recoverLegacySingleBookingReference,
   selectLegacyExcusedAbsenceBookingByScheduleCheck,
   selectLessonBookingMatches,
@@ -59,10 +60,34 @@ export function assertBookingTimeRangeIntegrity(bookings: BookingRequest[]): voi
 export function assertBookingsAvailableForApproval(bookings: BookingRequest[], lessonId: string): void {
   for (const booking of bookings) {
     if (
-      (booking.status !== 'pending' && booking.status !== 'confirmed')
+      !isActiveAttendanceBooking(booking)
       || (booking.lessonId && booking.lessonId !== lessonId)
     ) throw new Error('BOOKING_STATE_CHANGED')
   }
+}
+
+/**
+ * Re-check the identity and topology inside the approval transaction. The
+ * resolver runs before the transaction, so a booking edited concurrently must
+ * never be used to deduct a different course package.
+ */
+export function assertBookingsMatchLessonForApproval(
+  bookings: BookingRequest[],
+  lesson: LessonBookingReference,
+): void {
+  if (bookings.length === 0) return
+  if (!bookings.every(isActiveAttendanceBooking)) throw new Error('BOOKING_STATE_CHANGED')
+
+  const hasExplicitSubjectMismatch = bookings.some((booking) => (
+    booking.studentId === lesson.studentId
+    && booking.teacherId === lesson.teacherId
+    && booking.requestedDate === lesson.date
+    && Boolean(lesson.subjectId)
+    && Boolean(booking.subjectId)
+    && booking.subjectId !== lesson.subjectId
+  ))
+  if (hasExplicitSubjectMismatch) throw new Error('BOOKING_SUBJECT_MISMATCH')
+  if (!validateExplicitLessonBookings(bookings, lesson)) throw new Error('BOOKING_STATE_CHANGED')
 }
 
 export async function resolveLessonBookings(lesson: LessonBookingReference): Promise<BookingRequest[]> {
@@ -82,6 +107,15 @@ export async function resolveLessonBookings(lesson: LessonBookingReference): Pro
       .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
     if (resolved.length !== bookingIds.length) throw new Error('BOOKING_REFERENCE_INVALID')
     if (!validateExplicitLessonBookings(resolved, lesson)) {
+      const hasExplicitSubjectMismatch = resolved.some((booking) => (
+        booking.studentId === lesson.studentId
+        && booking.teacherId === lesson.teacherId
+        && booking.requestedDate === lesson.date
+        && Boolean(lesson.subjectId)
+        && Boolean(booking.subjectId)
+        && booking.subjectId !== lesson.subjectId
+      ))
+      if (hasExplicitSubjectMismatch) throw new Error('BOOKING_SUBJECT_MISMATCH')
       // Old attendance records could retain only the first 25-minute booking
       // ID after a teacher reported a merged 50/75/100-minute lesson. Recover
       // only a provably complete contiguous set; all ambiguous cases fail closed.

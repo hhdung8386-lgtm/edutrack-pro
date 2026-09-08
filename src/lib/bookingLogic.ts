@@ -30,6 +30,18 @@ export function isBookingCancellable(booking: BookingRequest | null | undefined)
 
 const ACTIVE_BOOKING_STATUSES = new Set<BookingRequest['status']>(['pending', 'confirmed'])
 
+/**
+ * A booking is usable for attendance only while it is still an active hold.
+ * A pending request that the tutor already declined must not be linked later
+ * merely because its Firestore status has not been released yet.
+ */
+export function isActiveAttendanceBooking(
+  booking: Pick<BookingRequest, 'status' | 'teacherResponse'>,
+): boolean {
+  return ACTIVE_BOOKING_STATUSES.has(booking.status)
+    && !(booking.status === 'pending' && booking.teacherResponse === 'declined')
+}
+
 function timeToMinutes(time: string) {
   const [hours = '0', minutes = '0'] = time.split(':')
   return Number(hours) * 60 + Number(minutes)
@@ -114,15 +126,21 @@ export function selectUniqueContiguousBookingSet(
   const target = Number(requestedMinutes)
   if (![25, 50, 75, 100].includes(target)) return []
 
-  // A single booking whose persisted duration already equals the lesson is
-  // sufficient even for older records that never stored a display start time.
-  const exactSingles = candidates.filter((booking) => Number(booking.requestedMinutes) === target)
-  if (exactSingles.length === 1) return exactSingles
-  if (exactSingles.length > 1) return []
-
   const sorted = candidates
     .filter(hasValidAttendanceSlot)
     .sort((left, right) => timeToMinutes(left.requestedStart) - timeToMinutes(right.requestedStart))
+
+  // A single legacy record without a usable display time can remain compatible
+  // only when it is the sole candidate. With any additional candidate we cannot
+  // prove whether it belongs to the same class block, so fail closed.
+  if (sorted.length !== candidates.length) {
+    return candidates.length === 1 && Number(candidates[0].requestedMinutes) === target
+      ? [candidates[0]]
+      : []
+  }
+
+  // Do not silently split a contiguous block. This covers a persisted 50-minute
+  // slot followed by an adjacent slot as well as the common 25 + 25-minute case.
   const blocks: BookingRequest[][] = []
   for (const booking of sorted) {
     const current = blocks[blocks.length - 1]
@@ -139,6 +157,12 @@ function sameLessonIdentity(booking: BookingRequest, lesson: LessonBookingRefere
   if (booking.teacherId !== lesson.teacherId) return false
   if (booking.requestedDate !== lesson.date) return false
   return matchesLessonBookingSubject(booking, lesson.subjectId)
+}
+
+function sameLessonIdentityIgnoringSubject(booking: BookingRequest, lesson: LessonBookingReference): boolean {
+  return booking.studentId === lesson.studentId
+    && booking.teacherId === lesson.teacherId
+    && booking.requestedDate === lesson.date
 }
 
 /**
@@ -158,8 +182,17 @@ export function validateExplicitLessonBookings(
   bookings: BookingRequest[],
   lesson: LessonBookingReference,
 ): boolean {
-  return bookings.every((booking) => sameLessonIdentity(booking, lesson))
-    && (Number(lesson.minutes) <= 0 || totalBookingMinutes(bookings) === Number(lesson.minutes))
+  if (bookings.length === 0) return false
+  if (!bookings.every((booking) => sameLessonIdentity(booking, lesson))) return false
+
+  const lessonMinutes = Number(lesson.minutes)
+  if (lessonMinutes <= 0) return true
+  if (totalBookingMinutes(bookings) !== lessonMinutes) return false
+
+  const contiguous = selectUniqueContiguousBookingSet(bookings, lessonMinutes)
+  if (contiguous.length !== bookings.length) return false
+  const selectedIds = new Set(contiguous.map((booking) => booking.id))
+  return bookings.every((booking) => selectedIds.has(booking.id))
 }
 
 /**
@@ -179,13 +212,13 @@ export function recoverLegacySingleBookingReference(
 
   const explicit = explicitBookings[0]
   if (
-    !ACTIVE_BOOKING_STATUSES.has(explicit.status)
+    !isActiveAttendanceBooking(explicit)
     || !sameLessonIdentity(explicit, lesson)
     || !hasValidAttendanceSlot(explicit)
   ) return []
 
   const eligible = candidates.filter((booking) => (
-    ACTIVE_BOOKING_STATUSES.has(booking.status)
+    isActiveAttendanceBooking(booking)
     && sameLessonIdentity(booking, lesson)
     && (!booking.lessonId || booking.lessonId === lesson.id)
     && hasValidAttendanceSlot(booking)
@@ -195,7 +228,11 @@ export function recoverLegacySingleBookingReference(
   // Ask for the whole uninterrupted block rather than only enough adjacent
   // rows: otherwise a 50-minute lesson inside a longer block would be guessed.
   const contiguous = selectUniqueContiguousBookingSet(eligible, lessonMinutes)
-  if (contiguous.length < 2 || !contiguous.some((booking) => booking.id === explicit.id)) return []
+  if (
+    contiguous.length < 2
+    || contiguous.length !== eligible.length
+    || !contiguous.some((booking) => booking.id === explicit.id)
+  ) return []
 
   return contiguous
 }
@@ -215,7 +252,7 @@ export function selectLegacyExcusedAbsenceBookingByScheduleCheck(
   if (!start) return []
 
   const anchored = candidates.filter((booking) => (
-    ACTIVE_BOOKING_STATUSES.has(booking.status)
+    isActiveAttendanceBooking(booking)
     && sameLessonIdentity(booking, lesson)
     && (!booking.lessonId || booking.lessonId === lesson.id)
     && booking.requestedStart === start
@@ -243,12 +280,24 @@ export function selectLessonBookingMatches(
   matches: BookingRequest[],
   lesson: LessonBookingReference,
 ): BookingRequest[] {
-  const active = matches.filter((booking) => (
-    ACTIVE_BOOKING_STATUSES.has(booking.status)
-    && sameLessonIdentity(booking, lesson)
+  const activeSameIdentity = matches.filter((booking) => (
+    isActiveAttendanceBooking(booking)
+    && sameLessonIdentityIgnoringSubject(booking, lesson)
     && (!booking.lessonId || booking.lessonId === lesson.id)
   ))
-  if (active.length === 0) return []
+  const active = activeSameIdentity.filter((booking) => sameLessonIdentity(booking, lesson))
+  if (active.length === 0) {
+    // A concrete booking for the same pupil, tutor and day exists, but it is
+    // explicitly tied to a different subject. Returning [] here would let an
+    // approval be treated as an unbooked fixed lesson and charge a package that
+    // was never selected for this booking.
+    if (activeSameIdentity.some((booking) => (
+      Boolean(lesson.subjectId)
+      && Boolean(booking.subjectId)
+      && booking.subjectId !== lesson.subjectId
+    ))) throw new Error('BOOKING_SUBJECT_MISMATCH')
+    return []
+  }
 
   // An excused absence is saved as zero minutes while its arranged slot still
   // has its normal 25/50-minute duration. For legacy lessons that do not keep
@@ -258,10 +307,8 @@ export function selectLessonBookingMatches(
     throw new Error('BOOKING_MATCH_AMBIGUOUS')
   }
 
-  const exact = active.filter((booking) => Number(booking.requestedMinutes) === Number(lesson.minutes))
-  if (exact.length === 1) return exact
-  if (exact.length > 1) throw new Error('BOOKING_MATCH_AMBIGUOUS')
-  if (active.length > 1 && totalBookingMinutes(active) === Number(lesson.minutes)) return active
+  const contiguous = selectUniqueContiguousBookingSet(active, Number(lesson.minutes))
+  if (contiguous.length > 0 && contiguous.length === active.length) return contiguous
 
   throw new Error('BOOKING_MATCH_AMBIGUOUS')
 }

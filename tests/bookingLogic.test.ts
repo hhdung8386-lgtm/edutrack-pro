@@ -80,6 +80,35 @@ test('fails closed when same-day holds cannot be proven to equal the lesson', ()
   ], lesson(50)), false)
 })
 
+test('does not merge disjoint same-day bookings merely because their minutes add up', () => {
+  assert.throws(
+    () => selectLessonBookingMatches([
+      booking('morning', '08:00'),
+      booking('evening', '20:00'),
+    ], lesson(50)),
+    /BOOKING_MATCH_AMBIGUOUS/,
+  )
+})
+
+test('reports an explicit booking subject mismatch instead of treating it as an unbooked lesson', () => {
+  assert.throws(
+    () => selectLessonBookingMatches([
+      booking('other-subject', '20:00', { requestedMinutes: 50, subjectId: 'subject-2' }),
+    ], lesson(50)),
+    /BOOKING_SUBJECT_MISMATCH/,
+  )
+  assert.deepEqual(
+    selectLessonBookingMatches([
+      booking('released-other-subject', '20:00', {
+        requestedMinutes: 50,
+        subjectId: 'subject-2',
+        status: 'released',
+      }),
+    ], lesson(50)),
+    [],
+  )
+})
+
 test('ignores released bookings when using the legacy fallback matcher', () => {
   const active = booking('active', '20:00', { requestedMinutes: 50 })
   const released = booking('released', '20:30', { requestedMinutes: 50, status: 'released' })
@@ -117,6 +146,27 @@ test('requires one whole contiguous block instead of choosing between multiple p
   assert.deepEqual(selectUniqueContiguousBookingSet(morning, 50).map((item) => item.id), ['morning-a', 'morning-b'])
   assert.deepEqual(selectUniqueContiguousBookingSet([...morning, ...evening], 50), [])
   assert.deepEqual(selectUniqueContiguousBookingSet([...morning, booking('extra', '09:00')], 50), [])
+})
+
+test('does not split an adjacent booking from a longer stored block', () => {
+  assert.deepEqual(
+    selectUniqueContiguousBookingSet([
+      booking('fifty', '20:00', { requestedMinutes: 50 }),
+      booking('next', '21:00'),
+    ], 50),
+    [],
+  )
+})
+
+test('requires explicit multi-booking references to form one contiguous group', () => {
+  assert.equal(validateExplicitLessonBookings([
+    booking('morning', '08:00'),
+    booking('evening', '20:00'),
+  ], lesson(50)), false)
+  assert.equal(validateExplicitLessonBookings([
+    booking('first', '20:00'),
+    booking('second', '20:30'),
+  ], lesson(50)), true)
 })
 
 test('keeps a uniquely matching legacy single booking even when its display start is absent', () => {

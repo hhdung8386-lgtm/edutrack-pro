@@ -19,7 +19,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
-import { assertBookingsAvailableForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
@@ -95,6 +95,7 @@ export function ApprovalsPage() {
 
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
+  const [approveStudentLoading, setApproveStudentLoading] = useState(false)
   const [copiedLessonId, setCopiedLessonId] = useState<string | null>(null)
   // Đối chiếu lịch + số lần điểm danh trong ngày, chạy ngay khi mở hộp thoại duyệt
   const [approveAudit, setApproveAudit] = useState<{ lessonId: string; audit: AttendanceAudit } | null>(null)
@@ -115,6 +116,7 @@ export function ApprovalsPage() {
     setApprovingLesson(lesson)
     setApproveSubjectId(lesson.subjectId || '')
     setApproveStudentSubjects([])
+    setApproveStudentLoading(true)
     setApproveAudit(null)
     setAuditLoading(true)
     auditLessonForAdmin({
@@ -169,12 +171,15 @@ export function ApprovalsPage() {
         if (hasLessonSub) {
           setApproveSubjectId(lesson.subjectId)
         } else {
-          const firstWithBalance = resolvedSubjects.find(sub => sub.remainingMinutes > 0)
-          setApproveSubjectId(firstWithBalance?.subjectId || resolvedSubjects[0]?.subjectId || '')
+          // Never silently charge the first package that still has minutes when
+          // historical lesson/booking subject data no longer matches it.
+          setApproveSubjectId('')
         }
       }
     } catch (err) {
       console.error('Error fetching student packages:', err)
+    } finally {
+      setApproveStudentLoading(false)
     }
   }
 
@@ -320,8 +325,18 @@ export function ApprovalsPage() {
     && approveAudit?.lessonId === approvingLesson.id
     && (
       approveAudit.audit.schedule.status === 'ambiguous'
+      || approveAudit.audit.schedule.status === 'subject_mismatch'
       || (approveAudit.audit.schedule.status === 'time_mismatch' && !approvalIsZeroMinuteExcusedAbsence)
     )
+  )
+  const approvalHasLessonSubjectPackage = Boolean(
+    approvingLesson
+    && approveStudentSubjects.some((subject) => subject.subjectId === approvingLesson.subjectId),
+  )
+  const approvalHasSubjectPackageMismatch = Boolean(
+    approvingLesson
+    && !approveStudentLoading
+    && !approvalHasLessonSubjectPackage,
   )
 
   const handleApprove = async () => {
@@ -335,6 +350,10 @@ export function ApprovalsPage() {
       const chosenSubjectPkg = approveStudentSubjects.find(s => s.subjectId === approveSubjectId)
       if (!chosenSubjectPkg) {
         toast.error('Môn học được chọn không hợp lệ')
+        return
+      }
+      if (approveSubjectId !== approvingLesson.subjectId || !approvalHasLessonSubjectPackage) {
+        toast.error('Môn của buổi điểm danh không còn khớp gói học viên. Không thể tự trừ sang gói còn buổi khác.')
         return
       }
 
@@ -384,6 +403,15 @@ export function ApprovalsPage() {
           if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
           assertBookingsAvailableForApproval(bookingNows, approvingLesson.id)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
+          assertBookingsMatchLessonForApproval(bookingNows, {
+            id: approvingLesson.id,
+            studentId: lessonNow.studentId,
+            teacherId: lessonNow.teacherId,
+            date: lessonNow.date,
+            minutes: lessonNow.minutes,
+            subjectId: lessonNow.subjectId,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const teacherLevel = (approvingLesson.teacherLevel ?? teacherData?.level ?? 1) || 1
@@ -619,6 +647,8 @@ export function ApprovalsPage() {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
       } else if (message === 'BOOKING_STATE_CHANGED') {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
+      } else if (message === 'BOOKING_SUBJECT_MISMATCH') {
+        toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
@@ -915,7 +945,7 @@ export function ApprovalsPage() {
           title="Xác nhận duyệt buổi dạy?"
           confirmLabel="Duyệt buổi dạy"
           loading={approving}
-          confirmDisabled={auditLoading || approvalHasBlockingScheduleIssue}
+          confirmDisabled={auditLoading || approveStudentLoading || approvalHasBlockingScheduleIssue || approvalHasSubjectPackageMismatch || !approveSubjectId}
         >
           <div className="bg-white rounded-xl p-4 text-sm space-y-3">
             {/* Đối chiếu tươi ngay trước khi trừ kim cương: lịch đã sắp + buổi trùng ngày */}
@@ -959,12 +989,15 @@ export function ApprovalsPage() {
               <select
                 value={approveSubjectId}
                 onChange={(e) => setApproveSubjectId(e.target.value)}
+                disabled={approveStudentLoading || approvalHasSubjectPackageMismatch}
                 className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {approveStudentSubjects.length === 0 ? (
+                {approveStudentLoading ? (
                   <option value="">Đang tải các gói môn học...</option>
+                ) : approvalHasSubjectPackageMismatch ? (
+                  <option value="">Không có gói môn trùng với buổi điểm danh</option>
                 ) : (
-                  approveStudentSubjects.map((sub) => {
+                  approveStudentSubjects.filter((sub) => sub.subjectId === approvingLesson.subjectId).map((sub) => {
                     const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
                     return (
                       <option key={sub.subjectId} value={sub.subjectId}>
@@ -975,6 +1008,13 @@ export function ApprovalsPage() {
                 )}
               </select>
             </div>
+
+            {approvalHasSubjectPackageMismatch && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                <p className="font-bold">Không tự trừ vào gói còn buổi khác</p>
+                <p className="mt-0.5">Buổi điểm danh không còn có gói môn tương ứng. Cần giáo vụ xác nhận nghiệp vụ chuyển môn/lịch sử trước khi có thể duyệt an toàn.</p>
+              </div>
+            )}
 
             {(() => {
               const chosen = approveStudentSubjects.find(s => s.subjectId === approveSubjectId)

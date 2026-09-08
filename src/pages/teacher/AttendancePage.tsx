@@ -341,6 +341,12 @@ export function AttendancePage() {
       }
 
       if (audit) {
+        if (audit.schedule.status === 'subject_mismatch') {
+          toast.error(lang === 'vi'
+            ? 'Môn đang chọn không khớp lịch đặt của học viên. Vui lòng chọn đúng môn hoặc liên hệ giáo vụ để đối soát chuyển môn trước khi gửi điểm danh.'
+            : 'The selected subject does not match the student\'s booking. Choose the correct subject or ask academic staff to reconcile the course transfer before submitting attendance.')
+          return
+        }
         const nextCount = audit.sameDayByTeacher + 1
         if (nextCount > MAX_DAILY_ATTENDANCE_PER_STUDENT) {
           setDailyLimitBlock({ count: audit.sameDayByTeacher, date: data.date })

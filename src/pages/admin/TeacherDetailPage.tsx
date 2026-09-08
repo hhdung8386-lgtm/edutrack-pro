@@ -22,7 +22,7 @@ import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
-import { assertBookingsAvailableForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
@@ -545,7 +545,7 @@ export function TeacherDetailPage() {
           if (lessonNow.status !== 'pending' && lessonNow.status !== 'rejected') throw new Error('LESSON_ALREADY_PROCESSED')
 
           const student = studentSnap.data() as Student
-          const subjectId = lessonNow.subjectId || lesson.subjectId || student.subjectId || student.subjects?.[0]?.subjectId
+          const subjectId = lessonNow.subjectId || lesson.subjectId
           if (!subjectId) throw new Error('SUBJECT_NOT_FOUND')
 
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
@@ -566,6 +566,15 @@ export function TeacherDetailPage() {
           if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
           assertBookingsAvailableForApproval(bookingNows, lesson.id)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
+          assertBookingsMatchLessonForApproval(bookingNows, {
+            id: lesson.id,
+            studentId: lessonNow.studentId,
+            teacherId: lessonNow.teacherId,
+            date: lessonNow.date,
+            minutes: lessonNow.minutes,
+            subjectId: lessonNow.subjectId,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
@@ -1012,6 +1021,8 @@ export function TeacherDetailPage() {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
       } else if (message === 'BOOKING_STATE_CHANGED') {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
+      } else if (message === 'BOOKING_SUBJECT_MISMATCH') {
+        toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
       } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {
