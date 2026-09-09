@@ -28,6 +28,7 @@ import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHun
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import {
   assertAutomaticReconciliationRollbackAllowed,
+  isBookingHoldingStudentFund,
   requiresIndividualSubjectReconciliation,
 } from '@/lib/bookingLogic'
 
@@ -285,10 +286,10 @@ export function StudentDetailPage() {
   }
 
   // A booking in either pending or confirmed state is still holding the student's fund.
-  // Keep this total separate from the "future" list: overdue, unattended bookings must
-  // remain visible in the total so the held fund never appears to disappear.
+  // Keep this total separate from the "future" list: attendance attaches a
+  // lessonId before approval, but that booking is still holding the fund.
   const heldBookings = useMemo(() => {
-    const list = bookingRequests.filter((b: BookingRequest) => !b.lessonId)
+    const list = bookingRequests.filter(isBookingHoldingStudentFund)
     return [...list].sort((a: BookingRequest, b: BookingRequest) => {
       const dateA = a.requestedDate || ''
       const dateB = b.requestedDate || ''
@@ -308,8 +309,17 @@ export function StudentDetailPage() {
   )
 
   const overdueHeldBookings = useMemo(
-    () => heldBookings.filter((booking) => booking.requestedDate && booking.requestedDate < todayISO),
+    () => heldBookings.filter((booking) => (
+      booking.requestedDate
+      && booking.requestedDate < todayISO
+      && !booking.lessonId
+    )),
     [heldBookings, todayISO],
+  )
+
+  const awaitingApprovalHeldBookings = useMemo(
+    () => heldBookings.filter((booking) => Boolean(booking.lessonId)),
+    [heldBookings],
   )
 
   const handleCancelSpecificBookings = async (targetBookings: BookingRequest[]) => {
@@ -1757,6 +1767,7 @@ export function StudentDetailPage() {
           <p className="text-xs text-slate-500 mt-1">
             Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
+            {awaitingApprovalHeldBookings.length > 0 && <> <strong>{awaitingApprovalHeldBookings.length} ca đã điểm danh đang chờ duyệt</strong> vẫn được giữ quỹ cho đến khi duyệt.</>}
             {unmatchedHeldBookings.length > 0 && (
               <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng vẫn bị chặn điểm danh đến khi giáo vụ sửa đúng môn.</>
             )}

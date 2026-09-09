@@ -42,7 +42,7 @@ import {
   type TeacherSubjectGroup,
 } from '@/lib/teacherSubjects'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
-import { isBookingAttended, isBookingCancellable } from '@/lib/bookingLogic'
+import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } from '@/lib/bookingLogic'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
@@ -520,7 +520,7 @@ export function BookingSchedulesPage() {
           const pkg = subs.find(s => s.subjectId === subjectId)
           if (!pkg) return 0
           const booked = list
-            .filter((b) => b.subjectId === subjectId && !b.lessonId)
+            .filter((booking) => booking.subjectId === subjectId && isBookingHoldingStudentFund(booking))
             .reduce((sum, b) => sum + getBookingPoints(b), 0)
           return Math.max(0, (pkg.remainingMinutes || 0) - booked)
         }
@@ -884,7 +884,7 @@ export function BookingSchedulesPage() {
     const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
     const totalRequiredPoints = selectedSlots.length * pointsPerLesson
     const bookedPointsForSubject = selectedStudentBookings
-      .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+      .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
       .reduce((sum, b) => sum + getBookingPoints(b), 0)
     const availableSubjectPoints = Math.max(0, sub.remainingMinutes - bookedPointsForSubject)
     const maxRecurringSessions = pointsPerLesson > 0
@@ -971,7 +971,7 @@ export function BookingSchedulesPage() {
       )
       const studentBookingsList = bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
       const latestHeldPoints = studentBookingsList
-        .filter((b) => !b.lessonId)
+        .filter(isBookingHoldingStudentFund)
         .reduce((sum, b) => sum + getBookingPoints(b), 0)
 
       // Capture both calendar revisions before conflict detection. The transaction
@@ -1063,13 +1063,19 @@ export function BookingSchedulesPage() {
         if (isGroupClass(currentStudent) && !teacherSupportsGroupClassDeliveryMode(currentTeacher, currentStudent)) {
           throw new Error('TEACHING_FORMAT_MISMATCH')
         }
-        const fund = getStudentMinuteFund(currentStudent, latestHeldPoints)
+        // The booking snapshot is intentionally read before this transaction
+        // to keep the candidate query bounded. Never let that external read
+        // lower a newer stored hold: attendance may have linked a lesson while
+        // its pending/confirmed booking still owns diamonds until approval.
+        const storedHeldPoints = Number(currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0) || 0
+        const effectiveHeldPoints = Math.max(storedHeldPoints, latestHeldPoints)
+        const fund = getStudentMinuteFund(currentStudent, effectiveHeldPoints)
 
         const subInDb = currentStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
         if (!subInDb) throw new Error('SUBJECT_NOT_FOUND')
 
         const bookedPointsForSubject = studentBookingsList
-          .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+          .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
           .reduce((sum, b) => sum + getBookingPoints(b), 0)
         const availableSubjectPoints = Math.max(0, subInDb.remainingMinutes - bookedPointsForSubject)
 
@@ -2481,7 +2487,7 @@ export function BookingSchedulesPage() {
                 {(() => {
                   const activeSubPkg = selectedStudent.subjects?.find(s => s.subjectId === selectedSubjectId)
                   const bookedPointsForSubject = selectedStudentBookings
-                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+                    .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
                     .reduce((sum, b) => sum + getBookingPoints(b), 0)
                   const availableForSubject = activeSubPkg ? Math.max(0, activeSubPkg.remainingMinutes - bookedPointsForSubject) : 0
 
@@ -2493,8 +2499,22 @@ export function BookingSchedulesPage() {
                   const totalDurationMinutes = selectedSlots.length * duration
                   const isEnough = availableForSubject >= requiredPoints
                   const subjectFutureBookings = selectedStudentBookings
-                    .filter((b) => b.subjectId === selectedSubjectId && !b.lessonId)
+                    .filter((booking) => (
+                      booking.subjectId === selectedSubjectId
+                      && isBookingHoldingStudentFund(booking)
+                      && !booking.lessonId
+                    ))
                     .sort((a, b) => (a.requestedDate || '').localeCompare(b.requestedDate || ''))
+                  const awaitingApprovalBookings = selectedStudentBookings
+                    .filter((booking) => (
+                      booking.subjectId === selectedSubjectId
+                      && isBookingHoldingStudentFund(booking)
+                      && Boolean(booking.lessonId)
+                    ))
+                  const awaitingApprovalPoints = awaitingApprovalBookings
+                    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+                  const futureCancellablePoints = subjectFutureBookings
+                    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
 
                   return (
                     <div className="text-xs border-t border-slate-200/50 pt-2 space-y-2">
@@ -2532,8 +2552,13 @@ export function BookingSchedulesPage() {
                           {bookedPointsForSubject > 0 && (
                             <>
                               <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
-                                * Đã có {bookedPointsForSubject} kim cương đang được giữ cho {subjectFutureBookings.length} ca tương lai. Vui lòng hủy các ca này hoặc nạp thêm kim cương.
+                                * Tổng {bookedPointsForSubject} kim cương đang được giữ. Trong đó {futureCancellablePoints} kim cương thuộc {subjectFutureBookings.length} ca tương lai còn có thể hủy.
                               </p>
+                              {awaitingApprovalPoints > 0 && (
+                                <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
+                                  * {awaitingApprovalPoints} kim cương thuộc {awaitingApprovalBookings.length} ca đã điểm danh, đang chờ duyệt; các ca này không thể hủy ở đây.
+                                </p>
+                              )}
                               {subjectFutureBookings.length > 0 && (
                                 <div className="mt-2 text-[10px] pl-5 space-y-1 text-slate-500 max-h-[120px] overflow-y-auto border-t border-rose-100 pt-1.5 font-semibold">
                                   <p className="text-rose-500 font-bold">Danh sách ca tương lai đã đặt ({subjectFutureBookings.length}):</p>
@@ -2567,12 +2592,14 @@ export function BookingSchedulesPage() {
                     >
                       {studentSubjects.map((sub) => {
                         const bookedPointsForSub = selectedStudentBookings
-                          .filter((b) => b.subjectId === sub.subjectId && !b.lessonId)
+                          .filter((booking) => booking.subjectId === sub.subjectId && isBookingHoldingStudentFund(booking))
                           .reduce((sum, b) => sum + getBookingPoints(b), 0)
                         const availablePoints = Math.max(0, sub.remainingMinutes - bookedPointsForSub)
                         const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
                         const availSessions = pointsForOneLesson > 0 ? Math.floor(availablePoints / pointsForOneLesson) : 0
-                        const bookedSessions = selectedStudentBookings.filter((b) => b.subjectId === sub.subjectId && !b.lessonId).length
+                        const bookedSessions = selectedStudentBookings.filter(
+                          (booking) => booking.subjectId === sub.subjectId && isBookingHoldingStudentFund(booking),
+                        ).length
                         return (
                           <option key={sub.subjectId} value={sub.subjectId}>
                             {sub.subjectName} (Còn {availSessions} buổi / {availablePoints} kim cương - Đã đặt {bookedSessions} buổi)
@@ -2619,7 +2646,7 @@ export function BookingSchedulesPage() {
                   if (!selectedTeacher) return null
                   const pkg = selectedStudent.subjects?.find((subject) => subject.subjectId === selectedSubjectId)
                   const bookedForSubject = selectedStudentBookings
-                    .filter((booking) => booking.subjectId === selectedSubjectId && !booking.lessonId)
+                    .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
                     .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
                   const availableForSubject = pkg ? Math.max(0, (pkg.remainingMinutes || 0) - bookedForSubject) : 0
                   const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))

@@ -5,15 +5,26 @@ import {
   getStudentSubjectMinuteFunds,
   resolveStudentSubjectFund,
 } from '@/lib/studentQuotaCore'
+import { isBookingFinancialHold, isBookingHoldingStudentFund, isBookingPendingRebookFundHold } from '@/lib/bookingLogic'
 
 export function getStudentPackageMinuteSummary(student: Student) {
   return getStudentMinuteSummaryCore(student)
 }
 
+/**
+ * Keep one financial-ledger definition for all balance views. A released
+ * pending-rebook row has no calendar slot, so its preserved amount lives in
+ * `rebookHoldPoints` rather than the original booking price.
+ */
+export function getBookingFinancialHoldPoints(booking: BookingRequest): number {
+  if (isBookingHoldingStudentFund(booking)) return getBookingPoints(booking)
+  return isBookingPendingRebookFundHold(booking) ? Number(booking.rebookHoldPoints) : 0
+}
+
 export function getHeldBookingMinutes(bookings: BookingRequest[], subjectId: string): number {
   return bookings
-    .filter(b => b.subjectId === subjectId && !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
-    .reduce((sum, b) => sum + getBookingPoints(b), 0)
+    .filter((booking) => booking.subjectId === subjectId && isBookingFinancialHold(booking))
+    .reduce((sum, b) => sum + getBookingFinancialHoldPoints(b), 0)
 }
 
 export function getStudentSubjectAvailableMinutes(
@@ -27,11 +38,11 @@ export function getStudentSubjectAvailableMinutes(
   const ignored = new Set(ignoreBookingIds)
   const heldMinutes = bookings
     .filter((booking) => {
-      if (ignored.has(booking.id) || booking.lessonId || !['pending', 'confirmed'].includes(booking.status)) return false
+      if (ignored.has(booking.id) || !isBookingFinancialHold(booking)) return false
       const bookingFund = resolveStudentSubjectFund(student, booking.subjectId)
       return bookingFund?.key === fund.key
     })
-    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+    .reduce((sum, booking) => sum + getBookingFinancialHoldPoints(booking), 0)
 
   return {
     fund,
@@ -52,9 +63,7 @@ export type StudentQuotaBreakdown = {
 }
 
 export function getStudentBookingQuotaBreakdown(student: Student, bookings: BookingRequest[]) {
-  const activeBookings = bookings.filter(
-    (booking) => !booking.lessonId && (booking.status === 'pending' || booking.status === 'confirmed'),
-  )
+  const activeBookings = bookings.filter(isBookingFinancialHold)
   const breakdown = new Map<string, StudentQuotaBreakdown>()
   getStudentSubjectMinuteFunds(student).forEach((fund) => {
     breakdown.set(fund.key, {
@@ -80,7 +89,7 @@ export function getStudentBookingQuotaBreakdown(student: Student, bookings: Book
       overBy: 0,
       bookings: [],
     }
-    item.heldMinutes += getBookingPoints(booking)
+    item.heldMinutes += getBookingFinancialHoldPoints(booking)
     item.bookings.push(booking)
     breakdown.set(key, item)
   })

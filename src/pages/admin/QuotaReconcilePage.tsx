@@ -4,10 +4,12 @@ import { collection, getDocs, query, where, runTransaction, doc, serverTimestamp
 import { db } from '@/lib/firebase'
 import { BookingRequest, Student } from '@/types'
 import {
+  getBookingFinancialHoldPoints,
   getStudentBookingQuotaBreakdown,
   getStudentPackageMinuteSummary,
   type StudentQuotaBreakdown,
 } from '@/lib/studentMinutes'
+import { isBookingCancellable, isBookingFinancialHold, isBookingHoldingStudentFund, isBookingPendingRebookFundHold } from '@/lib/bookingLogic'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { Card } from '@/components/ui/Card'
@@ -37,6 +39,8 @@ type Row = {
   storedHeld: number
   actualHeld: number
   pastHeld: number
+  awaitingApprovalHeld: number
+  pendingRebookHeld: number
   futureHeld: number
   holdingBookings: BookingRequest[]
   futureBookings: BookingRequest[]
@@ -79,12 +83,19 @@ export function QuotaReconcilePage() {
     return () => { active = false }
   }, [])
 
-  // Chỉ cần các ca ĐANG giữ chỗ: pending + confirmed, chưa gắn buổi dạy
+  // Pending/confirmed still hold diamonds even after attendance attaches a
+  // lessonId; approval is the only settlement that releases the hold. A
+  // released pending-rebook row has no calendar slot, but also keeps money.
   useEffect(() => {
     let active = true
-    Promise.all((['pending', 'confirmed'] as const).map((st) =>
-      getDocs(query(collection(db, 'bookingRequests'), where('status', '==', st)))
-    )).then((snapshots) => {
+    Promise.all([
+      ...(['pending', 'confirmed'] as const).map((st) =>
+        getDocs(query(collection(db, 'bookingRequests'), where('status', '==', st)))
+      ),
+      // Do not load every released historical row merely to find the small
+      // subset whose diamonds are intentionally held for a replacement.
+      getDocs(query(collection(db, 'bookingRequests'), where('pendingRebook', '==', true))),
+    ]).then((snapshots) => {
       if (!active) return
       setBookings(snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))))
       setLoadingB(false)
@@ -93,7 +104,7 @@ export function QuotaReconcilePage() {
   }, [])
 
   const rows = useMemo<Row[]>(() => {
-    const holding = bookings.filter((b) => !b.lessonId && (b.status === 'pending' || b.status === 'confirmed'))
+    const holding = bookings.filter(isBookingFinancialHold)
     const byStudent = new Map<string, BookingRequest[]>()
     holding.forEach((b) => {
       if (!b.studentId) return
@@ -109,9 +120,25 @@ export function QuotaReconcilePage() {
       const storedHeld = s.reservedMinutes ?? s.heldMinutes ?? 0
       // Quỹ còn lại tính từ các gói môn (chuẩn nhất), không phụ thuộc field có thể thiếu
       const remainingMinutes = quota.remainingMinutes
-      const pastHeld = list.filter((b) => (b.requestedDate || '') < todayISO).reduce((sum, b) => sum + getBookingPoints(b), 0)
+      const pastHeld = list
+        .filter((booking) => (
+          isBookingHoldingStudentFund(booking)
+          && (booking.requestedDate || '') < todayISO
+          && !booking.lessonId
+        ))
+        .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const awaitingApprovalHeld = list
+        .filter((booking) => isBookingHoldingStudentFund(booking) && Boolean(booking.lessonId))
+        .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const pendingRebookHeld = list
+        .filter(isBookingPendingRebookFundHold)
+        .reduce((sum, booking) => sum + getBookingFinancialHoldPoints(booking), 0)
       const futureList = list
-        .filter((b) => (b.requestedDate || '') >= todayISO)
+        .filter((booking) => (
+          isBookingCancellable(booking)
+          && Boolean(booking.requestedDate)
+          && (booking.requestedDate || '') >= todayISO
+        ))
         .sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || '')) // xa nhất trước
       const futureHeld = futureList.reduce((sum, b) => sum + getBookingPoints(b), 0)
       const drift = storedHeld - actualHeld
@@ -125,7 +152,7 @@ export function QuotaReconcilePage() {
 
       out.push({
         student: s, remainingMinutes, storedHeld, actualHeld,
-        pastHeld, futureHeld, holdingBookings: list, futureBookings: futureList, drift, overByActual,
+        pastHeld, awaitingApprovalHeld, pendingRebookHeld, futureHeld, holdingBookings: list, futureBookings: futureList, drift, overByActual,
         quotaBySubject: quota.subjects,
       })
     })
@@ -177,10 +204,9 @@ export function QuotaReconcilePage() {
         const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
         if (
           booking.studentId !== row.student.id
-          || booking.lessonId
-          || (booking.status !== 'pending' && booking.status !== 'confirmed')
+          || !isBookingFinancialHold(booking)
         ) return sum
-        return sum + getBookingPoints(booking)
+        return sum + getBookingFinancialHoldPoints(booking)
       }, 0)
       const freshRemaining = getStudentPackageMinuteSummary(fresh).remainingMinutes
       tx.update(sRef, {
@@ -238,16 +264,15 @@ export function QuotaReconcilePage() {
       const fresh = { id: sSnap.id, ...sSnap.data() } as Student
       const curHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
       if (curHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
-      const activeBookings = bookingSnaps.flatMap((bookingSnap) => {
+      const financialHoldBookings = bookingSnaps.flatMap((bookingSnap) => {
         if (!bookingSnap.exists()) return []
         const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
         return booking.studentId === row.student.id
-          && !booking.lessonId
-          && (booking.status === 'pending' || booking.status === 'confirmed')
+          && isBookingFinancialHold(booking)
           ? [booking]
           : []
       })
-      const freshQuota = getStudentBookingQuotaBreakdown(fresh, activeBookings)
+      const freshQuota = getStudentBookingQuotaBreakdown(fresh, financialHoldBookings)
       if (freshQuota.overByActual <= 0) return 0
       // Không vừa sửa sai số vừa huỷ lịch trong cùng thao tác: bắt buộc đồng bộ
       // số đang giữ trước để tránh lấy một field cũ làm căn cứ xoá lịch thật.
@@ -258,7 +283,11 @@ export function QuotaReconcilePage() {
       for (const subjectQuota of freshQuota.subjects.filter((item) => item.overBy > 0)) {
         let subjectFreed = 0
         const futureCandidates = subjectQuota.bookings
-          .filter((booking) => Boolean(booking.requestedDate && booking.requestedDate >= todayISO))
+          .filter((booking) => Boolean(
+            isBookingCancellable(booking)
+            && booking.requestedDate
+            && booking.requestedDate >= todayISO
+          ))
           .sort((left, right) => (right.requestedDate || '').localeCompare(left.requestedDate || ''))
         for (const booking of futureCandidates) {
           if (subjectFreed >= subjectQuota.overBy) break
@@ -304,7 +333,7 @@ export function QuotaReconcilePage() {
     setProcessing(true)
     try {
       const cancelled = await cancelFutureOne(row)
-      if (cancelled === 0) toast.warning('Học viên không còn lịch tương lai để huỷ. Vui lòng dọn ca quá hạn hoặc nạp thêm buổi.')
+      if (cancelled === 0) toast.warning('Không còn ca tương lai có thể hủy. Ca đã điểm danh đang chờ duyệt vẫn giữ quỹ và không bị hủy tự động.')
       else toast.success(`Đã huỷ ${cancelled} ca tương lai cho ${row.student.name}`)
       setConfirmCancel(null)
     } catch (err: any) {
@@ -339,10 +368,10 @@ export function QuotaReconcilePage() {
 
   const exportCSV = () => {
     const rowsCsv = [
-      ['Mã HV', 'Học viên', 'Quỹ còn lại (kim cương)', 'Đang giữ (hồ sơ)', 'Đang giữ (lịch thực tế)', 'Lệch số liệu', 'Vượt quỹ', 'Giữ bởi ca quá hạn', 'Giữ bởi lịch tương lai', 'Xử lý đề xuất'],
+      ['Mã HV', 'Học viên', 'Quỹ còn lại (kim cương)', 'Đang giữ (hồ sơ)', 'Đang giữ (lịch thực tế)', 'Lệch số liệu', 'Vượt quỹ', 'Giữ bởi ca quá hạn', 'Chờ duyệt', 'Chờ đặt lại', 'Giữ bởi lịch tương lai', 'Xử lý đề xuất'],
       ...filtered.map((r) => [
         r.student.code, r.student.name, r.remainingMinutes, r.storedHeld, r.actualHeld, r.drift,
-        Math.max(0, r.overByActual), r.pastHeld, r.futureHeld,
+        Math.max(0, r.overByActual), r.pastHeld, r.awaitingApprovalHeld, r.pendingRebookHeld, r.futureHeld,
         r.drift !== 0 ? 'Tính lại số liệu' : r.overByActual > 0 ? 'Huỷ bớt lịch tương lai' : 'Theo dõi',
       ]),
     ]
@@ -532,7 +561,9 @@ export function QuotaReconcilePage() {
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-600">
                       <p>Quá hạn: <span className="font-bold text-amber-600">{r.pastHeld} kim cương</span></p>
-                      <p>Tương lai: <span className="font-bold text-slate-800">{r.futureHeld} kim cương</span> ({r.futureBookings.length} ca)</p>
+                      <p>Chờ duyệt: <span className="font-bold text-sky-700">{r.awaitingApprovalHeld} kim cương</span></p>
+                      <p>Chờ đặt lại: <span className="font-bold text-violet-700">{r.pendingRebookHeld} kim cương</span></p>
+                      <p>Tương lai có thể huỷ: <span className="font-bold text-slate-800">{r.futureHeld} kim cương</span> ({r.futureBookings.length} ca)</p>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-1.5">
@@ -562,7 +593,7 @@ export function QuotaReconcilePage() {
         <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
         <p>
           <span className="font-bold text-slate-800">An toàn dữ liệu:</span> "Tính lại" chỉ sửa con số <span className="font-semibold">đang giữ chỗ</span> cho khớp
-          lịch thật, <span className="font-semibold">không đụng tới tổng buổi hay số buổi đã học</span>. "Huỷ bớt lịch" chỉ huỷ ca ở tương lai và nhả đúng số kim cương
+          lịch thật, bao gồm cả ca <span className="font-semibold">chờ duyệt</span> và nghĩa vụ <span className="font-semibold">chờ đặt lại</span>; <span className="font-semibold">không đụng tới tổng buổi hay số buổi đã học</span>. "Huỷ bớt lịch" chỉ huỷ ca tương lai còn có thể huỷ và nhả đúng số kim cương
           giữ chỗ tương ứng. Mọi thao tác đều ghi vào Nhật ký admin.
         </p>
       </div>
@@ -572,7 +603,7 @@ export function QuotaReconcilePage() {
         onClose={() => { if (!processing) setConfirmRecalcAll(false) }}
         onConfirm={() => handleRecalc(driftRows)}
         title={`Tính lại số kim cương đang giữ cho ${driftRows.length} học viên?`}
-        description="Hệ thống đặt lại số kim cương đang giữ đúng bằng tổng chi phí các ca đang thực sự giữ (pending + đã xác nhận, chưa điểm danh)."
+        description="Hệ thống đặt lại số kim cương đang giữ đúng bằng ca pending/đã xác nhận, kể cả ca đã gắn buổi chờ duyệt, và các nghĩa vụ chờ đặt lại còn hiệu lực."
         consequence="Không huỷ lớp nào, không thay đổi tổng buổi hay số buổi đã học."
         confirmLabel="Tính lại"
         loading={processing}

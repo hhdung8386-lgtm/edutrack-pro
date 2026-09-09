@@ -156,6 +156,8 @@ export function ClassHuntingPage() {
     () => lookup?.subjects.find((subject) => subject.id === form.subjectId),
     [form.subjectId, lookup],
   )
+  const selectedSubjectHasNoAvailablePoints = selectedSubject?.availablePoints !== undefined
+    && selectedSubject.availablePoints <= 0
   const displayedSessionCount = preview?.slots.length
     || (form.sessionSelectionMode === 'specific' ? form.sessionCount : undefined)
   const hasSafeDraftCompensation = Number.isSafeInteger(form.compensationRatePerMinute)
@@ -264,6 +266,13 @@ export function ClassHuntingPage() {
     }
     if (selectedSubject.eligibleForHunt === false) {
       toast.error('Gói học này không đủ điều kiện để mở CLASS HUNTING.')
+      return false
+    }
+    if (selectedSubjectHasNoAvailablePoints) {
+      const heldBookingLabel = selectedSubject.heldBookingCount
+        ? `${selectedSubject.heldBookingCount} ca đang giữ`
+        : 'quỹ đang giữ'
+      toast.error(`Gói này không còn kim cương khả dụng vì ${heldBookingLabel}. Hãy điều chỉnh lịch đã đặt hoặc cộng thêm quyền học trước.`)
       return false
     }
     if (!draft.startDate || draft.startDate < todayInVietnam()) {
@@ -523,7 +532,7 @@ export function ClassHuntingPage() {
                   <option value="">Chọn gói học</option>
                   {(lookup?.subjects || []).map((subject) => (
                     <option key={subject.id} value={subject.id} disabled={subject.eligibleForHunt === false}>
-                      {subject.name}{subject.remainingSessions !== undefined ? ` - còn ${subject.remainingSessions} buổi` : ''}{subject.remainingPoints !== undefined ? ` (${subject.remainingPoints} kim cương)` : ''}
+                      {subject.name}{subject.remainingSessions !== undefined ? ` - theo gói ${subject.remainingSessions} buổi` : ''}{subject.remainingPoints !== undefined ? ` (${subject.remainingPoints} kim cương)` : ''}
                     </option>
                   ))}
                 </select>
@@ -608,10 +617,17 @@ export function ClassHuntingPage() {
                   </label>
                 )}
                 {selectedSubject && (
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    {selectedSubject.remainingSessions === undefined
-                      ? 'Gói này chưa có số buổi còn lại chính xác; chỉ nên xếp số buổi nhất định sau khi kiểm tra gói.'
-                      : `Gói đang ghi nhận còn ${selectedSubject.remainingSessions} buổi. Hệ thống sẽ trừ thêm các buổi đã được giữ trước khi chốt lịch.`}
+                  <p className={`mt-2 text-xs leading-5 ${selectedSubjectHasNoAvailablePoints ? 'font-semibold text-amber-800' : 'text-slate-500'}`}>
+                    {selectedSubject.availablePoints !== undefined
+                      ? <>
+                          Gói ghi nhận {selectedSubject.remainingSessions ?? '—'} buổi / {selectedSubject.remainingPoints ?? 0} kim cương;
+                          {' '}đã giữ {selectedSubject.heldBookingCount ?? 0} ca / {selectedSubject.heldPoints ?? 0} kim cương;
+                          {' '}khả dụng {selectedSubject.availablePoints} kim cương.
+                          {selectedSubjectHasNoAvailablePoints && ' Cần giải phóng lịch đã đặt hoặc cộng thêm quyền học trước khi mở CLASS HUNTING.'}
+                        </>
+                      : selectedSubject.remainingSessions === undefined
+                        ? 'Gói này chưa có số buổi còn lại chính xác; chỉ nên xếp số buổi nhất định sau khi kiểm tra gói.'
+                        : `Gói đang ghi nhận còn ${selectedSubject.remainingSessions} buổi. Hệ thống sẽ trừ thêm các buổi đã được giữ trước khi chốt lịch.`}
                     {' '}Một yêu cầu CLASS HUNTING tạo tối đa {CLASS_HUNT_MAX_SESSIONS} buổi để việc nhận lớp luôn nguyên tử và an toàn.
                   </p>
                 )}

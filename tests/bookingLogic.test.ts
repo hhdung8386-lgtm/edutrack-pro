@@ -8,6 +8,9 @@ import {
   isSameAttendanceClass,
   isBookingAttended,
   isBookingCancellable,
+  isBookingFinancialHold,
+  isBookingHoldingStudentFund,
+  isBookingPendingRebookFundHold,
   matchesLessonBookingSubject,
   recoverLegacySingleBookingReference,
   requiresIndividualSubjectReconciliation,
@@ -256,11 +259,36 @@ test('distinguishes scheduled bookings from attended and cancellable bookings', 
 
   assert.equal(isBookingAttended(scheduled), false)
   assert.equal(isBookingCancellable(scheduled), true)
+  assert.equal(isBookingHoldingStudentFund(scheduled), true)
   assert.equal(isBookingCancellable(pending), true)
+  assert.equal(isBookingHoldingStudentFund(pending), true)
   assert.equal(isBookingAttended(attended), true)
   assert.equal(isBookingCancellable(attended), false)
+  // Attendance writes lessonId before approval settles the student's ledger.
+  // It must remain a hold even though it can no longer be cancelled.
+  assert.equal(isBookingHoldingStudentFund(attended), true)
   assert.equal(isBookingAttended(completed), true)
   assert.equal(isBookingCancellable(completed), false)
+  assert.equal(isBookingHoldingStudentFund(completed), false)
+})
+
+test('retains a released pending-rebook obligation as a financial hold, not a calendar booking', () => {
+  const rebookHold = booking('rebook-hold', '22:00', {
+    status: 'released',
+    pendingRebook: true,
+    rebookHoldPoints: 25,
+  })
+  const completedRebook = {
+    ...rebookHold,
+    rebookedByBookingId: 'replacement-booking',
+  }
+
+  assert.equal(isBookingHoldingStudentFund(rebookHold), false)
+  assert.equal(isBookingCancellable(rebookHold), false)
+  assert.equal(isBookingPendingRebookFundHold(rebookHold), true)
+  assert.equal(isBookingFinancialHold(rebookHold), true)
+  assert.equal(isBookingPendingRebookFundHold(completedRebook), false)
+  assert.equal(isBookingFinancialHold(completedRebook), false)
 })
 
 test('allows settlement only to the canonical lesson package for an exact prelinked legacy subject group', () => {

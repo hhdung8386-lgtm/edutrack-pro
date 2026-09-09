@@ -10,6 +10,7 @@ const {
   ClassHuntValidationError,
   availableClassHuntSessionCount,
   buildClassHuntDraft,
+  classHuntSubjectAvailability,
   classHuntClaimConflictReason,
   classHuntCompensationAmount,
   buildFutureClassHuntSessions,
@@ -135,6 +136,55 @@ test('all-remaining counts only package sessions not already held by a booking',
     subjectId: 'legacy',
     bookings: [],
   }), null)
+})
+
+test('subject availability retains attendance-pending and pending-rebook fund holds', () => {
+  const student = {
+    subjects: [{
+      subjectId: 'subject-l2',
+      subjectName: 'Tiếng Anh',
+      totalSessions: 3,
+      usedSessions: 0,
+      minutesPerSession: 50,
+      totalMinutes: 150,
+      usedMinutes: 0,
+    }],
+    reservedMinutes: 0,
+  }
+  const availability = classHuntSubjectAvailability({
+    student,
+    subjectId: 'subject-l2',
+    bookings: [
+      // lessonId is written at attendance time, but approval has not spent
+      // the package yet, so this row must still keep its full hold.
+      {
+        id: 'awaiting-approval',
+        subjectId: 'subject-l2',
+        status: 'confirmed',
+        lessonId: 'lesson-awaiting-approval',
+        requestedMinutes: 50,
+        pointsPer25Minutes: 25,
+      },
+      // A released self-service cancellation can keep a fund hold until its
+      // replacement is finalized. It is not a calendar conflict, but it is
+      // still unavailable package credit.
+      {
+        id: 'pending-rebook',
+        subjectId: 'subject-l2',
+        status: 'released',
+        pendingRebook: true,
+        rebookHoldPoints: 50,
+      },
+    ],
+  })
+
+  assert.deepEqual(availability, {
+    remainingSessions: 3,
+    availableSessionCount: 1,
+    heldBookingCount: 2,
+    heldPoints: 100,
+    availablePoints: 50,
+  })
 })
 
 test('CLASS HUNTING publish retries recover only the exact original selection', () => {

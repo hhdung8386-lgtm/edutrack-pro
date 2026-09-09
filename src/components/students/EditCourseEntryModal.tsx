@@ -6,7 +6,8 @@ import { collection, doc, getDocs, query, runTransaction, serverTimestamp, where
 import { CalendarDays, Gift, Info, ReceiptText } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import type { BookingRequest, Student } from '@/types'
-import { getBookingPoints } from '@/lib/points'
+import { isBookingFinancialHold } from '@/lib/bookingLogic'
+import { getBookingFinancialHoldPoints } from '@/lib/studentMinutes'
 import { editCourseEntry, getCourseEntry, getStudentSubjects } from '@/lib/studentCourseLedger'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -89,7 +90,8 @@ export function EditCourseEntryModal({ student, subjectId, batchId, onClose }: E
   const onSubmit = async (data: FormData) => {
     try {
       // Read by studentId only to avoid a composite-index dependency. Transaction reads
-      // re-check every candidate before saving so released/completed bookings are ignored.
+      // Re-check every candidate before saving. Only a released row with an
+      // active rebook obligation remains financially held.
       const bookingSnapshot = await getDocs(query(
         collection(db, 'bookingRequests'),
         where('studentId', '==', student.id),
@@ -112,16 +114,16 @@ export function EditCourseEntryModal({ student, subjectId, batchId, onClose }: E
         const activeBookings = bookingSnapshots.flatMap((bookingSnapshot) => {
           if (!bookingSnapshot.exists()) return []
           const booking = { id: bookingSnapshot.id, ...bookingSnapshot.data() } as BookingRequest
-          return (booking.status === 'pending' || booking.status === 'confirmed') && !booking.lessonId
+          return isBookingFinancialHold(booking)
             ? [booking]
             : []
         })
         const heldPointsForSubject = activeBookings.reduce((sum, booking) => {
           const belongsToSubject = booking.subjectId === subjectId
             || (currentSubjects.length === 1 && !currentSubjects.some((subject) => subject.subjectId === booking.subjectId))
-          return sum + (belongsToSubject ? getBookingPoints(booking) : 0)
+          return sum + (belongsToSubject ? getBookingFinancialHoldPoints(booking) : 0)
         }, 0)
-        const bookingHeldTotal = activeBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+        const bookingHeldTotal = activeBookings.reduce((sum, booking) => sum + getBookingFinancialHoldPoints(booking), 0)
         const storedHeldTotal = Number(currentStudent.reservedMinutes ?? currentStudent.heldMinutes ?? 0)
         const totalHeldPoints = Math.max(storedHeldTotal, bookingHeldTotal)
 

@@ -7,8 +7,8 @@ import {
   CLASS_HUNT_MAX_SESSIONS,
   CLASS_HUNTS_COLLECTION,
   ClassHuntValidationError,
-  availableClassHuntSessionCount,
   buildClassHuntDraft,
+  classHuntSubjectAvailability,
   classHuntCompensationAmount,
   classHuntLessonPoints,
   classHuntPublicSlot,
@@ -326,6 +326,16 @@ async function existingPublishedHuntForRetry(
   return hunt
 }
 
+function noRemainingClassHuntSessionMessage(availability: ReturnType<typeof classHuntSubjectAvailability>): string {
+  if (availability
+    && availability.remainingSessions !== undefined
+    && availability.remainingSessions > 0
+    && availability.heldBookingCount > 0) {
+    return `Gói học đang ghi nhận còn ${availability.remainingSessions} buổi, nhưng ${availability.heldBookingCount} ca đã được giữ; không còn buổi khả dụng để xếp thêm.`
+  }
+  return 'Gói học không còn buổi chưa được xếp.'
+}
+
 function draftFromRequest(
   data: Record<string, unknown>,
   studentId: string,
@@ -367,20 +377,23 @@ function draftFromRequest(
 
   if (sessionSelectionMode === 'specific') {
     const draft = build(data.sessionCount)
-    const remainingSessionCount = availableClassHuntSessionCount({
+    const availability = classHuntSubjectAvailability({
       student,
       subjectId: draft.subjectId,
       bookings: studentBookings,
     })
+    const remainingSessionCount = availability?.availableSessionCount ?? null
     if (remainingSessionCount !== null) {
       if (remainingSessionCount < 1) {
-        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', 'Gói học không còn buổi chưa được xếp.')
+        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability))
       }
       if (draft.sessionCount > remainingSessionCount) {
         throw error(
           'failed-precondition',
           'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING',
-          `Gói học chỉ còn ${remainingSessionCount} buổi chưa được xếp.`,
+          availability && availability.heldBookingCount > 0
+            ? `Gói học chỉ còn ${remainingSessionCount} buổi khả dụng sau khi trừ ${availability.heldBookingCount} ca đã được giữ.`
+            : `Gói học chỉ còn ${remainingSessionCount} buổi chưa được xếp.`,
         )
       }
     }
@@ -401,11 +414,12 @@ function draftFromRequest(
       'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.',
     )
   }
-  const remainingSessionCount = availableClassHuntSessionCount({
+  const availability = classHuntSubjectAvailability({
     student,
     subjectId: provisional.subjectId,
     bookings: studentBookings,
   })
+  const remainingSessionCount = availability?.availableSessionCount ?? null
   if (remainingSessionCount === null) {
     throw error(
       'failed-precondition',
@@ -414,7 +428,7 @@ function draftFromRequest(
     )
   }
   if (remainingSessionCount < 1) {
-    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', 'Gói học không còn buổi chưa được xếp.')
+    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability))
   }
   if (remainingSessionCount > CLASS_HUNT_MAX_SESSIONS) {
     throw error(
@@ -563,7 +577,11 @@ function subjectSources(student: ClassHuntStudentLike): Array<Record<string, unk
   return [student as Record<string, unknown>]
 }
 
-function lookupSubjects(student: ClassHuntStudentLike, studentEligible: boolean) {
+function lookupSubjects(
+  student: ClassHuntStudentLike,
+  studentEligible: boolean,
+  bookings?: ClassHuntBookingLike[],
+) {
   if (!studentEligible) return []
   const subjectIds = [...new Set(subjectSources(student)
     .map((source) => cleanText(source.subjectId, 160))
@@ -571,12 +589,20 @@ function lookupSubjects(student: ClassHuntStudentLike, studentEligible: boolean)
   return subjectIds.flatMap((id) => {
     const fund = resolveClassHuntSubjectFund(student, id)
     if (!fund || fund.remainingMinutes <= 0) return []
+    const availability = bookings
+      ? classHuntSubjectAvailability({ student, subjectId: id, bookings })
+      : null
     return [{
       id,
       name: fund.subjectName || 'Môn học',
       remainingPoints: fund.remainingMinutes,
       ...(fund.remainingSessions !== undefined ? { remainingSessions: fund.remainingSessions } : {}),
       minutesPerSession: fund.minutesPerSession,
+      ...(availability ? {
+        heldBookingCount: availability.heldBookingCount,
+        heldPoints: availability.heldPoints,
+        availablePoints: availability.availablePoints,
+      } : {}),
       eligibleForHunt: true,
     }]
   })
@@ -673,9 +699,25 @@ async function classHuntLookupPreview(data: Record<string, unknown>) {
   const found = await findIndividualStudentByCode(data.studentCode)
   const student = found.data as ClassHuntStudentLike
   const baseEligible = isActiveIndividualOnlineStudent(student)
-  const subjects = lookupSubjects(student, baseEligible)
-  const eligibleForHunt = baseEligible && subjects.length > 0
   const warnings: string[] = []
+  let bookings: ClassHuntBookingLike[] | undefined = []
+  if (baseEligible) {
+    const bookingsSnapshot = await db.collection('bookingRequests')
+      .where('studentId', '==', found.id)
+      .limit(CLASS_HUNT_BOOKING_READ_LIMIT + 1)
+      .get()
+    if (bookingsSnapshot.size > CLASS_HUNT_BOOKING_READ_LIMIT) {
+      bookings = undefined
+      warnings.push('Lịch học viên quá lớn để tính chính xác quỹ đang giữ khi tra cứu. Hệ thống sẽ đối soát lại an toàn trước khi đăng lớp.')
+    } else {
+      bookings = bookingsSnapshot.docs.map((document) => ({
+        id: document.id,
+        ...document.data(),
+      } as ClassHuntBookingLike))
+    }
+  }
+  const subjects = lookupSubjects(student, baseEligible, bookings)
+  const eligibleForHunt = baseEligible && subjects.length > 0
   if (!baseEligible) {
     warnings.push('Săn lớp chỉ áp dụng cho học viên 1 kèm 1 online đang hoạt động.')
   } else if (subjects.length === 0) {

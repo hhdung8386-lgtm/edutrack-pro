@@ -54,6 +54,45 @@ export function isBookingCancellable(booking: BookingRequest | null | undefined)
   )
 }
 
+/**
+ * A booking keeps the student's diamond fund reserved until approval settles
+ * it. Attendance attaches `lessonId` before that settlement, so `lessonId`
+ * must never by itself make an active booking spendable again. Cancellation
+ * uses the narrower `isBookingCancellable` predicate above.
+ */
+export function isBookingHoldingStudentFund(
+  booking: Pick<BookingRequest, 'status'> | null | undefined,
+): boolean {
+  return Boolean(booking && (booking.status === 'pending' || booking.status === 'confirmed'))
+}
+
+/**
+ * A parent self-service cancellation can keep the original diamonds locked
+ * while the family must arrange a replacement lesson. This is no longer a
+ * calendar booking, but it remains a financial hold until a replacement has
+ * consumed it (or an audited workflow clears it).
+ */
+export function isBookingPendingRebookFundHold(
+  booking: Pick<BookingRequest, 'status' | 'pendingRebook' | 'rebookHoldPoints' | 'rebookedByBookingId'> | null | undefined,
+): boolean {
+  const points = Number(booking?.rebookHoldPoints)
+  return Boolean(
+    booking
+    && booking.status === 'released'
+    && booking.pendingRebook === true
+    && !booking.rebookedByBookingId
+    && Number.isFinite(points)
+    && points > 0,
+  )
+}
+
+/** A financial hold is either a live calendar booking or an unrebooked debt. */
+export function isBookingFinancialHold(
+  booking: Pick<BookingRequest, 'status' | 'pendingRebook' | 'rebookHoldPoints' | 'rebookedByBookingId'> | null | undefined,
+): boolean {
+  return isBookingHoldingStudentFund(booking) || isBookingPendingRebookFundHold(booking)
+}
+
 const ACTIVE_BOOKING_STATUSES = new Set<BookingRequest['status']>(['pending', 'confirmed'])
 
 /**

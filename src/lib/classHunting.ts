@@ -36,6 +36,11 @@ export interface ClassHuntSubject {
   remainingPoints?: number
   remainingSessions?: number
   minutesPerSession?: number
+  /** Active calendar rows or unrebooked holds for this package. */
+  heldBookingCount?: number
+  heldPoints?: number
+  /** Conservative spendable balance after subject and aggregate holds. */
+  availablePoints?: number
   eligibleForHunt?: boolean
 }
 
@@ -225,6 +230,9 @@ function subjectFrom(value: unknown): ClassHuntSubject | undefined {
       : {}),
     ...(numberValue(data.remainingSessions) !== undefined ? { remainingSessions: numberValue(data.remainingSessions) } : {}),
     ...(numberValue(data.minutesPerSession) !== undefined ? { minutesPerSession: numberValue(data.minutesPerSession) } : {}),
+    ...(numberValue(data.heldBookingCount) !== undefined ? { heldBookingCount: numberValue(data.heldBookingCount) } : {}),
+    ...(numberValue(data.heldPoints) !== undefined ? { heldPoints: numberValue(data.heldPoints) } : {}),
+    ...(numberValue(data.availablePoints) !== undefined ? { availablePoints: numberValue(data.availablePoints) } : {}),
     ...(typeof data.eligibleForHunt === 'boolean' ? { eligibleForHunt: data.eligibleForHunt } : {}),
   }
 }

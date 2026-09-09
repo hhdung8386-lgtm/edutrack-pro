@@ -842,25 +842,61 @@ export function resolveClassHuntSubjectFund(student: ClassHuntStudentLike, subje
   return matching.length === 1 ? matching[0] : null
 }
 
+export interface ClassHuntSubjectAvailability {
+  /** Raw package ledger: completed lessons have already been deducted here. */
+  remainingSessions?: number
+  /** Active bookings and unrebooked holds consume scheduling slots too. */
+  availableSessionCount?: number
+  heldBookingCount: number
+  heldPoints: number
+  /** Lower of the subject and aggregate diamond balances after active holds. */
+  availablePoints: number
+}
+
+/**
+ * Resolve the raw package balance together with active booking holds. A
+ * `lessonId` is intentionally irrelevant here: attendance creates it before
+ * approval, while the booking remains financially held until approval settles
+ * it.
+ */
+export function classHuntSubjectAvailability(input: {
+  student: ClassHuntStudentLike
+  subjectId: string
+  bookings: ClassHuntBookingLike[]
+}): ClassHuntSubjectAvailability | null {
+  const fund = resolveClassHuntSubjectFund(input.student, input.subjectId)
+  if (!fund) return null
+  const heldBookings = input.bookings.filter((booking) => (
+    booking.subjectId === input.subjectId
+    && (isActiveClassHuntBooking(booking) || classHuntBookingHeldPoints(booking) > 0)
+  ))
+  const effectiveHold = effectiveClassHuntHeldPoints(input.student, input.bookings)
+  const heldPoints = heldPointsForClassHuntSubject(input.bookings, input.subjectId)
+  return {
+    ...(fund.remainingSessions === undefined ? {} : {
+      remainingSessions: fund.remainingSessions,
+      availableSessionCount: Math.max(0, fund.remainingSessions - heldBookings.length),
+    }),
+    heldBookingCount: heldBookings.length,
+    heldPoints,
+    availablePoints: Math.max(0, Math.min(
+      fund.remainingMinutes - heldPoints,
+      effectiveHold.availablePoints,
+    )),
+  }
+}
+
 /**
  * How many package sessions may still be planned before a new Class Hunting
- * request. Package `usedSessions` normally represents completed lessons, so
- * active bookings and unrebooked held rows must also consume one scheduling
- * slot. Return null rather than inventing a value for legacy packages that do
- * not have a reliable session ledger.
+ * request. Return null rather than inventing a value for legacy packages that
+ * do not have a reliable session ledger.
  */
 export function availableClassHuntSessionCount(input: {
   student: ClassHuntStudentLike
   subjectId: string
   bookings: ClassHuntBookingLike[]
 }): number | null {
-  const fund = resolveClassHuntSubjectFund(input.student, input.subjectId)
-  if (!fund || fund.remainingSessions === undefined) return null
-  const alreadyPlanned = input.bookings.filter((booking) => (
-    booking.subjectId === input.subjectId
-    && (isActiveClassHuntBooking(booking) || classHuntBookingHeldPoints(booking) > 0)
-  )).length
-  return Math.max(0, fund.remainingSessions - alreadyPlanned)
+  return classHuntSubjectAvailability(input)?.availableSessionCount ?? null
 }
 
 /**
