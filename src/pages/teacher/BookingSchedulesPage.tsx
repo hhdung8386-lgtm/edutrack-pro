@@ -39,16 +39,11 @@ import {
   AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
   composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
 } from '@/components/lessons/absenceReport'
-
-const isAttendanceAllowed = (booking: BookingRequest, nowMs = Date.now()) => {
-  if (!booking.requestedDate || !booking.requestedEnd) return false
-  const [year, month, day] = booking.requestedDate.split('-').map(Number)
-  const [hours, minutes] = booking.requestedEnd.split(':').map(Number)
-  const utcMs = Date.UTC(year, month - 1, day, hours, minutes)
-  const vnTimeMs = utcMs - 7 * 60 * 60 * 1000 // Convert Vietnam (GMT+7) local to UTC time
-  const allowedTimeMs = vnTimeMs + 5 * 60 * 1000 // 5 minutes after class ends
-  return nowMs >= allowedTimeMs
-}
+import {
+  attendanceDeadlineMessage,
+  canSubmitAttendance,
+  getAttendanceDeadline,
+} from '@/lib/attendanceDeadline'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
@@ -390,7 +385,7 @@ export function BookingSchedulesPage() {
   const pendingAttendanceBookings = useMemo(() => {
     const todayStr = getVietnamDateISO()
     return confirmedBookings
-      .filter((b) => isAwaitingAttendance(b) && (b.requestedDate || '') <= todayStr && isAttendanceAllowed(b, attendanceNow))
+      .filter((b) => isAwaitingAttendance(b) && (b.requestedDate || '') <= todayStr && canSubmitAttendance(b, attendanceNow))
       .sort((a, b) => {
         if (a.requestedDate !== b.requestedDate) {
           return (a.requestedDate || '').localeCompare(b.requestedDate || '')
@@ -665,6 +660,22 @@ export function BookingSchedulesPage() {
       return
     }
 
+    const expiredBooking = attendanceBookings.find((booking) => getAttendanceDeadline(booking, Date.now()).state === 'expired')
+    if (expiredBooking) {
+      toast.error(attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en'))
+      return
+    }
+    const invalidDeadlineBooking = attendanceBookings.find((booking) => getAttendanceDeadline(booking, Date.now()).state === 'invalid')
+    if (invalidDeadlineBooking) {
+      toast.error(attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en'))
+      return
+    }
+    const tooEarlyBooking = attendanceBookings.find((booking) => getAttendanceDeadline(booking, Date.now()).state === 'too_early')
+    if (tooEarlyBooking) {
+      toast.warning(attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en'))
+      return
+    }
+
     if (attendanceStatus === 'present' && attendanceBookings.length > 1) {
       if (attendanceBookings.length > 4) {
         toast.warning(lang === 'vi' ? 'Chỉ được gộp tối đa 4 ca trong một lần điểm danh.' : 'You can submit at most 4 sessions at once.')
@@ -758,6 +769,21 @@ export function BookingSchedulesPage() {
           || !freshAttendanceBookings.every((booking) => (booking.subjectId || '') === subjectId)
         ) {
           throw new Error('BOOKING_CLASS_CHANGED')
+        }
+
+        // Re-check the deadline after the latest booking read. This protects a
+        // modal that stayed open across the twelve-hour boundary and keeps the
+        // write path consistent with the schedule list and button state.
+        const freshDeadlineState = freshAttendanceBookings
+          .map((booking) => getAttendanceDeadline(booking, Date.now()).state)
+        if (freshDeadlineState.some((state) => state === 'expired')) {
+          throw new Error('ATTENDANCE_WINDOW_EXPIRED')
+        }
+        if (freshDeadlineState.some((state) => state === 'invalid')) {
+          throw new Error('ATTENDANCE_WINDOW_INVALID')
+        }
+        if (freshDeadlineState.some((state) => state === 'too_early')) {
+          throw new Error('ATTENDANCE_WINDOW_TOO_EARLY')
         }
 
         // Chốt chặn tại giao dịch cuối: ca đã được đặt không có nghĩa là gia sư
@@ -956,6 +982,12 @@ export function BookingSchedulesPage() {
               ? (lang === 'vi' ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.' : 'The booking no longer exists. Reload the schedule.')
                 : errorMessage === 'BOOKING_CLASS_CHANGED'
                   ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
+                : errorMessage === 'ATTENDANCE_WINDOW_EXPIRED'
+                  ? attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')
+                : errorMessage === 'ATTENDANCE_WINDOW_TOO_EARLY'
+                  ? attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en')
+                : errorMessage === 'ATTENDANCE_WINDOW_INVALID'
+                  ? attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en')
                 : errorMessage === 'CLASS_HUNT_COMPENSATION_INVALID'
                   ? (lang === 'vi' ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.' : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
                 : errorMessage === 'STUDENT_EXPIRED'
@@ -1225,7 +1257,8 @@ export function BookingSchedulesPage() {
                     </div>
                   )
                 }
-                const allowed = isAttendanceAllowed(selectedBooking, attendanceNow)
+                const attendanceDeadline = getAttendanceDeadline(selectedBooking, attendanceNow)
+                const allowed = attendanceDeadline.state === 'open'
                 return (
                   <div className="flex flex-col items-end gap-1.5">
                     <Button
@@ -1248,10 +1281,12 @@ export function BookingSchedulesPage() {
                       {t('sched.attendance_btn')}
                     </Button>
                     {!allowed && (
-                      <span className="text-[10px] text-rose-500 font-bold max-w-[220px] text-right leading-tight">
-                        {lang === 'vi'
-                          ? 'Chỉ được điểm danh sau khi buổi học kết thúc 5 phút'
-                          : 'Only allowed 5 minutes after class ends'}
+                      <span className={`max-w-[240px] text-right text-[10px] font-bold leading-tight ${attendanceDeadline.state === 'expired' ? 'text-rose-600' : 'text-amber-700'}`}>
+                        {attendanceDeadline.state === 'expired'
+                          ? attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')
+                          : attendanceDeadline.state === 'too_early'
+                            ? attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en')
+                            : attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en')}
                       </span>
                     )}
                   </div>

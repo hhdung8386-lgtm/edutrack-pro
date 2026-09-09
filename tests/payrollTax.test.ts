@@ -22,6 +22,8 @@ test('legacy payment settings remain disabled until an admin explicitly enables 
     thresholdAmount: 5_000_000,
     ratePercent: 10,
     currency: 'VND',
+    mode: 'percent',
+    fixedAmount: 0,
     effectiveFromMonth: undefined,
     updatedAt: undefined,
     updatedBy: undefined,
@@ -37,6 +39,20 @@ test('tax uses the configured full monthly gross only when it strictly exceeds t
     applies: true,
     policy: enabledVndPolicy,
   })
+})
+
+test('fixed withholding mode uses the configured amount and never exceeds gross', () => {
+  const policy: PayrollTaxPolicy = {
+    enabled: true,
+    thresholdAmount: 5_000_000,
+    ratePercent: 10,
+    mode: 'fixed',
+    fixedAmount: 750_000,
+    currency: 'VND',
+  }
+  assert.equal(calculatePayrollTax(6_000_000, 'VND', policy, '2026-09').tax, 750_000)
+  assert.equal(calculatePayrollTax(600_000, 'VND', policy, '2026-09').tax, 0)
+  assert.equal(calculatePayrollTax(6_000_000, 'VND', { ...policy, fixedAmount: 8_000_000 }, '2026-09').tax, 6_000_000)
 })
 
 test('a later payment settles only the tax not already snapshotted on a paid line', () => {

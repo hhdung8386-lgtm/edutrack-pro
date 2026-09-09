@@ -400,6 +400,8 @@ export interface PayrollTaxSettlement {
     enabled: boolean
     thresholdAmount: number
     ratePercent: number
+    mode?: 'percent' | 'fixed'
+    fixedAmount?: number
     currency: string
     effectiveFromMonth?: string
   }
@@ -629,6 +631,8 @@ export interface PaymentSettings {
   payrollTaxEnabled?: boolean
   payrollTaxThresholdAmount?: number
   payrollTaxRatePercent?: number
+  payrollTaxMode?: 'percent' | 'fixed'
+  payrollTaxFixedAmount?: number
   payrollTaxCurrency?: string
   payrollTaxEffectiveFromMonth?: string
   payrollTaxUpdatedAt?: Timestamp

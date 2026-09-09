@@ -290,6 +290,8 @@ export function PayrollPage() {
             enabled: plan.policy.enabled,
             thresholdAmount: plan.policy.thresholdAmount,
             ratePercent: plan.policy.ratePercent,
+            mode: plan.policy.mode || 'percent',
+            fixedAmount: plan.policy.fixedAmount || 0,
             currency: plan.policy.currency,
             ...(plan.policy.effectiveFromMonth ? { effectiveFromMonth: plan.policy.effectiveFromMonth } : {}),
           },

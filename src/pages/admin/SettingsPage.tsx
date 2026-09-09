@@ -48,6 +48,11 @@ function parsePayrollTaxRate(value: string): number {
   return Number(value.trim().replace(',', '.'))
 }
 
+function parsePayrollTaxFixedAmount(value: string): number {
+  const digits = value.replace(/[^\d]/g, '')
+  return digits ? Number(digits) : 0
+}
+
 function isValidPayrollTaxMonth(value: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
 }
@@ -112,6 +117,8 @@ export function SettingsPage() {
   const [payrollTaxEnabled, setPayrollTaxEnabled] = useState(false)
   const [payrollTaxThreshold, setPayrollTaxThreshold] = useState('5000000')
   const [payrollTaxRate, setPayrollTaxRate] = useState('10')
+  const [payrollTaxMode, setPayrollTaxMode] = useState<'percent' | 'fixed'>('percent')
+  const [payrollTaxFixedAmount, setPayrollTaxFixedAmount] = useState('0')
   const [payrollTaxCurrency, setPayrollTaxCurrency] = useState('VND')
   const [payrollTaxEffectiveFromMonth, setPayrollTaxEffectiveFromMonth] = useState(getCurrentMonth())
 
@@ -247,6 +254,8 @@ export function SettingsPage() {
         setPayrollTaxEnabled(data.payrollTaxEnabled === true)
         setPayrollTaxThreshold(String(data.payrollTaxThresholdAmount ?? 5000000))
         setPayrollTaxRate(String(data.payrollTaxRatePercent ?? 10))
+        setPayrollTaxMode(data.payrollTaxMode === 'fixed' ? 'fixed' : 'percent')
+        setPayrollTaxFixedAmount(String(data.payrollTaxFixedAmount ?? 0))
         setPayrollTaxCurrency(String(data.payrollTaxCurrency || 'VND'))
         setPayrollTaxEffectiveFromMonth(String(data.payrollTaxEffectiveFromMonth || getCurrentMonth()))
         setPayrollTaxLoading(false)
@@ -542,13 +551,21 @@ export function SettingsPage() {
     event.preventDefault()
     const threshold = parsePayrollTaxThreshold(payrollTaxThreshold)
     const rate = parsePayrollTaxRate(payrollTaxRate)
+    const fixedAmount = parsePayrollTaxFixedAmount(payrollTaxFixedAmount)
+    const storedRate = Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate : 0
     const currency = payrollTaxCurrency.trim().toUpperCase()
     if (!Number.isFinite(threshold) || threshold <= 0) {
       toast.warning('Ngưỡng thu nhập phải là số tiền lớn hơn 0')
       return
     }
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    if (payrollTaxMode === 'percent' && (!Number.isFinite(rate) || rate < 0 || rate > 100)) {
       toast.warning('Tỷ lệ thuế phải nằm trong khoảng 0 đến 100%')
+      return
+    }
+    if (!Number.isFinite(fixedAmount) || fixedAmount < 0 || (payrollTaxMode === 'fixed' && fixedAmount <= 0)) {
+      toast.warning(payrollTaxMode === 'fixed'
+        ? 'Số tiền khấu trừ cố định phải lớn hơn 0'
+        : 'Số tiền khấu trừ cố định không hợp lệ')
       return
     }
     if (!/^[A-Z]{3}$/.test(currency)) {
@@ -564,7 +581,9 @@ export function SettingsPage() {
       await setDoc(doc(db, 'paymentSettings', 'main'), {
         payrollTaxEnabled,
         payrollTaxThresholdAmount: Math.round(threshold),
-        payrollTaxRatePercent: rate,
+        payrollTaxRatePercent: storedRate,
+        payrollTaxMode,
+        payrollTaxFixedAmount: Math.round(fixedAmount),
         payrollTaxCurrency: currency,
         payrollTaxEffectiveFromMonth,
         payrollTaxUpdatedAt: serverTimestamp(),
@@ -973,7 +992,7 @@ export function SettingsPage() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Cấu hình lương</p>
             <h2 className="mt-1 text-lg font-black text-slate-950">Khấu trừ thuế TNCN</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Có thể bật/tắt và thay đổi ngưỡng áp dụng mà không cần sửa code. Nếu chưa có cấu hình, mặc định là tắt để không tự động trừ 10%.
+              Có thể bật/tắt, chọn cách tính và thay đổi ngưỡng áp dụng mà không cần sửa code. Nếu chưa có cấu hình, mặc định là tắt để không tự động trừ 10%.
             </p>
           </div>
           {payrollTaxLoading ? (
@@ -1010,6 +1029,22 @@ export function SettingsPage() {
                   pattern="[0-9]+([.,][0-9]+)?"
                   placeholder="Ví dụ: 10 hoặc 10,5"
                   hint="Nhập từ 0 đến 100; có thể dùng dấu phẩy hoặc dấu chấm thập phân."
+                />
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-slate-600">Cách tính khấu trừ</span>
+                  <select value={payrollTaxMode} onChange={(event) => setPayrollTaxMode(event.target.value === 'fixed' ? 'fixed' : 'percent')} className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="percent">Theo phần trăm</option>
+                    <option value="fixed">Số tiền cố định</option>
+                  </select>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">Chỉ phương thức đang chọn được áp dụng; ngưỡng tháng vẫn được giữ nguyên.</span>
+                </label>
+                <Input
+                  label="Số tiền khấu trừ cố định"
+                  value={payrollTaxFixedAmount}
+                  onChange={(event) => setPayrollTaxFixedAmount(event.target.value)}
+                  inputMode="numeric"
+                  placeholder="Ví dụ: 500 000"
+                  hint="Dùng khi chọn Số tiền cố định; số tiền không vượt quá Gross của dòng lương."
                 />
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-slate-600">Loại tiền</span>

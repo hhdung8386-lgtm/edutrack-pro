@@ -2,12 +2,17 @@ import type { PaymentSettings } from '@/types'
 
 export const DEFAULT_PAYROLL_TAX_THRESHOLD = 5_000_000
 export const DEFAULT_PAYROLL_TAX_RATE_PERCENT = 10
+export const DEFAULT_PAYROLL_TAX_FIXED_AMOUNT = 0
+
+export type PayrollTaxMode = 'percent' | 'fixed'
 
 export interface PayrollTaxPolicy {
   enabled: boolean
   thresholdAmount: number
   ratePercent: number
   currency: string
+  mode?: PayrollTaxMode
+  fixedAmount?: number
   effectiveFromMonth?: string
   updatedAt?: unknown
   updatedBy?: string
@@ -88,6 +93,7 @@ export interface PayrollTaxCurrencySummary {
 export function normalizePayrollTaxPolicy(settings?: Partial<PaymentSettings> | null): PayrollTaxPolicy {
   const threshold = Number(settings?.payrollTaxThresholdAmount)
   const rate = Number(settings?.payrollTaxRatePercent)
+  const fixedAmount = Number(settings?.payrollTaxFixedAmount)
   return {
     enabled: settings?.payrollTaxEnabled === true,
     thresholdAmount: Number.isFinite(threshold) && threshold >= 0
@@ -97,6 +103,10 @@ export function normalizePayrollTaxPolicy(settings?: Partial<PaymentSettings> | 
       ? rate
       : DEFAULT_PAYROLL_TAX_RATE_PERCENT,
     currency: String(settings?.payrollTaxCurrency || 'VND').toUpperCase(),
+    mode: settings?.payrollTaxMode === 'fixed' ? 'fixed' : 'percent',
+    fixedAmount: Number.isFinite(fixedAmount) && fixedAmount >= 0
+      ? Math.round(fixedAmount)
+      : DEFAULT_PAYROLL_TAX_FIXED_AMOUNT,
     effectiveFromMonth: settings?.payrollTaxEffectiveFromMonth || undefined,
     updatedAt: settings?.payrollTaxUpdatedAt,
     updatedBy: settings?.payrollTaxUpdatedBy,
@@ -109,7 +119,7 @@ export function payrollTaxApplies(gross: number, currency: string, policy: Payro
     && isEffective
     && String(currency || '').toUpperCase() === policy.currency
     && gross > policy.thresholdAmount
-    && policy.ratePercent > 0
+    && (policy.mode === 'fixed' ? (policy.fixedAmount || 0) > 0 : policy.ratePercent > 0)
 }
 
 export function calculatePayrollTax(
@@ -121,7 +131,9 @@ export function calculatePayrollTax(
   const gross = Number.isFinite(Number(grossAmount)) ? Math.max(0, Number(grossAmount)) : 0
   const applies = payrollTaxApplies(gross, currency, policy, month)
   const tax = applies
-    ? Math.round(gross * policy.ratePercent / 100)
+    ? policy.mode === 'fixed'
+      ? Math.min(gross, Math.max(0, Math.round(policy.fixedAmount || 0)))
+      : Math.round(gross * policy.ratePercent / 100)
     : 0
   return {
     gross,
