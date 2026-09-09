@@ -14,7 +14,15 @@ export const CLASS_HUNT_SCHEMA_VERSION = 1
 export const CLASS_HUNT_DEFAULT_TTL_MINUTES = 24 * 60
 export const CLASS_HUNT_MIN_TTL_MINUTES = 5
 export const CLASS_HUNT_MAX_TTL_MINUTES = 7 * 24 * 60
-export const CLASS_HUNT_MAX_SESSIONS = 24
+/**
+ * A claim creates one booking document per planned session inside one
+ * Firestore transaction, alongside the student, teacher, hunt, audit and
+ * notification writes. Keep this comfortably below Firestore's 500-write
+ * ceiling and within the one-year schedule horizon; this is a transaction
+ * safety boundary, not a UI-only product limit.
+ */
+export const CLASS_HUNT_MAX_SESSIONS = 52
+export const CLASS_HUNT_SESSION_HORIZON_DAYS = 366
 export const CLASS_HUNT_MINUTES = [25, 50, 75, 100] as const
 export const CLASS_HUNT_COMPENSATION_VERSION = 1
 export const CLASS_HUNT_COMPENSATION_CURRENCY = 'VND' as const
@@ -31,6 +39,8 @@ const CONTROL_CHARACTER_PATTERN = new RegExp(
 
 export type ClassHuntDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
+/** A legacy request without this field is treated as a specific-count request. */
+export type ClassHuntSessionSelectionMode = 'all_remaining' | 'specific'
 
 export interface ClassHuntSession {
   dateISO: string
@@ -58,6 +68,7 @@ export interface ClassHuntDraft {
   requestedStart: string
   requestedMinutes: number
   sessionCount: number
+  sessionSelectionMode: ClassHuntSessionSelectionMode
   expiresInMinutes: number
   sessions: ClassHuntSession[]
   /**
@@ -187,6 +198,11 @@ function requiredDocumentId(value: unknown, reason: string): string {
 function finiteInteger(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) ? parsed : null
+}
+
+function finiteNonNegativeInteger(value: unknown): number | null {
+  const parsed = finiteInteger(value)
+  return parsed !== null && parsed >= 0 ? parsed : null
 }
 
 /** Strictly validate a persisted snapshot. Do not coerce historical Firestore
@@ -393,6 +409,13 @@ export function normalizeClassHuntSessionCount(value: unknown): number {
   return count
 }
 
+export function normalizeClassHuntSessionSelectionMode(value: unknown): ClassHuntSessionSelectionMode {
+  // Keep historical browser callers and existing idempotent requests working.
+  if (value === undefined || value === null || value === '') return 'specific'
+  if (value === 'all_remaining' || value === 'specific') return value
+  throw new ClassHuntValidationError('CLASS_HUNT_SESSION_SELECTION_INVALID', 'Cách xếp buổi học không hợp lệ.')
+}
+
 export function normalizeClassHuntExpiryMinutes(value: unknown): number {
   if (value === undefined || value === null || value === '') return CLASS_HUNT_DEFAULT_TTL_MINUTES
   const minutes = finiteInteger(value)
@@ -429,9 +452,9 @@ export function buildFutureClassHuntSessions(input: {
 
   const selected = new Set(selectedDays)
   const sessions: ClassHuntSession[] = []
-  // 24 sessions on one weekday fit well within this bound. The guard is also a
-  // fail-closed defence if this helper is changed in the future.
-  for (let offset = 0; sessions.length < sessionCount && offset <= 366; offset += 1) {
+  // A weekly plan of up to 52 sessions fits within this horizon. The guard is
+  // also a fail-closed defence if this helper is changed in the future.
+  for (let offset = 0; sessions.length < sessionCount && offset <= CLASS_HUNT_SESSION_HORIZON_DAYS; offset += 1) {
     const date = addCalendarDays(start, offset)
     const dateISO = formatDateISO(date)
     const day = dayOfDate(date)
@@ -461,6 +484,7 @@ export function buildClassHuntDraft(input: {
   requestedStart?: unknown
   requestedMinutes?: unknown
   sessionCount?: unknown
+  sessionSelectionMode?: unknown
   expiresInMinutes?: unknown
   compensationRatePerMinute?: unknown
 }, nowMs: number): ClassHuntDraft {
@@ -471,6 +495,7 @@ export function buildClassHuntDraft(input: {
   const requestedStart = normalizeTime(input.requestedStart, 'CLASS_HUNT_TIME_INVALID')
   const requestedMinutes = normalizeClassHuntDuration(input.requestedMinutes)
   const sessionCount = normalizeClassHuntSessionCount(input.sessionCount)
+  const sessionSelectionMode = normalizeClassHuntSessionSelectionMode(input.sessionSelectionMode)
   const expiresInMinutes = normalizeClassHuntExpiryMinutes(input.expiresInMinutes)
   const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
   if (classHuntCompensation) {
@@ -490,6 +515,7 @@ export function buildClassHuntDraft(input: {
     requestedStart,
     requestedMinutes,
     sessionCount,
+    sessionSelectionMode,
     expiresInMinutes,
     sessions,
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
@@ -505,6 +531,7 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     requestedStart: draft.requestedStart,
     requestedMinutes: draft.requestedMinutes,
     sessionCount: draft.sessionCount,
+    sessionSelectionMode: draft.sessionSelectionMode,
     expiresInMinutes: draft.expiresInMinutes,
     sessions: draft.sessions,
     classHuntCompensation: draft.classHuntCompensation || null,
@@ -526,6 +553,7 @@ export function classHuntPublishRetryMatches(input: {
   startTime?: unknown
   minutes?: unknown
   sessionCount?: unknown
+  sessionSelectionMode?: unknown
   expiresInMinutes?: unknown
   compensationRatePerMinute?: unknown
 }, stored: {
@@ -537,6 +565,7 @@ export function classHuntPublishRetryMatches(input: {
   requestedStart: string
   requestedMinutes: number
   sessionCount: number
+  sessionSelectionMode?: unknown
   createdAtMs: number
   expiresAtMs: number
   classHuntCompensation?: unknown
@@ -560,6 +589,21 @@ export function classHuntPublishRetryMatches(input: {
     }
   })()
   if (requestedStart === null) return false
+  const requestedSelectionMode = (() => {
+    try {
+      return normalizeClassHuntSessionSelectionMode(input.sessionSelectionMode)
+    } catch {
+      return null
+    }
+  })()
+  const storedSelectionMode = (() => {
+    try {
+      return normalizeClassHuntSessionSelectionMode(stored.sessionSelectionMode)
+    } catch {
+      return null
+    }
+  })()
+  if (requestedSelectionMode === null || storedSelectionMode === null) return false
   let requestedCompensation: ClassHuntCompensation | undefined
   try {
     requestedCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
@@ -581,7 +625,11 @@ export function classHuntPublishRetryMatches(input: {
     && cleanText(input.startDate, 10) === stored.startDate
     && requestedStart === stored.requestedStart
     && Number(input.minutes) === stored.requestedMinutes
-    && Number(input.sessionCount) === stored.sessionCount
+    && requestedSelectionMode === storedSelectionMode
+    // "All remaining" is resolved against a server-owned package snapshot.
+    // A retry must recover that immutable plan even if a browser still holds a
+    // stale display count from before the publish completed.
+    && (requestedSelectionMode === 'all_remaining' || Number(input.sessionCount) === stored.sessionCount)
     && requestedExpiry !== null
     && requestedExpiry === storedExpiry
     && requestedDays.length === storedDays.length
@@ -750,13 +798,18 @@ export interface ClassHuntSubjectFund {
   subjectId: string
   subjectName: string
   curriculumLink: string
+  minutesPerSession: number
   totalMinutes: number
   usedMinutes: number
   remainingMinutes: number
+  /** Present only when the package has an exact, non-ambiguous session ledger. */
+  remainingSessions?: number
 }
 
 function subjectFundFrom(source: SubjectFundSource): ClassHuntSubjectFund {
   const minutesPerSession = finiteNonNegative(source.minutesPerSession, 50) || 50
+  const totalSessions = finiteNonNegativeInteger(source.totalSessions)
+  const usedSessions = finiteNonNegativeInteger(source.usedSessions)
   const totalMinutes = finiteNonNegative(source.totalMinutes,
     finiteNonNegative(source.totalSessions, 0) * minutesPerSession)
   const usedMinutes = finiteNonNegative(source.usedMinutes,
@@ -765,9 +818,13 @@ function subjectFundFrom(source: SubjectFundSource): ClassHuntSubjectFund {
     subjectId: cleanText(source.subjectId, 160),
     subjectName: cleanText(source.subjectName, 160),
     curriculumLink: cleanText(source.curriculumLink, 500),
+    minutesPerSession,
     totalMinutes,
     usedMinutes,
     remainingMinutes: Math.max(0, totalMinutes - usedMinutes),
+    ...(totalSessions !== null && usedSessions !== null
+      ? { remainingSessions: Math.max(0, totalSessions - usedSessions) }
+      : {}),
   }
 }
 
@@ -783,6 +840,27 @@ export function resolveClassHuntSubjectFund(student: ClassHuntStudentLike, subje
   // later settle atomically. Treat duplicate legacy rows as an ambiguity that
   // must be reconciled before Class Hunting is used.
   return matching.length === 1 ? matching[0] : null
+}
+
+/**
+ * How many package sessions may still be planned before a new Class Hunting
+ * request. Package `usedSessions` normally represents completed lessons, so
+ * active bookings and unrebooked held rows must also consume one scheduling
+ * slot. Return null rather than inventing a value for legacy packages that do
+ * not have a reliable session ledger.
+ */
+export function availableClassHuntSessionCount(input: {
+  student: ClassHuntStudentLike
+  subjectId: string
+  bookings: ClassHuntBookingLike[]
+}): number | null {
+  const fund = resolveClassHuntSubjectFund(input.student, input.subjectId)
+  if (!fund || fund.remainingSessions === undefined) return null
+  const alreadyPlanned = input.bookings.filter((booking) => (
+    booking.subjectId === input.subjectId
+    && (isActiveClassHuntBooking(booking) || classHuntBookingHeldPoints(booking) > 0)
+  )).length
+  return Math.max(0, fund.remainingSessions - alreadyPlanned)
 }
 
 /**

@@ -10,6 +10,7 @@ import app from '@/lib/firebase'
 
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
 export type ClassHuntMinutes = 25 | 50 | 75 | 100
+export type ClassHuntSessionSelectionMode = 'all_remaining' | 'specific'
 
 /** Immutable teacher-pay snapshot supplied only by the Class Hunting backend. */
 export interface ClassHuntCompensation {
@@ -69,6 +70,7 @@ export interface ClassHunt {
   slots: ClassHuntSlot[]
   minutes: ClassHuntMinutes
   sessionCount: number
+  sessionSelectionMode?: ClassHuntSessionSelectionMode
   createdAt?: string
   expiresAt?: string
   cancelledAt?: string
@@ -97,6 +99,8 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   startTime: string
   minutes: ClassHuntMinutes
   sessionCount: number
+  /** `all_remaining` is resolved by the server from the current package ledger. */
+  sessionSelectionMode: ClassHuntSessionSelectionMode
   /** Positive whole-VND rate. New UI always sends this; legacy stored hunts
    * without a snapshot stay readable and claimable. */
   compensationRatePerMinute: number
@@ -109,6 +113,7 @@ export interface ClassHuntPreview {
   slots: ClassHuntSlot[]
   eligibleTeachers: ClassHuntTeacherMatch[]
   eligibleTeacherCount?: number
+  matchingTeacherCount?: number
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
 }
@@ -137,6 +142,10 @@ const publishCallable = httpsCallable<ClassHuntPublishInput, unknown>(functions,
 const listCallable = httpsCallable<{ scope: 'admin' | 'teacher'; status?: ClassHuntStatus }, unknown>(functions, 'listClassHunts')
 const cancelCallable = httpsCallable<{ huntId: string }, unknown>(functions, 'cancelClassHunt')
 const claimCallable = httpsCallable<{ huntId: string; clientRequestId: string }, unknown>(functions, 'claimClassHunt')
+const markTeacherNotificationsReadCallable = httpsCallable<{ notificationIds: string[] }, unknown>(
+  functions,
+  'markTeacherNotificationsRead',
+)
 
 function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -181,6 +190,10 @@ function minutesFrom(value: unknown): ClassHuntMinutes {
 
 function statusFrom(value: unknown): ClassHuntStatus {
   return value === 'claimed' || value === 'cancelled' || value === 'expired' ? value : 'open'
+}
+
+function sessionSelectionModeFrom(value: unknown): ClassHuntSessionSelectionMode | undefined {
+  return value === 'all_remaining' || value === 'specific' ? value : undefined
 }
 
 function studentFrom(value: unknown): ClassHuntStudent | undefined {
@@ -282,6 +295,9 @@ function previewFrom(value: unknown): ClassHuntPreview {
     ...(typeof data.eligibleTeacherCount === 'number'
       ? { eligibleTeacherCount: data.eligibleTeacherCount }
       : {}),
+    ...(typeof data.matchingTeacherCount === 'number'
+      ? { matchingTeacherCount: data.matchingTeacherCount }
+      : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
     warnings: asArray(data.warnings).filter((warning): warning is string => typeof warning === 'string'),
   }
@@ -302,6 +318,7 @@ function huntFrom(value: unknown): ClassHunt {
     slots,
     minutes: minutesFrom(data.minutes ?? data.requestedMinutes),
     sessionCount: numberValue(data.sessionCount) || slots.length,
+    ...(sessionSelectionModeFrom(data.sessionSelectionMode) ? { sessionSelectionMode: sessionSelectionModeFrom(data.sessionSelectionMode) } : {}),
     ...(dateFrom(data.createdAt ?? data.createdAtMs) ? { createdAt: dateFrom(data.createdAt ?? data.createdAtMs) } : {}),
     ...(dateFrom(data.expiresAt ?? data.expiresAtMs) ? { expiresAt: dateFrom(data.expiresAt ?? data.expiresAtMs) } : {}),
     ...(dateFrom(data.cancelledAt ?? data.cancelledAtMs) ? { cancelledAt: dateFrom(data.cancelledAt ?? data.cancelledAtMs) } : {}),
@@ -333,6 +350,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     slots,
     minutes: minutesFrom(data.minutes ?? data.requestedMinutes),
     sessionCount: numberValue(data.sessionCount) || slots.length,
+    ...(sessionSelectionModeFrom(data.sessionSelectionMode) ? { sessionSelectionMode: sessionSelectionModeFrom(data.sessionSelectionMode) } : {}),
     ...(dateFrom(data.expiresAt ?? data.expiresAtMs) ? { expiresAt: dateFrom(data.expiresAt ?? data.expiresAtMs) } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
@@ -378,6 +396,11 @@ export async function claimClassHunt(huntId: string, clientRequestId: string): P
     ...(data.hunt ? { hunt: teacherHuntFrom(data.hunt) } : {}),
     ...(Array.isArray(data.bookingIds) ? { bookingIds: data.bookingIds.filter((id): id is string => typeof id === 'string') } : {}),
   }
+}
+
+export async function markTeacherNotificationsRead(notificationIds: string[]): Promise<void> {
+  if (notificationIds.length === 0) return
+  await markTeacherNotificationsReadCallable({ notificationIds })
 }
 
 export function classHuntErrorReason(error: unknown): string {

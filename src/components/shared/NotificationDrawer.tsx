@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, query, where, onSnapshot, updateDoc, doc, arrayUnion } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { markTeacherNotificationsRead } from '@/lib/classHunting'
 import { SystemNotification } from '@/types'
 import {
   Bell, X, CheckCheck, AlertCircle, Calendar, ClipboardList,
@@ -50,7 +51,7 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as SystemNotification))
-        .filter(n => n.targetIds.length === 0 || n.targetIds.includes(targetId))
+        .filter(n => !Array.isArray(n.targetIds) || n.targetIds.length === 0 || n.targetIds.includes(targetId))
         // sort by createdAt desc
         .sort((a, b) => {
           const tA = a.createdAt?.toMillis() || 0
@@ -71,9 +72,13 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
 
   const handleMarkAsRead = async (notifyId: string) => {
     try {
-      await updateDoc(doc(db, 'notifications', notifyId), {
-        readBy: arrayUnion(targetId)
-      })
+      if (targetType === 'teachers') {
+        await markTeacherNotificationsRead([notifyId])
+      } else {
+        await updateDoc(doc(db, 'notifications', notifyId), {
+          readBy: arrayUnion(targetId),
+        })
+      }
     } catch (err) {
       console.error(err)
     }
@@ -83,13 +88,17 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
     const unread = notifications.filter(n => !n.readBy?.includes(targetId))
     if (unread.length === 0) return
     try {
-      await Promise.all(
-        unread.map(n =>
-          updateDoc(doc(db, 'notifications', n.id), {
-            readBy: arrayUnion(targetId)
-          })
+      if (targetType === 'teachers') {
+        await markTeacherNotificationsRead(unread.map((notification) => notification.id))
+      } else {
+        await Promise.all(
+          unread.map(n =>
+            updateDoc(doc(db, 'notifications', n.id), {
+              readBy: arrayUnion(targetId),
+            })
+          )
         )
-      )
+      }
       toast.success('Đã đánh dấu đọc tất cả thông báo')
     } catch (err) {
       console.error(err)

@@ -43,6 +43,7 @@ const WEEKDAYS: Array<{ value: DayOfWeek; label: string }> = [
 ]
 
 const DURATIONS: ClassHuntMinutes[] = [25, 50, 75, 100]
+const CLASS_HUNT_MAX_SESSIONS = 52
 
 type StatusFilter = 'all' | ClassHuntStatus
 
@@ -137,6 +138,7 @@ export function ClassHuntingPage() {
     startTime: '19:00',
     minutes: 50,
     sessionCount: 1,
+    sessionSelectionMode: 'specific',
     compensationRatePerMinute: 0,
   })
   const publishRequestIdsRef = useRef<Record<string, string>>({})
@@ -154,9 +156,11 @@ export function ClassHuntingPage() {
     () => lookup?.subjects.find((subject) => subject.id === form.subjectId),
     [form.subjectId, lookup],
   )
+  const displayedSessionCount = preview?.slots.length
+    || (form.sessionSelectionMode === 'specific' ? form.sessionCount : undefined)
   const hasSafeDraftCompensation = Number.isSafeInteger(form.compensationRatePerMinute)
     && form.compensationRatePerMinute > 0
-    && Number.isSafeInteger(form.compensationRatePerMinute * form.minutes * form.sessionCount)
+    && Number.isSafeInteger(form.compensationRatePerMinute * form.minutes * (displayedSessionCount || 1))
 
   const loadHunts = useCallback(async () => {
     setHuntsError('')
@@ -278,8 +282,28 @@ export function ClassHuntingPage() {
       toast.error('Thời lượng chưa hợp lệ.')
       return false
     }
-    if (!Number.isInteger(draft.sessionCount) || draft.sessionCount < 1 || draft.sessionCount > 24) {
-      toast.error('Số buổi phải từ 1 đến 24.')
+    if (draft.sessionSelectionMode === 'all_remaining') {
+      if (selectedSubject.remainingSessions === undefined) {
+        toast.error('Gói học chưa có số buổi còn lại chính xác. Hãy chọn số buổi nhất định hoặc cập nhật gói học.')
+        return false
+      }
+      if (selectedSubject.minutesPerSession !== undefined && selectedSubject.minutesPerSession !== draft.minutes) {
+        toast.error('Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.')
+        return false
+      }
+      if (selectedSubject.remainingSessions < 1) {
+        toast.error('Gói học không còn buổi chưa được xếp.')
+        return false
+      }
+      if (selectedSubject.remainingSessions > CLASS_HUNT_MAX_SESSIONS) {
+        toast.error(`Gói còn ${selectedSubject.remainingSessions} buổi. Một CLASS HUNTING chỉ có thể tạo an toàn tối đa ${CLASS_HUNT_MAX_SESSIONS} buổi; hãy tách kế hoạch.`)
+        return false
+      }
+    } else if (!Number.isInteger(draft.sessionCount) || draft.sessionCount < 1 || draft.sessionCount > CLASS_HUNT_MAX_SESSIONS) {
+      toast.error(`Số buổi phải từ 1 đến ${CLASS_HUNT_MAX_SESSIONS}.`)
+      return false
+    } else if (selectedSubject.remainingSessions !== undefined && draft.sessionCount > selectedSubject.remainingSessions) {
+      toast.error(`Gói học hiện còn ${selectedSubject.remainingSessions} buổi. Hãy chọn số buổi phù hợp.`)
       return false
     }
     if (!Number.isSafeInteger(draft.compensationRatePerMinute) || draft.compensationRatePerMinute <= 0) {
@@ -312,6 +336,14 @@ export function ClassHuntingPage() {
         ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
         : reason === 'CLASS_HUNT_COMPENSATION_AMOUNT_OVERFLOW'
           ? 'Đơn giá và tổng giá trị lớp vượt giới hạn tính toán an toàn.'
+          : reason === 'CLASS_HUNT_ALL_DURATION_MISMATCH'
+            ? 'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.'
+            : reason === 'CLASS_HUNT_ALL_SESSION_LEDGER_UNAVAILABLE'
+              ? 'Gói học chưa có số buổi còn lại chính xác. Hãy cập nhật gói hoặc chọn số buổi nhất định.'
+              : reason === 'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING' || reason === 'CLASS_HUNT_NO_REMAINING_SESSIONS'
+                ? 'Số buổi đã chọn không còn phù hợp với gói học hiện tại. Hãy kiểm tra lại gói và lịch.'
+                : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
+                  ? 'Chưa có gia sư online hoạt động nào được gắn đúng mã môn này. Hãy đồng bộ chuyên môn gia sư trước.'
           : 'Chưa kiểm tra được lịch lớp. Dữ liệu chưa được tạo.')
     } finally {
       if (requestId === previewRequestRef.current) setPreviewing(false)
@@ -322,7 +354,8 @@ export function ClassHuntingPage() {
     preview
     && previewKey === draftKey(draft)
     && canCreateRateBearingHunt
-    && preview.classHuntCompensation?.ratePerMinute === draft.compensationRatePerMinute,
+    && preview.classHuntCompensation?.ratePerMinute === draft.compensationRatePerMinute
+    && (preview.matchingTeacherCount || 0) > 0,
   )
 
   const handlePublish = async () => {
@@ -339,7 +372,7 @@ export function ClassHuntingPage() {
       setPublishConfirmOpen(false)
       clearSchedulePreview()
       delete publishRequestIdsRef.current[publishKey]
-      toast.success('Đã mở CLASS HUNTING. Gia sư đúng chuyên môn có thể nhận lớp ngay.')
+      toast.success('Đã mở CLASS HUNTING. Gia sư đúng chuyên môn sẽ thấy lớp và có thể nhận ngay.')
       await loadHunts()
     } catch (error) {
       console.error('Publish class hunt failed:', error)
@@ -348,6 +381,10 @@ export function ClassHuntingPage() {
         ? 'Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.'
         : reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
           ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
+          : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
+            ? 'Chưa có gia sư online hoạt động nào được gắn đúng mã môn này. Hãy đồng bộ chuyên môn gia sư trước.'
+            : reason === 'CLASS_HUNT_ALL_DURATION_MISMATCH'
+              ? 'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.'
           : 'Chưa đăng được CLASS HUNTING. Dữ liệu chưa bị trừ.')
     } finally {
       setPublishing(false)
@@ -524,18 +561,61 @@ export function ClassHuntingPage() {
                     {DURATIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} phút</option>)}
                   </select>
                 </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-bold text-slate-700">Số buổi cần xếp</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={form.sessionCount}
-                    onChange={(event) => updateForm('sessionCount', Math.min(24, Math.max(1, Number(event.target.value) || 1)))}
-                    className={formFieldClass()}
-                  />
-                </label>
               </div>
+              <fieldset>
+                <legend className="mb-2 text-xs font-bold text-slate-700">Số buổi cần xếp</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${form.sessionSelectionMode === 'all_remaining' ? 'border-indigo-500 bg-indigo-50/70' : 'border-slate-200 bg-white hover:border-indigo-200'}`}>
+                    <input
+                      type="radio"
+                      name="class-hunt-session-selection"
+                      value="all_remaining"
+                      checked={form.sessionSelectionMode === 'all_remaining'}
+                      onChange={() => updateForm('sessionSelectionMode', 'all_remaining')}
+                      className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-extrabold text-slate-900">Xếp toàn bộ buổi còn lại</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600">Hệ thống chốt số buổi theo gói học tại thời điểm kiểm tra; không lấy số nhập tay.</span>
+                    </span>
+                  </label>
+                  <label className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${form.sessionSelectionMode === 'specific' ? 'border-indigo-500 bg-indigo-50/70' : 'border-slate-200 bg-white hover:border-indigo-200'}`}>
+                    <input
+                      type="radio"
+                      name="class-hunt-session-selection"
+                      value="specific"
+                      checked={form.sessionSelectionMode === 'specific'}
+                      onChange={() => updateForm('sessionSelectionMode', 'specific')}
+                      className="mt-0.5 h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-extrabold text-slate-900">Xếp số buổi nhất định</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600">Chọn một phần số buổi còn lại của gói học.</span>
+                    </span>
+                  </label>
+                </div>
+                {form.sessionSelectionMode === 'specific' && (
+                  <label className="mt-3 block max-w-sm">
+                    <span className="mb-1.5 block text-xs font-bold text-slate-700">Số buổi muốn xếp</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={CLASS_HUNT_MAX_SESSIONS}
+                      value={form.sessionCount}
+                      onChange={(event) => updateForm('sessionCount', Math.min(CLASS_HUNT_MAX_SESSIONS, Math.max(1, Number(event.target.value) || 1)))}
+                      className={formFieldClass()}
+                    />
+                  </label>
+                )}
+                {selectedSubject && (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    {selectedSubject.remainingSessions === undefined
+                      ? 'Gói này chưa có số buổi còn lại chính xác; chỉ nên xếp số buổi nhất định sau khi kiểm tra gói.'
+                      : `Gói đang ghi nhận còn ${selectedSubject.remainingSessions} buổi. Hệ thống sẽ trừ thêm các buổi đã được giữ trước khi chốt lịch.`}
+                    {' '}Một yêu cầu CLASS HUNTING tạo tối đa {CLASS_HUNT_MAX_SESSIONS} buổi để việc nhận lớp luôn nguyên tử và an toàn.
+                  </p>
+                )}
+              </fieldset>
               <fieldset>
                 <legend className="mb-2 text-xs font-bold text-slate-700">Các thứ học</legend>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -580,8 +660,12 @@ export function ClassHuntingPage() {
                 </label>
                 {hasSafeDraftCompensation && (
                   <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-sm leading-6 text-indigo-950">
-                    <p className="font-extrabold">{compensationSummary(form.compensationRatePerMinute, form.minutes, form.sessionCount)}</p>
-                    <p className="mt-1 text-xs text-indigo-700">Bản ghi đơn giá được lưu cùng lớp và các lịch dạy tạo ra sau khi gia sư nhận lớp.</p>
+                    <p className="font-extrabold">{displayedSessionCount
+                      ? compensationSummary(form.compensationRatePerMinute, form.minutes, displayedSessionCount)
+                      : `${formatVND(form.compensationRatePerMinute)}/phút · ${formatVND(form.compensationRatePerMinute * form.minutes)}/buổi`}</p>
+                    <p className="mt-1 text-xs text-indigo-700">{displayedSessionCount
+                      ? 'Bản ghi đơn giá được lưu cùng lớp và các lịch dạy tạo ra sau khi gia sư nhận lớp.'
+                      : 'Tổng tiền được chốt sau khi hệ thống xác định chính xác toàn bộ buổi còn lại của gói.'}</p>
                   </div>
                 )}
               </section>
@@ -639,10 +723,17 @@ export function ClassHuntingPage() {
                 {preview.warnings?.map((warning) => (
                   <p key={warning} className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{warning}</p>
                 ))}
-                <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p>Yêu cầu lớp đã hợp lệ. Hệ thống không tìm hoặc giữ trước giáo viên nào; lớp sẽ được hiển thị cho giáo viên đúng chuyên môn để chủ động nhận.</p>
-                </div>
+                {preview.matchingTeacherCount === 0 ? (
+                  <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900" role="alert">
+                    <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>Chưa có hồ sơ gia sư online hoạt động được gắn đúng mã môn này. Không thể đăng lớp hoặc gửi thông báo chung trước khi dữ liệu chuyên môn được đồng bộ.</p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>{preview.matchingTeacherCount ? `Đã tìm thấy ${preview.matchingTeacherCount} hồ sơ gia sư khớp đúng môn. ` : ''}Hệ thống không yêu cầu gia sư mở lịch rảnh trước; khi nhận lớp, hệ thống mới kiểm tra trùng ca dạy thực tế.</p>
+                  </div>
+                )}
                 <Button fullWidth type="button" onClick={() => setPublishConfirmOpen(true)} disabled={!canPublish} className="whitespace-nowrap">
                   <Send className="h-4 w-4" />
                   Đăng CLASS HUNTING

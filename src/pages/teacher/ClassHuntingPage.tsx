@@ -7,11 +7,14 @@ import {
   Target,
   XCircle,
 } from 'lucide-react'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
+import { db } from '@/lib/firebase'
 import {
   claimClassHunt,
   classHuntErrorReason,
@@ -73,12 +76,21 @@ function clientRequestId(huntId: string) {
   return `class-hunt-${huntId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function isClassHuntNotificationForTeacher(data: Record<string, unknown>, teacherId: string): boolean {
+  const targetIds = Array.isArray(data.targetIds)
+    ? data.targetIds.filter((value): value is string => typeof value === 'string')
+    : []
+  return (targetIds.length === 0 || targetIds.includes(teacherId))
+    && (data.kind === 'class_hunt_available' || data.senderId === 'system:class-hunt')
+}
+
 /**
  * The teacher endpoint returns a deliberately sanitized offer. This page must
  * never fetch classHunts from Firestore, derive eligibility locally, or render
  * student details; eligibility and the first-claim transaction stay server-side.
  */
 export function TeacherClassHuntingPage() {
+  const teacherId = useAuthStore((state) => state.teacherId)
   const [hunts, setHunts] = useState<TeacherClassHunt[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -111,7 +123,12 @@ export function TeacherClassHuntingPage() {
     } catch (loadError) {
       console.error('Load teacher class hunts failed:', loadError)
       if (mountedRef.current) {
-        setError('Chưa tải được danh sách lớp phù hợp. Vui lòng làm mới để thử lại.')
+        const reason = classHuntErrorReason(loadError)
+        setError(reason === 'CLASS_HUNT_CONTRACT_SCAN_LIMIT'
+          ? 'Hệ thống chưa thể đối soát lịch sử hợp đồng an toàn. Vui lòng liên hệ quản trị viên để kiểm tra hồ sơ.'
+          : reason === 'CLASS_HUNT_FEED_SCAN_LIMIT'
+            ? 'Hệ thống chưa thể đối soát danh sách lớp an toàn. Vui lòng làm mới để thử lại.'
+            : 'Chưa tải được danh sách lớp phù hợp. Vui lòng làm mới để thử lại.')
       }
     } finally {
       if (mountedRef.current) {
@@ -146,6 +163,31 @@ export function TeacherClassHuntingPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [refresh])
+
+  useEffect(() => {
+    if (!teacherId) return undefined
+    let receivedInitialSnapshot = false
+    const notificationsQuery = query(
+      collection(db, 'notifications'),
+      where('targetType', '==', 'teachers'),
+    )
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      if (!receivedInitialSnapshot) {
+        receivedInitialSnapshot = true
+        return
+      }
+      const hasNewClassHunt = snapshot.docChanges().some((change) => (
+        change.type === 'added'
+        && isClassHuntNotificationForTeacher(change.doc.data() || {}, teacherId)
+      ))
+      if (hasNewClassHunt) void refresh(true)
+    }, (notificationError) => {
+      // The feed remains callable-only and continues polling if the optional
+      // notification bridge is temporarily unavailable.
+      console.warn('Class hunt notification listener failed:', notificationError)
+    })
+    return unsubscribe
+  }, [refresh, teacherId])
 
   const handleClaim = async (hunt: TeacherClassHunt) => {
     if (claimingId || hunt.status !== 'open') return
@@ -232,7 +274,7 @@ export function TeacherClassHuntingPage() {
           <EmptyState
             icon={<Target className="h-8 w-8" />}
             title="Chưa có lớp mới"
-            description="Khi có lớp đúng chuyên môn, hệ thống sẽ hiển thị tại đây để bạn chủ động nhận lớp."
+            description="Chỉ lớp có mã môn khớp đúng chuyên môn và còn đủ điều kiện nhận mới hiển thị ở đây. Thông báo chung không đồng nghĩa lớp nào cũng phù hợp với hồ sơ của bạn."
             action={{ label: 'Làm mới danh sách', onClick: () => void refresh() }}
           />
         </Card>

@@ -1250,6 +1250,7 @@ export {
   listClassHunts,
   cancelClassHunt,
   claimClassHunt,
+  markTeacherNotificationsRead,
 } from './classHuntingFunctions'
 
 export { createParentProfileBooking } from './parentProfileBookingFunctions'

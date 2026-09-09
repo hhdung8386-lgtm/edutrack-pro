@@ -3,10 +3,12 @@ const test = require('node:test')
 
 const {
   CLASS_HUNT_DEFAULT_TTL_MINUTES,
+  CLASS_HUNT_MAX_SESSIONS,
   CLASS_HUNT_COMPENSATION_CURRENCY,
   CLASS_HUNT_COMPENSATION_FORMULA,
   CLASS_HUNT_COMPENSATION_VERSION,
   ClassHuntValidationError,
+  availableClassHuntSessionCount,
   buildClassHuntDraft,
   classHuntClaimConflictReason,
   classHuntCompensationAmount,
@@ -33,6 +35,7 @@ const {
   isClassHuntSessionShape,
   isEligibleOnlineClassHuntTeacher,
   isSafeClassHuntClientRequestId,
+  normalizeClassHuntSessionSelectionMode,
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
   studentClassHuntTotals,
@@ -74,6 +77,64 @@ test('CLASS HUNTING generates a fixed future Vietnam-calendar series', () => {
   assert.deepEqual(classHuntPublicSlot(sessions[0]), {
     date: '2026-09-01', weekday: 'tue', start: '19:00', end: '19:50', minutes: 50,
   })
+})
+
+test('CLASS HUNTING keeps its bounded atomic plan and validates selection modes', () => {
+  assert.equal(CLASS_HUNT_MAX_SESSIONS, 52)
+  assert.equal(normalizeClassHuntSessionSelectionMode(undefined), 'specific')
+  assert.equal(normalizeClassHuntSessionSelectionMode('all_remaining'), 'all_remaining')
+  assert.throws(
+    () => normalizeClassHuntSessionSelectionMode('all'),
+    (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_SESSION_SELECTION_INVALID',
+  )
+
+  const weeklyPlan = buildFutureClassHuntSessions({
+    startDate: '2026-09-07',
+    selectedDays: ['mon'],
+    requestedStart: '19:00',
+    requestedMinutes: 50,
+    sessionCount: CLASS_HUNT_MAX_SESSIONS,
+    nowMs: NOW_MS,
+  })
+  assert.equal(weeklyPlan.length, CLASS_HUNT_MAX_SESSIONS)
+  assert.throws(
+    () => buildFutureClassHuntSessions({
+      startDate: '2026-09-07', selectedDays: ['mon'], requestedStart: '19:00', requestedMinutes: 50,
+      sessionCount: CLASS_HUNT_MAX_SESSIONS + 1, nowMs: NOW_MS,
+    }),
+    (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_SESSION_COUNT_INVALID',
+  )
+})
+
+test('all-remaining counts only package sessions not already held by a booking', () => {
+  const student = {
+    subjects: [{
+      subjectId: 'subject-l2',
+      subjectName: 'Tiếng Anh',
+      totalSessions: 24,
+      usedSessions: 5,
+      minutesPerSession: 50,
+      totalMinutes: 1_200,
+      usedMinutes: 250,
+    }],
+  }
+  const fund = resolveClassHuntSubjectFund(student, 'subject-l2')
+  assert.equal(fund?.minutesPerSession, 50)
+  assert.equal(fund?.remainingSessions, 19)
+  assert.equal(availableClassHuntSessionCount({
+    student,
+    subjectId: 'subject-l2',
+    bookings: [
+      { id: 'confirmed', subjectId: 'subject-l2', status: 'confirmed' },
+      { id: 'rebook-hold', subjectId: 'subject-l2', status: 'released', pendingRebook: true, rebookHoldPoints: 50 },
+      { id: 'other-subject', subjectId: 'subject-l3', status: 'confirmed' },
+    ],
+  }), 17)
+  assert.equal(availableClassHuntSessionCount({
+    student: { subjects: [{ subjectId: 'legacy', totalMinutes: 1_200, usedMinutes: 0 }] },
+    subjectId: 'legacy',
+    bookings: [],
+  }), null)
 })
 
 test('CLASS HUNTING publish retries recover only the exact original selection', () => {
@@ -121,6 +182,11 @@ test('CLASS HUNTING publish retries recover only the exact original selection', 
   delete legacyRequest.compensationRatePerMinute
   assert.equal(classHuntPublishRetryMatches(legacyRequest, legacyStored), true)
   assert.equal(classHuntPublishRetryMatches(exact, legacyStored), false)
+
+  const allRemainingStored = { ...stored, sessionSelectionMode: 'all_remaining' }
+  const allRemainingRequest = { ...exact, sessionSelectionMode: 'all_remaining', sessionCount: 1 }
+  assert.equal(classHuntPublishRetryMatches(allRemainingRequest, allRemainingStored), true)
+  assert.equal(classHuntPublishRetryMatches({ ...allRemainingRequest, sessionSelectionMode: 'specific' }, allRemainingStored), false)
 })
 
 test('a passed slot today is never silently moved or included', () => {
