@@ -154,9 +154,40 @@ export function attendanceAuditWindowDates(date: string, windowDays = 7): string
   return dates
 }
 
+function classHuntCompensationAuditValue(value: unknown): Record<string, unknown> | undefined {
+  // Only a truly absent field is the legacy compatibility path. A stored null
+  // is malformed and must reach the client as an inert fail-closed sentinel.
+  if (value === undefined) return undefined
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+  if (
+    source
+    && source.version === 1
+    && Number.isSafeInteger(Number(source.ratePerMinute))
+    && Number(source.ratePerMinute) > 0
+    && source.currency === 'VND'
+    && source.formula === 'flat_per_minute'
+  ) {
+    return {
+      version: 1,
+      ratePerMinute: Number(source.ratePerMinute),
+      currency: 'VND',
+      formula: 'flat_per_minute',
+    }
+  }
+  // Return only an inert sentinel, never an arbitrary malformed object. The
+  // client will fail closed before it can create a special-rate attendance.
+  return { version: 0, ratePerMinute: 0, currency: '', formula: '' }
+}
+
 /** Fields required by evaluateLessonSchedule; identities and notes are deliberately omitted. */
-export function teacherAttendanceAuditBookingResponse(id: string, source: Record<string, unknown>): Record<string, unknown> {
-  return {
+export function teacherAttendanceAuditBookingResponse(
+  id: string,
+  source: Record<string, unknown>,
+  includeOwnClassHuntCompensation = false,
+): Record<string, unknown> {
+  const response: Record<string, unknown> = {
     id,
     status: cleanText(source.status, 40),
     teacherResponse: cleanText(source.teacherResponse, 20),
@@ -174,4 +205,13 @@ export function teacherAttendanceAuditBookingResponse(id: string, source: Record
     requestedMinutes: Number(source.requestedMinutes) || 0,
     lessonId: cleanText(source.lessonId, 160),
   }
+  // A tutor must never learn another tutor's negotiated rate just because the
+  // two tutors share a student. The callable opts in only for its own booking.
+  if (includeOwnClassHuntCompensation) {
+    const classHuntId = cleanText(source.classHuntId, 160)
+    if (classHuntId) response.classHuntId = classHuntId
+    const compensation = classHuntCompensationAuditValue(source.classHuntCompensation)
+    if (compensation) response.classHuntCompensation = compensation
+  }
+  return response
 }

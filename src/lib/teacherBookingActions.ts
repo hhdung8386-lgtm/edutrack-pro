@@ -1,6 +1,7 @@
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import type { BookingRequest } from '@/types'
 import app from '@/lib/firebase'
+import { isClassHuntCompensation } from '@/lib/classHuntCompensation'
 
 const functions = getFunctions(app, 'asia-southeast1')
 const respondCallable = httpsCallable<{ bookingId: string; response: 'accepted' | 'declined' }, unknown>(
@@ -37,6 +38,11 @@ export async function getTeacherAttendanceAuditData(input: {
   const response = record((await auditCallable(input)).data)
   const bookings = (Array.isArray(response.bookings) ? response.bookings : []).map((value) => {
     const data = record(value)
+    const classHuntId = text(data.classHuntId)
+    const hasCompensationField = data.classHuntCompensation !== undefined
+    const classHuntCompensation = isClassHuntCompensation(data.classHuntCompensation)
+      ? data.classHuntCompensation
+      : null
     return {
       id: text(data.id),
       status: text(data.status),
@@ -58,6 +64,16 @@ export async function getTeacherAttendanceAuditData(input: {
       requestedEnd: text(data.requestedEnd),
       requestedMinutes: Number(data.requestedMinutes),
       lessonId: text(data.lessonId) || undefined,
+      ...(classHuntId ? { classHuntId } : {}),
+      ...(classHuntCompensation ? {
+        classHuntCompensation: { ...classHuntCompensation },
+      } : {}),
+      // Server returns an inert malformed sentinel for the owning tutor only.
+      // Retain just this local boolean so generic attendance fails closed; it
+      // is never spread into Firestore or exposed to another tutor.
+      ...(classHuntId && hasCompensationField && !classHuntCompensation
+        ? { classHuntCompensationInvalid: true }
+        : {}),
       createdAt: undefined,
     } as unknown as BookingRequest
   })

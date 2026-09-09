@@ -7,6 +7,7 @@ const {
   PARENT_BOOKING_CANCELLATION_WINDOW_MS,
   ParentBookingAccessValidationError,
   assertParentCancellationAllowed,
+  isParentManagedClassHuntBooking,
   normalizeParentBookingAccessRequest,
   normalizeParentBookingCancellationRequest,
   parentBookingResponse,
@@ -140,15 +141,31 @@ test('parent booking payload is allow-listed and timestamp values are converted 
     payrollAmount: 41_667,
     guardianEmail: 'private@example.test',
     internalNote: 'do not expose',
+    classHuntId: 'hunt-a',
+    classHuntCompensation: {
+      version: 1,
+      ratePerMinute: 1234,
+      currency: 'VND',
+      formula: 'flat_per_minute',
+    },
   })
 
   assert.equal(response.teacherName, 'Nicole')
   assert.equal(response.createdAtMs, 1_789_000_000_000)
   assert.equal(response.confirmedAtMs, Date.parse('2026-09-08T00:00:00.000Z'))
   assert.equal(response.requestedPoints, 50)
+  assert.equal(response.parentRebookManaged, true)
+  assert.equal(Object.hasOwn(response, 'classHuntCompensation'), false)
   assert.equal(Object.hasOwn(response, 'payrollAmount'), false)
   assert.equal(Object.hasOwn(response, 'guardianEmail'), false)
   assert.equal(Object.hasOwn(response, 'internalNote'), false)
+})
+
+test('Class Hunt parent-management marker protects every present override snapshot but keeps legacy rows compatible', () => {
+  assert.equal(isParentManagedClassHuntBooking({ classHuntId: 'hunt-a', classHuntCompensation: { version: 1 } }), true)
+  assert.equal(isParentManagedClassHuntBooking({ classHuntId: 'hunt-a', classHuntCompensation: null }), true)
+  assert.equal(isParentManagedClassHuntBooking({ classHuntId: 'legacy-hunt' }), false)
+  assert.equal(isParentManagedClassHuntBooking({ classHuntCompensation: { version: 1 } }), false)
 })
 
 test('busy-slot and cancellation payloads disclose only scheduling and ownership fields', () => {
@@ -268,6 +285,10 @@ test('parent cancellation rejects processed, cross-student, group and unresolved
     [confirmedBooking({ lessonId: 'lesson-a' }), student, 'BOOKING_ALREADY_PROCESSED'],
     [confirmedBooking({ studentId: 'student-b' }), student, 'STUDENT_MISMATCH'],
     [confirmedBooking({ groupClassId: 'group-a' }), student, 'GROUP_BOOKING_MANAGED'],
+    [confirmedBooking({
+      classHuntId: 'hunt-a',
+      classHuntCompensation: { version: 1, ratePerMinute: 1234, currency: 'VND', formula: 'flat_per_minute' },
+    }), student, 'CLASS_HUNT_COMPENSATION_PARENT_MANAGED'],
     [confirmedBooking(), { ...student, pendingRebookBookingId: 'booking-old' }, 'REBOOK_REQUIRED'],
   ]
 

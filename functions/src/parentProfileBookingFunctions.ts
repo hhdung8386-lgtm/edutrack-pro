@@ -10,6 +10,7 @@ import {
   assertParentProfileBookingRequestFuture,
   decideParentProfileBookingHold,
   effectiveParentBookingHolds,
+  isParentManagedClassHuntRebook,
   normalizeParentBookingPointRate,
   normalizeParentProfileBookingRequest,
   parentBookingPoints,
@@ -274,6 +275,13 @@ export const createParentProfileBooking = onCall({
         throw callableError('failed-precondition', 'PARENT_BOOKING_REBOOK_TARGET_MISSING', 'Ca cần đặt lại không còn tồn tại.')
       }
       const rebook = rebookSnapshot.data() || {}
+      if (isParentManagedClassHuntRebook(rebook)) {
+        throw callableError(
+          'failed-precondition',
+          'CLASS_HUNT_COMPENSATION_PARENT_MANAGED',
+          'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.',
+        )
+      }
       const validatedReusablePoints = parentProfileReusableRebookPoints({
         booking: rebook,
         request,

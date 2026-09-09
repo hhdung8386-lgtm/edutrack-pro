@@ -161,6 +161,20 @@ function optionalStringArray(data: Record<string, unknown>, key: string): string
   return values.length > 0 ? values : undefined
 }
 
+/**
+ * A Class Hunt rate is bound to the original booking. Do not expose that rate
+ * to a parent, and do not let self-service cancellation create a rebook hold
+ * which a normal booking flow would later price as an ordinary lesson.
+ *
+ * A legacy hunt has no nested snapshot, so it deliberately keeps the legacy
+ * path. Any present nested value is protected even when malformed: support
+ * staff must inspect it rather than silently discarding the immutable marker.
+ */
+export function isParentManagedClassHuntBooking(booking: Record<string, unknown>): boolean {
+  return Boolean(cleanText(booking.classHuntId, 160))
+    && Object.prototype.hasOwnProperty.call(booking, 'classHuntCompensation')
+}
+
 const BOOKING_TIMESTAMP_FIELDS = [
   'createdAt',
   'confirmedAt',
@@ -222,6 +236,7 @@ export function parentBookingResponse(id: string, source: Record<string, unknown
     const millis = timestampMillis(source[key])
     if (millis !== null) response[`${key}Ms`] = millis
   })
+  if (isParentManagedClassHuntBooking(source)) response.parentRebookManaged = true
   return response
 }
 
@@ -302,6 +317,12 @@ export function assertParentCancellationAllowed(
   }
   if (cleanText(booking.groupClassId, 160)) {
     throw new ParentBookingAccessValidationError('GROUP_BOOKING_MANAGED', 'Lịch lớp nhóm do trung tâm quản lý.')
+  }
+  if (isParentManagedClassHuntBooking(booking)) {
+    throw new ParentBookingAccessValidationError(
+      'CLASS_HUNT_COMPENSATION_PARENT_MANAGED',
+      'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.',
+    )
   }
   if (cleanText(student.pendingRebookBookingId, 160)) {
     throw new ParentBookingAccessValidationError('REBOOK_REQUIRED', 'Hãy đặt lại buổi đang treo trước khi hủy buổi khác.')

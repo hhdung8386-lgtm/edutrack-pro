@@ -11,6 +11,14 @@ import app from '@/lib/firebase'
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
 export type ClassHuntMinutes = 25 | 50 | 75 | 100
 
+/** Immutable teacher-pay snapshot supplied only by the Class Hunting backend. */
+export interface ClassHuntCompensation {
+  version: 1
+  ratePerMinute: number
+  currency: 'VND'
+  formula: 'flat_per_minute'
+}
+
 export interface ClassHuntStudent {
   id?: string
   code: string
@@ -70,6 +78,7 @@ export interface ClassHunt {
   eligibleTeachers?: ClassHuntTeacherMatch[]
   claimedTeacher?: ClassHuntClaimedTeacher
   bookingIds?: string[]
+  classHuntCompensation?: ClassHuntCompensation
 }
 
 /** The teacher endpoint deliberately does not include a student object. */
@@ -88,6 +97,9 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   startTime: string
   minutes: ClassHuntMinutes
   sessionCount: number
+  /** Positive whole-VND rate. New UI always sends this; legacy stored hunts
+   * without a snapshot stay readable and claimable. */
+  compensationRatePerMinute: number
 }
 
 export interface ClassHuntPreview {
@@ -98,6 +110,7 @@ export interface ClassHuntPreview {
   eligibleTeachers: ClassHuntTeacherMatch[]
   eligibleTeacherCount?: number
   warnings?: string[]
+  classHuntCompensation?: ClassHuntCompensation
 }
 
 export interface ClaimClassHuntResult {
@@ -142,6 +155,23 @@ function text(value: unknown): string | undefined {
 function numberValue(value: unknown): number | undefined {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function classHuntCompensationFrom(value: unknown): ClassHuntCompensation | undefined {
+  const data = asRecord(value)
+  const ratePerMinute = numberValue(data.ratePerMinute)
+  if (data.version !== 1
+    || ratePerMinute === undefined
+    || !Number.isSafeInteger(ratePerMinute)
+    || ratePerMinute <= 0
+    || data.currency !== 'VND'
+    || data.formula !== 'flat_per_minute') return undefined
+  return {
+    version: 1,
+    ratePerMinute,
+    currency: 'VND',
+    formula: 'flat_per_minute',
+  }
 }
 
 function minutesFrom(value: unknown): ClassHuntMinutes {
@@ -240,6 +270,7 @@ function previewFrom(value: unknown): ClassHuntPreview {
   const data = asRecord(root.preview ?? value)
   const eligibleTeachers = teachersFrom(data.eligibleTeachers)
   const subject = subjectFrom(data.subject)
+  const classHuntCompensation = classHuntCompensationFrom(data.classHuntCompensation)
   return {
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
@@ -248,9 +279,10 @@ function previewFrom(value: unknown): ClassHuntPreview {
     subject,
     slots: slotsFrom(data.slots ?? data.sessions),
     eligibleTeachers,
-    eligibleTeacherCount: typeof data.eligibleTeacherCount === 'number'
-      ? data.eligibleTeacherCount
-      : eligibleTeachers.length,
+    ...(typeof data.eligibleTeacherCount === 'number'
+      ? { eligibleTeacherCount: data.eligibleTeacherCount }
+      : {}),
+    ...(classHuntCompensation ? { classHuntCompensation } : {}),
     warnings: asArray(data.warnings).filter((warning): warning is string => typeof warning === 'string'),
   }
 }
@@ -262,6 +294,7 @@ function huntFrom(value: unknown): ClassHunt {
   const claimedTeacherData = asRecord(data.claimedTeacher)
   const claimedTeacherName = text(claimedTeacherData.name) || text(data.claimedTeacherName)
   const claimedTeacherId = text(claimedTeacherData.id) || text(data.claimedByTeacherId)
+  const classHuntCompensation = classHuntCompensationFrom(data.classHuntCompensation)
   return {
     id: text(data.id) || '',
     status: statusFrom(data.status),
@@ -285,12 +318,14 @@ function huntFrom(value: unknown): ClassHunt {
       },
     } : {}),
     ...(Array.isArray(data.bookingIds) ? { bookingIds: data.bookingIds.filter((id): id is string => typeof id === 'string') } : {}),
+    ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
 
 function teacherHuntFrom(value: unknown): TeacherClassHunt {
   const data = asRecord(value)
   const slots = slotsFrom(data.slots ?? data.sessions)
+  const classHuntCompensation = classHuntCompensationFrom(data.classHuntCompensation)
   return {
     id: text(data.id) || '',
     status: statusFrom(data.status),
@@ -299,6 +334,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     minutes: minutesFrom(data.minutes ?? data.requestedMinutes),
     sessionCount: numberValue(data.sessionCount) || slots.length,
     ...(dateFrom(data.expiresAt ?? data.expiresAtMs) ? { expiresAt: dateFrom(data.expiresAt ?? data.expiresAtMs) } : {}),
+    ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
 

@@ -1470,6 +1470,12 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
 
   const openCancellationDialog = (booking: BookingRequest) => {
     if (!['pending', 'confirmed'].includes(booking.status)) return
+    if (booking.parentRebookManaged) {
+      toast.info(lang === 'vi'
+        ? 'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.'
+        : 'This class uses a center-managed schedule. Please contact support to change or cancel it.')
+      return
+    }
     if (!canStudentManageBooking(booking, student.id)) {
       toast.info(lang === 'vi'
         ? 'Lịch lớp nhóm do trung tâm quản lý. Vui lòng liên hệ học vụ nếu cần thay đổi.'
@@ -1497,6 +1503,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
   const submitCancellationRequest = async () => {
     const booking = cancellationDialog?.booking
     if (!booking || cancellationDialog.mode !== 'confirm' || !['pending', 'confirmed'].includes(booking.status)) return
+    if (booking.parentRebookManaged) {
+      setCancellationDialog(null)
+      toast.info(lang === 'vi'
+        ? 'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.'
+        : 'This class uses a center-managed schedule. Please contact support to change or cancel it.')
+      return
+    }
     if (!canStudentManageBooking(booking, student.id)) {
       setCancellationDialog(null)
       toast.error(lang === 'vi' ? 'Bạn không thể tự hủy lịch lớp nhóm.' : 'You cannot cancel a group-class schedule yourself.')
@@ -1530,6 +1543,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
       const code = parentBookingAccessErrorReason(error) || (error instanceof Error ? error.message : '')
       if (code === 'CANCELLATION_WINDOW_CLOSED') {
         setCancellationDialog({ booking, mode: 'blocked' })
+      } else if (code === 'CLASS_HUNT_COMPENSATION_PARENT_MANAGED') {
+        toast.info(lang === 'vi'
+          ? 'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.'
+          : 'This class uses a center-managed schedule. Please contact support to change or cancel it.')
+        setCancellationDialog(null)
       } else if (code === 'REBOOK_REQUIRED') {
         toast.warning(lang === 'vi' ? 'Bạn cần đặt lại buổi đã huỷ trước khi huỷ buổi tiếp theo.' : 'Please rebook your cancelled session before cancelling another.')
         setCancellationDialog(null)
@@ -2045,7 +2063,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     } catch (error) {
       console.error('Profile timetable booking failed:', error)
       const reason = parentProfileBookingErrorReason(error) || (error instanceof Error ? error.message : '')
-      if (['PARENT_BOOKING_CONFLICT', 'PARENT_BOOKING_AVAILABILITY_CHANGED', 'PARENT_BOOKING_SLOT_PAST'].includes(reason)) {
+      if (reason === 'CLASS_HUNT_COMPENSATION_PARENT_MANAGED') {
+        toast.info(lang === 'vi'
+          ? 'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ để đổi hoặc hủy lịch.'
+          : 'This class uses a center-managed schedule. Please contact support to change or cancel it.')
+      } else if (['PARENT_BOOKING_CONFLICT', 'PARENT_BOOKING_AVAILABILITY_CHANGED', 'PARENT_BOOKING_SLOT_PAST'].includes(reason)) {
         toast.warning(lang === 'vi' ? 'Khung giờ này vừa không còn khả dụng. Vui lòng chọn khung khác.' : 'This slot is no longer available. Please choose another one.')
       } else toast.error(['PARENT_BOOKING_NOT_ENOUGH_POINTS', 'NOT_ENOUGH_POINTS'].includes(reason)
         ? (lang === 'vi' ? 'Quỹ kim cương khả dụng không đủ để đặt khung giờ này.' : 'Your available diamond balance is not enough for this slot.')
@@ -2589,7 +2611,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               </div>
             )}
 
-            {canStudentManageBooking(selectedParentBooking, student.id) && ['pending', 'confirmed'].includes(selectedParentBooking.status) && (() => {
+            {selectedParentBooking.parentRebookManaged ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-900">
+                {lang === 'vi'
+                  ? 'Lớp này có cơ chế xếp lịch riêng. Vui lòng liên hệ học vụ nếu cần đổi hoặc hủy lịch.'
+                  : 'This class uses a center-managed schedule. Contact support to change or cancel it.'}
+              </div>
+            ) : canStudentManageBooking(selectedParentBooking, student.id) && ['pending', 'confirmed'].includes(selectedParentBooking.status) && (() => {
               const pendingRequest = cancellationRequests.find((item) => item.bookingId === selectedParentBooking.id && item.status === 'pending')
 
               if (pendingRequest) {

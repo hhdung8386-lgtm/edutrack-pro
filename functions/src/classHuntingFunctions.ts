@@ -2,12 +2,12 @@ import { FieldValue, Firestore, Timestamp, type DocumentData, type QueryDocument
 import { logger } from 'firebase-functions'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
-  CLASS_HUNT_DEFAULT_TTL_MINUTES,
   CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION,
   CLASS_HUNT_SCHEMA_VERSION,
   CLASS_HUNTS_COLLECTION,
   ClassHuntValidationError,
   buildClassHuntDraft,
+  classHuntCompensationAmount,
   classHuntLessonPoints,
   classHuntPublicSlot,
   classHuntPublishFingerprint,
@@ -24,15 +24,18 @@ import {
   hasSufficientClassHuntPointBalance,
   heldPointsForClassHuntSubject,
   isActiveIndividualOnlineStudent,
+  isClassHuntTeacherProfileComplete,
+  isClassHuntCompensation,
   isClassHuntSessionShape,
   isEligibleOnlineClassHuntTeacher,
   isSafeClassHuntClientRequestId,
-  isTeacherAvailableForClassHuntSessions,
+  classHuntClaimConflictReason,
   pointsPer25Minutes,
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
   teacherMatchesClassHuntSubject,
   type ClassHuntBookingLike,
+  type ClassHuntCompensation,
   type ClassHuntDraft,
   type ClassHuntSession,
   type ClassHuntStatus,
@@ -45,15 +48,10 @@ const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
 const CLASS_HUNT_ADMIN_LIST_LIMIT = 100
 const CLASS_HUNT_TEACHER_LIST_LIMIT = 30
 const CLASS_HUNT_OPEN_SCAN_LIMIT = 200
-const CLASS_HUNT_TEACHER_SCAN_LIMIT = 200
 const CLASS_HUNT_BOOKING_READ_LIMIT = 1000
 const CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT = 5000
 const FIRESTORE_MULTI_VALUE_QUERY_LIMIT = 30
-const CLASS_HUNT_STUDENT_QUERY_CONCURRENCY = 10
-const CLASS_HUNT_DATE_QUERY_CONCURRENCY = 3
 const CONTRACT_QUERY_LIMIT = 20
-const CANONICAL_LOGIN_PRELOAD_BATCH_SIZE = 100
-const CANONICAL_LOGIN_PRELOAD_CONCURRENCY = 3
 const CONTROL_CHARACTER_PATTERN = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
   'g',
@@ -94,6 +92,7 @@ type StoredClassHunt = {
   publishedByName: string
   createdAtMs: number
   bookingIds: string[]
+  classHuntCompensation?: ClassHuntCompensation
   eligibleTeacherCount?: number
   claimedByTeacherId?: string
   claimedByUid?: string
@@ -121,11 +120,6 @@ function safeId(value: unknown, reason: string, message: string): string {
   const result = cleanText(value, 160)
   if (!SAFE_ID_PATTERN.test(result)) throw error('invalid-argument', reason, message)
   return result
-}
-
-function canonicalLoginUid(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length < 1 || value.length > 128 || value.includes('/')) return null
-  return value
 }
 
 function timestampMillis(value: unknown): number | null {
@@ -177,6 +171,21 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   if (!Number.isSafeInteger(sessionCount) || sessionCount !== sessions.length) {
     throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Số buổi của lớp săn không khớp.')
   }
+  let classHuntCompensation: ClassHuntCompensation | undefined
+  if (data.classHuntCompensation !== undefined) {
+    if (!isClassHuntCompensation(data.classHuntCompensation)) {
+      throw error('failed-precondition', 'CLASS_HUNT_COMPENSATION_INVALID', 'Đơn giá riêng của lớp không còn hợp lệ.')
+    }
+    try {
+      // Verify the complete immutable class amount as well as the individual
+      // rate. A corrupted snapshot must never silently fall back to the
+      // teacher profile, subject price, or current Settings.
+      classHuntCompensationAmount(data.classHuntCompensation, requestedMinutes, sessionCount)
+    } catch {
+      throw error('failed-precondition', 'CLASS_HUNT_COMPENSATION_INVALID', 'Đơn giá riêng của lớp không còn hợp lệ.')
+    }
+    classHuntCompensation = { ...data.classHuntCompensation }
+  }
   const bookingIds = Array.isArray(data.bookingIds)
     ? data.bookingIds.filter((value): value is string => typeof value === 'string' && SAFE_ID_PATTERN.test(value))
     : []
@@ -202,6 +211,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
     publishedByName: cleanText(data.publishedByName, 100),
     createdAtMs,
     bookingIds,
+    ...(classHuntCompensation ? { classHuntCompensation } : {}),
     ...(Number.isSafeInteger(Number(data.eligibleTeacherCount)) && Number(data.eligibleTeacherCount) >= 0
       ? { eligibleTeacherCount: Number(data.eligibleTeacherCount) }
       : {}),
@@ -238,34 +248,10 @@ function teacherIdentityFromDocuments(uid: string, userData: DocumentData, teach
   if (!isEligibleOnlineClassHuntTeacher(teacherData)) {
     throw error('failed-precondition', 'CLASS_HUNT_TEACHER_NOT_ELIGIBLE', 'Hồ sơ gia sư chưa đủ điều kiện nhận lớp online.')
   }
-  return { uid, teacherId, teacher: teacherData as ClassHuntTeacherLike & DocumentData }
-}
-
-async function preloadCanonicalTeacherUsers(candidates: Array<{ id: string; data: ClassHuntTeacherLike & DocumentData }>): Promise<Map<string, DocumentData>> {
-  const uids = [...new Set(candidates
-    .map((candidate) => canonicalLoginUid(candidate.data.loginAccountUid))
-    .filter((uid): uid is string => uid !== null))]
-  const usersByUid = new Map<string, DocumentData>()
-  const perRound = CANONICAL_LOGIN_PRELOAD_BATCH_SIZE * CANONICAL_LOGIN_PRELOAD_CONCURRENCY
-
-  for (let offset = 0; offset < uids.length; offset += perRound) {
-    const round = uids.slice(offset, offset + perRound)
-    const batches = Array.from(
-      { length: Math.ceil(round.length / CANONICAL_LOGIN_PRELOAD_BATCH_SIZE) },
-      (_, index) => round.slice(
-        index * CANONICAL_LOGIN_PRELOAD_BATCH_SIZE,
-        (index + 1) * CANONICAL_LOGIN_PRELOAD_BATCH_SIZE,
-      ),
-    )
-    const snapshotsByBatch = await Promise.all(batches.map((batch) => (
-      db.getAll(...batch.map((uid) => db.collection('users').doc(uid)))
-    )))
-    snapshotsByBatch.flat().forEach((snapshot) => {
-      if (snapshot.exists) usersByUid.set(snapshot.id, snapshot.data() || {})
-    })
+  if (!isClassHuntTeacherProfileComplete(teacherData)) {
+    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_PROFILE_INCOMPLETE', 'Vui lòng hoàn thiện hồ sơ và thông tin nhận lương trước khi nhận lớp.')
   }
-
-  return usersByUid
+  return { uid, teacherId, teacher: teacherData as ClassHuntTeacherLike & DocumentData }
 }
 
 async function requireClassHuntOperator(uid: string | undefined): Promise<OperatorActor> {
@@ -287,6 +273,14 @@ function requireClassHuntClientRequestId(value: unknown): string {
     throw error('invalid-argument', 'CLASS_HUNT_CLIENT_REQUEST_ID_INVALID', 'Mã chống gửi trùng lớp săn không hợp lệ. Vui lòng tải lại và thử lại.')
   }
   return value
+}
+
+function hasRequestedClassHuntCompensation(data: Record<string, unknown>): boolean {
+  // Older deployed clients do not send this property at all. Preserve their
+  // legacy no-rate flow for compatibility, but treat every explicit value
+  // (including null/zero) as an attempt to create a priced class and enforce
+  // the admin-only boundary before any record is created.
+  return Object.prototype.hasOwnProperty.call(data, 'compensationRatePerMinute')
 }
 
 /**
@@ -330,6 +324,7 @@ function draftFromRequest(data: Record<string, unknown>, studentId: string, nowM
       requestedMinutes: data.minutes,
       sessionCount: data.sessionCount,
       expiresInMinutes: data.expiresInMinutes,
+      compensationRatePerMinute: data.compensationRatePerMinute,
     }, nowMs)
   } catch (cause) {
     if (cause instanceof ClassHuntValidationError) {
@@ -369,54 +364,6 @@ function deduplicateBookings(...groups: ClassHuntBookingLike[][]): ClassHuntBook
   return [...byId.values()]
 }
 
-function addISODate(dateISO: string, days: number): string | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO)
-  if (!match) return null
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days))
-  if (Number.isNaN(date.getTime())) return null
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
-}
-
-function chunksOf<T>(values: T[], size: number): T[][] {
-  const chunks: T[][] = []
-  for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size))
-  return chunks
-}
-
-async function loadRelevantScheduleBookings(sessions: ClassHuntSession[]): Promise<ClassHuntBookingLike[]> {
-  // Include adjacent dates because legacy 24:xx/25:xx slots can overlap the
-  // following calendar day. This mirrors findClassHuntBookingConflicts.
-  const relevantDates = [...new Set(sessions.flatMap((session) => (
-    [-1, 0, 1]
-      .map((offset) => addISODate(session.dateISO, offset))
-      .filter((date): date is string => Boolean(date))
-  )))]
-  if (relevantDates.length === 0) return []
-
-  const snapshots = await mapWithConcurrency(
-    chunksOf(relevantDates, FIRESTORE_MULTI_VALUE_QUERY_LIMIT),
-    CLASS_HUNT_DATE_QUERY_CONCURRENCY,
-    (dates) => db.collection('bookingRequests')
-      .where('requestedDate', 'in', dates)
-      .limit(CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT + 1)
-      .get(),
-  )
-  if (snapshots.some((snapshot) => snapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT)) {
-    logger.warn('Class hunt date booking scan reached its safety bound', {
-      dates: relevantDates.length,
-      limitPerBatch: CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT,
-    })
-    throw error(
-      'failed-precondition',
-      'CLASS_HUNT_BOOKING_SCAN_LIMIT',
-      'Lịch đang quá lớn để đối soát an toàn. Chưa đăng lớp hay giữ chỗ nào.',
-    )
-  }
-  return deduplicateBookings(...snapshots.map((snapshot) => (
-    snapshot.docs.map((document) => ({ id: document.id, ...document.data() } as ClassHuntBookingLike))
-  )))
-}
-
 function assertNoStudentScheduleConflict(studentId: string, sessions: ClassHuntSession[], bookings: ClassHuntBookingLike[]): void {
   const conflicts = findClassHuntBookingConflicts({ teacherId: '__unassigned__', studentId, sessions, bookings })
   if (conflicts.length > 0) {
@@ -429,10 +376,15 @@ function assertTeacherClaimContext(input: {
   teacherId: string
   teacher: ClassHuntTeacherLike
   student: ClassHuntStudentLike
-  availability: DocumentData | undefined
   teacherBookings: ClassHuntBookingLike[]
   studentBookings: ClassHuntBookingLike[]
   studentScheduleBookings?: ClassHuntBookingLike[]
+  /**
+   * The offer feed deliberately does not pre-filter a tutor's calendar. This
+   * lets a tutor decide to claim a class outside their declared availability;
+   * the atomic claim still blocks a real teaching-time collision.
+   */
+  includeTeacherSchedule?: boolean
   nowMs: number
 }): { totalRequiredPoints: number; pointsPerLesson: number; nextHeld: number; curriculumLink: string } {
   const {
@@ -440,10 +392,10 @@ function assertTeacherClaimContext(input: {
     teacherId,
     teacher,
     student,
-    availability,
     teacherBookings,
     studentBookings,
     studentScheduleBookings = studentBookings,
+    includeTeacherSchedule = true,
     nowMs,
   } = input
   if (!allSessionsStillFuture(hunt, nowMs)) {
@@ -466,18 +418,21 @@ function assertTeacherClaimContext(input: {
   if (!teacherMatchesClassHuntSubject(teacher, hunt.subjectId)) {
     throw error('failed-precondition', 'CLASS_HUNT_SUBJECT_MISMATCH', 'Môn học của lớp không còn khớp chuyên môn gia sư.')
   }
-  if (!isTeacherAvailableForClassHuntSessions(availability, hunt.sessions)) {
-    throw error('failed-precondition', 'CLASS_HUNT_AVAILABILITY_CHANGED', 'Lịch rảnh của gia sư đã thay đổi hoặc không phủ đủ toàn bộ các buổi.')
-  }
-  const allBookings = deduplicateBookings(teacherBookings, studentScheduleBookings)
+  const allBookings = includeTeacherSchedule
+    ? deduplicateBookings(teacherBookings, studentScheduleBookings)
+    : studentScheduleBookings
   const conflicts = findClassHuntBookingConflicts({
-    teacherId,
+    teacherId: includeTeacherSchedule ? teacherId : '',
     studentId: hunt.studentId,
     sessions: hunt.sessions,
     bookings: allBookings,
   })
-  if (conflicts.length > 0) {
-    throw error('failed-precondition', 'CLASS_HUNT_BOOKING_CONFLICT', 'Lịch gia sư hoặc học viên vừa có ca trùng. Chưa tạo buổi nào.')
+  const conflictReason = classHuntClaimConflictReason(conflicts)
+  if (conflictReason === 'teacher') {
+    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT', 'Gia sư đã có ca dạy trùng với lớp này. Chưa tạo buổi nào.')
+  }
+  if (conflictReason === 'student') {
+    throw error('failed-precondition', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT', 'Học viên vừa có lịch trùng với lớp này. Chưa tạo buổi nào.')
   }
   const subjectFund = resolveClassHuntSubjectFund(student, hunt.subjectId)
   if (!subjectFund || subjectFund.remainingMinutes <= 0) {
@@ -565,7 +520,12 @@ function serializeLookupStudent(id: string, student: ClassHuntStudentLike, eligi
   }
 }
 
-function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now()) {
+/**
+ * Class-level pay is payroll-sensitive. Student managers may still manage the
+ * scheduling lifecycle, but the rate itself is returned only to a system
+ * admin (or separately to the teacher who is deciding whether to claim).
+ */
+function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now(), includeCompensation = false) {
   return {
     id: hunt.id,
     status: effectiveClassHuntStatus(hunt, nowMs),
@@ -577,6 +537,9 @@ function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now()) {
     expiresAt: isoFromMillis(hunt.expiresAtMs),
     createdAt: isoFromMillis(hunt.createdAtMs),
     bookingIds: hunt.bookingIds,
+    ...(includeCompensation && hunt.classHuntCompensation ? {
+      classHuntCompensation: { ...hunt.classHuntCompensation },
+    } : {}),
     ...(hunt.eligibleTeacherCount !== undefined ? { eligibleTeacherCount: hunt.eligibleTeacherCount } : {}),
     ...(hunt.claimedByTeacherId ? {
       claimedTeacher: {
@@ -597,6 +560,7 @@ function serializeTeacherHunt(hunt: StoredClassHunt) {
     requestedMinutes: hunt.requestedMinutes,
     sessions: hunt.sessions,
     expiresAtMs: hunt.expiresAtMs,
+    classHuntCompensation: hunt.classHuntCompensation,
   })
   if (!sanitized) throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Lớp săn không còn dữ liệu lịch hợp lệ.')
   return {
@@ -607,116 +571,10 @@ function serializeTeacherHunt(hunt: StoredClassHunt) {
     minutes: sanitized.requestedMinutes,
     sessionCount: sanitized.sessions.length,
     expiresAt: isoFromMillis(sanitized.expiresAtMs),
+    ...(sanitized.classHuntCompensation ? {
+      classHuntCompensation: { ...sanitized.classHuntCompensation },
+    } : {}),
   }
-}
-
-async function loadEligibleTeachersForPreview(
-  draft: ClassHuntDraft,
-  student: ClassHuntStudentLike,
-  studentBookings: ClassHuntBookingLike[],
-  studentScheduleBookings: ClassHuntBookingLike[],
-  nowMs: number,
-) {
-  const teachersSnapshot = await db.collection('teachers')
-    // Keep this on a single-field index. Status and online eligibility are
-    // verified below and again inside the claim transaction.
-    .where('subjectIds', 'array-contains', draft.subjectId)
-    .limit(CLASS_HUNT_TEACHER_SCAN_LIMIT + 1)
-    .get()
-  if (teachersSnapshot.size > CLASS_HUNT_TEACHER_SCAN_LIMIT) {
-    logger.warn('Class hunt teacher preview scan reached its safety bound', {
-      limit: CLASS_HUNT_TEACHER_SCAN_LIMIT,
-    })
-    throw error(
-      'failed-precondition',
-      'CLASS_HUNT_TEACHER_SCAN_LIMIT',
-      'Danh sách gia sư đang quá lớn để đối soát an toàn. Vui lòng liên hệ quản trị viên.',
-    )
-  }
-  const candidateProfiles = teachersSnapshot.docs
-    .map((document) => ({ id: document.id, data: document.data() as ClassHuntTeacherLike & DocumentData }))
-    .filter((teacher) => isEligibleOnlineClassHuntTeacher(teacher.data) && teacherMatchesClassHuntSubject(teacher.data, draft.subjectId))
-  const usersByUid = await preloadCanonicalTeacherUsers(candidateProfiles)
-  const candidates = candidateProfiles.filter((candidate) => {
-    const uid = canonicalLoginUid(candidate.data.loginAccountUid)
-    const user = uid ? usersByUid.get(uid) : undefined
-    return SAFE_ID_PATTERN.test(candidate.id)
-      && Boolean(uid)
-      && hasCanonicalClassHuntTeacherLogin({
-        teacherId: candidate.id,
-        uid,
-        teacherLoginAccountUid: candidate.data.loginAccountUid,
-        userTeacherId: user?.teacherId,
-        userRole: user?.role,
-      })
-  })
-  if (candidates.length === 0) return []
-  const relevantBookings = await loadRelevantScheduleBookings(draft.sessions)
-  const bookingsByTeacherId = new Map<string, ClassHuntBookingLike[]>()
-  relevantBookings.forEach((booking) => {
-    if (typeof booking.teacherId !== 'string' || !booking.teacherId) return
-    const current = bookingsByTeacherId.get(booking.teacherId) || []
-    current.push(booking)
-    bookingsByTeacherId.set(booking.teacherId, current)
-  })
-  const results = await mapWithConcurrency(candidates, CLASS_HUNT_STUDENT_QUERY_CONCURRENCY, async (candidate) => {
-    try {
-      const availabilitySnapshot = await db.collection('teacherAvailability').doc(candidate.id).get()
-      if (!isTeacherAvailableForClassHuntSessions(availabilitySnapshot.data(), draft.sessions)) return null
-      const contractsSnapshot = await db.collection('contracts')
-        .where('teacherId', '==', candidate.id)
-        .limit(CONTRACT_QUERY_LIMIT + 1)
-        .get()
-      if (contractsSnapshot.size > CONTRACT_QUERY_LIMIT) {
-        logger.warn('Class hunt preview skipped teacher with an ambiguous contract read', {
-          teacherId: candidate.id,
-        })
-        return null
-      }
-      if (!hasAcceptedContract(contractsSnapshot.docs)) return null
-      assertTeacherClaimContext({
-        hunt: {
-          id: 'preview',
-          status: 'open',
-          studentId: draft.studentId,
-          studentCode: cleanText(student.code, 80),
-          studentName: '',
-          subjectId: draft.subjectId,
-          subjectName: '',
-          startDate: draft.startDate,
-          selectedDays: draft.selectedDays,
-          requestedStart: draft.requestedStart,
-          requestedMinutes: draft.requestedMinutes,
-          sessionCount: draft.sessionCount,
-          sessions: draft.sessions,
-          expiresAtMs: nowMs + CLASS_HUNT_DEFAULT_TTL_MINUTES * 60_000,
-          publishedByUid: '',
-          publishedByName: '',
-          createdAtMs: nowMs,
-          bookingIds: [],
-        },
-        teacherId: candidate.id,
-        teacher: candidate.data,
-        student,
-        availability: availabilitySnapshot.data(),
-        teacherBookings: bookingsByTeacherId.get(candidate.id) || [],
-        studentBookings,
-        studentScheduleBookings,
-        nowMs,
-      })
-      return {
-        id: candidate.id,
-        code: cleanText(candidate.data.code, 80),
-        name: cleanText(candidate.data.name, 160),
-        photoURL: cleanText(candidate.data.photoURL, 500),
-        matchedSlots: draft.sessions.length,
-        pointsPer25Minutes: pointsPer25Minutes(candidate.data.pointsPer25Minutes),
-      }
-    } catch {
-      return null
-    }
-  })
-  return results.filter((item): item is NonNullable<typeof item> => item !== null)
 }
 
 function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
@@ -726,6 +584,10 @@ function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
     && data.startTime === undefined
     && data.minutes === undefined
     && data.sessionCount === undefined
+    // A supplied rate is never a harmless lookup-only field: even a malformed
+    // or otherwise incomplete draft is an explicit attempt to use the
+    // payroll-sensitive path and must pass the admin-only gate below.
+    && !hasRequestedClassHuntCompensation(data)
 }
 
 async function classHuntLookupPreview(data: Record<string, unknown>) {
@@ -808,37 +670,33 @@ export const previewClassHunt = onCall({
   memory: '256MiB',
   maxInstances: 5,
 }, async (request) => {
-  await requireClassHuntOperator(request.auth?.uid)
+  const actor = await requireClassHuntOperator(request.auth?.uid)
   const data = (request.data || {}) as Record<string, unknown>
   if (isLookupOnlyPreviewRequest(data)) return classHuntLookupPreview(data)
+  if (hasRequestedClassHuntCompensation(data) && actor.role !== 'admin') {
+    logger.warn('Non-admin attempted to preview a rate-bearing class hunt', {
+      actorUid: actor.uid,
+      actorRole: actor.role,
+    })
+    throw error(
+      'permission-denied',
+      'CLASS_HUNT_COMPENSATION_ADMIN_REQUIRED',
+      'Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.',
+    )
+  }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const eligibleTeachers = await loadEligibleTeachersForPreview(
-    context.draft,
-    context.student,
-    context.studentBookings,
-    context.studentScheduleBookings,
-    nowMs,
-  )
-  const rates = eligibleTeachers.map((teacher) => teacher.pointsPer25Minutes)
   return {
     student: serializeLookupStudent(context.draft.studentId, context.student, true),
     subjects: lookupSubjects(context.student, true),
     subject: { id: context.draft.subjectId, name: context.subjectName },
     slots: context.draft.sessions.map(classHuntPublicSlot),
-    eligibleTeachers: eligibleTeachers.map(({ id, code, name, photoURL, matchedSlots }) => ({
-      id,
-      code,
-      name,
-      photoURL,
-      matchedSlots,
-    })),
-    eligibleTeacherCount: eligibleTeachers.length,
-    warnings: eligibleTeachers.length === 0
-      ? ['Hiện chưa có gia sư nào đồng thời đúng môn, còn hoạt động, dạy online, rảnh đủ toàn bộ lịch và không bị trùng ca.']
-      : (new Set(rates).size > 1
-        ? ['Gia sư phù hợp có đơn giá khác nhau; hệ thống chỉ giữ kim cương theo đơn giá chính xác của người nhận lớp.']
-        : []),
+    ...(context.draft.classHuntCompensation ? {
+      classHuntCompensation: { ...context.draft.classHuntCompensation },
+    } : {}),
+    // Preserve this field for older clients without using it to preselect or
+    // reserve a tutor. Eligibility is checked when a tutor views and claims.
+    eligibleTeachers: [],
   }
 })
 
@@ -850,21 +708,22 @@ export const publishClassHunt = onCall({
 }, async (request) => {
   const actor = await requireClassHuntOperator(request.auth?.uid)
   const data = (request.data || {}) as Record<string, unknown>
+  if (hasRequestedClassHuntCompensation(data) && actor.role !== 'admin') {
+    logger.warn('Non-admin attempted to publish a rate-bearing class hunt', {
+      actorUid: actor.uid,
+      actorRole: actor.role,
+    })
+    throw error(
+      'permission-denied',
+      'CLASS_HUNT_COMPENSATION_ADMIN_REQUIRED',
+      'Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.',
+    )
+  }
   const clientRequestId = requireClassHuntClientRequestId(data.clientRequestId)
   const existing = await existingPublishedHuntForRetry(actor.uid, clientRequestId, data)
-  if (existing) return { hunt: serializeAdminHunt(existing) }
+  if (existing) return { hunt: serializeAdminHunt(existing, Date.now(), actor.role === 'admin') }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const eligibleTeachers = await loadEligibleTeachersForPreview(
-    context.draft,
-    context.student,
-    context.studentBookings,
-    context.studentScheduleBookings,
-    nowMs,
-  )
-  if (eligibleTeachers.length === 0) {
-    throw error('failed-precondition', 'CLASS_HUNT_NO_ELIGIBLE_TEACHER', 'Không còn gia sư nào khớp trọn lịch này. Hãy kiểm tra lại trước khi đăng.')
-  }
   const fingerprint = classHuntPublishFingerprint(context.draft)
   const publishRequestRef = db.collection(CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION)
     .doc(classHuntPublishRequestDocumentId(actor.uid, clientRequestId))
@@ -934,6 +793,9 @@ export const publishClassHunt = onCall({
       requestedMinutes: context.draft.requestedMinutes,
       sessionCount: context.draft.sessionCount,
       sessions: context.draft.sessions,
+      ...(context.draft.classHuntCompensation ? {
+        classHuntCompensation: { ...context.draft.classHuntCompensation },
+      } : {}),
       expiresAt: serverTimestampMillis(expiresAtMs),
       expiresAtMs,
       publishedByUid: actor.uid,
@@ -942,7 +804,6 @@ export const publishClassHunt = onCall({
       createdAtMs: nowMs,
       updatedAt: FieldValue.serverTimestamp(),
       bookingIds: [],
-      eligibleTeacherCount: eligibleTeachers.length,
     }
     transaction.create(newHuntRef, hunt)
     transaction.create(publishRequestRef, {
@@ -967,6 +828,7 @@ export const publishClassHunt = onCall({
         sessionCount: context.draft.sessionCount,
         requestedMinutes: context.draft.requestedMinutes,
         expiresAtMs,
+        classHuntCompensation: context.draft.classHuntCompensation || null,
       },
       createdAt: FieldValue.serverTimestamp(),
     })
@@ -975,7 +837,7 @@ export const publishClassHunt = onCall({
     // access and contains no student, class, subject, or schedule information.
     transaction.create(notificationRef, {
       title: 'Có lớp mới đang chờ nhận',
-      content: 'Có lớp online mới phù hợp đang chờ nhận. Mở mục Nhận lớp để xem lớp phù hợp.',
+      content: 'Có lớp online mới đang chờ nhận. Mở mục CLASS HUNTING để xem và nhận lớp.',
       color: 'sky',
       iconName: 'Calendar',
       targetType: 'teachers',
@@ -992,7 +854,7 @@ export const publishClassHunt = onCall({
   })
 
   logger.info('Class hunt published', { huntId: result.id, actorUid: actor.uid, sessionCount: result.sessions.length })
-  return { hunt: serializeAdminHunt(result) }
+  return { hunt: serializeAdminHunt(result, Date.now(), actor.role === 'admin') }
 })
 
 export const cancelClassHunt = onCall({
@@ -1033,7 +895,7 @@ export const cancelClassHunt = onCall({
     })
     return { ...current, status: 'cancelled' as const, cancelledByUid: actor.uid, cancelledAtMs: nowMs }
   })
-  return { hunt: serializeAdminHunt(hunt) }
+  return { hunt: serializeAdminHunt(hunt, Date.now(), actor.role === 'admin') }
 })
 
 type TeacherHuntStudentContext = {
@@ -1044,26 +906,7 @@ type TeacherHuntStudentContext = {
 }
 
 type TeacherHuntReadSet = {
-  availability?: DocumentData
-  teacherBookings: ClassHuntBookingLike[]
   students: Map<string, TeacherHuntStudentContext>
-}
-
-async function mapWithConcurrency<T, R>(
-  values: T[],
-  concurrency: number,
-  task: (value: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(values.length)
-  let cursor = 0
-  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (cursor < values.length) {
-      const index = cursor
-      cursor += 1
-      results[index] = await task(values[index])
-    }
-  }))
-  return results
 }
 
 async function loadOpenClassHuntCandidates(
@@ -1114,9 +957,7 @@ async function loadTeacherHuntReadSet(
     logger.warn('Class hunt teacher feed exceeded the aggregate student bound', { teacherId, students: studentIds.length })
     return null
   }
-  const [availabilitySnapshot, teacherBookingsSnapshot, studentSnapshots, directBookingsSnapshot, groupMemberBookingsSnapshot] = await Promise.all([
-    db.collection('teacherAvailability').doc(teacherId).get(),
-    db.collection('bookingRequests').where('teacherId', '==', teacherId).limit(CLASS_HUNT_BOOKING_READ_LIMIT + 1).get(),
+  const [studentSnapshots, directBookingsSnapshot, groupMemberBookingsSnapshot] = await Promise.all([
     db.getAll(...studentIds.map((studentId) => db.collection('students').doc(studentId))),
     db.collection('bookingRequests')
       .where('studentId', 'in', studentIds)
@@ -1127,12 +968,10 @@ async function loadTeacherHuntReadSet(
       .limit(CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT + 1)
       .get(),
   ])
-  if (teacherBookingsSnapshot.size > CLASS_HUNT_BOOKING_READ_LIMIT
-    || directBookingsSnapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT
+  if (directBookingsSnapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT
     || groupMemberBookingsSnapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT) {
     logger.warn('Class hunt aggregate booking scan reached its safety bound', {
       teacherId,
-      teacherBookings: teacherBookingsSnapshot.size,
       directBookings: directBookingsSnapshot.size,
       groupMemberBookings: groupMemberBookingsSnapshot.size,
     })
@@ -1170,8 +1009,6 @@ async function loadTeacherHuntReadSet(
     students.set(studentId, { student: studentData.get(studentId), bookings, scheduleBookings, complete: true })
   })
   return {
-    availability: availabilitySnapshot.data(),
-    teacherBookings: teacherBookingsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() } as ClassHuntBookingLike)),
     students,
   }
 }
@@ -1193,10 +1030,10 @@ function teacherCanSeeHunt(
       teacherId: teacher.teacherId,
       teacher: teacher.teacher,
       student: studentContext.student,
-      availability: readSet.availability,
-      teacherBookings: readSet.teacherBookings,
+      teacherBookings: [],
       studentBookings: studentContext.bookings,
       studentScheduleBookings: studentContext.scheduleBookings,
+      includeTeacherSchedule: false,
       nowMs,
     })
     return true
@@ -1233,7 +1070,7 @@ export const listClassHunts = onCall({
       })
       .filter((hunt): hunt is StoredClassHunt => hunt !== null)
       .filter((hunt) => !requestedStatus || effectiveClassHuntStatus(hunt, nowMs) === requestedStatus)
-      .map((hunt) => serializeAdminHunt(hunt, nowMs))
+      .map((hunt) => serializeAdminHunt(hunt, nowMs, user.role === 'admin'))
     return { hunts }
   }
 
@@ -1313,7 +1150,6 @@ export const claimClassHunt = onCall({
     }
 
     const studentRef = db.collection('students').doc(hunt.studentId)
-    const availabilityRef = db.collection('teacherAvailability').doc(teacher.teacherId)
     const contractsQuery = db.collection('contracts')
       .where('teacherId', '==', teacher.teacherId)
       .limit(CONTRACT_QUERY_LIMIT + 1)
@@ -1328,14 +1164,12 @@ export const claimClassHunt = onCall({
       .limit(CLASS_HUNT_BOOKING_READ_LIMIT + 1)
     const [
       studentSnapshot,
-      availabilitySnapshot,
       contractsSnapshot,
       teacherBookingsSnapshot,
       studentBookingsSnapshot,
       groupMemberBookingsSnapshot,
     ] = await Promise.all([
       transaction.get(studentRef),
-      transaction.get(availabilityRef),
       transaction.get(contractsQuery),
       transaction.get(teacherBookingsQuery),
       transaction.get(studentBookingsQuery),
@@ -1379,12 +1213,17 @@ export const claimClassHunt = onCall({
       teacherId: teacher.teacherId,
       teacher: teacher.teacher,
       student,
-      availability: availabilitySnapshot.data(),
       teacherBookings,
       studentBookings,
       studentScheduleBookings,
       nowMs: claimNowMs,
     })
+    const compensationAmountPerLesson = hunt.classHuntCompensation
+      ? classHuntCompensationAmount(hunt.classHuntCompensation, hunt.requestedMinutes)
+      : undefined
+    const totalCompensationAmount = hunt.classHuntCompensation
+      ? classHuntCompensationAmount(hunt.classHuntCompensation, hunt.requestedMinutes, hunt.sessions.length)
+      : undefined
 
     const teacherCode = cleanText(teacher.teacher.code, 80)
     const teacherName = cleanText(teacher.teacher.name, 160) || teacherCode || 'Gia sư'
@@ -1421,6 +1260,12 @@ export const claimClassHunt = onCall({
         requestedMinutes: session.requestedMinutes,
         requestedPoints: accounting.pointsPerLesson,
         pointsPer25Minutes: pointsPer25Minutes(teacher.teacher.pointsPer25Minutes),
+        ...(hunt.classHuntCompensation ? {
+          // The booking is the bridge into attendance, approvals, and payroll.
+          // Copy the full snapshot rather than a derived value so every later
+          // financial step can prove it used the price the tutor saw pre-claim.
+          classHuntCompensation: { ...hunt.classHuntCompensation },
+        } : {}),
         heldImmediately: true,
         heldMinutesAfterConfirm: accounting.nextHeld,
         adminNote: 'Gia sư nhận lớp qua Săn lớp.',
@@ -1475,6 +1320,15 @@ export const claimClassHunt = onCall({
         pointsPerLesson: accounting.pointsPerLesson,
         totalHeldPoints: accounting.totalRequiredPoints,
         heldMinutesAfter: accounting.nextHeld,
+        ...(hunt.classHuntCompensation ? {
+          classHuntCompensation: { ...hunt.classHuntCompensation },
+          compensationAmountPerLesson,
+          totalCompensationAmount,
+        } : {
+          // Explicitly record a compatibility claim so reconciliation can tell
+          // a historical no-rate offer from a missing/corrupted snapshot.
+          classHuntCompensation: null,
+        }),
         clientRequestId,
       },
       createdAt: FieldValue.serverTimestamp(),

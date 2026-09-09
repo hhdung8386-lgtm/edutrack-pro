@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CalendarDays,
-  CheckCircle2,
   Clock3,
   RefreshCw,
   Target,
@@ -38,6 +37,20 @@ function formatDate(date?: string) {
   if (!date) return 'Chưa xác định ngày'
   const [year, month, day] = date.split('-')
   return year && month && day ? `${day}/${month}/${year}` : date
+}
+
+function formatVND(amount: number) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function compensationSummary(ratePerMinute: number, minutes: number, sessionCount: number) {
+  const perLesson = ratePerMinute * minutes
+  const total = perLesson * sessionCount
+  return `${formatVND(ratePerMinute)}/phút · ${formatVND(perLesson)}/buổi · ${formatVND(total)}/${sessionCount} buổi`
 }
 
 function expiryLabel(expiresAt?: string) {
@@ -144,9 +157,9 @@ export function TeacherClassHuntingPage() {
       const result = await claimClassHunt(hunt.id, requestId)
       const outcome = result.outcome || result.status || result.hunt?.status
       if (outcome === 'taken') {
-        toast.warning('Lớp này đã có gia sư nhận trước. Danh sách đã được cập nhật.')
+        toast.warning('😭 Ôi, chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận mất rồi. Mình săn lớp tiếp theo nha!')
       } else {
-        toast.success('Bạn đã nhận lớp thành công. Lịch dạy đã được tạo.')
+        toast.success('🎉 Nhanh tay quá cô ơi! Lớp đã chính thức về đội của cô và được thêm vào lịch dạy.')
       }
       setConfirmingHunt(null)
       await refresh(true)
@@ -154,10 +167,18 @@ export function TeacherClassHuntingPage() {
       console.error('Claim class hunt failed:', claimError)
       const reason = classHuntErrorReason(claimError)
       if (isClassHuntTaken(claimError)) {
-        toast.warning('Lớp này đã có gia sư nhận trước. Danh sách đã được cập nhật.')
+        toast.warning('😭 Ôi, chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận mất rồi. Mình săn lớp tiếp theo nha!')
         setConfirmingHunt(null)
         await refresh(true)
-      } else if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED', 'CLASS_HUNT_SUBJECT_MISMATCH', 'CLASS_HUNT_AVAILABILITY_CHANGED', 'CLASS_HUNT_BOOKING_CONFLICT'].includes(reason)) {
+      } else if (reason === 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT') {
+        toast.warning('⏰ Tiếc quá! Cô không thể nhận lớp này vì đã có ca dạy trùng vào khung giờ này. Mình săn một lớp khác phù hợp hơn nha!')
+        setConfirmingHunt(null)
+        await refresh(true)
+      } else if (reason === 'CLASS_HUNT_COMPENSATION_INVALID') {
+        toast.warning('Đơn giá của lớp này cần được Admin kiểm tra lại trước khi nhận. Danh sách đã được cập nhật.')
+        setConfirmingHunt(null)
+        await refresh(true)
+      } else if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED', 'CLASS_HUNT_SUBJECT_MISMATCH', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT'].includes(reason)) {
         toast.warning('Lớp này không còn phù hợp hoặc đã đóng. Danh sách đã được cập nhật.')
         setConfirmingHunt(null)
         await refresh(true)
@@ -176,11 +197,11 @@ export function TeacherClassHuntingPage() {
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 text-amber-700">
               <Target className="h-5 w-5" strokeWidth={2} />
-              <span className="text-xs font-extrabold tracking-[0.15em]">LỚP PHÙ HỢP</span>
+              <span className="text-xs font-extrabold tracking-[0.15em]">LỚP MỚI</span>
             </div>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Chỉ các lớp khớp toàn bộ lịch rảnh và điều kiện dạy của bạn mới xuất hiện ở đây. Người nhận hợp lệ đầu tiên sẽ được xếp lớp.
+              Lớp mới vừa lên sóng! Giáo viên phù hợp và nhanh tay xác nhận trước sẽ được nhận lớp nha.
             </p>
           </div>
           <Button type="button" variant="outline" onClick={() => void refresh()} loading={refreshing} className="self-start whitespace-nowrap sm:self-auto">
@@ -203,15 +224,15 @@ export function TeacherClassHuntingPage() {
       )}
 
       {loading ? (
-        <section className="space-y-3" role="status" aria-live="polite" aria-busy="true" aria-label="Đang tải lớp phù hợp">
+        <section className="space-y-3" role="status" aria-live="polite" aria-busy="true" aria-label="Đang tải lớp mới">
           {[1, 2, 3].map((item) => <div key={item} className="h-48 animate-pulse rounded-2xl bg-slate-100" />)}
         </section>
       ) : hunts.length === 0 ? (
         <Card padding="none">
           <EmptyState
             icon={<Target className="h-8 w-8" />}
-            title="Chưa có lớp phù hợp"
-            description="Khi có lớp khớp lịch và điều kiện dạy của bạn, hệ thống sẽ hiển thị tại đây."
+            title="Chưa có lớp mới"
+            description="Khi có lớp đúng chuyên môn, hệ thống sẽ hiển thị tại đây để bạn chủ động nhận lớp."
             action={{ label: 'Làm mới danh sách', onClick: () => void refresh() }}
           />
         </Card>
@@ -223,7 +244,7 @@ export function TeacherClassHuntingPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
                     <Target className="h-4 w-4 text-amber-700" />
-                    Lớp phù hợp với bạn
+                    Lớp mới đang chờ nhận
                   </div>
                   <span className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-bold text-amber-800">{expiryLabel(hunt.expiresAt)}</span>
                 </div>
@@ -246,8 +267,7 @@ export function TeacherClassHuntingPage() {
                     disabled={Boolean(claimingId)}
                     className="w-full whitespace-nowrap sm:w-auto"
                   >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Nhận lớp liền
+                    ✋ Nhận lớp liền
                   </Button>
                 </div>
 
@@ -263,9 +283,21 @@ export function TeacherClassHuntingPage() {
                   </ul>
                 </div>
 
+                {hunt.classHuntCompensation ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-sm leading-6 text-emerald-950">
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-emerald-700">Đơn giá lớp đã chốt</p>
+                    <p className="mt-1 font-extrabold">{compensationSummary(hunt.classHuntCompensation.ratePerMinute, hunt.minutes, hunt.sessionCount)}</p>
+                    <p className="mt-1 text-xs text-emerald-800">Đơn giá này áp dụng cho lớp này, tính theo phút dạy và không nhân level. Hệ thống lưu cố định trước khi bạn nhận lớp.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs leading-5 text-amber-900">
+                    Đây là lớp cũ chưa có đơn giá riêng được lưu. Lương sẽ áp dụng theo quy tắc hiện có của hệ thống.
+                  </div>
+                )}
+
                 <div className="flex items-start gap-2 text-xs leading-5 text-slate-500">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <p>Hệ thống sẽ kiểm tra lại lịch rảnh và điều kiện của bạn ngay khi nhận lớp. Không chia sẻ thông tin học viên ngoài buổi học được phân công.</p>
+                  <p>Không cần mở lịch rảnh cho khung này. Hệ thống sẽ kiểm tra chuyên môn và ca dạy trùng ngay khi bạn nhận lớp. Không chia sẻ thông tin học viên ngoài buổi học được phân công.</p>
                 </div>
               </div>
             </article>
@@ -278,23 +310,31 @@ export function TeacherClassHuntingPage() {
         onClose={() => setConfirmingHunt(null)}
         onConfirm={() => confirmingHunt && void handleClaim(confirmingHunt)}
         title="Xác nhận nhận lớp?"
-        description={confirmingHunt ? `Bạn sẽ nhận ${confirmingHunt.sessionCount} buổi của gói ${confirmingHunt.subject.name}.` : undefined}
-        consequence="Hệ thống sẽ kiểm tra lại điều kiện và tạo toàn bộ lịch cho người nhận hợp lệ đầu tiên."
-        confirmLabel="Nhận lớp liền"
+        description={confirmingHunt ? `Bạn sẽ nhận ${confirmingHunt.sessionCount} buổi của gói ${confirmingHunt.subject.name}.${confirmingHunt.classHuntCompensation ? ` Đơn giá đã chốt: ${formatVND(confirmingHunt.classHuntCompensation.ratePerMinute)}/phút, không nhân level.` : ' Đây là lớp cũ chưa lưu đơn giá riêng.'}` : undefined}
+        consequence="Không cần mở lịch rảnh cho khung này. Hệ thống sẽ kiểm tra chuyên môn và ca dạy trùng trước khi tạo toàn bộ lịch."
+        confirmLabel="✋ Nhận lớp liền"
         loading={Boolean(confirmingHunt && claimingId === confirmingHunt.id)}
         confirmDisabled={!confirmingHunt || Boolean(claimingId)}
       >
         {confirmingHunt && (
-          <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Toàn bộ lịch sẽ nhận</p>
-            <ul className="mt-2 space-y-2" aria-label="Các buổi cần xác nhận">
-              {confirmingHunt.slots.map((slot) => (
-                <li key={`${slot.date}-${slot.start}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-slate-700">
-                  <span className="font-bold">{WEEKDAY_LABELS[slot.weekday]} {formatDate(slot.date)}</span>
-                  <span className="font-semibold">{slot.start}-{slot.end}</span>
-                </li>
-              ))}
-            </ul>
+          <div className="space-y-3">
+            {confirmingHunt.classHuntCompensation && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-950">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-emerald-700">Đơn giá lớp đã chốt</p>
+                <p className="mt-1 font-extrabold">{compensationSummary(confirmingHunt.classHuntCompensation.ratePerMinute, confirmingHunt.minutes, confirmingHunt.sessionCount)}</p>
+              </div>
+            )}
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Toàn bộ lịch sẽ nhận</p>
+              <ul className="mt-2 space-y-2" aria-label="Các buổi cần xác nhận">
+                {confirmingHunt.slots.map((slot) => (
+                  <li key={`${slot.date}-${slot.start}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-slate-700">
+                    <span className="font-bold">{WEEKDAY_LABELS[slot.weekday]} {formatDate(slot.date)}</span>
+                    <span className="font-semibold">{slot.start}-{slot.end}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
       </ConfirmDialog>

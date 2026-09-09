@@ -34,6 +34,8 @@ export type LessonScheduleCheck = LessonScheduleCheckSnapshot
 
 export interface AttendanceAudit {
   schedule: LessonScheduleCheck
+  /** Server-verified booking rows used to form `schedule`; only own rate data is exposed. */
+  bookings: BookingRequest[]
   /** Các buổi điểm danh còn hiệu lực của CÙNG học viên trong ngày (đã bỏ từ chối/đã huỷ). */
   sameDayLessons: Lesson[]
   /** Trong đó, số buổi do chính gia sư đang xét ghi nhận. */
@@ -265,6 +267,7 @@ export async function auditTeacherAttendance(input: {
   const audit = await getTeacherAttendanceAuditData(input)
   return {
     schedule: evaluateLessonSchedule(audit.bookings, input),
+    bookings: audit.bookings,
     // Teacher UI only consumes the count. Other teachers' lesson documents never leave the backend.
     sameDayLessons: [],
     sameDayByTeacher: audit.sameDayByTeacher,
@@ -287,6 +290,7 @@ export async function auditLessonForAdmin(lesson: {
   const sameDayLessons = dayLessons.filter(countsAsDailyAttendance)
   return {
     schedule: evaluateLessonSchedule(bookings, lesson),
+    bookings,
     sameDayLessons,
     sameDayByTeacher: sameDayLessons.filter((l) => l.teacherId === lesson.teacherId).length,
   }

@@ -3,6 +3,9 @@ export type ReopenedPaidLesson = {
   payrollPaidAmount?: number
   payrollPaidCurrency?: string
   payrollPaidAt?: unknown
+  payrollPaidTaxWithheldAmount?: number
+  payrollPaidNetAmount?: number
+  payrollPaidTaxSettlement?: unknown
 }
 
 /**
@@ -27,6 +30,18 @@ export function buildPayrollApprovalFields(
   }
   if (lesson.payrollPaidAt !== undefined && lesson.payrollPaidAt !== null) {
     fields.paidAt = lesson.payrollPaidAt
+  }
+  // Carry explicit values only. A legacy paid payroll that never recorded a
+  // withholding snapshot must remain gross=net rather than being guessed from
+  // today's policy during re-approval.
+  if (Number.isFinite(Number(lesson.payrollPaidTaxWithheldAmount))) {
+    fields.taxWithheldAmount = Number(lesson.payrollPaidTaxWithheldAmount)
+  }
+  if (Number.isFinite(Number(lesson.payrollPaidNetAmount))) {
+    fields.netPaidAmount = Number(lesson.payrollPaidNetAmount)
+  }
+  if (lesson.payrollPaidTaxSettlement !== undefined && lesson.payrollPaidTaxSettlement !== null) {
+    fields.taxSettlement = lesson.payrollPaidTaxSettlement
   }
   return fields
 }

@@ -160,6 +160,11 @@ function ScheduleCard({
                   <span className={`rounded-lg px-2 py-1 text-[10px] font-black ${confirmed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                     {confirmed ? (lang === 'vi' ? 'Sắp diễn ra' : 'Upcoming') : (lang === 'vi' ? 'Chờ xác nhận' : 'Pending')}
                   </span>
+                  {booking.parentRebookManaged && (
+                    <span className="text-right text-[10px] font-semibold leading-4 text-amber-700">
+                      {lang === 'vi' ? 'Học vụ hỗ trợ đổi lịch' : 'Support manages changes'}
+                    </span>
+                  )}
                   {canCancel && ['pending', 'confirmed'].includes(booking.status) && (
                     <button
                       type="button"
@@ -317,7 +322,7 @@ export function BookingExperienceTab({
       pilotClassroom={isPilotBooking(booking)}
       cancellationPending={pendingCancellationIds.has(booking.id)}
       rebookRequired={rebookRequired}
-      canCancel={canManageBooking(booking)}
+      canCancel={canManageBooking(booking) && !booking.parentRebookManaged}
       onDetail={() => onSelectBooking(booking)}
       onTeacherProfile={() => onOpenTeacherProfile(booking.teacherId)}
       onCancel={() => onCancelBooking(booking)}

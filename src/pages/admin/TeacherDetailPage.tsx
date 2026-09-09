@@ -15,7 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { ArrowLeft, Calendar, BookOpen, Clock, DollarSign, GraduationCap, Pencil, Search, Eye, Download, Check, X, MoreVertical, Info, Hourglass, Wallet, ChevronDown, CheckCircle2, ExternalLink, Loader2, Pause, Volume2 } from 'lucide-react'
 import { formatMoney, formatMoneyTotals, getCurrentMonth, LOW_SESSION_THRESHOLD } from '@/lib/constants'
-import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
+import { normalizePayrollTaxPolicy, storedPayrollSettlementAmounts, summarizePayrollTaxCurrency } from '@/lib/payrollTax'
 import { COUNTRY_CURRENCY_MAP, getCountryRate } from '@/lib/countryPricing'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
@@ -35,6 +35,13 @@ import { buildPublicTeacherProfile } from '@/lib/publicTeacherProfile'
 import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import {
+  classHuntCompensationFromBookings,
+  classHuntCompensationLegacyFields,
+  classHuntCompensationSalary,
+  classHuntPayrollCompensationFields,
+  salaryForLesson,
+} from '@/lib/classHuntCompensation'
 import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -409,9 +416,10 @@ export function TeacherDetailPage() {
           || lesson.scheduleCheck?.bookingId
           || (Array.isArray(lesson.scheduleCheck?.bookingIds) && lesson.scheduleCheck.bookingIds.length > 0),
         )
-        if (hasLinkedBooking) {
-          // Changing a student's current setup must not rewrite immutable
-          // booking history or invalidate a stored subject reconciliation.
+        if (lesson.classHuntCompensation !== undefined || hasLinkedBooking) {
+          // A Class Hunt marker is immutable even when malformed. Changing a
+          // student's current setup must also not rewrite linked booking
+          // history or invalidate a stored subject reconciliation.
           protectedLessonCount += 1
           return
         }
@@ -600,7 +608,7 @@ export function TeacherDetailPage() {
           ])
 
           const teacherData = teacherSnap.data()
-          const teacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
+          const legacyTeacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
           const lessonMinutes = Number(lesson.minutes) || 0
           const bookingNows = bookingSnaps
             .filter((snap) => snap.exists())
@@ -624,6 +632,7 @@ export function TeacherDetailPage() {
           })
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
+          const classHuntCompensation = classHuntCompensationFromBookings(bookingNows)
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
             || lessonNow.attendanceStatus === 'without_permission'
             || zeroMinuteExcusedAbsenceNow
@@ -658,8 +667,13 @@ export function TeacherDetailPage() {
           if (Number(subjectPackage.remainingMinutes || 0) < lessonPoints) {
             throw new Error('NOT_ENOUGH_POINTS')
           }
-          const { price: pricePerMinute, currency } = getCountryRate(subjectPackage, teacherData?.country || 'VN')
-          const salary = calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
+          const legacyRate = getCountryRate(subjectPackage, teacherData?.country || 'VN')
+          const pricePerMinute = classHuntCompensation?.ratePerMinute ?? legacyRate.price
+          const currency = classHuntCompensation?.currency ?? legacyRate.currency
+          const teacherLevel = classHuntCompensation ? 1 : legacyTeacherLevel
+          const salary = classHuntCompensation
+            ? classHuntCompensationSalary(lessonMinutes, classHuntCompensation)
+            : calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = (lesson.date || '').slice(0, 7)
           const newSubjectUsedMinutes = Number(subjectPackage.usedMinutes || 0) + lessonPoints
           const newSubjectRemainingMinutes = Math.max(0, Number(subjectPackage.totalMinutes || 0) - newSubjectUsedMinutes)
@@ -702,6 +716,7 @@ export function TeacherDetailPage() {
             teacherLevel,
             pricePerMinute,
             currency,
+            ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId,
@@ -807,6 +822,7 @@ export function TeacherDetailPage() {
             level: teacherLevel,
             month,
             ...buildPayrollApprovalFields(lessonNow, salary, currency),
+            ...(classHuntCompensation ? classHuntPayrollCompensationFields(classHuntCompensation) : {}),
             createdAt: serverTimestamp(),
           })
 
@@ -921,6 +937,13 @@ export function TeacherDetailPage() {
               payrollPaidAmount: Number(paidPayrollData.amount || 0),
               payrollPaidCurrency: String(paidPayrollData.currency || lessonCurrent.currency || 'VND'),
               ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+              ...(Number.isFinite(Number(paidPayrollData.taxWithheldAmount)) ? {
+                payrollPaidTaxWithheldAmount: Number(paidPayrollData.taxWithheldAmount),
+              } : {}),
+              ...(Number.isFinite(Number(paidPayrollData.netPaidAmount)) ? {
+                payrollPaidNetAmount: Number(paidPayrollData.netPaidAmount),
+              } : {}),
+              ...(paidPayrollData.taxSettlement ? { payrollPaidTaxSettlement: paidPayrollData.taxSettlement } : {}),
             } : {}),
             ...(targetStatus === 'pending' ? { bookingHoldConsumed: false } : {}),
             updatedAt: serverTimestamp(),
@@ -1086,6 +1109,8 @@ export function TeacherDetailPage() {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (message === 'BOOKING_SUBJECT_MISMATCH') {
         toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
+      } else if (message === 'CLASS_HUNT_COMPENSATION_INVALID') {
+        toast.error('Rate riêng của lớp chưa nhất quán. Chưa duyệt buổi; vui lòng kiểm tra Class Hunting trước.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Hãy kiểm tra ngày, gia sư và thời lượng trước khi xử lý.')
       } else if (message === 'RECONCILIATION_MANUAL_ROLLBACK_REQUIRED') {
@@ -1297,15 +1322,11 @@ export function TeacherDetailPage() {
     }
   }
 
-  const totalSalary = approvedLessons.reduce((acc, l) => acc + (l.salary || 0), 0)
   const fallbackCurrency = COUNTRY_CURRENCY_MAP[teacher.country || 'VN'] || 'VND'
   const totalSalaryLabel = formatMoneyTotals(
     approvedLessons.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
     fallbackCurrency,
   )
-  const approvedCurrencies = new Set(approvedLessons.map((lesson) => (lesson.currency || fallbackCurrency).toUpperCase()))
-  const isVndOnly = approvedCurrencies.size <= 1 && (approvedCurrencies.size === 0 || approvedCurrencies.has('VND'))
-  const totalSalaryTaxSummary = calculatePayrollTax(totalSalary, fallbackCurrency, payrollTaxPolicy)
 
   const studentIdSet = new Set(lessons.filter(l => l.status !== 'rejected').map(l => l.studentId))
   const activeStudents = students.filter(s => studentIdSet.has(s.id))
@@ -1317,40 +1338,55 @@ export function TeacherDetailPage() {
   const monthCurrency = approvedInMonth.find((lesson) => lesson.currency)?.currency
     || pendingInMonth.find((lesson) => lesson.currency)?.currency
     || fallbackCurrency
-  const monthCurrencies = new Set(lessonsInMonth.map((lesson) => (lesson.currency || monthCurrency).toUpperCase()))
-  const isVndMonth = monthCurrencies.size <= 1 && (monthCurrencies.size === 0 || monthCurrencies.has('VND'))
+  const estimatedLessonSalary = (lesson: Lesson) => salaryForLesson(lesson, {
+    pricePerMinute: lesson.pricePerMinute || 0,
+    level: lesson.teacherLevel ?? teacher?.level ?? 1,
+    currency: lesson.currency || monthCurrency,
+    calculate: calculateSalary,
+  })
 
-  const approvedSalaryMonth = approvedInMonth.reduce((acc, l) => acc + (l.salary || 0), 0)
-  const pendingSalaryMonth = pendingInMonth.reduce((acc, l) => acc + calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency), 0)
-  const totalSalaryMonth = approvedSalaryMonth + pendingSalaryMonth
-  const approvedSalaryMonthTaxSummary = calculatePayrollTax(approvedSalaryMonth, monthCurrency, payrollTaxPolicy, lessonMonth || undefined)
-  const totalSalaryMonthTaxSummary = calculatePayrollTax(totalSalaryMonth, monthCurrency, payrollTaxPolicy, lessonMonth || undefined)
   const approvedSalaryMonthLabel = formatMoneyTotals(
     approvedInMonth.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
     monthCurrency,
   )
   const pendingSalaryMonthLabel = formatMoneyTotals(
-    pendingInMonth.map((lesson) => ({
-      amount: calculateSalary(lesson.minutes, lesson.pricePerMinute || 0, lesson.teacherLevel ?? teacher?.level ?? 1, lesson.currency || monthCurrency),
-      currency: lesson.currency || monthCurrency,
-    })),
+    pendingInMonth.map((lesson) => {
+      const estimated = estimatedLessonSalary(lesson)
+      return { amount: estimated.salary, currency: estimated.currency }
+    }),
     monthCurrency,
   )
   const totalSalaryMonthLabel = formatMoneyTotals([
     ...approvedInMonth.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
-    ...pendingInMonth.map((lesson) => ({
-      amount: calculateSalary(lesson.minutes, lesson.pricePerMinute || 0, lesson.teacherLevel ?? teacher?.level ?? 1, lesson.currency || monthCurrency),
-      currency: lesson.currency || monthCurrency,
-    })),
+    ...pendingInMonth.map((lesson) => {
+      const estimated = estimatedLessonSalary(lesson)
+      return { amount: estimated.salary, currency: estimated.currency }
+    }),
   ], monthCurrency)
 
   // Monthly paid/unpaid payroll stats
   const paidPayrollList = payrolls.filter(p => !p.voided && p.paid && (lessonMonth ? p.month === lessonMonth : true))
   const unpaidPayrollList = payrolls.filter(p => !p.voided && !p.paid && (lessonMonth ? p.month === lessonMonth : true))
-  const paidPayrollMonth = paidPayrollList.reduce((sum, p) => sum + p.amount, 0)
-  const unpaidPayrollMonth = unpaidPayrollList.reduce((sum, p) => sum + p.amount, 0)
-  // Gộp theo từng loại tiền tệ để gia sư nước ngoài không bị hiển thị nhầm ký hiệu "đ"
-  const paidPayrollMonthLabel = formatMoneyTotals(paidPayrollList.map(p => ({ amount: p.amount, currency: p.currency })), fallbackCurrency)
+  const monthlyPayrollList = [...paidPayrollList, ...unpaidPayrollList]
+  const monthlyPayrollCurrencies = Array.from(new Set(monthlyPayrollList.map((payroll) => (
+    String(payroll.currency || fallbackCurrency).toUpperCase()
+  ))))
+  const monthlyPayrollTaxSummaries = monthlyPayrollCurrencies.map((currency) => (
+    summarizePayrollTaxCurrency(monthlyPayrollList, currency, payrollTaxPolicy, lessonMonth || undefined)
+  ))
+  // Paid amounts always come from their immutable snapshot. Unpaid amounts are
+  // only an estimate under the current policy until Finance settles them.
+  const paidPayrollMonthGrossLabel = formatMoneyTotals(
+    paidPayrollList.map((payroll) => ({ amount: payroll.amount, currency: payroll.currency })),
+    fallbackCurrency,
+  )
+  const paidPayrollMonthNetLabel = formatMoneyTotals(
+    paidPayrollList.map((payroll) => ({
+      amount: storedPayrollSettlementAmounts(payroll).net,
+      currency: payroll.currency,
+    })),
+    fallbackCurrency,
+  )
   const unpaidPayrollMonthLabel = formatMoneyTotals(unpaidPayrollList.map(p => ({ amount: p.amount, currency: p.currency })), fallbackCurrency)
 
   const [mYear, mMon] = lessonMonth ? lessonMonth.split('-') : ['', '']
@@ -1359,11 +1395,16 @@ export function TeacherDetailPage() {
   const exportPayrollCSV = () => {
     if (!teacher) return
     const rows = [
-      ['Ngày', 'Học viên', 'Mã học viên', 'Môn học', 'Số phút', 'Đơn giá/phút', 'Lương tạm tính', 'Trạng thái duyệt', 'Thanh toán'],
+      ['Ngày', 'Học viên', 'Mã học viên', 'Môn học', 'Số phút', 'Đơn giá/phút', 'Gross', 'Thuế đã chốt', 'Net đã chốt', 'Trạng thái duyệt', 'Thanh toán'],
       ...lessonsInMonth.map((l) => {
         const p = payrolls.find((pay) => pay.lessonId === l.id && !pay.voided)
-        const paymentStatus = p ? (p.paid ? 'Đã thanh toán' : 'Chưa thanh toán') : '—'
-        const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency)
+        const estSalary = l.status === 'approved' && l.salary != null ? l.salary : estimatedLessonSalary(l).salary
+        const paidSettlement = p?.paid ? storedPayrollSettlementAmounts(p) : null
+        const paymentStatus = p
+          ? p.paid
+            ? 'Đã thanh toán (đã chốt)'
+            : 'Chưa thanh toán — chưa chốt thuế/Net'
+          : '—'
         return [
           l.date,
           l.studentName,
@@ -1371,7 +1412,9 @@ export function TeacherDetailPage() {
           l.subjectName,
           `${l.minutes}'`,
           l.pricePerMinute,
-          estSalary,
+          p?.amount ?? estSalary,
+          paidSettlement?.tax ?? '',
+          paidSettlement?.net ?? '',
           l.status === 'approved' ? 'Đã duyệt' : l.status === 'pending' ? 'Chờ duyệt' : l.status === 'cancelled' ? 'Gia sư đã huỷ' : 'Từ chối',
           paymentStatus
         ]
@@ -1822,17 +1865,9 @@ export function TeacherDetailPage() {
               <Wallet className="w-6 h-6 text-emerald-500" />
             </div>
             <div>
-              {isVndOnly && totalSalaryTaxSummary.applies ? (
-                <div className="space-y-0.5">
-                  <p className="text-xs text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalaryTaxSummary.gross, fallbackCurrency)}</span></p>
-                  <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(totalSalaryTaxSummary.net, fallbackCurrency)}</p>
-                  <p className="text-[10px] text-rose-500 italic font-medium">(-{totalSalaryTaxSummary.policy.ratePercent}% thuế TNCN)</p>
-                </div>
-              ) : (
-                <p className="text-2xl font-bold text-emerald-600">{totalSalaryLabel}</p>
-              )}
-              <p className="text-xs font-semibold text-slate-700 mt-1">Tổng lương</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">(từ trước tới giờ)</p>
+              <p className="text-2xl font-bold text-emerald-600">{totalSalaryLabel}</p>
+              <p className="text-xs font-semibold text-slate-700 mt-1">Tổng lương (Gross)</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">(từ trước tới giờ; thuế chỉ xem theo từng tháng đã chốt)</p>
             </div>
           </div>
           <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold text-sm flex-shrink-0">
@@ -2121,15 +2156,7 @@ export function TeacherDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 items-center">
               <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1">Đã duyệt</p>
-                {approvedSalaryMonthTaxSummary.applies ? (
-                  <div className="space-y-0.5">
-                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(approvedSalaryMonthTaxSummary.gross, monthCurrency)}</span></p>
-                    <p className="text-lg font-bold text-emerald-600">Thực nhận: {formatMoney(approvedSalaryMonthTaxSummary.net, monthCurrency)}</p>
-                    <p className="text-[10px] text-rose-500 italic font-medium">(-{approvedSalaryMonthTaxSummary.policy.ratePercent}% thuế TNCN)</p>
-                  </div>
-                ) : (
-                  <p className="text-xl font-bold text-emerald-600">{approvedSalaryMonthLabel}</p>
-                )}
+                <p className="text-xl font-bold text-emerald-600">{approvedSalaryMonthLabel}</p>
                 <p className="text-xs text-slate-400 mt-0.5">({approvedInMonth.length} buổi)</p>
               </div>
               <div>
@@ -2138,16 +2165,8 @@ export function TeacherDetailPage() {
                 <p className="text-xs text-slate-400 mt-0.5">({pendingInMonth.length} buổi)</p>
               </div>
               <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Tổng lương tháng {Number(mMon) || ''}</p>
-                {totalSalaryMonthTaxSummary.applies ? (
-                  <div className="space-y-0.5">
-                    <p className="text-[11px] text-slate-400 font-medium">Trước trừ: <span className="line-through">{formatMoney(totalSalaryMonthTaxSummary.gross, monthCurrency)}</span></p>
-                    <p className="text-lg font-bold text-emerald-600">Dự kiến sau trừ: {formatMoney(totalSalaryMonthTaxSummary.net, monthCurrency)}</p>
-                    <p className="text-[10px] text-rose-500 italic font-medium">(-{totalSalaryMonthTaxSummary.policy.ratePercent}% thuế TNCN)</p>
-                  </div>
-                ) : (
-                  <p className="text-xl font-bold text-emerald-600">{totalSalaryMonthLabel}</p>
-                )}
+                <p className="text-xs font-semibold text-slate-500 mb-1">Tổng lương tháng {Number(mMon) || ''} (Gross)</p>
+                <p className="text-xl font-bold text-emerald-600">{totalSalaryMonthLabel}</p>
               </div>
               <div className="flex justify-start md:justify-end">
                 {(() => {
@@ -2192,6 +2211,39 @@ export function TeacherDetailPage() {
               </div>
             </div>
 
+            {monthlyPayrollTaxSummaries.length > 0 && (
+              <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/50 px-4 py-3">
+                <p className="text-xs font-bold text-sky-800">Đối soát thanh toán và thuế TNCN</p>
+                <div className="mt-2 space-y-2">
+                  {monthlyPayrollTaxSummaries.map((summary) => (
+                    <div key={summary.currency} className="flex flex-col gap-1 text-xs sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-700">
+                          {summary.currency}: Gross {formatMoney(summary.grossAmount, summary.currency)} · Thuế {formatMoney(summary.taxAmount, summary.currency)} · Net {formatMoney(summary.netAmount, summary.currency)}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {summary.source === 'stored'
+                            ? 'Đã chốt: dùng số Gross/Thuế/Net đã lưu khi thanh toán.'
+                            : summary.source === 'mixed'
+                              ? 'Đã chốt một phần: phần đã trả dùng snapshot; phần chưa trả chỉ là ước tính theo cấu hình hiện tại.'
+                              : 'Chưa thanh toán: Thuế và Net chỉ là ước tính theo cấu hình hiện tại.'}
+                        </p>
+                        {summary.hasLegacyPaidLines && (
+                          <p className="text-[11px] text-amber-700">Bản ghi thanh toán cũ chưa có snapshot nên đang giữ Gross = Net và Thuế = 0.</p>
+                        )}
+                        {summary.hasPaidSettlementMonthMismatch && (
+                          <p className="text-[11px] text-amber-700">Có khoản đã chốt được chuyển sang tháng báo cáo khác; không dùng khoản đó để bù thuế của tháng này.</p>
+                        )}
+                        {(summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0) && (
+                          <p className="text-[11px] text-rose-700">Cần kế toán rà soát phần thuế chưa phân bổ hoặc đã khấu trừ vượt; hệ thống không tự sửa khoản đã trả.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-slate-100 my-4 pt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="flex items-start gap-1.5 text-xs text-slate-500">
                 <Info className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
@@ -2199,7 +2251,7 @@ export function TeacherDetailPage() {
                   <p>Lương tháng chỉ tính các buổi đã duyệt.</p>
                   <p className="text-[11px] text-slate-500 italic">
                     {payrollTaxPolicy.enabled
-                      ? `* Thuế ${payrollTaxPolicy.ratePercent}% áp dụng khi tổng lương vượt ${formatMoney(payrollTaxPolicy.thresholdAmount, payrollTaxPolicy.currency)}.`
+                      ? `* Chính sách hiện tại: thuế ${payrollTaxPolicy.ratePercent}% khi tổng Gross tháng vượt ${formatMoney(payrollTaxPolicy.thresholdAmount, payrollTaxPolicy.currency)}. Khoản đã chốt không bị tính lại.`
                       : '* Khấu trừ thuế TNCN hiện đang tắt trong Cài đặt.'}
                   </p>
                 </div>
@@ -2382,7 +2434,8 @@ export function TeacherDetailPage() {
                   const p = payrolls.find((pay) => pay.lessonId === l.id && !pay.voided);
                   const isPaid = p?.paid === true;
                   const hasPayroll = !!p;
-                  const estSalary = l.status === 'approved' && l.salary != null ? l.salary : calculateSalary(l.minutes, l.pricePerMinute || 0, l.teacherLevel ?? teacher?.level ?? 1, l.currency || monthCurrency);
+                  const paidSettlement = isPaid && p ? storedPayrollSettlementAmounts(p) : null;
+                  const estSalary = l.status === 'approved' && l.salary != null ? l.salary : estimatedLessonSalary(l).salary;
                   const isNearBottom = filteredLessons.length - index <= 2;
 
                   return (
@@ -2502,13 +2555,20 @@ export function TeacherDetailPage() {
                       {/* Payment Status Badges */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         {hasPayroll ? (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            isPaid 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
-                          }`}>
-                            {isPaid ? 'Đã thanh toán' : 'Chưa thanh toán'}
-                          </span>
+                          <div className="space-y-1">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              isPaid
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                : 'bg-amber-50 text-amber-700 border border-amber-100'
+                            }`}>
+                              {isPaid ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                            </span>
+                            {paidSettlement && (
+                              <p className="text-[10px] font-medium text-emerald-700">
+                                Net {formatMoney(paidSettlement.net, p.currency || monthCurrency)}
+                              </p>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-400 text-xs">—</span>
                         )}
@@ -2617,29 +2677,44 @@ export function TeacherDetailPage() {
                 <span className="text-slate-500">Lương chưa trừ thuế:</span>
                 <span className="font-bold text-slate-700">{approvedSalaryMonthLabel}</span>
               </div>
-              {approvedSalaryMonthTaxSummary.applies ? (
-                <>
+              {monthlyPayrollTaxSummaries.map((summary) => (
+                <div key={summary.currency} className="space-y-2 border-t border-slate-200/50 pt-2.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Payroll {summary.currency} (Gross):</span>
+                    <span className="font-bold text-slate-700">{formatMoney(summary.grossAmount, summary.currency)}</span>
+                  </div>
                   <div className="flex justify-between text-sm text-rose-500 font-medium">
-                    <span>Thuế TNCN khấu trừ ({approvedSalaryMonthTaxSummary.policy.ratePercent}%):</span>
-                    <span>-{formatMoney(approvedSalaryMonthTaxSummary.tax, monthCurrency)}</span>
+                    <span>{summary.source === 'stored' ? 'Thuế TNCN đã chốt:' : 'Thuế TNCN (ước tính phần chưa trả):'}</span>
+                    <span>-{formatMoney(summary.taxAmount, summary.currency)}</span>
                   </div>
-                  <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5 font-semibold">
-                    <span className="text-slate-700">Lương thực nhận sau thuế (Net):</span>
-                    <span className="font-bold text-emerald-600">{formatMoney(approvedSalaryMonthTaxSummary.net, monthCurrency)}</span>
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span className="text-slate-700">{summary.source === 'stored' ? 'Thực nhận đã chốt (Net):' : 'Net (gồm số đã chốt và/hoặc ước tính):'}</span>
+                    <span className="font-bold text-emerald-600">{formatMoney(summary.netAmount, summary.currency)}</span>
                   </div>
-                </>
-              ) : null}
+                  <p className="text-[10px] text-slate-400 italic">
+                    {summary.source === 'stored'
+                      ? 'Đã chốt theo snapshot thanh toán.'
+                      : summary.source === 'mixed'
+                        ? 'Đã trả dùng snapshot; phần chưa trả là ước tính theo cấu hình hiện tại.'
+                        : 'Chưa thanh toán: chưa có số thuế/Net được chốt.'}
+                  </p>
+                </div>
+              ))}
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Đã thanh toán (Gross):</span>
-                <span className="font-bold text-emerald-600">{paidPayrollMonthLabel}</span>
+                <span className="font-bold text-emerald-600">{paidPayrollMonthGrossLabel}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
+                <span className="text-slate-500">Đã thanh toán (Net đã chốt):</span>
+                <span className="font-bold text-emerald-600">{paidPayrollMonthNetLabel}</span>
               </div>
               <div className="flex justify-between text-sm border-t border-slate-200/50 pt-2.5">
                 <span className="text-slate-500">Chưa thanh toán (Chờ trả - Gross):</span>
                 <span className="font-bold text-amber-500">{unpaidPayrollMonthLabel}</span>
               </div>
-              {approvedSalaryMonthTaxSummary.applies && (
+              {monthlyPayrollTaxSummaries.some((summary) => summary.source !== 'stored') && (
                 <div className="text-[10px] text-slate-400 italic border-t border-slate-200/30 pt-2 text-right">
-                  * Lương thực nhận của tháng áp dụng policy thuế hiện tại.
+                  * Chỉ các khoản chưa thanh toán mới dùng cấu hình thuế hiện tại để ước tính; khoản đã trả không bị tính lại.
                 </div>
               )}
             </div>
@@ -2656,19 +2731,9 @@ export function TeacherDetailPage() {
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-xs text-slate-400 font-semibold">Tổng lương tháng {Number(mMon) || ''}</p>
-              {totalSalaryMonthTaxSummary.applies ? (
-                <>
-                  <p className="text-[11px] text-slate-400 line-through leading-none mt-0.5">{formatMoney(totalSalaryMonthTaxSummary.gross, monthCurrency)}</p>
-                  <p className="text-base font-extrabold text-slate-800 leading-tight">{formatMoney(totalSalaryMonthTaxSummary.net, monthCurrency)}</p>
-                  <p className="text-[9px] text-rose-500 italic font-semibold leading-none mt-0.5">(-{totalSalaryMonthTaxSummary.policy.ratePercent}% thuế TNCN)</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-base font-extrabold text-slate-800 mt-0.5">{totalSalaryMonthLabel}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">(Tính từ các buổi đã duyệt)</p>
-                </>
-              )}
+              <p className="text-xs text-slate-400 font-semibold">Tổng lương tháng {Number(mMon) || ''} (Gross)</p>
+              <p className="text-base font-extrabold text-slate-800 mt-0.5">{totalSalaryMonthLabel}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">(Từ buổi đã duyệt và chờ duyệt; Net xem theo phần đã chốt)</p>
             </div>
           </div>
 
@@ -2680,14 +2745,7 @@ export function TeacherDetailPage() {
             <div>
               <p className="text-xs text-slate-400 font-semibold">Đã duyệt</p>
               <p className="text-base font-extrabold text-emerald-600 mt-0.5">{approvedInMonth.length} buổi</p>
-              {approvedSalaryMonthTaxSummary.applies ? (
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  <span className="line-through">{formatMoney(approvedSalaryMonthTaxSummary.gross, monthCurrency)}</span>
-                  <span className="text-emerald-600 font-semibold ml-1">→ {formatMoney(approvedSalaryMonthTaxSummary.net, monthCurrency)}</span>
-                </p>
-              ) : (
-                <p className="text-[10px] text-slate-400 mt-0.5">{approvedSalaryMonthLabel}</p>
-              )}
+              <p className="text-[10px] text-slate-400 mt-0.5">{approvedSalaryMonthLabel}</p>
             </div>
           </div>
 
@@ -2711,7 +2769,7 @@ export function TeacherDetailPage() {
             </div>
             <div className="text-[10px] text-slate-500 italic mt-1 leading-normal">
               {payrollTaxPolicy.enabled
-                ? `* Thuế ${payrollTaxPolicy.ratePercent}% áp dụng khi tổng lương vượt ${formatMoney(payrollTaxPolicy.thresholdAmount, payrollTaxPolicy.currency)}.`
+                ? `* Chính sách mới: thuế ${payrollTaxPolicy.ratePercent}% khi tổng Gross tháng vượt ${formatMoney(payrollTaxPolicy.thresholdAmount, payrollTaxPolicy.currency)}. Khoản đã trả dùng snapshot riêng.`
                 : '* Khấu trừ thuế TNCN hiện đang tắt trong Cài đặt.'}
             </div>
           </div>

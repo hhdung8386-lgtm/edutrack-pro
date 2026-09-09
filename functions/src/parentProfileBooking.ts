@@ -56,6 +56,8 @@ export type ParentProfileBookingLike = {
   rebookHoldPoints?: unknown
   rebookedByBookingId?: unknown
   lessonId?: unknown
+  classHuntId?: unknown
+  classHuntCompensation?: unknown
 }
 
 export type ParentProfileBookingStudentLike = {
@@ -330,6 +332,17 @@ export function isPendingParentRebookHold(booking: ParentProfileBookingLike): bo
     && points > 0
 }
 
+/**
+ * New Class Hunt bookings carry a published compensation snapshot. Rebooking
+ * through the general parent flow would replace it with a normal booking, so
+ * support must manage that transition. Legacy hunts have no snapshot and keep
+ * their historical behavior.
+ */
+export function isParentManagedClassHuntRebook(booking: ParentProfileBookingLike): boolean {
+  return Boolean(cleanText(booking.classHuntId, 160))
+    && Object.prototype.hasOwnProperty.call(booking, 'classHuntCompensation')
+}
+
 export function parentProfileReusableRebookPoints(input: {
   booking: ParentProfileBookingLike
   request: Pick<ParentProfileBookingRequest, 'studentId' | 'studentCode' | 'subjectId'>
@@ -338,7 +351,8 @@ export function parentProfileReusableRebookPoints(input: {
 }): number | null {
   const { booking, request } = input
   const reusablePoints = Number(booking.rebookHoldPoints)
-  return booking.studentId === request.studentId
+  return !isParentManagedClassHuntRebook(booking)
+    && booking.studentId === request.studentId
     && booking.studentId !== undefined
     && booking.studentId !== ''
     && booking.subjectId === request.subjectId

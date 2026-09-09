@@ -750,6 +750,40 @@ test('Admin hệ thống vẫn quản lý được toàn bộ vòng đời hồ 
   await assertSucceeds(deleteDoc(target))
 })
 
+test('CLASS HUNTING chỉ cho callable Functions truy cập dữ liệu thô', async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore()
+    await Promise.all([
+      setDoc(doc(db, 'classHunts', 'hunt-private'), {
+        kind: 'class_hunt',
+        studentId: 'student-a',
+        subjectId: 'subject-a',
+        status: 'open',
+      }),
+      setDoc(doc(db, 'classHuntPublishRequests', 'request-private'), {
+        kind: 'class_hunt_publish_request',
+        huntId: 'hunt-private',
+      }),
+    ])
+  })
+
+  const anonymousDb = testEnvironment.unauthenticatedContext().firestore()
+  const adminDb = testEnvironment.authenticatedContext(ADMIN_UID).firestore()
+  const teacherDb = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+  const studentManagerDb = testEnvironment.authenticatedContext(STUDENT_MANAGER_UID).firestore()
+
+  await Promise.all([
+    assertFails(getDoc(doc(anonymousDb, 'classHunts', 'hunt-private'))),
+    assertFails(getDocs(collection(anonymousDb, 'classHunts'))),
+    assertFails(getDoc(doc(adminDb, 'classHunts', 'hunt-private'))),
+    assertFails(getDoc(doc(teacherDb, 'classHunts', 'hunt-private'))),
+    assertFails(getDoc(doc(studentManagerDb, 'classHuntPublishRequests', 'request-private'))),
+    assertFails(setDoc(doc(adminDb, 'classHunts', 'forged-hunt'), { status: 'open' })),
+    assertFails(updateDoc(doc(adminDb, 'classHunts', 'hunt-private'), { status: 'claimed' })),
+    assertFails(deleteDoc(doc(adminDb, 'classHunts', 'hunt-private'))),
+  ])
+})
+
 test('khách ẩn danh không thể đọc hoặc ghi booking và yêu cầu hủy thô', async () => {
   await seedBookingSecurityFixtures()
   const db = testEnvironment.unauthenticatedContext().firestore()

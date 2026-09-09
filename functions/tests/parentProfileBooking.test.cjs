@@ -6,6 +6,7 @@ const {
   assertParentProfileBookingRequestFuture,
   decideParentProfileBookingHold,
   effectiveParentBookingHolds,
+  isParentManagedClassHuntRebook,
   normalizeParentProfileBookingRequest,
   parentBookingPoints,
   parentProfileBookingConflictReason,
@@ -199,6 +200,19 @@ test('only the exact referenced same-subject pending rebook hold is reusable', (
   }), null)
   assert.equal(parentProfileReusableRebookPoints({
     booking: { ...oldBooking, pendingRebook: false },
+    request: normalized,
+    pendingRebookPoints: 50,
+    effectiveHeldPoints: 50,
+  }), null)
+  const classHuntRebook = {
+    ...oldBooking,
+    classHuntId: 'hunt-a',
+    classHuntCompensation: { version: 1, ratePerMinute: 1234, currency: 'VND', formula: 'flat_per_minute' },
+  }
+  assert.equal(isParentManagedClassHuntRebook(classHuntRebook), true)
+  assert.equal(isParentManagedClassHuntRebook({ ...classHuntRebook, classHuntCompensation: null }), true)
+  assert.equal(parentProfileReusableRebookPoints({
+    booking: classHuntRebook,
     request: normalized,
     pendingRebookPoints: 50,
     effectiveHeldPoints: 50,

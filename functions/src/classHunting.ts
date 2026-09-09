@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 /**
  * Server-owned data contract for the class-hunting flow.  Nothing in this
  * module trusts browser time, a browser-selected teacher, or a client-side
- * availability calculation.  The callable layer is responsible for reading
+ * timetable-conflict calculation. The callable layer is responsible for reading
  * Firestore and uses these deterministic helpers to make the same decision on
  * every retry.
  */
@@ -16,6 +16,9 @@ export const CLASS_HUNT_MIN_TTL_MINUTES = 5
 export const CLASS_HUNT_MAX_TTL_MINUTES = 7 * 24 * 60
 export const CLASS_HUNT_MAX_SESSIONS = 24
 export const CLASS_HUNT_MINUTES = [25, 50, 75, 100] as const
+export const CLASS_HUNT_COMPENSATION_VERSION = 1
+export const CLASS_HUNT_COMPENSATION_CURRENCY = 'VND' as const
+export const CLASS_HUNT_COMPENSATION_FORMULA = 'flat_per_minute' as const
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,160}$/
@@ -57,6 +60,26 @@ export interface ClassHuntDraft {
   sessionCount: number
   expiresInMinutes: number
   sessions: ClassHuntSession[]
+  /**
+   * Present only for newly published, admin-priced hunts. Its absence is a
+   * deliberate compatibility path for offers created before class-level pay
+   * existed; callers must never invent a rate for those historical offers.
+   */
+  classHuntCompensation?: ClassHuntCompensation
+}
+
+/**
+ * Immutable class-level teacher compensation snapshot. This is intentionally
+ * distinct from student diamond rates (`pointsPer25Minutes`) and from a
+ * teacher's current level/rate. A Class Hunting claim copies it unchanged to
+ * every booking so later profile, subject, or Settings edits cannot re-price
+ * an already published class.
+ */
+export interface ClassHuntCompensation {
+  version: typeof CLASS_HUNT_COMPENSATION_VERSION
+  ratePerMinute: number
+  currency: typeof CLASS_HUNT_COMPENSATION_CURRENCY
+  formula: typeof CLASS_HUNT_COMPENSATION_FORMULA
 }
 
 export interface ClassHuntTeacherLike {
@@ -69,12 +92,17 @@ export interface ClassHuntTeacherLike {
   code?: unknown
   name?: unknown
   photoURL?: unknown
+  gender?: unknown
+  yob?: unknown
+  livingArea?: unknown
+  degreeType?: unknown
+  university?: unknown
+  major?: unknown
+  teachingYears?: unknown
+  bankName?: unknown
+  bankAccountNo?: unknown
+  bankAccountName?: unknown
   pointsPer25Minutes?: unknown
-}
-
-export interface ClassHuntAvailabilityLike {
-  slots?: unknown
-  weekOverrides?: unknown
 }
 
 export interface ClassHuntStudentLike {
@@ -115,6 +143,7 @@ export interface ClassHuntBookingLike {
   pendingRebook?: unknown
   rebookHoldPoints?: unknown
   rebookedByBookingId?: unknown
+  classHuntCompensation?: unknown
 }
 
 export interface ClassHuntStoredLike {
@@ -128,6 +157,7 @@ export interface ClassHuntStoredLike {
   requestedMinutes?: unknown
   subjectId?: unknown
   studentId?: unknown
+  classHuntCompensation?: unknown
 }
 
 export class ClassHuntValidationError extends Error {
@@ -157,6 +187,78 @@ function requiredDocumentId(value: unknown, reason: string): string {
 function finiteInteger(value: unknown): number | null {
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) ? parsed : null
+}
+
+/** Strictly validate a persisted snapshot. Do not coerce historical Firestore
+ * data here: a malformed field must not silently fall back to a platform or
+ * teacher rate and change what a teacher is paid. */
+export function isClassHuntCompensation(value: unknown): value is ClassHuntCompensation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const compensation = value as Record<string, unknown>
+  return compensation.version === CLASS_HUNT_COMPENSATION_VERSION
+    && typeof compensation.ratePerMinute === 'number'
+    && Number.isSafeInteger(compensation.ratePerMinute)
+    && compensation.ratePerMinute > 0
+    && compensation.currency === CLASS_HUNT_COMPENSATION_CURRENCY
+    && compensation.formula === CLASS_HUNT_COMPENSATION_FORMULA
+}
+
+/**
+ * Normalize only a new admin-entered rate. The public callable accepts a
+ * numeric form value, then writes the full immutable snapshot server-side so
+ * no browser can choose a currency, a multiplier, or a different formula.
+ */
+export function createClassHuntCompensation(ratePerMinute: unknown): ClassHuntCompensation {
+  const normalizedRate = finiteInteger(ratePerMinute)
+  if (normalizedRate === null || normalizedRate <= 0) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_COMPENSATION_RATE_INVALID',
+      'Đơn giá lớp phải là số nguyên VND lớn hơn 0.',
+    )
+  }
+  return {
+    version: CLASS_HUNT_COMPENSATION_VERSION,
+    ratePerMinute: normalizedRate,
+    currency: CLASS_HUNT_COMPENSATION_CURRENCY,
+    formula: CLASS_HUNT_COMPENSATION_FORMULA,
+  }
+}
+
+/**
+ * Return a VND integer only when the complete scheduled value is representable
+ * exactly. This intentionally has no arbitrary business ceiling: it protects
+ * the financial invariant instead of silently clamping a legitimate rate.
+ */
+export function classHuntCompensationAmount(
+  compensation: ClassHuntCompensation,
+  minutes: number,
+  sessionCount = 1,
+): number {
+  if (!isClassHuntCompensation(compensation)
+    || !Number.isSafeInteger(minutes)
+    || minutes <= 0
+    || !Number.isSafeInteger(sessionCount)
+    || sessionCount <= 0) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_COMPENSATION_AMOUNT_INVALID',
+      'Không thể tính đơn giá lớp an toàn.',
+    )
+  }
+  const amount = compensation.ratePerMinute * minutes * sessionCount
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_COMPENSATION_AMOUNT_OVERFLOW',
+      'Đơn giá lớp vượt quá giới hạn tính toán an toàn.',
+    )
+  }
+  return amount
+}
+
+function optionalClassHuntCompensation(ratePerMinute: unknown): ClassHuntCompensation | undefined {
+  // Missing is reserved exclusively for compatibility with an offer published
+  // before the class-level compensation feature. New UI always sends a rate.
+  if (ratePerMinute === undefined || ratePerMinute === null || ratePerMinute === '') return undefined
+  return createClassHuntCompensation(ratePerMinute)
 }
 
 function finiteNonNegative(value: unknown, fallback = 0): number {
@@ -360,6 +462,7 @@ export function buildClassHuntDraft(input: {
   requestedMinutes?: unknown
   sessionCount?: unknown
   expiresInMinutes?: unknown
+  compensationRatePerMinute?: unknown
 }, nowMs: number): ClassHuntDraft {
   const studentId = requiredDocumentId(input.studentId, 'CLASS_HUNT_STUDENT_ID_INVALID')
   const subjectId = requiredDocumentId(input.subjectId, 'CLASS_HUNT_SUBJECT_ID_INVALID')
@@ -369,6 +472,13 @@ export function buildClassHuntDraft(input: {
   const requestedMinutes = normalizeClassHuntDuration(input.requestedMinutes)
   const sessionCount = normalizeClassHuntSessionCount(input.sessionCount)
   const expiresInMinutes = normalizeClassHuntExpiryMinutes(input.expiresInMinutes)
+  const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
+  if (classHuntCompensation) {
+    // Validate the whole class amount at creation time. No value is rounded or
+    // capped; a value that cannot remain exact is rejected before it reaches
+    // an immutable financial record.
+    classHuntCompensationAmount(classHuntCompensation, requestedMinutes, sessionCount)
+  }
   const sessions = buildFutureClassHuntSessions({
     startDate: formatDateISO(start), selectedDays, requestedStart, requestedMinutes, sessionCount, nowMs,
   })
@@ -382,6 +492,7 @@ export function buildClassHuntDraft(input: {
     sessionCount,
     expiresInMinutes,
     sessions,
+    ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
 
@@ -396,6 +507,7 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     sessionCount: draft.sessionCount,
     expiresInMinutes: draft.expiresInMinutes,
     sessions: draft.sessions,
+    classHuntCompensation: draft.classHuntCompensation || null,
   }), 'utf8').digest('hex')
 }
 
@@ -415,6 +527,7 @@ export function classHuntPublishRetryMatches(input: {
   minutes?: unknown
   sessionCount?: unknown
   expiresInMinutes?: unknown
+  compensationRatePerMinute?: unknown
 }, stored: {
   studentId: string
   studentCode: string
@@ -426,6 +539,7 @@ export function classHuntPublishRetryMatches(input: {
   sessionCount: number
   createdAtMs: number
   expiresAtMs: number
+  classHuntCompensation?: unknown
 }): boolean {
   if (!Array.isArray(input.weekdays)
     || !input.weekdays.every((day) => typeof day === 'string')
@@ -446,6 +560,21 @@ export function classHuntPublishRetryMatches(input: {
     }
   })()
   if (requestedStart === null) return false
+  let requestedCompensation: ClassHuntCompensation | undefined
+  try {
+    requestedCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
+  } catch {
+    return false
+  }
+  const storedCompensation = stored.classHuntCompensation
+  const compensationMatches = storedCompensation === undefined || storedCompensation === null
+    ? requestedCompensation === undefined
+    : isClassHuntCompensation(storedCompensation)
+      && requestedCompensation !== undefined
+      && storedCompensation.ratePerMinute === requestedCompensation.ratePerMinute
+      && storedCompensation.currency === requestedCompensation.currency
+      && storedCompensation.formula === requestedCompensation.formula
+      && storedCompensation.version === requestedCompensation.version
   return cleanText(input.studentId, 160) === stored.studentId
     && cleanText(input.studentCode, 80) === stored.studentCode
     && cleanText(input.subjectId, 160) === stored.subjectId
@@ -457,6 +586,7 @@ export function classHuntPublishRetryMatches(input: {
     && requestedExpiry === storedExpiry
     && requestedDays.length === storedDays.length
     && requestedDays.every((day, index) => day === storedDays[index])
+    && compensationMatches
 }
 
 export function isActiveIndividualOnlineStudent(student: ClassHuntStudentLike | null | undefined): boolean {
@@ -475,47 +605,35 @@ export function isEligibleOnlineClassHuntTeacher(teacher: ClassHuntTeacherLike |
   return formats.length === 0 || formats.includes('online')
 }
 
+// Mirrors the required profile fields in src/lib/teacherProfile.ts. It is kept
+// server-owned here so a caller cannot bypass the teacher UI and claim a class
+// without the profile and payout details that the app already requires.
+const CLASS_HUNT_REQUIRED_TEACHER_PROFILE_FIELDS = [
+  'photoURL',
+  'gender',
+  'yob',
+  'livingArea',
+  'degreeType',
+  'university',
+  'major',
+  'teachingYears',
+  'bankName',
+  'bankAccountNo',
+  'bankAccountName',
+] as const
+
+export function isClassHuntTeacherProfileComplete(teacher: ClassHuntTeacherLike | null | undefined): boolean {
+  if (!teacher) return false
+  return CLASS_HUNT_REQUIRED_TEACHER_PROFILE_FIELDS.every((field) => {
+    const value = teacher[field]
+    // Match the existing browser policy: numerical values must be positive;
+    // strings and legacy scalar values must be non-empty after trimming.
+    return typeof value === 'number' ? value > 0 : Boolean(value && String(value).trim())
+  })
+}
+
 export function teacherMatchesClassHuntSubject(teacher: ClassHuntTeacherLike | null | undefined, subjectId: string): boolean {
   return Array.isArray(teacher?.subjectIds) && teacher.subjectIds.some((item) => item === subjectId)
-}
-
-function rangeCovers(range: unknown, start: number, end: number): boolean {
-  if (!range || typeof range !== 'object') return false
-  const data = range as Record<string, unknown>
-  try {
-    const rangeStart = normalizeTime(data.start, 'CLASS_HUNT_AVAILABILITY_INVALID')
-    const rangeEnd = normalizeTime(data.end, 'CLASS_HUNT_AVAILABILITY_INVALID')
-    return timeToMinutes(rangeStart) <= start && timeToMinutes(rangeEnd) >= end
-  } catch {
-    return false
-  }
-}
-
-export function isTeacherAvailableForClassHuntSessions(
-  availability: ClassHuntAvailabilityLike | null | undefined,
-  sessions: ClassHuntSession[],
-): boolean {
-  if (!availability || !availability.slots || typeof availability.slots !== 'object' || sessions.length === 0) return false
-  const baseSlots = availability.slots as Record<string, unknown>
-  const overrides = availability.weekOverrides && typeof availability.weekOverrides === 'object'
-    ? availability.weekOverrides as Record<string, unknown>
-    : {}
-  return sessions.every((session) => {
-    const override = overrides[session.requestedWeekStart]
-    const overrideSlots = override && typeof override === 'object' && (override as Record<string, unknown>).slots
-    const slots = overrideSlots && typeof overrideSlots === 'object'
-      ? overrideSlots as Record<string, unknown>
-      : baseSlots
-    const dayAvailability = slots[session.day]
-    if (!dayAvailability || typeof dayAvailability !== 'object') return false
-    const data = dayAvailability as Record<string, unknown>
-    // A legacy availability document may not contain `available`; actual ranges
-    // are still an explicit availability declaration. A false value always wins.
-    if (data.available === false || !Array.isArray(data.timeRanges)) return false
-    const start = timeToMinutes(session.requestedStart)
-    const end = timeToMinutes(session.requestedEnd)
-    return data.timeRanges.some((range) => rangeCovers(range, start, end))
-  })
 }
 
 export function isActiveClassHuntBooking(booking: ClassHuntBookingLike): boolean {
@@ -548,6 +666,36 @@ export interface ClassHuntConflict {
   reasons: ClassHuntConflictReason[]
 }
 
+/**
+ * A teacher-side overlap takes precedence in the claim response because the
+ * teacher can act on it. A student-side overlap is still blocked separately
+ * so no claim can create an invalid student timetable.
+ */
+export function classHuntClaimConflictReason(
+  conflicts: ClassHuntConflict[],
+): ClassHuntConflictReason | null {
+  if (conflicts.some((conflict) => conflict.reasons.includes('teacher'))) return 'teacher'
+  if (conflicts.some((conflict) => conflict.reasons.includes('student'))) return 'student'
+  return null
+}
+
+function classHuntBookingInterval(booking: ClassHuntBookingLike): { startMs: number; endMs: number } | null {
+  if (typeof booking.requestedDate !== 'string' || typeof booking.requestedStart !== 'string') return null
+  const startMs = classHuntDateTimeMs(booking.requestedDate, booking.requestedStart)
+  if (startMs === null) return null
+
+  // `requestedMinutes` is the canonical duration throughout the application.
+  // Prefer it over an obsolete display end so a legacy record cannot leave a
+  // false gap in the claim-time timetable check.
+  const requestedMinutes = Number(booking.requestedMinutes)
+  if (CLASS_HUNT_MINUTES.includes(requestedMinutes as typeof CLASS_HUNT_MINUTES[number])) {
+    return { startMs, endMs: startMs + requestedMinutes * 60_000 }
+  }
+
+  if (typeof booking.requestedEnd !== 'string') return null
+  return classHuntInterval(booking.requestedDate, booking.requestedStart, booking.requestedEnd)
+}
+
 export function findClassHuntBookingConflicts(input: {
   teacherId: string
   studentId: string
@@ -558,10 +706,9 @@ export function findClassHuntBookingConflicts(input: {
   for (const booking of input.bookings) {
     if (!isActiveClassHuntBooking(booking)
       || typeof booking.requestedDate !== 'string'
-      || typeof booking.requestedStart !== 'string'
-      || typeof booking.requestedEnd !== 'string') continue
+      || typeof booking.requestedStart !== 'string') continue
     for (const session of input.sessions) {
-      const bookingInterval = classHuntInterval(booking.requestedDate, booking.requestedStart, booking.requestedEnd)
+      const bookingInterval = classHuntBookingInterval(booking)
       const sessionInterval = classHuntInterval(session.dateISO, session.requestedStart, session.requestedEnd)
       const overlaps = bookingInterval && sessionInterval
         ? bookingInterval.startMs < sessionInterval.endMs && sessionInterval.startMs < bookingInterval.endMs
@@ -828,6 +975,7 @@ export function sanitizeClassHuntForTeacher(input: {
   requestedMinutes?: unknown
   sessions?: unknown
   expiresAtMs?: unknown
+  classHuntCompensation?: unknown
 }): {
   id: string
   status: ClassHuntStatus
@@ -835,13 +983,21 @@ export function sanitizeClassHuntForTeacher(input: {
   requestedMinutes: number
   sessions: ClassHuntSession[]
   expiresAtMs: number
+  classHuntCompensation?: ClassHuntCompensation
 } | null {
   const sessions = Array.isArray(input.sessions) && input.sessions.every(isClassHuntSessionShape)
     ? input.sessions as ClassHuntSession[]
     : null
   const expiresAtMs = Number(input.expiresAtMs)
   const requestedMinutes = Number(input.requestedMinutes)
-  if (!sessions || !Number.isFinite(expiresAtMs) || !CLASS_HUNT_MINUTES.includes(requestedMinutes as typeof CLASS_HUNT_MINUTES[number])) return null
+  const hasClassHuntCompensation = input.classHuntCompensation !== undefined
+  const classHuntCompensation = hasClassHuntCompensation && isClassHuntCompensation(input.classHuntCompensation)
+    ? input.classHuntCompensation
+    : undefined
+  if (!sessions
+    || !Number.isFinite(expiresAtMs)
+    || !CLASS_HUNT_MINUTES.includes(requestedMinutes as typeof CLASS_HUNT_MINUTES[number])
+    || (hasClassHuntCompensation && !classHuntCompensation)) return null
   return {
     id: input.id,
     status: input.status,
@@ -849,5 +1005,8 @@ export function sanitizeClassHuntForTeacher(input: {
     requestedMinutes,
     sessions: sessions.map((session) => ({ ...session })),
     expiresAtMs,
+    ...(classHuntCompensation ? {
+      classHuntCompensation: { ...classHuntCompensation },
+    } : {}),
   }
 }

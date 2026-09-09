@@ -6,7 +6,7 @@ import {
   collection, query, where, getDocs, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Student } from '@/types'
+import { BookingRequest, Student } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LessonReportForm } from '@/components/lessons/LessonReportForm'
@@ -35,6 +35,10 @@ import {
   formatShortDate, MAX_DAILY_ATTENDANCE_PER_STUDENT,
   type AttendanceAudit, type AuditMessage,
 } from '@/lib/attendanceAudit'
+import {
+  classHuntCompensationFromBookings,
+  classHuntCompensationLegacyFields,
+} from '@/lib/classHuntCompensation'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -369,6 +373,30 @@ export function AttendancePage() {
         }
       }
 
+      // A generic attendance report normally has no booking authority. When a
+      // report matches a Class Hunt slot, keep only the server-returned booking
+      // IDs as a hint, then read them again inside the final transaction before
+      // copying a negotiated rate. A browser cannot invent this snapshot.
+      const matchedBookingIds = audit?.schedule.status === 'matched'
+        ? Array.from(new Set(
+            audit.schedule.bookingIds?.length
+              ? audit.schedule.bookingIds
+              : (audit.schedule.bookingId ? [audit.schedule.bookingId] : []),
+          ))
+        : []
+      const matchedAuditBookings = audit?.bookings.filter((booking) => matchedBookingIds.includes(booking.id)) || []
+      let auditedClassHuntCompensation = null
+      if (matchedBookingIds.length > 0 && matchedAuditBookings.length === matchedBookingIds.length) {
+        try {
+          auditedClassHuntCompensation = classHuntCompensationFromBookings(matchedAuditBookings)
+        } catch {
+          toast.error(lang === 'vi'
+            ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.'
+            : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
+          return
+        }
+      }
+
       const currentRemainingMinutes = selectedPkg.remainingMinutes
       const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
 
@@ -436,7 +464,13 @@ export function AttendancePage() {
       // cũng không thể gửi điểm danh nếu giáo vụ vừa làm gói môn hết hiệu lực.
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', student.id)
-        const latestStudentSnap = await tx.get(studentRef)
+        const compensationBookingRefs = auditedClassHuntCompensation
+          ? matchedBookingIds.map((bookingId) => doc(db, 'bookingRequests', bookingId))
+          : []
+        const [latestStudentSnap, ...compensationBookingSnaps] = await Promise.all([
+          tx.get(studentRef),
+          ...compensationBookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
         if (!latestStudentSnap.exists()) throw new Error('STUDENT_NOT_FOUND')
         const latestStudent = { id: latestStudentSnap.id, ...latestStudentSnap.data() } as Student
         const latestSubjectFund = resolveStudentSubjectFund(latestStudent, selectedSubjectId)
@@ -447,7 +481,33 @@ export function AttendancePage() {
           || latestSubjectFund.remainingMinutes <= 0
           || latestSubjectFund.remainingMinutes < lessonPoints
         ) throw new Error('STUDENT_EXPIRED')
-        tx.set(doc(collection(db, 'lessons')), lessonPayload)
+
+        let classHuntCompensation = null
+        if (auditedClassHuntCompensation) {
+          if (compensationBookingSnaps.length !== matchedBookingIds.length || compensationBookingSnaps.some((snapshot) => !snapshot.exists())) {
+            throw new Error('CLASS_HUNT_COMPENSATION_INVALID')
+          }
+          const freshBookings = compensationBookingSnaps.map((snapshot) => ({
+            id: snapshot.id,
+            ...snapshot.data(),
+          } as BookingRequest))
+          const isStillTheMatchedClass = freshBookings.every((booking) => (
+            booking.status === 'confirmed'
+            && !booking.lessonId
+            && booking.studentId === student.id
+            && booking.teacherId === teacherId
+            && booking.requestedDate === data.date
+            && booking.subjectId === selectedSubjectId
+          ))
+          if (!isStillTheMatchedClass) throw new Error('CLASS_HUNT_COMPENSATION_INVALID')
+          classHuntCompensation = classHuntCompensationFromBookings(freshBookings)
+          if (!classHuntCompensation) throw new Error('CLASS_HUNT_COMPENSATION_INVALID')
+        }
+
+        tx.set(doc(collection(db, 'lessons')), {
+          ...lessonPayload,
+          ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
+        })
       })
 
       setAuditPrompt(null)
@@ -471,7 +531,11 @@ export function AttendancePage() {
         ? (lang === 'vi'
             ? 'Gói môn học này đã hết hoặc không đủ kim cương nên không thể điểm danh.'
             : 'This subject package is exhausted or does not have enough diamonds for attendance.')
-        : t('attendance.submit_fail'))
+        : err instanceof Error && err.message === 'CLASS_HUNT_COMPENSATION_INVALID'
+          ? (lang === 'vi'
+              ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.'
+              : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
+          : t('attendance.submit_fail'))
     } finally {
       window.clearTimeout(slowSubmissionTimer)
       attendanceSubmissionInFlightRef.current = false

@@ -248,6 +248,18 @@ export interface LessonHomeworkItem {
   content: string
 }
 
+/**
+ * Immutable remuneration agreed when an administrator publishes a Class Hunt.
+ * It is copied only from a confirmed Class Hunt booking to its lesson/payroll
+ * records. Older records deliberately omit it and keep their legacy formula.
+ */
+export interface ClassHuntCompensation {
+  version: 1
+  ratePerMinute: number
+  currency: 'VND'
+  formula: 'flat_per_minute'
+}
+
 export interface Lesson {
   id: string
   studentId: string
@@ -292,6 +304,8 @@ export interface Lesson {
   minutesAfterApproval?: number
   teacherLevel?: number
   pricePerMinute?: number
+  /** Immutable Class Hunt rate copied from a confirmed booking, when applicable. */
+  classHuntCompensation?: ClassHuntCompensation
   salary?: number
   teacherRate?: number
   approvedAt?: Timestamp
@@ -316,6 +330,10 @@ export interface Lesson {
   payrollPaidAmount?: number
   payrollPaidCurrency?: string
   payrollPaidAt?: Timestamp
+  /** Immutable withholding facts carried through a review/re-approval of a paid lesson. */
+  payrollPaidTaxWithheldAmount?: number
+  payrollPaidNetAmount?: number
+  payrollPaidTaxSettlement?: PayrollTaxSettlement
   /** Kết quả đối chiếu với lịch đã xếp tại thời điểm gia sư gửi điểm danh. */
   scheduleCheck?: LessonScheduleCheckSnapshot
   /**
@@ -361,6 +379,34 @@ export interface LessonScheduleCheckSnapshot {
   windowDays: number
 }
 
+/**
+ * Immutable tax facts recorded when a payroll settlement is marked paid.
+ * The per-line `taxWithheldAmount`/`netPaidAmount` fields add up to this
+ * shared snapshot without duplicating its total in payroll reports.
+ */
+export interface PayrollTaxSettlement {
+  id: string
+  version: 'monthly-gross-v1'
+  month: string
+  currency: string
+  grossAmount: number
+  taxAmount: number
+  netAmount: number
+  taxableMonthGrossAmount: number
+  taxableMonthTaxAmount: number
+  previouslyWithheldAmount: number
+  policy: {
+    version: 'monthly-gross-v1'
+    enabled: boolean
+    thresholdAmount: number
+    ratePercent: number
+    currency: string
+    effectiveFromMonth?: string
+  }
+  settledAt?: Timestamp
+  settledBy?: string
+}
+
 export interface Payroll {
   id: string
   teacherId: string
@@ -376,9 +422,16 @@ export interface Payroll {
   minutes: number
   pricePerMinute: number
   level: number
+  /** Immutable Class Hunt rate copied from its approved lesson, when applicable. */
+  classHuntCompensation?: ClassHuntCompensation
   month: string
   paid?: boolean
   paidAt?: Timestamp
+  /** Amount withheld from this gross line in its immutable paid settlement. */
+  taxWithheldAmount?: number
+  /** Amount actually paid for this line: `amount - taxWithheldAmount`. */
+  netPaidAmount?: number
+  taxSettlement?: PayrollTaxSettlement
   voided?: boolean
   voidedAt?: Timestamp
   voidedBy?: string
@@ -442,6 +495,12 @@ export interface BookingRequest {
   rebookedByBookingId?: string
   /** Lớp được tạo từ luồng CLASS HUNTING sau khi gia sư thắng lượt nhận. */
   classHuntId?: string
+  /** Immutable rate assigned by the Class Hunt publisher; never edited by the parent. */
+  classHuntCompensation?: ClassHuntCompensation
+  /** Local audit-only sentinel for malformed compensation; never persisted. */
+  classHuntCompensationInvalid?: boolean
+  /** Parent portal marker: this Class Hunt booking must be changed through admin support. */
+  parentRebookManaged?: boolean
 }
 
 export interface AdminLog {

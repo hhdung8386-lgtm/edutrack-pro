@@ -194,7 +194,11 @@ export const getTeacherAttendanceAuditData = onCall({
     && !lesson.absenceFollowUpOf
   )).length
   return {
-    bookings: bookings.map((booking) => teacherAttendanceAuditBookingResponse(String(booking.id), booking)),
+    bookings: bookings.map((booking) => teacherAttendanceAuditBookingResponse(
+      String(booking.id),
+      booking,
+      booking.teacherId === actor.teacherId,
+    )),
     sameDayByTeacher,
   }
 })

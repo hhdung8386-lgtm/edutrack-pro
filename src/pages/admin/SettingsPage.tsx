@@ -39,6 +39,19 @@ type AccountActivityFilter = 'all' | 'never' | 'inactive_1' | 'inactive_3' | 'in
 
 const ACCOUNT_DELETE_BATCH_SIZE = 50
 
+function parsePayrollTaxThreshold(value: string): number {
+  const digits = value.replace(/[^\d]/g, '')
+  return digits ? Number(digits) : Number.NaN
+}
+
+function parsePayrollTaxRate(value: string): number {
+  return Number(value.trim().replace(',', '.'))
+}
+
+function isValidPayrollTaxMonth(value: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
+}
+
 function accountRoleLabel(account: StaffAccount) {
   if (account.accessScope === 'booking_only') return 'Trợ lý xếp lớp'
   if (account.role === 'admin') return 'Admin'
@@ -527,17 +540,22 @@ export function SettingsPage() {
 
   const savePayrollTaxSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const threshold = Number(payrollTaxThreshold.replace(/[^\d]/g, ''))
-    const rate = Number(payrollTaxRate)
-    if (!Number.isFinite(threshold) || threshold < 0) {
-      toast.warning('Vui lòng nhập ngưỡng thu nhập hợp lệ')
+    const threshold = parsePayrollTaxThreshold(payrollTaxThreshold)
+    const rate = parsePayrollTaxRate(payrollTaxRate)
+    const currency = payrollTaxCurrency.trim().toUpperCase()
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      toast.warning('Ngưỡng thu nhập phải là số tiền lớn hơn 0')
       return
     }
     if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
       toast.warning('Tỷ lệ thuế phải nằm trong khoảng 0 đến 100%')
       return
     }
-    if (!/^\d{4}-\d{2}$/.test(payrollTaxEffectiveFromMonth)) {
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      toast.warning('Loại tiền tệ không hợp lệ')
+      return
+    }
+    if (!isValidPayrollTaxMonth(payrollTaxEffectiveFromMonth)) {
       toast.warning('Vui lòng chọn tháng áp dụng hợp lệ')
       return
     }
@@ -547,7 +565,7 @@ export function SettingsPage() {
         payrollTaxEnabled,
         payrollTaxThresholdAmount: Math.round(threshold),
         payrollTaxRatePercent: rate,
-        payrollTaxCurrency: payrollTaxCurrency.toUpperCase(),
+        payrollTaxCurrency: currency,
         payrollTaxEffectiveFromMonth,
         payrollTaxUpdatedAt: serverTimestamp(),
         payrollTaxUpdatedBy: user?.email || user?.uid || '',
@@ -955,7 +973,7 @@ export function SettingsPage() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Cấu hình lương</p>
             <h2 className="mt-1 text-lg font-black text-slate-950">Khấu trừ thuế TNCN</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Có thể bật/tắt và thay đổi ngưỡng áp dụng mà không cần sửa code. Mặc định hiện tại đang tắt để không tự động trừ 10%.
+              Có thể bật/tắt và thay đổi ngưỡng áp dụng mà không cần sửa code. Nếu chưa có cấu hình, mặc định là tắt để không tự động trừ 10%.
             </p>
           </div>
           {payrollTaxLoading ? (
@@ -976,20 +994,22 @@ export function SettingsPage() {
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
-                  label="Ngưỡng thu nhập"
+                  label="Ngưỡng thu nhập tháng"
                   value={payrollTaxThreshold}
                   onChange={(event) => setPayrollTaxThreshold(event.target.value)}
                   inputMode="numeric"
-                  hint="Chỉ khấu trừ khi tổng Gross lớn hơn ngưỡng này."
+                  placeholder="Ví dụ: 5 000 000"
+                  hint="Có thể nhập 5000000 hoặc 5.000.000. Khi vượt ngưỡng, tỷ lệ được áp dụng trên toàn bộ Gross tháng."
                 />
                 <Input
                   label="Tỷ lệ thuế (%)"
                   value={payrollTaxRate}
                   onChange={(event) => setPayrollTaxRate(event.target.value)}
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]+([.,][0-9]+)?"
+                  placeholder="Ví dụ: 10 hoặc 10,5"
+                  hint="Nhập từ 0 đến 100; có thể dùng dấu phẩy hoặc dấu chấm thập phân."
                 />
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-slate-600">Loại tiền</span>

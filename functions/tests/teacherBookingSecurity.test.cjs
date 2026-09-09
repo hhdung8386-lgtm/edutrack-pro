@@ -171,3 +171,53 @@ test('teacher audit payload is allow-listed and hides identities, notes, URLs an
   assert.equal(Object.hasOwn(response, 'requestedPoints'), false)
   assert.equal(Object.hasOwn(response, 'salaryAmount'), false)
 })
+
+test('teacher audit exposes a Class Hunt snapshot only to its owner and fails closed when malformed', () => {
+  const source = {
+    ...targetBooking({
+      status: 'confirmed',
+      teacherId: 'teacher-a',
+      classHuntId: 'hunt-a',
+      classHuntCompensation: {
+        version: 1,
+        ratePerMinute: 1234,
+        currency: 'VND',
+        formula: 'flat_per_minute',
+      },
+    }),
+  }
+  const own = teacherAttendanceAuditBookingResponse('booking-own', source, true)
+  assert.equal(own.classHuntId, 'hunt-a')
+  assert.deepEqual(own.classHuntCompensation, {
+    version: 1,
+    ratePerMinute: 1234,
+    currency: 'VND',
+    formula: 'flat_per_minute',
+  })
+
+  const other = teacherAttendanceAuditBookingResponse('booking-other', source, false)
+  assert.equal(Object.hasOwn(other, 'classHuntId'), false)
+  assert.equal(Object.hasOwn(other, 'classHuntCompensation'), false)
+
+  const malformed = teacherAttendanceAuditBookingResponse('booking-malformed', {
+    ...source,
+    classHuntCompensation: { version: 1, ratePerMinute: 'not-a-rate', currency: 'VND', formula: 'flat_per_minute' },
+  }, true)
+  assert.deepEqual(malformed.classHuntCompensation, {
+    version: 0,
+    ratePerMinute: 0,
+    currency: '',
+    formula: '',
+  })
+
+  const explicitNull = teacherAttendanceAuditBookingResponse('booking-null', {
+    ...source,
+    classHuntCompensation: null,
+  }, true)
+  assert.deepEqual(explicitNull.classHuntCompensation, {
+    version: 0,
+    ratePerMinute: 0,
+    currency: '',
+    formula: '',
+  })
+})

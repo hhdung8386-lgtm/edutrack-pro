@@ -90,6 +90,9 @@ function booking(value: unknown, busy = false): BookingRequest {
   })
   if (typeof data.heldImmediately === 'boolean') decoded.heldImmediately = data.heldImmediately
   if (typeof data.pendingRebook === 'boolean') decoded.pendingRebook = data.pendingRebook
+  // This is an access-control marker only. The immutable compensation itself
+  // intentionally never crosses into the parent portal response.
+  if (data.parentRebookManaged === true) decoded.parentRebookManaged = true
   const teacherResponse = text(data.teacherResponse)
   if (['pending', 'accepted', 'declined'].includes(teacherResponse)) {
     decoded.teacherResponse = teacherResponse as BookingRequest['teacherResponse']

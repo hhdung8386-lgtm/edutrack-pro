@@ -5,6 +5,7 @@ import {
   assertAutomaticReconciliationRollbackAllowed,
   findConsecutiveAttendanceBookings,
   getPrelinkedSubjectMismatchCandidate,
+  isSameAttendanceClass,
   isBookingAttended,
   isBookingCancellable,
   matchesLessonBookingSubject,
@@ -68,6 +69,23 @@ test('does not merge a separate time block or another student into attendance', 
     booking('other-student', '21:00', { studentId: 'student-2' }),
   ]
   assert.deepEqual(findConsecutiveAttendanceBookings(slots, current).map((item) => item.id), ['b1', 'b2'])
+})
+
+test('attendance grouping keeps Class Hunt provenance and immutable rate boundaries', () => {
+  const compensation = {
+    version: 1 as const,
+    ratePerMinute: 1234,
+    currency: 'VND' as const,
+    formula: 'flat_per_minute' as const,
+  }
+  const first = booking('hunt-a', '20:00', { classHuntId: 'class-hunt-a', classHuntCompensation: compensation })
+  const sameHunt = booking('hunt-b', '20:30', { classHuntId: 'class-hunt-a', classHuntCompensation: { ...compensation } })
+  const otherHunt = booking('hunt-c', '21:00', { classHuntId: 'class-hunt-b', classHuntCompensation: { ...compensation } })
+  const normal = booking('normal', '21:30')
+
+  assert.equal(isSameAttendanceClass(first, sameHunt), true)
+  assert.equal(isSameAttendanceClass(first, otherHunt), false)
+  assert.equal(isSameAttendanceClass(first, normal), false)
 })
 
 test('matches two 25-minute holds to one 50-minute lesson', () => {

@@ -24,6 +24,7 @@ import { getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
+import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import {
   assertAutomaticReconciliationRollbackAllowed,
@@ -247,7 +248,8 @@ export function StudentDetailPage() {
     return () => { cancelled = true }
   }, [lessons.length, student?.subjectId])
 
-  // Helper: compute current expected salary from live rates
+  // Class Hunt lessons keep their published rate even if a subject or teacher
+  // rate later changes. Normal lessons retain the existing live-rate preview.
   const expectedSalary = (lesson: Lesson) => {
     const country = liveRates.teacherCountry[lesson.teacherId] ?? 'VN'
     const rates = liveRates.subjectPrice[lesson.subjectId]
@@ -255,21 +257,25 @@ export function StudentDetailPage() {
       ? getCountryRate(rates, country)
       : { price: lesson.pricePerMinute ?? 0, currency: lesson.currency || 'VND' }
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
-    return { price, currency, level, salary: calculateSalary(lesson.minutes, price, level, currency) }
+    return salaryForLesson(lesson, { pricePerMinute: price, currency, level, calculate: calculateSalary })
   }
 
   // Open recalc dialog after checking payroll paid status
   const openRecalc = async (lesson: Lesson) => {
+    if (classHuntCompensationFromLesson(lesson) || lesson.classHuntCompensation !== undefined) {
+      toast.info('Rate CLASS HUNTING của buổi này đã được chốt. Hãy đối soát qua luồng duyệt lịch nếu cần.')
+      return
+    }
     setRecalcOpening(true)
     try {
-      const { price, currency, level, salary } = expectedSalary(lesson)
+      const { pricePerMinute, currency, level, salary } = expectedSalary(lesson)
       const payrollSnap = await getDocs(
         query(collection(db, 'payroll'), where('lessonId', '==', lesson.id)),
       )
       const docs = payrollSnap.docs.filter(d => !d.data().voided)
       const payrollIds = docs.map(d => d.id)
       const payrollPaid = docs.some(d => d.data().paid === true)
-      setRecalcLesson({ lesson, newPrice: price, newCurrency: currency, newLevel: level, newSalary: salary, payrollPaid, payrollIds })
+      setRecalcLesson({ lesson, newPrice: pricePerMinute, newCurrency: currency, newLevel: level, newSalary: salary, payrollPaid, payrollIds })
     } catch (err) {
       console.error(err)
       toast.error('Không thể kiểm tra payroll')
@@ -516,6 +522,11 @@ export function StudentDetailPage() {
 
   const handleRecalcSalary = async () => {
     if (!recalcLesson) return
+    if (classHuntCompensationFromLesson(recalcLesson.lesson) || recalcLesson.lesson.classHuntCompensation !== undefined) {
+      toast.info('Rate CLASS HUNTING của buổi này đã được chốt. Không thể tính lại theo đơn giá hiện hành.')
+      setRecalcLesson(null)
+      return
+    }
     if (recalcLesson.payrollPaid) {
       toast.warning('Lương buổi này đã thanh toán, không thể tính lại')
       return
@@ -524,6 +535,12 @@ export function StudentDetailPage() {
     try {
       await runTransaction(db, async (tx) => {
         const lessonRef = doc(db, 'lessons', recalcLesson.lesson.id)
+        const lessonSnap = await tx.get(lessonRef)
+        if (!lessonSnap.exists()) throw new Error('Buổi học không còn tồn tại')
+        const lessonNow = lessonSnap.data() as Lesson
+        if (classHuntCompensationFromLesson(lessonNow) || lessonNow.classHuntCompensation !== undefined) {
+          throw new Error('CLASS_HUNT_COMPENSATION_LOCKED')
+        }
         tx.update(lessonRef, {
           salary: recalcLesson.newSalary,
           pricePerMinute: recalcLesson.newPrice,
@@ -562,7 +579,9 @@ export function StudentDetailPage() {
       setRecalcLesson(null)
     } catch (err) {
       console.error(err)
-      toast.error('Tính lại lương thất bại')
+      toast.error(err instanceof Error && err.message === 'CLASS_HUNT_COMPENSATION_LOCKED'
+        ? 'Rate CLASS HUNTING của buổi này đã được chốt. Không thể tính lại theo đơn giá hiện hành.'
+        : 'Tính lại lương thất bại')
     } finally {
       setActioning(false)
     }
@@ -900,6 +919,13 @@ export function StudentDetailPage() {
             payrollPaidAmount: Number(paidPayrollData.amount || 0),
             payrollPaidCurrency: String(paidPayrollData.currency || reversingLesson.currency || 'VND'),
             ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+            ...(Number.isFinite(Number(paidPayrollData.taxWithheldAmount)) ? {
+              payrollPaidTaxWithheldAmount: Number(paidPayrollData.taxWithheldAmount),
+            } : {}),
+            ...(Number.isFinite(Number(paidPayrollData.netPaidAmount)) ? {
+              payrollPaidNetAmount: Number(paidPayrollData.netPaidAmount),
+            } : {}),
+            ...(paidPayrollData.taxSettlement ? { payrollPaidTaxSettlement: paidPayrollData.taxSettlement } : {}),
           } : {}),
           updatedAt: serverTimestamp(),
         })
@@ -1017,6 +1043,10 @@ export function StudentDetailPage() {
 
   const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string, silent = false): Promise<boolean> => {
     if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return false
+    if (classHuntCompensationFromLesson(lesson) || lesson.classHuntCompensation !== undefined) {
+      if (!silent) toast.warning('Buổi CLASS HUNTING có rate đã chốt nên không thể đổi môn bằng công cụ sửa nhanh.')
+      return false
+    }
     if (lesson.bookingSubjectReconciliation) {
       if (!silent) toast.warning('Buổi đã có đối soát môn lịch cũ nên không thể đổi gói bằng công cụ sửa nhanh.')
       return false
@@ -1066,6 +1096,9 @@ export function StudentDetailPage() {
         const currentLesson = lessonSnap.data() as Lesson
         if (currentLesson.status !== lesson.status || currentLesson.subjectId !== lesson.subjectId) {
           throw new Error('Buổi học vừa thay đổi; vui lòng tải lại trước khi đổi môn')
+        }
+        if (classHuntCompensationFromLesson(currentLesson) || currentLesson.classHuntCompensation !== undefined) {
+          throw new Error('Buổi CLASS HUNTING có rate đã chốt; không thể đổi môn bằng công cụ sửa nhanh')
         }
         if (currentLesson.bookingSubjectReconciliation) {
           throw new Error('Buổi đã có đối soát môn lịch cũ; không thể đổi bằng công cụ sửa nhanh')
@@ -1915,9 +1948,11 @@ export function StudentDetailPage() {
                         <select
                           value={lesson.subjectId || ''}
                           onChange={(event) => handleChangeLessonSubject(lesson, event.target.value)}
-                          disabled={changingSubjectLessonId === lesson.id || activeSubjects.length === 0}
+                          disabled={changingSubjectLessonId === lesson.id || activeSubjects.length === 0 || lesson.classHuntCompensation !== undefined}
                           className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:cursor-wait disabled:opacity-60"
-                          title="Đổi môn học và tính lại lương theo đơn giá gói môn"
+                          title={lesson.classHuntCompensation !== undefined
+                            ? 'Rate CLASS HUNTING đã chốt; không thể đổi môn bằng công cụ sửa nhanh'
+                            : 'Đổi môn học và tính lại lương theo đơn giá gói môn'}
                         >
                           {!activeSubjects.some((subject) => subject.subjectId === lesson.subjectId) && lesson.subjectId && (
                             <option value={lesson.subjectId}>{lesson.subjectName || 'Môn cũ'}</option>

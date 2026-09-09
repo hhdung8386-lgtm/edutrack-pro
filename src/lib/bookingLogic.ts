@@ -1,4 +1,5 @@
 import type { BookingRequest, LessonBookingSubjectReconciliation, LessonScheduleCheckSnapshot } from '@/types'
+import { sameClassHuntCompensation } from './classHuntCompensation.ts'
 
 export type LessonBookingReference = {
   id: string
@@ -78,7 +79,8 @@ export function isSameAttendanceClass(left: BookingRequest, right: BookingReques
     && left.studentId === right.studentId
     && (!left.studentCode || !right.studentCode || left.studentCode === right.studentCode)
     && (left.subjectId || '') === (right.subjectId || '')
-    && (left.requestedDate || '') === (right.requestedDate || ''),
+    && (left.requestedDate || '') === (right.requestedDate || '')
+    && sameClassHuntCompensation(left, right),
   )
 }
 

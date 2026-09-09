@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, query, where, onSnapshot, getDocs, writeBatch, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc, deleteField } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, getDocs, doc, serverTimestamp, addDoc, updateDoc, runTransaction, getDoc, deleteField } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Payroll, Teacher, Lesson, Student, StudentSubject, PaymentSettings } from '@/types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { getCurrentMonth, formatMoney, formatMoneyTotals } from '@/lib/constants'
-import { normalizePayrollTaxPolicy, calculatePayrollTax } from '@/lib/payrollTax'
+import { getCurrentMonth, formatMoney } from '@/lib/constants'
+import {
+  normalizePayrollTaxPolicy,
+  planPayrollTaxSettlement,
+  storedPayrollSettlementAmounts,
+  summarizePayrollTaxCurrency,
+  type PayrollTaxCurrencySummary,
+  type PayrollTaxPolicy,
+} from '@/lib/payrollTax'
 import { ChevronLeft, ChevronRight, Download, ChevronDown, ChevronUp, CheckSquare, Search, Gift, MinusCircle, Trash2, Undo2, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { subMonths, format } from 'date-fns'
 import { toast } from '@/stores/toastStore'
@@ -21,6 +28,30 @@ import {
   requiresIndividualSubjectReconciliation,
 } from '@/lib/bookingLogic'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
+
+function payrollCurrency(value?: string): string {
+  return String(value || 'VND').toUpperCase()
+}
+
+function payrollCurrencySummaries(payrolls: Payroll[], policy: PayrollTaxPolicy, month: string): PayrollTaxCurrencySummary[] {
+  return Array.from(new Set(payrolls.map((payroll) => payrollCurrency(payroll.currency))))
+    .sort()
+    .map((currency) => summarizePayrollTaxCurrency(payrolls, currency, policy, month))
+}
+
+function formatPayrollCurrencySummaries(
+  summaries: PayrollTaxCurrencySummary[],
+  amount: 'grossAmount' | 'netAmount',
+): string {
+  if (summaries.length === 0) return formatMoney(0, 'VND')
+  return summaries.map((summary) => formatMoney(summary[amount], summary.currency)).join(' + ')
+}
+
+function createTaxSettlementId(teacherId: string, month: string, currency: string): string {
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  return `tax-${month}-${teacherId}-${currency}-${randomPart}`
+}
 
 export function PayrollPage() {
   const { user } = useAuthStore()
@@ -39,6 +70,7 @@ export function PayrollPage() {
   const [returningToPending, setReturningToPending] = useState(false)
   const [savingAttendanceTeacherId, setSavingAttendanceTeacherId] = useState<string | null>(null)
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null)
+  const [paymentSettingsLoaded, setPaymentSettingsLoaded] = useState(false)
   const taxPolicy = normalizePayrollTaxPolicy(paymentSettings)
 
   const prevMonth = () => {
@@ -105,9 +137,17 @@ export function PayrollPage() {
     })
   }, [])
 
-  useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snap) => {
-    setPaymentSettings(snap.exists() ? snap.data() as PaymentSettings : null)
-  }), [])
+  useEffect(() => onSnapshot(
+    doc(db, 'paymentSettings', 'main'),
+    (snap) => {
+      setPaymentSettings(snap.exists() ? snap.data() as PaymentSettings : null)
+      setPaymentSettingsLoaded(true)
+    },
+    (error) => {
+      console.error('Unable to load payroll tax settings:', error)
+      setPaymentSettingsLoaded(false)
+    },
+  ), [])
 
   useEffect(() => {
     let active = true
@@ -131,36 +171,35 @@ export function PayrollPage() {
   const [year, mon] = month.split('-')
   const monthLabel = `Tháng ${parseInt(mon)} / ${year}`
   
-  // Sum by currency
-  const totalsByCurrency = payrolls.reduce((acc, p) => {
-    const curr = p.currency || 'VND'
-    acc[curr] = (acc[curr] || 0) + p.amount
-    return acc
-  }, {} as Record<string, number>)
-
-  const formatTotals = () => {
-    const keys = Object.keys(totalsByCurrency)
-    if (keys.length === 0) return '0đ'
-    return keys.map(k => formatMoney(totalsByCurrency[k], k)).join(' + ')
-  }
+  const allCurrencySummaries = payrollCurrencySummaries(payrolls, taxPolicy, month)
+  const grossTotalsLabel = formatPayrollCurrencySummaries(allCurrencySummaries, 'grossAmount')
+  const netTotalsLabel = formatPayrollCurrencySummaries(allCurrencySummaries, 'netAmount')
 
   // Group payroll by teacher
   const teacherPayrolls = teachers.map((t) => {
     const tPayrolls = payrolls.filter((p) => p.teacherId === t.id)
     if (tPayrolls.length === 0) return null
-    // Một gia sư có thể có nhiều loại tiền (VD lương dạy bằng PHP + thưởng đánh giá bằng VND).
-    // Khi đó KHÔNG được cộng gộp thành một con số — phải tách theo từng loại tiền.
-    const currencySet = new Set(tPayrolls.map((p) => (p.currency || 'VND').toUpperCase()))
+    const currencySummaries = payrollCurrencySummaries(tPayrolls, taxPolicy, month)
     return {
       teacher: t,
       payrolls: tPayrolls,
-      total: tPayrolls.reduce((s, p) => s + p.amount, 0),
       minutes: tPayrolls.reduce((s, p) => s + p.minutes, 0),
       paid: tPayrolls.every((p) => p.paid),
-      isMixedCurrency: currencySet.size > 1,
-      totalLabel: formatMoneyTotals(tPayrolls.map((p) => ({ amount: p.amount, currency: p.currency })), 'VND'),
+      isMixedCurrency: currencySummaries.length > 1,
+      currencySummaries,
+      grossLabel: formatPayrollCurrencySummaries(currencySummaries, 'grossAmount'),
+      netLabel: formatPayrollCurrencySummaries(currencySummaries, 'netAmount'),
     }
-  }).filter(Boolean) as { teacher: Teacher; payrolls: Payroll[]; total: number; minutes: number; paid: boolean; isMixedCurrency: boolean; totalLabel: string }[]
+  }).filter(Boolean) as {
+    teacher: Teacher
+    payrolls: Payroll[]
+    minutes: number
+    paid: boolean
+    isMixedCurrency: boolean
+    currencySummaries: PayrollTaxCurrencySummary[]
+    grossLabel: string
+    netLabel: string
+  }[]
 
   const filteredTeacherPayrolls = teacherPayrolls.filter(tp => 
     tp.teacher.name.toLowerCase().includes(search.toLowerCase())
@@ -185,43 +224,160 @@ export function PayrollPage() {
     }
   }
 
+  const settleTeacherPayroll = async (teacherId: string) => {
+    // Keep each teacher settlement within one Firestore transaction. A partial
+    // batch would let a concurrent click write different tax snapshots.
+    const candidatePayrolls = payrolls.filter((payroll) => payroll.teacherId === teacherId && !payroll.voided)
+    if (candidatePayrolls.length === 0) return { settledPayrollCount: 0, manualReviewCount: 0 }
+    if (candidatePayrolls.length > 449) {
+      throw new Error('PAYROLL_SETTLEMENT_TOO_LARGE')
+    }
+
+    const payrollRefs = candidatePayrolls.map((payroll) => doc(db, 'payroll', payroll.id))
+    const settingsRef = doc(db, 'paymentSettings', 'main')
+    const logRef = doc(collection(db, 'adminLogs'))
+    const settlementIds = new Map(
+      Array.from(new Set(candidatePayrolls.map((payroll) => payrollCurrency(payroll.currency))))
+        .map((currency) => [currency, createTaxSettlementId(teacherId, month, currency)]),
+    )
+
+    return runTransaction(db, async (transaction) => {
+      const [settingsSnapshot, ...payrollSnapshots] = await Promise.all([
+        transaction.get(settingsRef),
+        ...payrollRefs.map((payrollRef) => transaction.get(payrollRef)),
+      ])
+      const currentPolicy = normalizePayrollTaxPolicy(
+        settingsSnapshot.exists() ? settingsSnapshot.data() as PaymentSettings : null,
+      )
+      const currentPayrolls = payrollSnapshots.flatMap((snapshot) => {
+        if (!snapshot.exists()) return []
+        return [{ id: snapshot.id, ...snapshot.data() } as Payroll]
+      }).filter((payroll) => payroll.teacherId === teacherId && !payroll.voided)
+      const currentUnpaidPayrolls = currentPayrolls.filter((payroll) => payroll.paid !== true)
+      if (currentUnpaidPayrolls.length === 0) return { settledPayrollCount: 0, manualReviewCount: 0 }
+
+      const settlementAudit: Array<{
+        currency: string
+        grossAmount: number
+        taxAmount: number
+        netAmount: number
+        taxableMonthGrossAmount: number
+        taxableMonthTaxAmount: number
+        previouslyWithheldAmount: number
+        unallocatedTaxAmount: number
+        overwithheldTaxAmount: number
+      }> = []
+      let manualReviewCount = 0
+
+      for (const currency of Array.from(new Set(currentUnpaidPayrolls.map((payroll) => payrollCurrency(payroll.currency)))).sort()) {
+        const currencyPayrolls = currentPayrolls.filter((payroll) => payrollCurrency(payroll.currency) === currency)
+        const plan = planPayrollTaxSettlement(currencyPayrolls, currency, currentPolicy, month)
+        const settlementId = settlementIds.get(currency) || createTaxSettlementId(teacherId, month, currency)
+        const lineSettlements = new Map(plan.lineSettlements.map((line) => [line.payrollId, line]))
+        const taxSettlement = {
+          id: settlementId,
+          version: 'monthly-gross-v1' as const,
+          month,
+          currency,
+          grossAmount: plan.grossAmount,
+          taxAmount: plan.taxAmount,
+          netAmount: plan.netAmount,
+          taxableMonthGrossAmount: plan.taxableMonthGrossAmount,
+          taxableMonthTaxAmount: plan.taxableMonthTaxAmount,
+          previouslyWithheldAmount: plan.previouslyWithheldAmount,
+          policy: {
+            version: 'monthly-gross-v1' as const,
+            enabled: plan.policy.enabled,
+            thresholdAmount: plan.policy.thresholdAmount,
+            ratePercent: plan.policy.ratePercent,
+            currency: plan.policy.currency,
+            ...(plan.policy.effectiveFromMonth ? { effectiveFromMonth: plan.policy.effectiveFromMonth } : {}),
+          },
+          settledAt: serverTimestamp(),
+          settledBy: user?.uid || user?.email || '',
+        }
+
+        for (const payroll of currencyPayrolls.filter((item) => item.paid !== true)) {
+          const lineSettlement = lineSettlements.get(payroll.id)
+          if (!lineSettlement) throw new Error('PAYROLL_TAX_SETTLEMENT_MISSING_LINE')
+          transaction.update(doc(db, 'payroll', payroll.id), {
+            paid: true,
+            paidAt: serverTimestamp(),
+            taxWithheldAmount: lineSettlement.taxWithheldAmount,
+            netPaidAmount: lineSettlement.netPaidAmount,
+            taxSettlement,
+          })
+        }
+
+        settlementAudit.push({
+          currency,
+          grossAmount: plan.grossAmount,
+          taxAmount: plan.taxAmount,
+          netAmount: plan.netAmount,
+          taxableMonthGrossAmount: plan.taxableMonthGrossAmount,
+          taxableMonthTaxAmount: plan.taxableMonthTaxAmount,
+          previouslyWithheldAmount: plan.previouslyWithheldAmount,
+          unallocatedTaxAmount: plan.unallocatedTaxAmount,
+          overwithheldTaxAmount: plan.overwithheldTaxAmount,
+        })
+        if (plan.unallocatedTaxAmount > 0 || plan.overwithheldTaxAmount > 0) manualReviewCount += 1
+      }
+
+      transaction.set(logRef, {
+        adminId: user?.uid || '',
+        action: 'MARK_PAID',
+        targetType: 'payroll',
+        targetId: teacherId,
+        changes: {
+          month,
+          teacherId,
+          settledPayrollCount: currentUnpaidPayrolls.length,
+          taxSettlementVersion: 'monthly-gross-v1',
+          taxSettlements: settlementAudit,
+        },
+        createdAt: serverTimestamp(),
+      })
+
+      return { settledPayrollCount: currentUnpaidPayrolls.length, manualReviewCount }
+    })
+  }
+
   const handleMarkPaid = async () => {
     if (selected.size === 0) return
+    if (!paymentSettingsLoaded) {
+      toast.warning('Đang tải cấu hình thuế TNCN. Vui lòng chờ trước khi thanh toán.')
+      return
+    }
+
     setPaying(true)
     try {
-      // Firestore giới hạn 500 thao tác/batch — chia lô để trả cho hàng trăm GV một lần
-      let batch = writeBatch(db)
-      let ops = 0
-      const flushIfFull = async () => {
-        if (ops >= 450) {
-          await batch.commit()
-          batch = writeBatch(db)
-          ops = 0
+      const results = await Promise.allSettled(
+        Array.from(selected).map((teacherId) => settleTeacherPayroll(teacherId)),
+      )
+      const successful = results.filter((result): result is PromiseFulfilledResult<{ settledPayrollCount: number; manualReviewCount: number }> => result.status === 'fulfilled')
+      const settledTeachers = successful.filter((result) => result.value.settledPayrollCount > 0)
+      const manualReviewCount = successful.reduce((sum, result) => sum + result.value.manualReviewCount, 0)
+      const failed = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      failed.forEach((result) => console.error('Unable to settle payroll:', result.reason))
+
+      if (settledTeachers.length > 0) {
+        toast.success(`Đã đánh dấu thanh toán và lưu snapshot thuế cho ${settledTeachers.length} gia sư`)
+      }
+      if (manualReviewCount > 0) {
+        toast.warning(`${manualReviewCount} khoản cần kế toán kiểm tra thuế thủ công; hệ thống không tự hoàn/trừ bù.`)
+      }
+      if (failed.length > 0) {
+        const oversizedSettlements = failed.filter((result) => (
+          result.reason instanceof Error && result.reason.message === 'PAYROLL_SETTLEMENT_TOO_LARGE'
+        )).length
+        if (oversizedSettlements > 0) {
+          toast.error(`${oversizedSettlements} gia sư có hơn 449 dòng lương trong tháng nên chưa được chốt; cần tách/đối soát thủ công để giữ giao dịch nguyên tử.`)
+        }
+        if (failed.length > oversizedSettlements) {
+          toast.error(`${failed.length - oversizedSettlements} gia sư chưa được thanh toán. Mỗi gia sư lỗi không có khoản nào bị ghi dở dang; các gia sư báo thành công đã được chốt.`)
         }
       }
-      for (const teacherId of selected) {
-        const tPayrolls = payrolls.filter((p) => p.teacherId === teacherId && !p.paid)
-        for (const p of tPayrolls) {
-          batch.update(doc(db, 'payroll', p.id), { paid: true, paidAt: serverTimestamp() })
-          ops++
-          await flushIfFull()
-        }
-        batch.set(doc(collection(db, 'adminLogs')), {
-          adminId: user?.uid || '',
-          action: 'MARK_PAID',
-          targetType: 'payroll',
-          targetId: teacherId,
-          changes: { month, teacherId },
-          createdAt: serverTimestamp(),
-        })
-        ops++
-        await flushIfFull()
-      }
-      if (ops > 0) await batch.commit()
-      toast.success(`Đã đánh dấu thanh toán cho ${selected.size} gia sư`)
       setSelected(new Set())
-    } catch {
-      toast.error('Có lỗi xảy ra')
     } finally {
       setPaying(false)
     }
@@ -375,6 +531,13 @@ export function PayrollPage() {
             payrollPaidAmount: Number(paidPayrollData.amount || 0),
             payrollPaidCurrency: String(paidPayrollData.currency || currentLesson.currency || 'VND'),
             ...(paidPayrollData.paidAt ? { payrollPaidAt: paidPayrollData.paidAt } : {}),
+            ...(Number.isFinite(Number(paidPayrollData.taxWithheldAmount)) ? {
+              payrollPaidTaxWithheldAmount: Number(paidPayrollData.taxWithheldAmount),
+            } : {}),
+            ...(Number.isFinite(Number(paidPayrollData.netPaidAmount)) ? {
+              payrollPaidNetAmount: Number(paidPayrollData.netPaidAmount),
+            } : {}),
+            ...(paidPayrollData.taxSettlement ? { payrollPaidTaxSettlement: paidPayrollData.taxSettlement } : {}),
           } : {}),
           updatedAt: serverTimestamp(),
         })
@@ -502,15 +665,35 @@ export function PayrollPage() {
 
   const exportCSV = () => {
     const rows = [
-      ['Teacher', 'Level', 'Minutes', 'Gross', 'Tax', 'Net', 'Currency'],
+      ['Teacher', 'Level', 'Minutes', 'Settlement status', 'Gross', 'Tax', 'Net', 'Currency', 'Tax source'],
       ...teacherPayrolls.flatMap((teacherPayroll) => {
-        const currencySet = new Set(teacherPayroll.payrolls.map((p) => (p.currency || 'VND').toUpperCase()))
-        if (teacherPayroll.isMixedCurrency || currencySet.size !== 1) {
-          return [[teacherPayroll.teacher.name, teacherPayroll.teacher.level, teacherPayroll.minutes, teacherPayroll.total, 0, teacherPayroll.total, 'MULTI']]
-        }
-        const currency = Array.from(currencySet)[0] || 'VND'
-        const taxSummary = calculatePayrollTax(teacherPayroll.total, currency, taxPolicy, month)
-        return [[teacherPayroll.teacher.name, teacherPayroll.teacher.level, teacherPayroll.minutes, taxSummary.gross, taxSummary.tax, taxSummary.net, currency]]
+        return teacherPayroll.currencySummaries.map((summary) => {
+          const minutes = teacherPayroll.payrolls
+            .filter((payroll) => payrollCurrency(payroll.currency) === summary.currency)
+            .reduce((sum, payroll) => sum + payroll.minutes, 0)
+          const settlementStatus = summary.source === 'stored'
+            ? 'Đã thanh toán (snapshot)'
+            : summary.source === 'live'
+              ? 'Chưa thanh toán (ước tính)'
+              : 'Đã thanh toán + chưa thanh toán'
+          const sourceParts = [
+            summary.hasPaidLines ? 'đã trả: snapshot đã lưu' : '',
+            summary.hasUnpaidLines ? 'chưa trả: policy hiện tại' : '',
+            summary.hasLegacyPaidLines ? 'có dòng cũ: gross=net' : '',
+            summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0 ? 'cần kế toán kiểm tra' : '',
+          ].filter(Boolean)
+          return [
+            teacherPayroll.teacher.name,
+            teacherPayroll.teacher.level,
+            minutes,
+            settlementStatus,
+            summary.grossAmount,
+            summary.taxAmount,
+            summary.netAmount,
+            summary.currency,
+            sourceParts.join('; '),
+          ]
+        })
       }),
     ]
     const csv = rows.map((r) => r.join(',')).join('\n')
@@ -530,7 +713,7 @@ export function PayrollPage() {
         </div>
         <div className="flex gap-2">
           {selected.size > 0 && (
-            <Button variant="primary" onClick={handleMarkPaid} loading={paying}>
+            <Button variant="primary" onClick={handleMarkPaid} loading={paying} disabled={!paymentSettingsLoaded} title={paymentSettingsLoaded ? undefined : 'Đang tải cấu hình thuế TNCN'}>
               <CheckSquare className="w-4 h-4" />
               Đánh dấu đã trả ({selected.size})
             </Button>
@@ -572,14 +755,26 @@ export function PayrollPage() {
 
       {/* Total */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
-        <p className="text-sm text-slate-500">Tổng lương phải trả {monthLabel}</p>
-        <p className="text-4xl font-bold text-emerald-400 mt-1">{formatTotals()}</p>
+        <p className="text-sm text-slate-500">Tổng lương thực nhận {monthLabel}</p>
+        <p className="text-4xl font-bold text-emerald-400 mt-1">{netTotalsLabel}</p>
+        <p className="text-xs text-slate-500 mt-1">Gross: {grossTotalsLabel}</p>
         <p className="text-xs text-slate-500 mt-1">{teacherPayrolls.length} gia sư · {payrolls.length} buổi dạy</p>
         <p className="text-[11px] text-slate-400 italic mt-2">
-          {taxPolicy.enabled
+          {!paymentSettingsLoaded
+            ? 'Đang tải cấu hình thuế TNCN; chưa thể chốt thanh toán.'
+            : taxPolicy.enabled
             ? `* Thuế ${taxPolicy.ratePercent}% chỉ áp dụng cho ${taxPolicy.currency} vượt ${formatMoney(taxPolicy.thresholdAmount, taxPolicy.currency)} theo cấu hình.`
             : '* Khấu trừ thuế TNCN hiện đang tắt trong Cài đặt.'}
         </p>
+        {allCurrencySummaries.some((summary) => summary.source === 'mixed') && (
+          <p className="text-[11px] text-slate-500 mt-1">Dòng đã trả dùng snapshot đã lưu; phần chưa trả là ước tính theo cấu hình hiện tại.</p>
+        )}
+        {allCurrencySummaries.some((summary) => summary.hasLegacyPaidLines) && (
+          <p className="text-[11px] text-amber-700 mt-1">Dòng đã trả từ trước khi có snapshot được giữ nguyên Gross = Net; hệ thống không suy đoán lại khoản đã chuyển.</p>
+        )}
+        {allCurrencySummaries.some((summary) => summary.hasPaidSettlementMonthMismatch) && (
+          <p className="text-[11px] text-amber-700 mt-1">Có khoản đã chốt được chuyển sang tháng báo cáo khác; khoản đó không được dùng để bù thuế của tháng này và cần kế toán đối soát.</p>
+        )}
       </Card>
 
       {selectableApprovedPayrolls.length > 0 && (
@@ -627,7 +822,7 @@ export function PayrollPage() {
 
       {/* Per teacher */}
       <div className="space-y-3">
-        {filteredTeacherPayrolls.map(({ teacher, payrolls: tp, total, minutes, paid, isMixedCurrency, totalLabel }) => (
+        {filteredTeacherPayrolls.map(({ teacher, payrolls: tp, minutes, paid, isMixedCurrency, currencySummaries, grossLabel, netLabel }) => (
           <Card key={teacher.id} padding="none">
             <div
               className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-100/20 transition-colors"
@@ -637,6 +832,7 @@ export function PayrollPage() {
                 type="checkbox"
                 aria-label={`Chọn gia sư ${teacher.name}`}
                 checked={selected.has(teacher.id)}
+                disabled={paid}
                 onChange={(e) => {
                   e.stopPropagation()
                   const next = new Set(selected)
@@ -700,23 +896,25 @@ export function PayrollPage() {
                   {paid ? 'Đã trả' : 'Chưa trả'}
                 </Badge>
                 {(() => {
-                  // Nhiều loại tiền -> hiển thị tách riêng, không gộp thành 1 số sai.
                   if (isMixedCurrency) {
-                    return <p className="text-emerald-400 font-semibold text-sm">{totalLabel}</p>
-                  }
-                  const teacherCurrency = tp[0]?.currency || 'VND'
-                  const taxSummary = calculatePayrollTax(total, teacherCurrency, taxPolicy, month)
-                  if (taxSummary.applies) {
                     return (
-                      <div className="text-right flex flex-col justify-end items-end">
-                        <p className="text-[10px] text-slate-400 line-through leading-none">{formatMoney(taxSummary.gross, teacherCurrency)}</p>
-                        <p className="text-emerald-400 font-bold text-sm leading-tight mt-0.5">{formatMoney(taxSummary.net, teacherCurrency)}</p>
-                        <p className="text-[9px] text-rose-500 italic font-medium leading-none mt-0.5">-{taxSummary.policy.ratePercent}% thuế</p>
+                      <div className="text-right">
+                        <p className="text-emerald-500 font-bold text-sm">{netLabel}</p>
+                        <p className="text-[10px] text-slate-400">Gross: {grossLabel}</p>
                       </div>
                     )
                   }
+                  const summary = currencySummaries[0]
+                  if (!summary) return null
                   return (
-                    <p className="text-emerald-400 font-semibold text-sm">{formatMoney(total, teacherCurrency)}</p>
+                    <div className="text-right flex flex-col justify-end items-end">
+                      <p className="text-[10px] text-slate-400 leading-none">Gross: {formatMoney(summary.grossAmount, summary.currency)}</p>
+                      <p className="text-emerald-500 font-bold text-sm leading-tight mt-0.5">Net: {formatMoney(summary.netAmount, summary.currency)}</p>
+                      {summary.taxAmount !== 0 && <p className="text-[9px] text-rose-500 italic font-medium leading-none mt-0.5">-{formatMoney(summary.taxAmount, summary.currency)} thuế</p>}
+                      {summary.source === 'mixed' && <p className="text-[9px] text-slate-400 mt-0.5">Đã chốt + ước tính</p>}
+                      {summary.hasLegacyPaidLines && <p className="text-[9px] text-amber-600 mt-0.5">Có dòng cũ chưa snapshot</p>}
+                      {summary.hasPaidSettlementMonthMismatch && <p className="text-[9px] text-amber-600 mt-0.5">Có dòng đã chốt lệch tháng báo cáo</p>}
+                    </div>
                   )
                 })()}
                 {expanded === teacher.id ? (
@@ -738,7 +936,7 @@ export function PayrollPage() {
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Phút</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Giá/phút</th>
                       <th className="text-left px-5 py-2.5 text-slate-500 font-medium">Level</th>
-                      <th className="text-right px-5 py-2.5 text-slate-500 font-medium">Lương</th>
+                      <th className="text-right px-5 py-2.5 text-slate-500 font-medium">Lương (Gross / Net)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -746,6 +944,7 @@ export function PayrollPage() {
                     {tp.filter((p) => p.type !== 'adjustment').map((p) => {
                       const lesson = lessons.find(l => l.id === p.lessonId)
                       const isSelectable = !!lesson && lesson.status === 'approved' && !p.paid
+                      const settledAmounts = p.paid ? storedPayrollSettlementAmounts(p) : null
                       return (
                         <tr key={p.id} className="border-b border-slate-200/30 hover:bg-slate-100/10">
                           <td className="px-3 py-2.5">
@@ -764,7 +963,15 @@ export function PayrollPage() {
                           <td className="px-5 py-2.5 text-slate-600">{p.minutes}'</td>
                           <td className="px-5 py-2.5 text-slate-600">{formatMoney(p.pricePerMinute, p.currency)}</td>
                           <td className="px-5 py-2.5 text-slate-600">×{p.level}</td>
-                          <td className="px-5 py-2.5 text-emerald-400 text-right font-medium">{formatMoney(p.amount, p.currency)}</td>
+                          <td className="px-5 py-2.5 text-right font-medium">
+                            <p className="text-emerald-500">{formatMoney(p.amount, p.currency)}</p>
+                            {settledAmounts ? (
+                              <p className="mt-0.5 text-[10px] text-slate-500">
+                                Net: {formatMoney(settledAmounts.net, p.currency)}
+                                {settledAmounts.tax !== 0 && <span className="ml-1 text-rose-500">· Thuế {formatMoney(settledAmounts.tax, p.currency)}</span>}
+                              </p>
+                            ) : <p className="mt-0.5 text-[10px] text-slate-400">Chưa chốt thanh toán</p>}
+                          </td>
                         </tr>
                       )
                     })}
@@ -786,6 +993,7 @@ export function PayrollPage() {
                           </tr>
                           {adjustments.map((p) => {
                             const isBonus = p.amount >= 0
+                            const settledAmounts = p.paid ? storedPayrollSettlementAmounts(p) : null
                             return (
                               <tr key={p.id} className={`border-b border-slate-200/30 ${isBonus ? 'bg-emerald-50/40' : 'bg-rose-50/40'}`}>
                                 <td colSpan={6} className="px-5 py-2.5">
@@ -806,7 +1014,8 @@ export function PayrollPage() {
                                   )}
                                 </td>
                                 <td className={`px-5 py-2.5 text-right font-bold ${isBonus ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                  {isBonus ? '+' : ''}{formatMoney(p.amount, p.currency)}
+                                  <p>{isBonus ? '+' : ''}{formatMoney(p.amount, p.currency)}</p>
+                                  {settledAmounts && <p className="mt-0.5 text-[10px] font-medium text-slate-500">Net: {formatMoney(settledAmounts.net, p.currency)}</p>}
                                 </td>
                               </tr>
                             )
@@ -815,47 +1024,53 @@ export function PayrollPage() {
                       )
                     })()}
 
-                    {(() => {
-                      if (isMixedCurrency) {
-                        return (
-                          <tr className="bg-emerald-50/10 text-emerald-600 border-t border-slate-200">
-                            <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Tổng cộng thực nhận (nhiều loại tiền):</td>
-                            <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{totalLabel}</td>
-                          </tr>
-                        )
-                      }
-                      const teacherCurrency = tp[0]?.currency || 'VND'
-                      const taxSummary = calculatePayrollTax(total, teacherCurrency, taxPolicy, month)
-                      if (taxSummary.applies) {
-                        return (
-                          <>
-                            <tr className="bg-slate-50/50">
-                              <td colSpan={6} className="px-5 py-2 text-right text-slate-500 font-medium">Tổng cộng trước thuế (Gross):</td>
-                              <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatMoney(taxSummary.gross, teacherCurrency)}</td>
-                            </tr>
-                            <tr className="bg-rose-50/20 text-rose-500">
-                              <td colSpan={6} className="px-5 py-2 text-right font-medium">Thuế thu nhập cá nhân ({taxSummary.policy.ratePercent}%):</td>
-                              <td className="px-5 py-2 text-right font-bold">-{formatMoney(taxSummary.tax, teacherCurrency)}</td>
-                            </tr>
-                            <tr className="bg-emerald-50/20 text-emerald-600 border-t border-slate-200">
-                              <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
-                              <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatMoney(taxSummary.net, teacherCurrency)}</td>
-                            </tr>
-                            <tr>
-                              <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-slate-400 italic">
-                                * Thu nhập vượt {formatMoney(taxSummary.policy.thresholdAmount, taxSummary.policy.currency)} sẽ bị khấu trừ {taxSummary.policy.ratePercent}% theo cấu hình.
-                              </td>
-                            </tr>
-                          </>
-                        )
-                      }
-                      return (
-                        <tr className="bg-emerald-50/10 text-emerald-600 border-t border-slate-200">
-                          <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Tổng cộng thực nhận:</td>
-                          <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatMoney(total, teacherCurrency)}</td>
+                    {currencySummaries.map((summary) => (
+                      <Fragment key={summary.currency}>
+                        <tr className="bg-slate-50/50">
+                          <td colSpan={6} className="px-5 py-2 text-right text-slate-500 font-medium">
+                            {currencySummaries.length > 1 ? `${summary.currency} · ` : ''}Tổng cộng trước thuế (Gross):
+                          </td>
+                          <td className="px-5 py-2 text-right text-slate-700 font-bold">{formatMoney(summary.grossAmount, summary.currency)}</td>
                         </tr>
-                      )
-                    })()}
+                        {summary.taxAmount !== 0 && (
+                          <tr className="bg-rose-50/20 text-rose-500">
+                            <td colSpan={6} className="px-5 py-2 text-right font-medium">
+                              {summary.source === 'stored'
+                                ? 'Thuế TNCN đã chốt:'
+                                : summary.source === 'live'
+                                  ? 'Thuế TNCN ước tính:'
+                                  : 'Thuế TNCN (đã chốt + ước tính):'}
+                            </td>
+                            <td className="px-5 py-2 text-right font-bold">-{formatMoney(summary.taxAmount, summary.currency)}</td>
+                          </tr>
+                        )}
+                        <tr className="bg-emerald-50/20 text-emerald-600 border-t border-slate-200">
+                          <td colSpan={6} className="px-5 py-2.5 text-right font-semibold">Lương thực nhận (Net):</td>
+                          <td className="px-5 py-2.5 text-right font-bold text-emerald-600 text-sm">{formatMoney(summary.netAmount, summary.currency)}</td>
+                        </tr>
+                        {summary.source === 'mixed' && (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-slate-500 italic">
+                              * Phần đã thanh toán dùng snapshot đã lưu; phần chưa thanh toán là ước tính theo cấu hình hiện tại.
+                            </td>
+                          </tr>
+                        )}
+                        {summary.hasLegacyPaidLines && (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-amber-700 italic">
+                              * Có dòng đã trả từ trước khi có snapshot: hệ thống giữ nguyên Gross = Net, không suy đoán lại khoản đã chuyển.
+                            </td>
+                          </tr>
+                        )}
+                        {(summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0) && (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-2 text-right text-[10px] text-amber-700 font-medium">
+                              * Cần kế toán kiểm tra thuế thủ công: {summary.unallocatedTaxAmount > 0 ? `còn cần phân bổ ${formatMoney(summary.unallocatedTaxAmount, summary.currency)}` : `đã khấu trừ vượt ${formatMoney(summary.overwithheldTaxAmount, summary.currency)}`}.
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
                   </tbody>
                 </table>
                 <AdjustmentBar

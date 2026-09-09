@@ -27,6 +27,13 @@ import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import {
+  classHuntCompensationFromBookings,
+  classHuntCompensationFromLesson,
+  classHuntCompensationLegacyFields,
+  classHuntCompensationSalary,
+  classHuntPayrollCompensationFields,
+} from '@/lib/classHuntCompensation'
+import {
   auditLessonForAdmin, describeDailyCount, describeSchedule, formatShortDate,
   countsAsDailyAttendance,
   type AttendanceAudit, type AuditMessage,
@@ -460,7 +467,8 @@ export function ApprovalsPage() {
           }, reconciliationDraft)
           if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const teacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
+          const classHuntCompensation = classHuntCompensationFromBookings(bookingNows)
+          const legacyTeacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
 
           const lessonMinutes = Number(lessonNow.minutes) || 0
           const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
@@ -512,11 +520,16 @@ export function ApprovalsPage() {
             throw new Error('NOT_ENOUGH_POINTS')
           }
           const freshSubjectPkg = subPkg
-          const { price: pricePerMinute, currency } = getCountryRate(
+          const legacyRate = getCountryRate(
             freshSubjectPkg,
             teacherData?.country || 'VN',
           )
-          const salary = calculateSalary(Number(lessonNow.minutes) || 0, pricePerMinute, teacherLevel, currency)
+          const pricePerMinute = classHuntCompensation?.ratePerMinute ?? legacyRate.price
+          const currency = classHuntCompensation?.currency ?? legacyRate.currency
+          const teacherLevel = classHuntCompensation ? 1 : legacyTeacherLevel
+          const salary = classHuntCompensation
+            ? classHuntCompensationSalary(Number(lessonNow.minutes) || 0, classHuntCompensation)
+            : calculateSalary(Number(lessonNow.minutes) || 0, pricePerMinute, teacherLevel, currency)
           const month = String(lessonNow.date || '').slice(0, 7)
           const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
@@ -560,6 +573,7 @@ export function ApprovalsPage() {
             teacherLevel,
             pricePerMinute,
             currency,
+            ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             subjectId: freshSubjectPkg.subjectId,
@@ -663,6 +677,7 @@ export function ApprovalsPage() {
             level: teacherLevel,
             month,
             ...buildPayrollApprovalFields(lessonNow, salary, currency),
+            ...(classHuntCompensation ? classHuntPayrollCompensationFields(classHuntCompensation) : {}),
             createdAt: serverTimestamp(),
           })
 
@@ -728,6 +743,8 @@ export function ApprovalsPage() {
         toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
       } else if (message === 'BOOKING_RECONCILIATION_INVALID') {
         toast.error('Dữ liệu lịch hoặc gói môn vừa thay đổi. Đối soát chưa được ghi; vui lòng mở lại và kiểm tra.')
+      } else if (message === 'CLASS_HUNT_COMPENSATION_INVALID') {
+        toast.error('Rate riêng của lớp chưa nhất quán. Chưa duyệt buổi; vui lòng kiểm tra Class Hunting trước.')
       } else if (message === 'BOOKING_SUBJECT_PACKAGE_AMBIGUOUS') {
         toast.error('Không xác định duy nhất gói môn cần trừ. Chưa thay đổi dữ liệu; vui lòng đối soát hồ sơ học viên.')
       } else if (message === 'BOOKING_MATCH_AMBIGUOUS' || message === 'BOOKING_REFERENCE_INVALID') {
@@ -1115,6 +1132,11 @@ export function ApprovalsPage() {
               const chosen = approveStudentSubjects.find(s => s.subjectId === approveSubjectId)
               if (!chosen) return null
               const isOutOfSessions = chosen.remainingMinutes <= 0 || chosen.remainingSessions <= 0
+              const classHuntCompensation = classHuntCompensationFromLesson(approvingLesson)
+              const previewCurrency = classHuntCompensation?.currency || chosen.currency || 'VND'
+              const previewSalary = classHuntCompensation
+                ? classHuntCompensationSalary(approvingLesson.minutes, classHuntCompensation)
+                : calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1, previewCurrency)
               return (
                 <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
                   <div className="flex justify-between">
@@ -1124,12 +1146,9 @@ export function ApprovalsPage() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Lương gia sư (tính theo môn chọn)</span>
+                    <span className="text-slate-500">{classHuntCompensation ? 'Lương gia sư (rate lớp đã chốt)' : 'Lương gia sư (tính theo môn chọn)'}</span>
                     <span className="text-emerald-500 font-semibold">
-                      +{formatMoney(
-                        calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1, chosen.currency || 'VND'),
-                        chosen.currency || 'VND'
-                      )}
+                      +{formatMoney(previewSalary, previewCurrency)}
                     </span>
                   </div>
                 </div>

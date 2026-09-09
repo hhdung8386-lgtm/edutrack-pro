@@ -3,8 +3,13 @@ const test = require('node:test')
 
 const {
   CLASS_HUNT_DEFAULT_TTL_MINUTES,
+  CLASS_HUNT_COMPENSATION_CURRENCY,
+  CLASS_HUNT_COMPENSATION_FORMULA,
+  CLASS_HUNT_COMPENSATION_VERSION,
   ClassHuntValidationError,
   buildClassHuntDraft,
+  classHuntClaimConflictReason,
+  classHuntCompensationAmount,
   buildFutureClassHuntSessions,
   classHuntDateTimeMs,
   classHuntLessonPoints,
@@ -12,6 +17,7 @@ const {
   classHuntPublicSlot,
   classHuntPublishFingerprint,
   classHuntPublishRequestDocumentId,
+  createClassHuntCompensation,
   decideClassHuntClaim,
   effectiveClassHuntStatus,
   effectiveClassHuntHeldPoints,
@@ -22,11 +28,13 @@ const {
   heldPointsForClassHuntBookings,
   heldPointsForClassHuntSubject,
   isActiveIndividualOnlineStudent,
+  isClassHuntTeacherProfileComplete,
+  isClassHuntCompensation,
   isClassHuntSessionShape,
   isEligibleOnlineClassHuntTeacher,
   isSafeClassHuntClientRequestId,
-  isTeacherAvailableForClassHuntSessions,
   resolveClassHuntSubjectFund,
+  sanitizeClassHuntForTeacher,
   studentClassHuntTotals,
   teacherMatchesClassHuntSubject,
 } = require('../lib/classHunting.js')
@@ -80,6 +88,12 @@ test('CLASS HUNTING publish retries recover only the exact original selection', 
     sessionCount: 13,
     createdAtMs: NOW_MS,
     expiresAtMs: NOW_MS + CLASS_HUNT_DEFAULT_TTL_MINUTES * 60_000,
+    classHuntCompensation: {
+      version: CLASS_HUNT_COMPENSATION_VERSION,
+      ratePerMinute: 50_000,
+      currency: CLASS_HUNT_COMPENSATION_CURRENCY,
+      formula: CLASS_HUNT_COMPENSATION_FORMULA,
+    },
   }
   const exact = {
     studentId: 'student-1',
@@ -90,6 +104,7 @@ test('CLASS HUNTING publish retries recover only the exact original selection', 
     startTime: '9:00',
     minutes: 50,
     sessionCount: 13,
+    compensationRatePerMinute: 50_000,
   }
 
   assert.equal(classHuntPublishRetryMatches(exact, stored), true)
@@ -97,6 +112,15 @@ test('CLASS HUNTING publish retries recover only the exact original selection', 
   assert.equal(classHuntPublishRetryMatches({ ...exact, subjectId: 'subject-l3' }, stored), false)
   assert.equal(classHuntPublishRetryMatches({ ...exact, sessionCount: 12 }, stored), false)
   assert.equal(classHuntPublishRetryMatches({ ...exact, weekdays: ['mon', 'wed', 'fri', 'fri'] }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...exact, compensationRatePerMinute: 50_001 }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...exact, compensationRatePerMinute: undefined }, stored), false)
+
+  const legacyStored = { ...stored }
+  delete legacyStored.classHuntCompensation
+  const legacyRequest = { ...exact }
+  delete legacyRequest.compensationRatePerMinute
+  assert.equal(classHuntPublishRetryMatches(legacyRequest, legacyStored), true)
+  assert.equal(classHuntPublishRetryMatches(exact, legacyStored), false)
 })
 
 test('a passed slot today is never silently moved or included', () => {
@@ -145,21 +169,78 @@ test('duration, count, and extended 24:xx clock values remain canonical', () => 
   }), (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_DAYS_INVALID')
 })
 
-test('availability requires every session and honors week overrides', () => {
-  const sessions = [mondaySession(), mondaySession({ dateISO: '2026-09-14', requestedWeekStart: '2026-09-14' })]
-  const baseSlots = {
-    mon: { available: true, timeRanges: [{ start: '18:00', end: '22:00' }] },
-  }
-  assert.equal(isTeacherAvailableForClassHuntSessions({ slots: baseSlots }, sessions), true)
-  assert.equal(isTeacherAvailableForClassHuntSessions({
-    slots: baseSlots,
-    weekOverrides: {
-      '2026-09-07': { slots: { mon: { available: false, timeRanges: [] } } },
-    },
-  }, sessions), false)
-  assert.equal(isTeacherAvailableForClassHuntSessions({
-    slots: { mon: { available: true, timeRanges: [{ start: '19:10', end: '20:00' }] } },
-  }, [mondaySession()]), false)
+test('CLASS HUNTING locks an exact VND-per-minute compensation snapshot without a level multiplier', () => {
+  const compensation = createClassHuntCompensation(50_000)
+  assert.deepEqual(compensation, {
+    version: 1,
+    ratePerMinute: 50_000,
+    currency: 'VND',
+    formula: 'flat_per_minute',
+  })
+  assert.equal(isClassHuntCompensation(compensation), true)
+  assert.equal(isClassHuntCompensation({ ...compensation, ratePerMinute: 50_000.5 }), false)
+  assert.equal(isClassHuntCompensation({ ...compensation, currency: 'USD' }), false)
+  // 50,000 VND/minute × 50 minutes; no teacher level appears in this formula.
+  assert.equal(classHuntCompensationAmount(compensation, 50), 2_500_000)
+  assert.equal(classHuntCompensationAmount(compensation, 50, 4), 10_000_000)
+  assert.throws(() => createClassHuntCompensation(0), (cause) => (
+    cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
+  ))
+  assert.throws(() => createClassHuntCompensation(12.5), (cause) => (
+    cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
+  ))
+  assert.throws(() => classHuntCompensationAmount(createClassHuntCompensation(Number.MAX_SAFE_INTEGER), 25), (cause) => (
+    cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_COMPENSATION_AMOUNT_OVERFLOW'
+  ))
+})
+
+test('teacher Class Hunting payload exposes only a valid immutable compensation snapshot', () => {
+  const compensation = createClassHuntCompensation(42_000)
+  const sanitized = sanitizeClassHuntForTeacher({
+    id: 'hunt-a',
+    status: 'open',
+    subjectName: 'Tiếng Anh',
+    requestedMinutes: 50,
+    sessions: [mondaySession()],
+    expiresAtMs: NOW_MS + 60_000,
+    classHuntCompensation: compensation,
+  })
+  assert.deepEqual(sanitized?.classHuntCompensation, compensation)
+  assert.notEqual(sanitized?.classHuntCompensation, compensation)
+
+  const legacy = sanitizeClassHuntForTeacher({
+    id: 'hunt-legacy', status: 'open', subjectName: 'Tiếng Anh', requestedMinutes: 50,
+    sessions: [mondaySession()], expiresAtMs: NOW_MS + 60_000,
+  })
+  assert.equal(legacy?.classHuntCompensation, undefined)
+  assert.equal(sanitizeClassHuntForTeacher({
+    id: 'hunt-corrupt', status: 'open', subjectName: 'Tiếng Anh', requestedMinutes: 50,
+    sessions: [mondaySession()], expiresAtMs: NOW_MS + 60_000,
+    classHuntCompensation: { ...compensation, formula: 'teacher_level' },
+  }), null)
+})
+
+test('CLASS HUNTING ignores declared availability and preserves real timetable conflicts', () => {
+  const session = mondaySession()
+  // There is deliberately no availability input in the CLASS HUNTING
+  // timetable decision: only saved teaching bookings can block the claim.
+  assert.deepEqual(findClassHuntBookingConflicts({
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    sessions: [session],
+    bookings: [],
+  }), [])
+
+  const conflicts = findClassHuntBookingConflicts({
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    sessions: [session],
+    bookings: [{
+      id: 'teacher-overlap', status: 'confirmed', teacherId: 'teacher-a', studentId: 'other-student',
+      requestedDate: '2026-09-07', requestedStart: '19:25', requestedEnd: '19:50', requestedMinutes: 25,
+    }],
+  })
+  assert.equal(classHuntClaimConflictReason(conflicts), 'teacher')
 })
 
 test('only an active individual online student and exact eligible teacher subject match', () => {
@@ -173,6 +254,27 @@ test('only an active individual online student and exact eligible teacher subjec
   assert.equal(teacherMatchesClassHuntSubject(teacher, 'same-name-but-different-id'), false)
   assert.equal(isEligibleOnlineClassHuntTeacher({ ...teacher, isTester: true }), false)
   assert.equal(isEligibleOnlineClassHuntTeacher({ ...teacher, teachingFormats: ['offline'] }), false)
+})
+
+test('CLASS HUNTING keeps required teacher-profile eligibility separate from availability', () => {
+  const completeProfile = {
+    photoURL: 'https://cdn.example.test/teacher.jpg',
+    gender: 'female',
+    yob: 1990,
+    livingArea: 'Hà Nội',
+    degreeType: 'Bachelor',
+    university: 'Đại học',
+    major: 'English',
+    teachingYears: 4,
+    bankName: 'Bank',
+    bankAccountNo: '0123456789',
+    bankAccountName: 'Nguyen Van A',
+  }
+  assert.equal(isClassHuntTeacherProfileComplete(completeProfile), true)
+  assert.equal(isClassHuntTeacherProfileComplete({ ...completeProfile, bankAccountNo: '   ' }), false)
+  assert.equal(isClassHuntTeacherProfileComplete({ ...completeProfile, teachingYears: 0 }), false)
+  // There is intentionally no availability field in this predicate.
+  assert.equal(isClassHuntTeacherProfileComplete({ ...completeProfile, teachingFormats: ['online'] }), true)
 })
 
 test('booking conflict scan uses half-open absolute intervals, including 24:xx crossover', () => {
@@ -205,6 +307,17 @@ test('booking conflict scan uses half-open absolute intervals, including 24:xx c
     ['booking-next-day', ['teacher']],
     ['group-member-overlap', ['student']],
   ])
+
+  const canonicalDurationConflicts = findClassHuntBookingConflicts({
+    teacherId: 'teacher-a',
+    studentId: 'student-a',
+    sessions: [mondaySession({ requestedStart: '19:40', requestedEnd: '20:30' })],
+    bookings: [{
+      id: 'legacy-display-end', status: 'confirmed', teacherId: 'teacher-a', studentId: 'other-student',
+      requestedDate: '2026-09-07', requestedStart: '19:00', requestedEnd: '19:25', requestedMinutes: 50,
+    }],
+  })
+  assert.deepEqual(canonicalDurationConflicts.map((conflict) => conflict.bookingId), ['legacy-display-end'])
 })
 
 test('subject-package funds fail closed for duplicate rows and legacy single-subject data remains compatible', () => {
@@ -343,13 +456,30 @@ test('publish idempotency is actor-scoped and canonical request content is stabl
     classHuntPublishRequestDocumentId('admin-b', requestId),
   )
   const first = buildClassHuntDraft({
-    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['thu', 'mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2,
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['thu', 'mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000,
   }, NOW_MS)
   const same = buildClassHuntDraft({
-    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon', 'thu'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2,
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon', 'thu'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000,
   }, NOW_MS)
   assert.equal(classHuntPublishFingerprint(first), classHuntPublishFingerprint(same))
   assert.equal(first.expiresInMinutes, CLASS_HUNT_DEFAULT_TTL_MINUTES)
+  assert.deepEqual(first.classHuntCompensation, {
+    version: 1,
+    ratePerMinute: 50_000,
+    currency: 'VND',
+    formula: 'flat_per_minute',
+  })
+  assert.notEqual(
+    classHuntPublishFingerprint(first),
+    classHuntPublishFingerprint({ ...first, classHuntCompensation: createClassHuntCompensation(50_001) }),
+  )
+  assert.throws(() => buildClassHuntDraft({
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 1, compensationRatePerMinute: -1,
+  }, NOW_MS), (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID')
+  const legacy = buildClassHuntDraft({
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 1,
+  }, NOW_MS)
+  assert.equal(legacy.classHuntCompensation, undefined)
 })
 
 test('claim lifecycle gives first eligible teacher the only write path', () => {

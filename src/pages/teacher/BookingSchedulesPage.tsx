@@ -32,6 +32,10 @@ import {
   isSameAttendanceClass,
 } from '@/lib/bookingLogic'
 import {
+  classHuntCompensationFromBookings,
+  classHuntCompensationLegacyFields,
+} from '@/lib/classHuntCompensation'
+import {
   AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
   composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
 } from '@/components/lessons/absenceReport'
@@ -744,6 +748,9 @@ export function BookingSchedulesPage() {
         const freshAttendanceBookings = bookingSnaps
           .slice(0, attendanceBookings.length)
           .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
+        const freshFollowUpBookings = bookingSnaps
+          .slice(attendanceBookings.length)
+          .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
         const freshPrimaryBooking = freshAttendanceBookings[0]
         const subjectId = freshPrimaryBooking?.subjectId || expectedSubjectId
         if (
@@ -770,22 +777,34 @@ export function BookingSchedulesPage() {
           throw new Error('STUDENT_EXPIRED')
         }
 
-        // Load pricing snapshot from subject or student subject rates
+        // A Class Hunt compensation is authoritative only when it came back
+        // from the confirmed booking rows read in this transaction. Never use
+        // a browser-provided lesson marker as a payroll override.
+        const classHuntCompensation = classHuntCompensationFromBookings(freshAttendanceBookings)
+
+        // Load normal pricing from subject/student rates. Class Hunt uses its
+        // immutable flat VND/minute snapshot instead, with no teacher level
+        // multiplier.
         let pricePerMinute = 0
         let currency = 'VND'
-        const teacherCountry = teacherData?.country || 'VN'
-        const activeSub = studentData.subjects?.find(s => s.subjectId === subjectId)
-        if (activeSub) {
-          const rate = getCountryRate(activeSub, teacherCountry)
-          pricePerMinute = rate.price
-          currency = rate.currency
-        } else if (subjectSnap.exists()) {
-          // Keep every Firestore read inside this transaction. An unrelated
-          // getDoc here used to leave the submit button spinning on a stalled
-          // network while the transaction itself could not settle.
-          const rate = getCountryRate(subjectSnap.data() as Subject, teacherCountry)
+        if (classHuntCompensation) {
+          pricePerMinute = classHuntCompensation.ratePerMinute
+          currency = classHuntCompensation.currency
+        } else {
+          const teacherCountry = teacherData?.country || 'VN'
+          const activeSub = studentData.subjects?.find(s => s.subjectId === subjectId)
+          if (activeSub) {
+            const rate = getCountryRate(activeSub, teacherCountry)
             pricePerMinute = rate.price
             currency = rate.currency
+          } else if (subjectSnap.exists()) {
+            // Keep every Firestore read inside this transaction. An unrelated
+            // getDoc here used to leave the submit button spinning on a stalled
+            // network while the transaction itself could not settle.
+            const rate = getCountryRate(subjectSnap.data() as Subject, teacherCountry)
+            pricePerMinute = rate.price
+            currency = rate.currency
+          }
         }
 
         const mps = studentData.minutesPerSession || 50
@@ -837,9 +856,10 @@ export function BookingSchedulesPage() {
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,
             minutesAfterApproval: currentRemainingMinutes,
-            teacherLevel: teacherData.level ?? 1,
+            teacherLevel: classHuntCompensation ? 1 : (teacherData.level ?? 1),
             pricePerMinute,
             currency,
+            ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             salary: 0,
             bookingRequestId: primaryBooking.id,
             ...(attendanceBookings.length > 1 ? { bookingRequestIds: attendanceBookings.map((booking) => booking.id) } : {}),
@@ -856,7 +876,8 @@ export function BookingSchedulesPage() {
 
         // 3. Các ca còn lại trong ngày: ghi vắng theo, 0 phút -> lương = 0
         //    => cả ngày chỉ tính tiền MỘT lần 25 phút, dù lớp 25/50/100 phút.
-        for (const followUpBooking of followUpBookings) {
+        for (const followUpBooking of freshFollowUpBookings) {
+          const followUpCompensation = classHuntCompensationFromBookings([followUpBooking])
           const followUpLessonRef = doc(collection(db, 'lessons'))
           tx.set(followUpLessonRef, {
             studentId: studentData.id,
@@ -884,9 +905,10 @@ export function BookingSchedulesPage() {
             sessionsAfterApproval: studentData.remainingSessions,
             minutesBeforeApproval: currentRemainingMinutes,
             minutesAfterApproval: currentRemainingMinutes,
-            teacherLevel: teacherData.level ?? 1,
+            teacherLevel: followUpCompensation ? 1 : (teacherData.level ?? 1),
             pricePerMinute,
             currency,
+            ...(followUpCompensation ? classHuntCompensationLegacyFields(followUpCompensation) : {}),
             salary: 0,
             bookingRequestId: followUpBooking.id,
             // Dấu vết: buổi vắng "ăn theo" ca trước, huỷ ca trước thì huỷ luôn buổi này
@@ -932,9 +954,11 @@ export function BookingSchedulesPage() {
             ? (lang === 'vi' ? 'Không tìm thấy hồ sơ học viên của ca này.' : 'The student profile for this session could not be found.')
               : errorMessage === 'BOOKING_NOT_FOUND'
               ? (lang === 'vi' ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.' : 'The booking no longer exists. Reload the schedule.')
-              : errorMessage === 'BOOKING_CLASS_CHANGED'
-                ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
-              : errorMessage === 'STUDENT_EXPIRED'
+                : errorMessage === 'BOOKING_CLASS_CHANGED'
+                  ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
+                : errorMessage === 'CLASS_HUNT_COMPENSATION_INVALID'
+                  ? (lang === 'vi' ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.' : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
+                : errorMessage === 'STUDENT_EXPIRED'
                 ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
                 : errorMessage === 'TEACHER_NOT_FOUND'
                   ? (lang === 'vi' ? 'Không tìm thấy hồ sơ gia sư. Vui lòng báo giáo vụ kiểm tra tài khoản.' : 'The teacher profile could not be found. Ask the academic team to check the account.')

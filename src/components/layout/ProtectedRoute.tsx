@@ -226,13 +226,16 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     return <Navigate to="/teacher/contract" replace />
   }
 
-  // Check if teacher needs to register availability slots (after contract accepted)
+  // Class Hunting is an explicit opt-in: a contracted tutor may receive a
+  // class even when they have not opened any availability. All other teacher
+  // routes keep the existing availability-setup requirement.
   if (hasCurrentRequirementsDecision && requireContractAccepted && role === 'teacher' && hasAcceptedContract && !hasRegisteredAvailability) {
     // Hồ sơ chưa hoàn thiện được TeacherLayout đưa về /teacher/profile. Phải cho
     // route hồ sơ đi qua trước; nếu ép sang lịch rảnh ở đây, hai lớp sẽ redirect
     // /teacher/profile <-> /teacher/availability vô hạn đối với gia sư mới.
     const isProfileSetupRoute = location.pathname === '/teacher/profile'
-    if (location.pathname !== '/teacher/availability' && !isProfileSetupRoute) {
+    const isClassHuntingRoute = location.pathname === '/teacher/class-hunting'
+    if (location.pathname !== '/teacher/availability' && !isProfileSetupRoute && !isClassHuntingRoute) {
       return <Navigate to="/teacher/availability?setupRequired=true" replace />
     }
   }

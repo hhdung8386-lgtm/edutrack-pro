@@ -9,13 +9,13 @@ import {
   Send,
   Target,
   UserRound,
-  UsersRound,
   XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import {
   cancelClassHunt,
@@ -63,6 +63,20 @@ function formatDate(date?: string) {
   return year && month && day ? `${day}/${month}/${year}` : date
 }
 
+function formatVND(amount: number) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function compensationSummary(ratePerMinute: number, minutes: number, sessionCount: number) {
+  const perLesson = ratePerMinute * minutes
+  const total = perLesson * sessionCount
+  return `${formatVND(ratePerMinute)}/phút · ${formatVND(perLesson)}/buổi · ${formatVND(total)}/${sessionCount} buổi`
+}
+
 function weekdayLabel(day: DayOfWeek) {
   return WEEKDAYS.find((item) => item.value === day)?.label || day
 }
@@ -100,6 +114,8 @@ function createPublishRequestId() {
 }
 
 export function ClassHuntingPage() {
+  const role = useAuthStore((state) => state.role)
+  const canCreateRateBearingHunt = role === 'admin'
   const [studentCode, setStudentCode] = useState('')
   const [lookup, setLookup] = useState<ClassHuntPreview | null>(null)
   const [preview, setPreview] = useState<ClassHuntPreview | null>(null)
@@ -121,6 +137,7 @@ export function ClassHuntingPage() {
     startTime: '19:00',
     minutes: 50,
     sessionCount: 1,
+    compensationRatePerMinute: 0,
   })
   const publishRequestIdsRef = useRef<Record<string, string>>({})
   const lookupRequestRef = useRef(0)
@@ -137,6 +154,9 @@ export function ClassHuntingPage() {
     () => lookup?.subjects.find((subject) => subject.id === form.subjectId),
     [form.subjectId, lookup],
   )
+  const hasSafeDraftCompensation = Number.isSafeInteger(form.compensationRatePerMinute)
+    && form.compensationRatePerMinute > 0
+    && Number.isSafeInteger(form.compensationRatePerMinute * form.minutes * form.sessionCount)
 
   const loadHunts = useCallback(async () => {
     setHuntsError('')
@@ -222,6 +242,10 @@ export function ClassHuntingPage() {
   }
 
   const validateDraft = () => {
+    if (!canCreateRateBearingHunt) {
+      toast.error('Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.')
+      return false
+    }
     if (!lookup?.student) {
       toast.error('Hãy kiểm tra đúng mã học viên trước.')
       return false
@@ -258,6 +282,14 @@ export function ClassHuntingPage() {
       toast.error('Số buổi phải từ 1 đến 24.')
       return false
     }
+    if (!Number.isSafeInteger(draft.compensationRatePerMinute) || draft.compensationRatePerMinute <= 0) {
+      toast.error('Nhập đơn giá lớp là số nguyên VND lớn hơn 0.')
+      return false
+    }
+    if (!hasSafeDraftCompensation) {
+      toast.error('Đơn giá và tổng giá trị lớp vượt giới hạn tính toán an toàn.')
+      return false
+    }
     return true
   }
 
@@ -271,14 +303,16 @@ export function ClassHuntingPage() {
       if (requestId !== previewRequestRef.current) return
       setPreview(nextPreview)
       setPreviewKey(draftKey(draft))
-      if (nextPreview.eligibleTeachers.length === 0) {
-        toast.warning('Chưa có gia sư nào khớp toàn bộ lịch này. Hãy đổi khung giờ hoặc ngày học.')
-      }
     } catch (error) {
       if (requestId !== previewRequestRef.current) return
       console.error('Class hunt preview failed:', error)
       clearSchedulePreview()
-      toast.error('Chưa kiểm tra được lịch và gia sư phù hợp. Dữ liệu chưa được tạo.')
+      const reason = classHuntErrorReason(error)
+      toast.error(reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
+        ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
+        : reason === 'CLASS_HUNT_COMPENSATION_AMOUNT_OVERFLOW'
+          ? 'Đơn giá và tổng giá trị lớp vượt giới hạn tính toán an toàn.'
+          : 'Chưa kiểm tra được lịch lớp. Dữ liệu chưa được tạo.')
     } finally {
       if (requestId === previewRequestRef.current) setPreviewing(false)
     }
@@ -287,7 +321,8 @@ export function ClassHuntingPage() {
   const canPublish = Boolean(
     preview
     && previewKey === draftKey(draft)
-    && preview.eligibleTeachers.length > 0,
+    && canCreateRateBearingHunt
+    && preview.classHuntCompensation?.ratePerMinute === draft.compensationRatePerMinute,
   )
 
   const handlePublish = async () => {
@@ -300,18 +335,20 @@ export function ClassHuntingPage() {
     publishRequestIdsRef.current[publishKey] = clientRequestId
     setPublishing(true)
     try {
-      const hunt = await publishClassHunt(draft, clientRequestId)
+      await publishClassHunt(draft, clientRequestId)
       setPublishConfirmOpen(false)
       clearSchedulePreview()
       delete publishRequestIdsRef.current[publishKey]
-      toast.success(`Đã mở CLASS HUNTING${hunt.eligibleTeacherCount ? ` cho ${hunt.eligibleTeacherCount} gia sư phù hợp` : ''}.`)
+      toast.success('Đã mở CLASS HUNTING. Gia sư đúng chuyên môn có thể nhận lớp ngay.')
       await loadHunts()
     } catch (error) {
       console.error('Publish class hunt failed:', error)
       const reason = classHuntErrorReason(error)
-      toast.error(reason === 'NO_ELIGIBLE_TEACHER' || reason === 'CLASS_HUNT_NO_ELIGIBLE_TEACHER'
-        ? 'Không còn gia sư phù hợp khi đăng. Hãy kiểm tra lại lịch.'
-        : 'Chưa đăng được CLASS HUNTING. Dữ liệu chưa bị trừ.')
+      toast.error(reason === 'CLASS_HUNT_COMPENSATION_ADMIN_REQUIRED'
+        ? 'Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.'
+        : reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
+          ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
+          : 'Chưa đăng được CLASS HUNTING. Dữ liệu chưa bị trừ.')
     } finally {
       setPublishing(false)
     }
@@ -355,9 +392,9 @@ export function ClassHuntingPage() {
               <Target className="h-5 w-5" strokeWidth={2} />
               <span className="text-xs font-extrabold tracking-[0.16em]">LỊCH HỌC LINH HOẠT</span>
             </div>
-            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Chỉ gia sư khớp toàn bộ điều kiện mới nhìn thấy yêu cầu nhận lớp.
+              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Gia sư đúng chuyên môn có thể nhận lớp dù chưa mở lịch rảnh ở khung giờ này; hệ thống chỉ chặn ca dạy thực tế bị trùng.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
@@ -367,12 +404,19 @@ export function ClassHuntingPage() {
         </div>
       </header>
 
+      {!canCreateRateBearingHunt && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900" role="alert">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <p>Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng. Bạn vẫn có thể tra cứu và theo dõi các yêu cầu đã có, nhưng không thể đăng yêu cầu mới từ tài khoản này.</p>
+        </div>
+      )}
+
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
         <Card className="overflow-hidden" padding="none">
           <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
             <CardHeader
               title="Tạo yêu cầu mới"
-              subtitle="Hệ thống kiểm tra lại điều kiện khi đăng và khi gia sư nhận lớp."
+              subtitle="Không cần tìm trước gia sư mở lịch rảnh; hệ thống kiểm tra chuyên môn và trùng ca khi nhận lớp."
               className="mb-0"
             />
           </div>
@@ -513,11 +557,45 @@ export function ClassHuntingPage() {
               </fieldset>
             </section>
 
+            {canCreateRateBearingHunt ? (
+              <section className="space-y-3 border-t border-slate-100 pt-5">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-xs font-black text-indigo-700">3</span>
+                  <h2 className="text-sm font-extrabold text-slate-900">Đơn giá riêng của lớp</h2>
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-bold text-slate-700">Đơn giá trả gia sư (VND/phút)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={form.compensationRatePerMinute || ''}
+                    onChange={(event) => updateForm('compensationRatePerMinute', Number(event.target.value) || 0)}
+                    className={formFieldClass()}
+                    placeholder="VD: 50000"
+                    aria-describedby="class-hunt-rate-hint"
+                  />
+                  <span id="class-hunt-rate-hint" className="mt-1.5 block text-xs leading-5 text-slate-500">Đơn giá này được khóa theo lớp, áp dụng cho mọi buổi của CLASS HUNTING, tính theo số phút dạy và không nhân level gia sư.</span>
+                </label>
+                {hasSafeDraftCompensation && (
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-sm leading-6 text-indigo-950">
+                    <p className="font-extrabold">{compensationSummary(form.compensationRatePerMinute, form.minutes, form.sessionCount)}</p>
+                    <p className="mt-1 text-xs text-indigo-700">Bản ghi đơn giá được lưu cùng lớp và các lịch dạy tạo ra sau khi gia sư nhận lớp.</p>
+                  </div>
+                )}
+              </section>
+            ) : (
+              <section className="border-t border-slate-100 pt-5 text-sm leading-6 text-slate-600">
+                Đơn giá riêng của lớp là dữ liệu lương nhạy cảm và chỉ Admin được xem hoặc thiết lập.
+              </section>
+            )}
+
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-slate-500">Bản xem trước không tạo lịch và không giữ quỹ buổi.</p>
-              <Button type="button" onClick={() => void handlePreview()} loading={previewing} className="whitespace-nowrap">
+              <Button type="button" onClick={() => void handlePreview()} loading={previewing} disabled={!canCreateRateBearingHunt} className="whitespace-nowrap">
                 <Eye className="h-4 w-4" />
-                Xem gia sư phù hợp
+                Kiểm tra lớp
               </Button>
             </div>
           </div>
@@ -526,13 +604,13 @@ export function ClassHuntingPage() {
         <aside className="space-y-4 xl:sticky xl:top-20">
           <Card className="min-h-[320px]" padding="none">
             <div className="border-b border-slate-100 px-5 py-4">
-              <CardHeader title="Kết quả kiểm tra" subtitle="Chỉ hiển thị gia sư khớp trọn lịch." className="mb-0" />
+              <CardHeader title="Kết quả kiểm tra" subtitle="Xác nhận học viên, gói và lịch hợp lệ trước khi đăng." className="mb-0" />
             </div>
             {!preview && !previewing && (
               <EmptyState
-                icon={<UsersRound className="h-8 w-8" />}
+                icon={<CheckCircle2 className="h-8 w-8" />}
                 title="Chưa có bản xem trước"
-                description="Kiểm tra mã học viên, chọn gói và lịch để tìm gia sư phù hợp."
+                description="Kiểm tra mã học viên, gói và lịch trước khi đăng CLASS HUNTING."
               />
             )}
             {previewing && (
@@ -547,28 +625,24 @@ export function ClassHuntingPage() {
                   <p className="mt-1 text-sm font-extrabold text-slate-900">{preview.subject?.name || selectedSubject?.name || 'Gói học đã chọn'}</p>
                   <p className="mt-1 text-xs leading-5 text-slate-600">{preview.slots.length > 0 ? formatSlots({ slots: preview.slots }, true) : `${draft.sessionCount} buổi, ${draft.minutes} phút/buổi`}</p>
                 </div>
+                {canCreateRateBearingHunt && preview.classHuntCompensation ? (
+                  <div className="rounded-xl border border-indigo-200 bg-white p-3 text-sm leading-6 text-slate-900">
+                    <p className="text-xs font-bold text-indigo-700">Đơn giá sẽ được khóa theo lớp</p>
+                    <p className="mt-1 font-extrabold">{compensationSummary(preview.classHuntCompensation.ratePerMinute, draft.minutes, preview.slots.length || draft.sessionCount)}</p>
+                    <p className="mt-1 text-xs text-slate-500">Tính theo phút dạy, không nhân level gia sư và không thay đổi theo bảng giá sau này.</p>
+                  </div>
+                ) : canCreateRateBearingHunt ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900" role="alert">
+                    Chưa nhận được đơn giá lớp hợp lệ từ hệ thống. Không thể đăng yêu cầu này.
+                  </div>
+                ) : null}
                 {preview.warnings?.map((warning) => (
                   <p key={warning} className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{warning}</p>
                 ))}
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-extrabold text-slate-900">Gia sư khớp lịch</p>
-                  <span className="rounded-lg bg-indigo-100 px-2.5 py-1 text-xs font-black text-indigo-800">{preview.eligibleTeacherCount ?? preview.eligibleTeachers.length}</span>
+                <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>Yêu cầu lớp đã hợp lệ. Hệ thống không tìm hoặc giữ trước giáo viên nào; lớp sẽ được hiển thị cho giáo viên đúng chuyên môn để chủ động nhận.</p>
                 </div>
-                {preview.eligibleTeachers.length === 0 ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">Chưa có gia sư khớp toàn bộ các buổi. Hãy điều chỉnh lịch rồi kiểm tra lại.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {preview.eligibleTeachers.map((teacher) => (
-                      <div key={teacher.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                        {teacher.photoURL ? <img src={teacher.photoURL} alt="" className="h-9 w-9 rounded-full object-cover" /> : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-indigo-600 ring-1 ring-slate-200"><UserRound className="h-4 w-4" /></span>}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-extrabold text-slate-900">{teacher.name}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">{teacher.code || 'Gia sư phù hợp'}{teacher.matchedSlots !== undefined ? `, khớp ${teacher.matchedSlots} buổi` : ''}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <Button fullWidth type="button" onClick={() => setPublishConfirmOpen(true)} disabled={!canPublish} className="whitespace-nowrap">
                   <Send className="h-4 w-4" />
                   Đăng CLASS HUNTING
@@ -637,7 +711,7 @@ export function ClassHuntingPage() {
                         <span className={`rounded-lg border px-2.5 py-1 text-xs font-bold ${status.className}`}>{status.label}</span>
                         <span className="text-xs font-semibold text-slate-500">{hunt.sessionCount} buổi, {hunt.minutes} phút/buổi</span>
                       </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Học viên</p>
                           <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.student?.name || 'Học viên đã ẩn'}</p>
@@ -649,7 +723,20 @@ export function ClassHuntingPage() {
                         </div>
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gia sư</p>
-                          <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.claimedTeacher?.name || (hunt.eligibleTeacherCount !== undefined ? `${hunt.eligibleTeacherCount} người phù hợp` : 'Đang tìm')}</p>
+                          <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.claimedTeacher?.name || 'Đang chờ nhận'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Đơn giá lớp</p>
+                          {!canCreateRateBearingHunt ? (
+                            <p className="mt-1 text-sm font-semibold text-slate-500">Chỉ Admin xem đơn giá</p>
+                          ) : hunt.classHuntCompensation ? (
+                            <>
+                              <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{formatVND(hunt.classHuntCompensation.ratePerMinute)}/phút</p>
+                              <p className="mt-0.5 text-xs text-slate-500">Không nhân level</p>
+                            </>
+                          ) : (
+                            <p className="mt-1 text-sm font-semibold text-slate-500">Theo quy tắc lương cũ</p>
+                          )}
                         </div>
                       </div>
                       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-600"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />{formatSlots(hunt, true)}</p>
@@ -673,8 +760,8 @@ export function ClassHuntingPage() {
         onClose={() => setPublishConfirmOpen(false)}
         onConfirm={() => void handlePublish()}
         title="Đăng CLASS HUNTING?"
-        description={selectedSubject ? `Yêu cầu sẽ mở cho gia sư phù hợp với gói ${selectedSubject.name} và lịch đã kiểm tra.` : undefined}
-        consequence="Lịch và quỹ buổi chỉ được tạo khi một gia sư nhận lớp thành công."
+        description={selectedSubject ? `Yêu cầu sẽ mở cho gia sư đúng chuyên môn với gói ${selectedSubject.name}; không yêu cầu họ đã mở lịch rảnh tại khung giờ này.${preview?.classHuntCompensation ? ` Đơn giá riêng ${formatVND(preview.classHuntCompensation.ratePerMinute)}/phút sẽ được khóa cho lớp.` : ''}` : undefined}
+        consequence="Lịch và quỹ buổi chỉ được tạo khi một gia sư nhận lớp thành công và không có ca dạy trùng. Lương của lớp dùng đơn giá riêng theo phút, không nhân level gia sư."
         confirmLabel="Đăng yêu cầu"
         loading={publishing}
         confirmDisabled={!canPublish}
