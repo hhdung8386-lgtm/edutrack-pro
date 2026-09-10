@@ -41,6 +41,8 @@ test('settles only active bookings with an exact approved lesson identity', () =
   assert.equal(isApprovedBookingSettlementCandidate(booking(), lesson({ subjectId: 'subject-2' })), false)
   assert.equal(isApprovedBookingSettlementCandidate(booking(), lesson({ subjectId: 'subject-2', bookingRequestId: 'other-booking' })), false)
   assert.equal(isApprovedBookingSettlementCandidate(booking(), lesson({ subjectId: 'subject-2', bookingRequestId: 'booking-1' })), true)
+  assert.equal(isApprovedBookingSettlementCandidate(booking(), lesson({ groupClassId: 'group-1' })), false)
+  assert.equal(isApprovedBookingSettlementCandidate(booking({ groupClassId: 'group-1' }), lesson({ groupClassId: 'group-1' })), true)
   assert.equal(isApprovedBookingSettlementCandidate(booking(), lesson({ studentId: 'student-2' })), false)
 })
 

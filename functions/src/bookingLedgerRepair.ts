@@ -3,12 +3,13 @@ import { logger } from 'firebase-functions'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
   isActiveParentBooking,
+  isPendingParentRebookHold,
   parentBookingHeldPoints,
   type ParentProfileBookingLike,
 } from './parentProfileBooking'
 
 const db = new Firestore()
-const MAX_BOOKING_ROWS = 500
+export const MAX_APPROVED_BOOKING_REPAIR_ROWS = 400
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
 
 export type ApprovedLessonForBooking = {
@@ -61,7 +62,7 @@ export function isApprovedBookingSettlementCandidate(
 
   const bookingGroup = text(booking.groupClassId)
   const lessonGroup = text(lesson.groupClassId)
-  return !bookingGroup || !lessonGroup || bookingGroup === lessonGroup
+  return bookingGroup === lessonGroup
 }
 
 export function approvedBookingSettlementIds(
@@ -108,6 +109,7 @@ function remainingActiveHeldPoints(
 ): number {
   return bookings.reduce((total, booking) => {
     if (settledIds.has(text(booking.id)) || booking.studentId === undefined) return total
+    if (isPendingParentRebookHold(booking)) return total + Number(booking.rebookHoldPoints)
     return isActiveParentBooking(booking) ? total + parentBookingHeldPoints(booking) : total
   }, 0)
 }
@@ -138,7 +140,7 @@ export const reconcileApprovedBookingStatuses = onCall({
   const studentRef = db.collection('students').doc(studentId)
   const bookingQuery = db.collection('bookingRequests')
     .where('studentId', '==', studentId)
-    .limit(MAX_BOOKING_ROWS + 1)
+    .limit(MAX_APPROVED_BOOKING_REPAIR_ROWS + 1)
   const auditRef = db.collection('adminLogs').doc()
 
   const result = await db.runTransaction(async (transaction): Promise<BookingLedgerRepairResult> => {
@@ -147,7 +149,7 @@ export const reconcileApprovedBookingStatuses = onCall({
       transaction.get(bookingQuery),
     ])
     if (!studentSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy học viên.')
-    if (bookingSnapshot.size > MAX_BOOKING_ROWS) {
+    if (bookingSnapshot.size > MAX_APPROVED_BOOKING_REPAIR_ROWS) {
       throw new HttpsError('resource-exhausted', 'Lịch học viên quá lớn để đồng bộ an toàn; vui lòng báo Admin hệ thống.')
     }
 
@@ -200,7 +202,10 @@ export const reconcileApprovedBookingStatuses = onCall({
     transaction.update(studentRef, {
       reservedMinutes: heldPointsAfter,
       heldMinutes: heldPointsAfter,
-      bookingScheduleRevision: Number(student.bookingScheduleRevision || 0) + 1,
+      bookingScheduleRevision: (() => {
+        const revision = Number(student.bookingScheduleRevision || 0)
+        return Number.isSafeInteger(revision) && revision >= 0 ? revision + 1 : 1
+      })(),
       bookingScheduleUpdatedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     })

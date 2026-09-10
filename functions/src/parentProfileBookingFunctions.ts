@@ -27,6 +27,7 @@ import {
 } from './parentProfileBooking'
 import {
   approvedBookingSettlementIds,
+  MAX_APPROVED_BOOKING_REPAIR_ROWS,
   type ApprovedLessonForBooking,
 } from './bookingLedgerRepair'
 
@@ -259,6 +260,9 @@ export const createParentProfileBooking = onCall({
       && typeof booking.lessonId === 'string'
       && booking.lessonId
     ))
+    if (repairableBookings.length > MAX_APPROVED_BOOKING_REPAIR_ROWS) {
+      throw callableError('resource-exhausted', 'PARENT_BOOKING_LEDGER_TOO_LARGE', 'Có quá nhiều lịch cũ cần đối soát; vui lòng báo Admin để đồng bộ an toàn.')
+    }
     const repairableLessonIds = [...new Set(repairableBookings.map((booking) => String(booking.lessonId)))]
     const repairableLessonSnapshots = await Promise.all(repairableLessonIds.map((lessonId) => (
       transaction.get(db.collection('lessons').doc(lessonId))
