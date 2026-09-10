@@ -610,9 +610,10 @@ export const deleteStudentSafely = onCall({
   }
 
   const studentRef = db.collection('students').doc(studentId)
+  // Keep deletion independent of the optional studentId+status composite
+  // index. The transaction re-checks lifecycle state before releasing rows.
   const bookingQuery = db.collection('bookingRequests')
     .where('studentId', '==', studentId)
-    .where('status', 'in', ['pending', 'confirmed'])
   const backupRef = db.collection('studentDeletionBackups').doc()
   const logRef = db.collection('adminLogs').doc()
 
@@ -628,6 +629,10 @@ export const deleteStudentSafely = onCall({
 
     const bookingSnapshot = await transaction.get(bookingQuery)
     const activeBookings = bookingSnapshot.docs
+      .filter((snapshot) => {
+        const status = snapshot.data().status
+        return status === 'pending' || status === 'confirmed'
+      })
     if (activeBookings.length > 450) {
       throw new HttpsError('resource-exhausted', 'Học viên có quá nhiều lịch đang giữ chỗ; vui lòng liên hệ kỹ thuật để xử lý an toàn.')
     }

@@ -74,10 +74,11 @@ export const getParentBookingState = onCall({
   const { data: student } = await verifiedStudent(request.studentId, request.studentCode)
   const recordIds = Array.from(new Set([request.studentId, ...uniqueSafeIds(student.groupClassIds)]))
 
+  // Read by studentId only and filter lifecycle state in memory. The
+  // studentId+status composite index is not guaranteed in every deployment;
+  // failing this read makes the parent portal lose its bookings/rebook state.
   const ownBookingQueries = recordIds.map((recordId) => db.collection('bookingRequests')
     .where('studentId', '==', recordId)
-    .where('status', 'in', ['pending', 'confirmed'])
-    .limit(PARENT_BOOKING_ACCESS_READ_LIMIT + 1)
     .get())
   const hasBusyWindow = Boolean(request.busyFromDate && request.busyToDate)
   const teacherChunkSize = hasBusyWindow ? 30 : 1
@@ -112,8 +113,14 @@ export const getParentBookingState = onCall({
       .get(),
   ])
   const ownById = new Map<string, DocumentData & { id: string }>()
-  ownSnapshots.forEach((snapshot) => completeQuery(snapshot, 'PARENT_BOOKING_HISTORY_TOO_LARGE')
-    .forEach((booking) => ownById.set(booking.id, booking)))
+  ownSnapshots.forEach((snapshot) => {
+    const activeBookings = snapshot.docs
+      .filter((booking) => booking.data().status === 'pending' || booking.data().status === 'confirmed')
+    if (activeBookings.length > PARENT_BOOKING_ACCESS_READ_LIMIT) {
+      throw callableError('resource-exhausted', 'PARENT_BOOKING_HISTORY_TOO_LARGE', 'Dữ liệu lịch vượt giới hạn kiểm tra an toàn.')
+    }
+    activeBookings.map(documentData).forEach((booking) => ownById.set(booking.id, booking))
+  })
   const busyById = new Map<string, DocumentData & { id: string }>()
   busySnapshots.forEach((snapshot) => completeQuery(snapshot, 'PARENT_BOOKING_TEACHER_HISTORY_TOO_LARGE')
     .forEach((booking) => busyById.set(booking.id, booking)))

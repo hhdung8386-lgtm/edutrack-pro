@@ -505,10 +505,14 @@ export function BookingSchedulesPage() {
     const q = query(
       collection(db, 'bookingRequests'),
       where('studentId', '==', selectedStudent.id),
-      where('status', 'in', ['confirmed', 'pending'])
     )
     getDocs(q).then((snap) => {
-      const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+      // Filter lifecycle status after the single-field read. This avoids a
+      // production-only composite-index failure that made a student with
+      // remaining sessions look unable to schedule.
+      const list = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       setSelectedStudentBookings(list)
 
       // Once bookings are known, make sure the pre-selected package actually has
@@ -966,10 +970,11 @@ export function BookingSchedulesPage() {
         query(
           collection(db, 'bookingRequests'),
           where('studentId', '==', studentId),
-          where('status', 'in', ['confirmed', 'pending'])
         )
       )
-      const studentBookingsList = bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      const studentBookingsList = bookingsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       const latestHeldPoints = studentBookingsList
         .filter(isBookingHoldingStudentFund)
         .reduce((sum, b) => sum + getBookingPoints(b), 0)

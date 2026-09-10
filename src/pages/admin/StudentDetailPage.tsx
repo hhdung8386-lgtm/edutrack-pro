@@ -182,14 +182,22 @@ export function StudentDetailPage() {
       setLessons(docs)
     })
 
+    // Keep this query single-field: the production project deliberately does
+    // not depend on a studentId+status composite index. Filter lifecycle
+    // status in memory so the profile still shows every active hold even when
+    // an index has not been provisioned in a particular environment.
     const qBookings = query(
       collection(db, 'bookingRequests'),
       where('studentId', '==', id),
-      where('status', 'in', ['confirmed', 'pending'])
     )
     const unsubBookings = onSnapshot(qBookings, (snap) => {
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
+      const docs = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
+        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       setBookingRequests(docs)
+    }, (error) => {
+      console.error('Error loading student booking requests:', error)
+      toast.error('Không tải được các ca đang giữ của học viên')
     })
 
     return () => { unsubStudent(); unsubLessons(); unsubBookings() }
@@ -414,14 +422,17 @@ export function StudentDetailPage() {
     try {
       const todayISO = new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
       
-      // Fetch all confirmed/pending bookings of this student
+      // Fetch all bookings of this student with a single-field query. A
+      // studentId+status composite index is not guaranteed in every deployed
+      // project, and a failed preflight here used to make Bảo lưu do nothing.
       const q = query(
         collection(db, 'bookingRequests'),
         where('studentId', '==', id),
-        where('status', 'in', ['confirmed', 'pending'])
       )
       const snap = await getDocs(q)
-      const bookings = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      const bookings = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       
       // Filter future bookings
       const futureBookings = bookings.filter(b => b.requestedDate && b.requestedDate >= todayISO && !b.lessonId)
