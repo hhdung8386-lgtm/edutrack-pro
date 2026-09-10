@@ -152,6 +152,9 @@ const markTeacherNotificationsReadCallable = httpsCallable<{ notificationIds: st
   'markTeacherNotificationsRead',
 )
 
+const CLASS_HUNT_PREVIEW_MAX_ATTEMPTS = 3
+const CLASS_HUNT_PREVIEW_RETRY_DELAYS_MS = [500, 1_500]
+
 function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as UnknownRecord
@@ -160,6 +163,40 @@ function asRecord(value: unknown): UnknownRecord {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+function callableErrorCode(error: unknown): string {
+  const data = asRecord(error)
+  const code = data.code
+  return typeof code === 'string' ? code.replace(/^functions\//, '').toLowerCase() : ''
+}
+
+/**
+ * A lookup is read-only, so a short bounded retry is safe when Cloud Run is
+ * briefly cold-starting or returns a transient capacity error. Permanent
+ * validation and permission errors are surfaced immediately.
+ */
+function isTransientClassHuntPreviewError(error: unknown): boolean {
+  return ['aborted', 'deadline-exceeded', 'internal', 'resource-exhausted', 'unavailable']
+    .includes(callableErrorCode(error))
+}
+
+async function invokePreviewCallable(input: ClassHuntLookupInput | ClassHuntDraftInput) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < CLASS_HUNT_PREVIEW_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await previewCallable(input)
+    } catch (error) {
+      lastError = error
+      if (!isTransientClassHuntPreviewError(error) || attempt === CLASS_HUNT_PREVIEW_MAX_ATTEMPTS - 1) {
+        throw error
+      }
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, CLASS_HUNT_PREVIEW_RETRY_DELAYS_MS[attempt] || 1_500)
+      })
+    }
+  }
+  throw lastError
 }
 
 function text(value: unknown): string | undefined {
@@ -365,7 +402,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
 }
 
 export async function previewClassHunt(input: ClassHuntLookupInput | ClassHuntDraftInput): Promise<ClassHuntPreview> {
-  const result = await previewCallable(input)
+  const result = await invokePreviewCallable(input)
   return previewFrom(result.data)
 }
 

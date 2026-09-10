@@ -830,6 +830,10 @@ export const previewClassHunt = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 60,
   memory: '256MiB',
+  // Keep one lightweight instance ready for the read-only code lookup. A
+  // cold-start capacity failure otherwise aborts the browser's OPTIONS
+  // request before the callable can return a useful validation result.
+  minInstances: 1,
   maxInstances: 5,
 }, async (request) => {
   const actor = await requireClassHuntOperator(request.auth?.uid)
