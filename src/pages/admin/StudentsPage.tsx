@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, query, where, onSnapshot, orderBy, getDocs, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Student } from '@/types'
+import { BookingRequest, Student } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -15,7 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { Users, Plus, Search, Eye, MoreVertical, Trash2, CheckSquare, Copy, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
-import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
 import { parseStoredStudentListLimit, studentListLimitStorageKey } from '@/lib/studentList'
@@ -95,6 +95,14 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null)
   const [deletingStudent, setDeletingStudent] = useState(false)
   const [exactSearchStudent, setExactSearchStudent] = useState<Student | null>(null)
+  // An exact code search is the one place where the list can cheaply load the
+  // booking ledger for the selected student. This keeps the list display in
+  // sync with the scheduling modal without adding a global booking listener to
+  // the main students page.
+  const [exactSearchBookingHold, setExactSearchBookingHold] = useState<{
+    studentId: string
+    actualHeld: number
+  } | null>(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set())
   const [bulkScheduleType, setBulkScheduleType] = useState<StudentClassification>(() => getDefaultBulkClassification(learningScheduleType))
   const [bulkUpdating, setBulkUpdating] = useState(false)
@@ -225,6 +233,40 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
   const currentExactSearchStudent = exactCodeSearch && exactSearchStudent?.code.toUpperCase() === normalizedSearch
     ? exactSearchStudent
     : null
+
+  useEffect(() => {
+    const student = currentExactSearchStudent
+    if (!student) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExactSearchBookingHold(null)
+      return
+    }
+
+    let cancelled = false
+    getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', student.id)))
+      .then((snapshot) => {
+        if (cancelled) return
+        const bookings = snapshot.docs.map((bookingDoc) => ({
+          id: bookingDoc.id,
+          ...bookingDoc.data(),
+        } as BookingRequest))
+        const actualHeld = getStudentBookingQuotaBreakdown(student, bookings).actualHeld
+        setExactSearchBookingHold({ studentId: student.id, actualHeld })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.error('Error loading exact student booking hold:', error)
+        setExactSearchBookingHold(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentExactSearchStudent])
+
+  const displayBookingHoldFor = (student: Student) => (
+    exactSearchBookingHold?.studentId === student.id ? exactSearchBookingHold.actualHeld : null
+  )
   const searchableStudents = currentExactSearchStudent && !students.some((student) => student.id === currentExactSearchStudent.id)
     ? [currentExactSearchStudent, ...students]
     : students
@@ -575,7 +617,9 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                 <tbody className="divide-y divide-slate-100">
                   {sorted.map((student) => {
                     const remainingMins = getStudentPackageMinuteSummary(student).remainingMinutes;
-                    const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
+                    const storedHeldMins = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0;
+                    const ledgerHeldMins = displayBookingHoldFor(student);
+                    const heldMins = ledgerHeldMins ?? storedHeldMins;
                     const availableMins = Math.max(0, remainingMins - heldMins);
                     const availableSessions25 = Math.floor(availableMins / 25);
                     const runningLow = isRunningLow(student);
@@ -639,7 +683,12 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                             <div className="text-[11px] text-slate-400 mt-0.5">
                               <span className={availableMins <= 0 ? 'text-rose-300' : ''}>{availableMins}</span>
                               <span> phút</span>
-                              {heldMins > 0 && <span className="ml-1">(đã giữ {heldMins}p)</span>}
+                              {heldMins > 0 && <span className="ml-1">(đã giữ {heldMins}p{ledgerHeldMins !== null ? ' · sổ booking' : ''})</span>}
+                              {ledgerHeldMins !== null && ledgerHeldMins !== storedHeldMins && (
+                                <span className="ml-1 text-amber-600" title="Số giữ chỗ được đối chiếu từ sổ booking thực tế.">
+                                  (hồ sơ lệch {storedHeldMins}p)
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -700,7 +749,9 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
           <div className="md:hidden space-y-3">
             {sorted.map((student) => {
               const remainingMins = getStudentPackageMinuteSummary(student).remainingMinutes;
-              const heldMins = student.reservedMinutes ?? student.heldMinutes ?? 0;
+              const storedHeldMins = Number(student.reservedMinutes ?? student.heldMinutes ?? 0) || 0;
+              const ledgerHeldMins = displayBookingHoldFor(student);
+              const heldMins = ledgerHeldMins ?? storedHeldMins;
               const availableMins = Math.max(0, remainingMins - heldMins);
               const availableSessions25 = Math.floor(availableMins / 25);
 
@@ -770,8 +821,13 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
                       <p className={`text-xl font-bold ${SESSION_LEVEL_TEXT_CLASS[getSessionLevel(availableSessions25)]}`}>{availableSessions25}</p>
                       <p className="text-xs text-slate-500">buổi khả dụng</p>
                       <p className={`text-[11px] mt-0.5 ${availableMins <= 0 ? 'text-rose-300' : 'text-slate-400'}`}>
-                        {availableMins} phút
+                        {availableMins} phút{heldMins > 0 ? ` · đã giữ ${heldMins}p${ledgerHeldMins !== null ? ' · sổ booking' : ''}` : ''}
                       </p>
+                      {ledgerHeldMins !== null && ledgerHeldMins !== storedHeldMins && (
+                        <p className="text-[11px] text-amber-600" title="Số giữ chỗ được đối chiếu từ sổ booking thực tế.">
+                          Hồ sơ đang lệch {storedHeldMins}p
+                        </p>
+                      )}
                     </div>
                   </div>
                 <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">

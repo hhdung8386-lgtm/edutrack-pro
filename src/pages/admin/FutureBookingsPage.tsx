@@ -103,6 +103,18 @@ export function FutureBookingsPage() {
     [bookings, selectedStudentId],
   )
 
+  const selectedStudentAwaitingApprovalBookings = useMemo(
+    () => bookings.filter((booking) =>
+      Boolean(booking.lessonId) && (selectedStudentId === 'all' || booking.studentId === selectedStudentId),
+    ),
+    [bookings, selectedStudentId],
+  )
+
+  const selectedStudentAwaitingApprovalStats = useMemo(() => ({
+    count: selectedStudentAwaitingApprovalBookings.length,
+    points: selectedStudentAwaitingApprovalBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0),
+  }), [selectedStudentAwaitingApprovalBookings])
+
   const selectedStudentOverdueBookings = useMemo(
     () => selectedStudentHeldBookings.filter((booking) =>
       Boolean(booking.requestedDate) && (booking.requestedDate || '') < todayISO,
@@ -364,6 +376,34 @@ export function FutureBookingsPage() {
         </div>
       )}
 
+      {selectedStudentId !== 'all' && selectedStudentAwaitingApprovalStats.count > 0 && (
+        <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-indigo-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-indigo-950">
+                  Học viên còn {selectedStudentAwaitingApprovalStats.count} ca đã điểm danh đang chờ duyệt
+                </p>
+                <p className="text-sm text-indigo-900 mt-1 leading-relaxed">
+                  {selectedStudentAwaitingApprovalStats.points.toLocaleString('vi-VN')} kim cương của các ca này vẫn đang giữ quỹ cho đến khi duyệt. Vì vậy nhả ca tương lai có thể hoàn một phần nhưng chưa chắc mở đủ quỹ để đặt ca mới.
+                </p>
+                <p className="text-xs text-indigo-700 mt-1.5 font-semibold">
+                  Đây là quy tắc bảo vệ quỹ, không phải lỗi mất buổi; mở Duyệt để xử lý các ca đã điểm danh.
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => navigate('/admin/approvals')}
+              className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              <ShieldCheck className="w-4 h-4 mr-2" />
+              Mở trang duyệt
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Filter and stats card */}
       <Card>
         <div className="space-y-4">
@@ -487,6 +527,7 @@ export function FutureBookingsPage() {
                 <>
                   Học viên này đang giữ <strong className="text-slate-700">{selectedStudentHeldBookings.length} ca</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
                   {selectedStudentOverdueBookings.length > 0 && <>; <strong className="text-amber-700">{selectedStudentOverdueBookings.length} ca quá hạn</strong> nằm ở cảnh báo phía trên</>}.
+                  {selectedStudentAwaitingApprovalStats.count > 0 && <> Còn <strong className="text-indigo-700">{selectedStudentAwaitingApprovalStats.count} ca đã điểm danh chờ duyệt</strong> vẫn giữ quỹ.</>}
                 </>
               )}
             </div>
