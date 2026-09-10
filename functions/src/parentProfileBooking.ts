@@ -44,6 +44,7 @@ export type ParentProfileBookingLike = {
   studentId?: unknown
   studentCode?: unknown
   groupClassMemberIds?: unknown
+  groupClassId?: unknown
   subjectId?: unknown
   requestedDate?: unknown
   requestedStart?: unknown

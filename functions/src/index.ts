@@ -1259,5 +1259,6 @@ export {
 } from './classHuntingFunctions'
 
 export { createParentProfileBooking } from './parentProfileBookingFunctions'
+export { reconcileApprovedBookingStatuses } from './bookingLedgerRepair'
 export { cancelParentBooking, getParentBookingState } from './parentBookingAccessFunctions'
 export { getTeacherAttendanceAuditData, respondToBookingRequest } from './teacherBookingSecurityFunctions'

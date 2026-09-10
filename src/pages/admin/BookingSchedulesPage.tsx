@@ -47,6 +47,7 @@ import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } 
 import { buildTeacherReassignmentPatch, TEACHER_REASSIGNMENT_ERRORS, validateTeacherReassignment } from '@/lib/teacherReassignment'
 import { withTransactionRetry } from '@/lib/transactionRetry'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { reconcileApprovedBookingStatuses } from '@/lib/bookingLedgerRepair'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
   buildFutureRecurringSlots,
@@ -891,11 +892,30 @@ export function BookingSchedulesPage() {
       return
     }
 
+    // Heal old approval rows before the quota check. A legacy row may still
+    // say confirmed even though its linked lesson is already approved.
+    let repairedBookingIds = new Set<string>()
+    try {
+      const repairResult = await reconcileApprovedBookingStatuses({
+        studentId: selectedStudent.id,
+        studentCode: selectedStudent.code,
+      })
+      repairedBookingIds = new Set(repairResult.bookingIds)
+    } catch (error) {
+      // A temporary repair-service outage must not affect students without
+      // legacy rows; the transaction below still performs its own final check.
+      console.warn('Could not reconcile approved booking rows before scheduling:', error)
+    }
+
     const pointsPer25Minutes = getTeacherPointsPer25Minutes(selectedTeacher)
     const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
     const totalRequiredPoints = selectedSlots.length * pointsPerLesson
     const bookedPointsForSubject = selectedStudentBookings
-      .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
+      .filter((booking) => (
+        booking.subjectId === selectedSubjectId
+        && !repairedBookingIds.has(booking.id)
+        && isBookingHoldingStudentFund(booking)
+      ))
       .reduce((sum, b) => sum + getBookingPoints(b), 0)
     const availableSubjectPoints = Math.max(0, sub.remainingMinutes - bookedPointsForSubject)
     const maxRecurringSessions = pointsPerLesson > 0
@@ -983,7 +1003,7 @@ export function BookingSchedulesPage() {
         .map(d => ({ id: d.id, ...d.data() } as BookingRequest))
         .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       const latestHeldPoints = studentBookingsList
-        .filter(isBookingHoldingStudentFund)
+        .filter((booking) => !repairedBookingIds.has(booking.id) && isBookingHoldingStudentFund(booking))
         .reduce((sum, b) => sum + getBookingPoints(b), 0)
 
       // Capture both calendar revisions before conflict detection. The transaction
@@ -1087,7 +1107,11 @@ export function BookingSchedulesPage() {
         if (!subInDb) throw new Error('SUBJECT_NOT_FOUND')
 
         const bookedPointsForSubject = studentBookingsList
-          .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
+          .filter((booking) => (
+            booking.subjectId === selectedSubjectId
+            && !repairedBookingIds.has(booking.id)
+            && isBookingHoldingStudentFund(booking)
+          ))
           .reduce((sum, b) => sum + getBookingPoints(b), 0)
         const availableSubjectPoints = Math.max(0, subInDb.remainingMinutes - bookedPointsForSubject)
 

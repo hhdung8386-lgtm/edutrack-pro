@@ -1,4 +1,4 @@
-import { FieldValue, Firestore, type DocumentData, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
+import { FieldValue, Firestore, Timestamp, type DocumentData, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
@@ -10,6 +10,7 @@ import {
   assertParentProfileBookingRequestFuture,
   decideParentProfileBookingHold,
   effectiveParentBookingHolds,
+  isActiveParentBooking,
   isParentManagedClassHuntRebook,
   normalizeParentBookingPointRate,
   normalizeParentProfileBookingRequest,
@@ -24,6 +25,10 @@ import {
   type ParentProfileBookingRequest,
   type ParentProfileBookingStudentLike,
 } from './parentProfileBooking'
+import {
+  approvedBookingSettlementIds,
+  type ApprovedLessonForBooking,
+} from './bookingLedgerRepair'
 
 const db = new Firestore()
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
@@ -239,11 +244,37 @@ export const createParentProfileBooking = onCall({
       transaction.get(studentBookingsQuery),
       transaction.get(memberBookingsQuery),
     ])
-    const allBookings = deduplicateBookings([
+    let allBookings = deduplicateBookings([
       completeBookingQuery(teacherBookingsSnapshot, 'PARENT_BOOKING_TEACHER_HISTORY_TOO_LARGE'),
       completeBookingQuery(studentBookingsSnapshot, 'PARENT_BOOKING_STUDENT_HISTORY_TOO_LARGE'),
       completeBookingQuery(memberBookingsSnapshot, 'PARENT_BOOKING_MEMBER_HISTORY_TOO_LARGE'),
     ])
+    // Older approval flows linked lessonId but forgot to change the booking
+    // status to completed. Read the approved lessons inside this transaction,
+    // settle only exact identity matches, and make the normalized rows drive
+    // conflict/quota checks before creating the new request.
+    const repairableBookings = allBookings.filter((booking) => (
+      booking.studentId === request.studentId
+      && isActiveParentBooking(booking)
+      && typeof booking.lessonId === 'string'
+      && booking.lessonId
+    ))
+    const repairableLessonIds = [...new Set(repairableBookings.map((booking) => String(booking.lessonId)))]
+    const repairableLessonSnapshots = await Promise.all(repairableLessonIds.map((lessonId) => (
+      transaction.get(db.collection('lessons').doc(lessonId))
+    )))
+    const repairableLessons = repairableLessonSnapshots
+      .filter((snapshot) => snapshot.exists)
+      .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() })) as ApprovedLessonForBooking[]
+    const repairedBookingIds = new Set(approvedBookingSettlementIds(repairableBookings, repairableLessons))
+    const repairableLessonsById = new Map(repairableLessons.map((lesson) => [lesson.id, lesson]))
+    if (repairedBookingIds.size > 0) {
+      allBookings = allBookings.map((booking) => (
+        repairedBookingIds.has(typeof booking.id === 'string' ? booking.id : '')
+          ? { ...booking, status: 'completed' }
+          : booking
+      ))
+    }
     const conflict = parentProfileBookingConflictReason(request, allBookings)
     if (conflict) {
       const reason = conflict === 'invalid-existing-booking'
@@ -315,6 +346,23 @@ export const createParentProfileBooking = onCall({
         : 'Quỹ kim cương khả dụng không đủ cho khung giờ này.')
     }
     const { heldAfterRequest } = holdDecision
+
+    // All reads, including a possible rebook target above, are complete before
+    // these settlement writes. Firestore transactions require that ordering.
+    for (const booking of repairableBookings) {
+      const bookingId = typeof booking.id === 'string' ? booking.id : ''
+      if (!repairedBookingIds.has(bookingId)) continue
+      const lesson = repairableLessonsById.get(String(booking.lessonId))
+      transaction.update(db.collection('bookingRequests').doc(bookingId), {
+        status: 'completed',
+        completedAt: lesson?.approvedAt instanceof Timestamp
+          ? lesson.approvedAt
+          : FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        ledgerRepairedAt: FieldValue.serverTimestamp(),
+        ledgerRepairedBy: 'system:createParentProfileBooking',
+      })
+    }
 
     const studentRevision = safeRevision(student.bookingScheduleRevision, 'PARENT_BOOKING_STUDENT_REVISION_INVALID')
     const teacherRevision = safeRevision(teacher.bookingScheduleRevision, 'PARENT_BOOKING_TEACHER_REVISION_INVALID')
