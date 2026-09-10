@@ -523,7 +523,7 @@ test('CLASS HUNTING shares the accepted-contract gate across discovery and claim
   assert.equal(hasAcceptedClassHuntContract(null), false)
 })
 
-test('CLASS HUNTING only counts a teacher profile with its canonical claimable login', () => {
+test('CLASS HUNTING accepts legacy teacher links when canonical UID is missing', () => {
   const exact = {
     teacherId: 'teacher-a',
     uid: 'teacher-user-a',
@@ -532,6 +532,8 @@ test('CLASS HUNTING only counts a teacher profile with its canonical claimable l
     userRole: 'teacher',
   }
   assert.equal(hasCanonicalClassHuntTeacherLogin(exact), true)
+  assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: '' }), true)
+  assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: undefined }), true)
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: 'old-user' }), false)
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, userTeacherId: 'teacher-b' }), false)
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, userRole: 'student_manager' }), false)

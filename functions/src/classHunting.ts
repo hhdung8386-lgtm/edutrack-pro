@@ -914,10 +914,12 @@ export function hasAcceptedClassHuntContract(contract: unknown): boolean {
 }
 
 /**
- * A teacher profile is claimable only when its canonical login points back to
- * the same teacher record and the user document is still a teacher. Keep the
- * identity check pure so candidate discovery cannot drift from claim-time
- * authorization.
+ * A teacher profile is claimable when the authenticated user still points back
+ * to the same teacher record and remains a teacher. Newer profiles also store
+ * a canonical login UID on the teacher document; when that legacy field is
+ * empty, the users/{uid} link remains the safe source of truth for existing
+ * teacher accounts. Keep the identity check pure so candidate discovery
+ * cannot drift from claim-time authorization.
  */
 export function hasCanonicalClassHuntTeacherLogin(input: {
   teacherId: unknown
@@ -926,11 +928,14 @@ export function hasCanonicalClassHuntTeacherLogin(input: {
   userTeacherId: unknown
   userRole: unknown
 }): boolean {
+  const teacherLoginAccountUid = typeof input.teacherLoginAccountUid === 'string'
+    ? input.teacherLoginAccountUid.trim()
+    : ''
   return typeof input.teacherId === 'string'
     && input.teacherId.length > 0
     && typeof input.uid === 'string'
     && input.uid.length > 0
-    && input.teacherLoginAccountUid === input.uid
+    && (!teacherLoginAccountUid || teacherLoginAccountUid === input.uid)
     && input.userTeacherId === input.teacherId
     && input.userRole === 'teacher'
 }
