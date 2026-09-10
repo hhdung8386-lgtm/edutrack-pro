@@ -39,6 +39,7 @@ import {
   classHuntCompensationFromBookings,
   classHuntCompensationLegacyFields,
 } from '@/lib/classHuntCompensation'
+import { withTransactionRetry } from '@/lib/transactionRetry'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -157,6 +158,11 @@ export function AttendancePage() {
         setSelectedSubjectId(subjects[0]?.subjectId || '')
 
       }
+    } catch (error) {
+      console.error('[attendance-search]', error)
+      toast.error(lang === 'vi'
+        ? 'Chưa tra được học viên do lỗi kết nối. Vui lòng kiểm tra mạng rồi thử lại.'
+        : 'The student could not be searched because of a connection problem. Check the network and try again.')
     } finally {
       setSearching(false)
     }
@@ -462,7 +468,7 @@ export function AttendancePage() {
 
       // Đọc lại và chặn ngay trong giao dịch ghi cuối. Nhờ vậy form mở từ trước
       // cũng không thể gửi điểm danh nếu giáo vụ vừa làm gói môn hết hiệu lực.
-      await runTransaction(db, async (tx) => {
+      await withTransactionRetry(() => runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', student.id)
         const compensationBookingRefs = auditedClassHuntCompensation
           ? matchedBookingIds.map((bookingId) => doc(db, 'bookingRequests', bookingId))
@@ -508,7 +514,7 @@ export function AttendancePage() {
           ...lessonPayload,
           ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
         })
-      })
+      }))
 
       setAuditPrompt(null)
       setDailyLimitBlock(null)
@@ -527,6 +533,7 @@ export function AttendancePage() {
       }, 2000)
     } catch (err) {
       console.error(err)
+      const errorCode = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : ''
       toast.error(err instanceof Error && err.message === 'STUDENT_EXPIRED'
         ? (lang === 'vi'
             ? 'Gói môn học này đã hết hoặc không đủ kim cương nên không thể điểm danh.'
@@ -535,7 +542,15 @@ export function AttendancePage() {
           ? (lang === 'vi'
               ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.'
               : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
-          : t('attendance.submit_fail'))
+          : errorCode === 'permission-denied'
+            ? (lang === 'vi'
+                ? 'Tài khoản chưa được cấp quyền ghi nhận buổi học. Vui lòng báo Admin kiểm tra liên kết gia sư.'
+                : 'This account is not allowed to record attendance. Ask an admin to check the teacher account link.')
+            : ['aborted', 'failed-precondition', 'deadline-exceeded', 'unavailable'].includes(errorCode)
+              ? (lang === 'vi'
+                  ? 'Hệ thống chưa xác nhận được giao dịch điểm danh do lịch hoặc kết nối vừa thay đổi. Vui lòng thử gửi lại một lần.'
+                  : 'Attendance could not be confirmed because the schedule or connection changed. Please try once more.')
+              : t('attendance.submit_fail'))
     } finally {
       window.clearTimeout(slowSubmissionTimer)
       attendanceSubmissionInFlightRef.current = false

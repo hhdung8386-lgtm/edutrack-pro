@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:teacher-login": "node --experimental-strip-types --test tests/teacherLoginIdentity.test.ts",
+    "test:teacher-reassignment": "node --experimental-strip-types --test tests/teacherReassignment.test.ts",
+    "test:transaction-retry": "node --experimental-strip-types --test tests/transactionRetry.test.ts",
     "test:lesson-attendance": "node --experimental-strip-types --test tests/lessonAttendance.test.ts",
     "test:lesson-report": "node --experimental-strip-types --test tests/lessonReport.test.ts",
     "test:recurring-schedule": "node --experimental-strip-types --test tests/recurringSchedule.test.ts",

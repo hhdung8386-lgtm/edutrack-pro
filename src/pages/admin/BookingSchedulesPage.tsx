@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { collection, doc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
 import {
   AlertTriangle,
+  ArrowRightLeft,
   BookOpen,
   BriefcaseBusiness,
   CalendarClock,
@@ -43,6 +44,8 @@ import {
 } from '@/lib/teacherSubjects'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } from '@/lib/bookingLogic'
+import { buildTeacherReassignmentPatch, TEACHER_REASSIGNMENT_ERRORS, validateTeacherReassignment } from '@/lib/teacherReassignment'
+import { withTransactionRetry } from '@/lib/transactionRetry'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
@@ -286,6 +289,10 @@ export function BookingSchedulesPage() {
   // Release booking state
   const [releasing, setReleasing] = useState(false)
   const [cancellingBatch, setCancellingBatch] = useState(false)
+  const [showReassignModal, setShowReassignModal] = useState(false)
+  const [reassignTeacherId, setReassignTeacherId] = useState('')
+  const [reassigning, setReassigning] = useState(false)
+  const [reassignConflictMessage, setReassignConflictMessage] = useState('')
 
   const weekStartISO = formatDateISO(weekStart)
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
@@ -1449,6 +1456,186 @@ export function BookingSchedulesPage() {
         : 'Nhả lịch thất bại')
     } finally {
       setReleasing(false)
+    }
+  }
+
+  const openReassignModal = () => {
+    if (!selectedBooking || selectedBooking.status !== 'confirmed' || selectedBooking.lessonId) return
+    setReassignTeacherId('')
+    setReassignConflictMessage('')
+    setShowReassignModal(true)
+  }
+
+  /**
+   * Move an existing confirmed hold to a substitute teacher atomically. The
+   * booking ID and student hold stay untouched, so this cannot create a second
+   * class or accidentally refund/charge the student.
+   */
+  const handleReassignBookingTeacher = async () => {
+    if (!selectedBooking || !reassignTeacherId || reassigning) return
+    const targetTeacher = teachers.find((teacher) => teacher.id === reassignTeacherId)
+    if (!targetTeacher) return
+
+    setReassigning(true)
+    setReassignConflictMessage('')
+    try {
+      validateTeacherReassignment(selectedBooking, targetTeacher)
+
+      const candidate = {
+        id: selectedBooking.id,
+        teacherId: targetTeacher.id,
+        teacherName: targetTeacher.name,
+        studentId: selectedBooking.studentId,
+        studentName: selectedBooking.studentName,
+        studentCode: selectedBooking.studentCode,
+        requestedDate: selectedBooking.requestedDate,
+        requestedStart: selectedBooking.requestedStart,
+        requestedEnd: selectedBooking.requestedEnd,
+        requestedMinutes: selectedBooking.requestedMinutes,
+        ...(selectedBooking.groupClassMemberIds ? { groupClassMemberIds: selectedBooking.groupClassMemberIds } : {}),
+      }
+      const conflicts = await checkBookingCandidates([candidate], { ignoreBookingIds: [selectedBooking.id] })
+      if (conflicts.length > 0) {
+        setReassignConflictMessage(bookingConflictMessage(conflicts[0]))
+        return
+      }
+
+      const sourceTeacherId = selectedBooking.teacherId
+      const memberIds = Array.from(new Set(
+        (selectedBooking.groupClassMemberIds || []).filter((memberId) => memberId && memberId !== selectedBooking.studentId),
+      ))
+      const bookingRef = doc(db, 'bookingRequests', selectedBooking.id)
+      const sourceTeacherRef = doc(db, 'teachers', sourceTeacherId)
+      const targetTeacherRef = doc(db, 'teachers', targetTeacher.id)
+      const studentRef = doc(db, 'students', selectedBooking.studentId)
+      const memberRefs = memberIds.map((memberId) => doc(db, 'students', memberId))
+      const [bookingSnap, sourceTeacherSnap, targetTeacherSnap, studentSnap, ...memberSnaps] = await Promise.all([
+        getDocFromServer(bookingRef),
+        getDocFromServer(sourceTeacherRef),
+        getDocFromServer(targetTeacherRef),
+        getDocFromServer(studentRef),
+        ...memberRefs.map((memberRef) => getDocFromServer(memberRef)),
+      ])
+      if (!bookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
+      if (!sourceTeacherSnap.exists() || !targetTeacherSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
+      if (!studentSnap.exists() || memberSnaps.some((snapshot) => !snapshot.exists())) throw new Error('STUDENT_NOT_FOUND')
+
+      const expectedSourceRevision = Number(sourceTeacherSnap.data().bookingScheduleRevision || 0)
+      const expectedTargetRevision = Number(targetTeacherSnap.data().bookingScheduleRevision || 0)
+      const expectedStudentRevision = Number(studentSnap.data().bookingScheduleRevision || 0)
+      const expectedMemberRevisions = memberSnaps.map((snapshot) => Number(snapshot.exists() ? snapshot.data().bookingScheduleRevision || 0 : 0))
+      const latestBooking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+      const latestTargetTeacher = { id: targetTeacherSnap.id, ...targetTeacherSnap.data() } as Teacher
+      validateTeacherReassignment(latestBooking, latestTargetTeacher)
+      if (
+        latestBooking.teacherId !== sourceTeacherId
+        || latestBooking.studentId !== selectedBooking.studentId
+        || latestBooking.requestedDate !== selectedBooking.requestedDate
+        || latestBooking.requestedStart !== selectedBooking.requestedStart
+        || latestBooking.requestedEnd !== selectedBooking.requestedEnd
+      ) throw new Error('BOOKING_CHANGED')
+
+      await withTransactionRetry(() => runTransaction(db, async (tx) => {
+        const [currentBookingSnap, currentSourceSnap, currentTargetSnap, currentStudentSnap, ...currentMemberSnaps] = await Promise.all([
+          tx.get(bookingRef),
+          tx.get(sourceTeacherRef),
+          tx.get(targetTeacherRef),
+          tx.get(studentRef),
+          ...memberRefs.map((memberRef) => tx.get(memberRef)),
+        ])
+        if (!currentBookingSnap.exists()) throw new Error('BOOKING_NOT_FOUND')
+        if (!currentSourceSnap.exists() || !currentTargetSnap.exists()) throw new Error('TEACHER_NOT_FOUND')
+        if (!currentStudentSnap.exists() || currentMemberSnaps.some((snapshot) => !snapshot.exists())) throw new Error('STUDENT_NOT_FOUND')
+
+        const currentBooking = { id: currentBookingSnap.id, ...currentBookingSnap.data() } as BookingRequest
+        const currentTargetTeacher = { id: currentTargetSnap.id, ...currentTargetSnap.data() } as Teacher
+        validateTeacherReassignment(currentBooking, currentTargetTeacher)
+        if (
+          currentBooking.teacherId !== sourceTeacherId
+          || currentBooking.studentId !== selectedBooking.studentId
+          || currentBooking.requestedDate !== selectedBooking.requestedDate
+          || currentBooking.requestedStart !== selectedBooking.requestedStart
+          || currentBooking.requestedEnd !== selectedBooking.requestedEnd
+          || Number(currentSourceSnap.data().bookingScheduleRevision || 0) !== expectedSourceRevision
+          || Number(currentTargetSnap.data().bookingScheduleRevision || 0) !== expectedTargetRevision
+          || Number(currentStudentSnap.data().bookingScheduleRevision || 0) !== expectedStudentRevision
+          || currentMemberSnaps.some((snapshot, index) => Number(snapshot.exists() ? snapshot.data().bookingScheduleRevision || 0 : 0) !== expectedMemberRevisions[index])
+        ) throw new Error('BOOKING_CALENDAR_CHANGED')
+
+        tx.update(bookingRef, {
+          ...buildTeacherReassignmentPatch(currentTargetTeacher),
+          teacherReassignedFromId: currentBooking.teacherId,
+          teacherReassignedFromCode: currentBooking.teacherCode || '',
+          teacherReassignedFromName: currentBooking.teacherName || '',
+          teacherReassignedAt: serverTimestamp(),
+          teacherReassignedBy: user?.uid ?? 'admin',
+        })
+        tx.update(sourceTeacherRef, {
+          bookingScheduleRevision: expectedSourceRevision + 1,
+          bookingScheduleUpdatedAt: serverTimestamp(),
+        })
+        tx.update(targetTeacherRef, {
+          bookingScheduleRevision: expectedTargetRevision + 1,
+          bookingScheduleUpdatedAt: serverTimestamp(),
+        })
+        tx.update(studentRef, {
+          bookingScheduleRevision: expectedStudentRevision + 1,
+          bookingScheduleUpdatedAt: serverTimestamp(),
+        })
+        memberRefs.forEach((memberRef, index) => {
+          tx.update(memberRef, {
+            bookingScheduleRevision: expectedMemberRevisions[index] + 1,
+            bookingScheduleUpdatedAt: serverTimestamp(),
+          })
+        })
+        tx.set(doc(collection(db, 'adminLogs')), {
+          adminId: user?.uid ?? 'admin',
+          action: 'REASSIGN_BOOKING_TEACHER',
+          targetType: 'bookingRequest',
+          targetId: currentBooking.id,
+          changes: {
+            studentId: currentBooking.studentId,
+            requestedDate: currentBooking.requestedDate || '',
+            requestedStart: currentBooking.requestedStart || '',
+            requestedEnd: currentBooking.requestedEnd || '',
+            fromTeacherId: currentBooking.teacherId,
+            fromTeacherCode: currentBooking.teacherCode || '',
+            fromTeacherName: currentBooking.teacherName || '',
+            toTeacherId: currentTargetTeacher.id,
+            toTeacherCode: currentTargetTeacher.code || '',
+            toTeacherName: currentTargetTeacher.name || '',
+          },
+          createdAt: serverTimestamp(),
+        })
+      }))
+
+      toast.success(`Đã chuyển ca sang gia sư ${targetTeacher.name}. Giữ nguyên buổi học và quỹ kim cương của học viên.`)
+      setShowReassignModal(false)
+      setShowDetailModal(false)
+      setSelectedBooking(null)
+    } catch (error: unknown) {
+      console.error('Teacher reassignment failed:', error)
+      const errorMessage = error instanceof Error ? error.message : ''
+      const message = errorMessage === 'BOOKING_NOT_FOUND'
+        ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.'
+        : errorMessage === 'BOOKING_ALREADY_ATTENDED'
+          ? 'Ca đã được điểm danh nên không thể chuyển gia sư.'
+          : errorMessage === TEACHER_REASSIGNMENT_ERRORS.BOOKING_NOT_ACTIVE
+            ? 'Chỉ ca đã xếp và chưa điểm danh mới được chuyển gia sư.'
+            : errorMessage === TEACHER_REASSIGNMENT_ERRORS.TARGET_NOT_ACTIVE
+              ? 'Gia sư nhận thay không còn hoạt động.'
+              : errorMessage === TEACHER_REASSIGNMENT_ERRORS.SAME_TEACHER
+                ? 'Vui lòng chọn gia sư khác với gia sư hiện tại.'
+                : errorMessage === 'BOOKING_CHANGED' || errorMessage === 'BOOKING_CALENDAR_CHANGED'
+                  ? 'Lịch vừa thay đổi. Vui lòng đóng cửa sổ, tải lại lịch rồi thử lại.'
+                  : errorMessage === 'TEACHER_NOT_FOUND'
+                    ? 'Không tìm thấy hồ sơ gia sư. Vui lòng tải lại danh sách.'
+                    : errorMessage === 'STUDENT_NOT_FOUND'
+                      ? 'Không tìm thấy hồ sơ học viên/lớp nhóm.'
+                      : 'Chuyển gia sư thất bại. Vui lòng thử lại.'
+      setReassignConflictMessage(message)
+    } finally {
+      setReassigning(false)
     }
   }
 
@@ -2733,22 +2920,30 @@ export function BookingSchedulesPage() {
           }}
           title="Chi tiết ca học đã xếp"
           footer={
-            <div className="flex gap-3 justify-between w-full">
-              {isBookingCancellable(selectedBooking) ? (
-                <Button variant="danger" loading={releasing} onClick={handleReleaseBooking}>
-                  <Trash2 className="w-4 h-4" />
-                  Hủy xếp lớp (Nhả lịch)
-                </Button>
-              ) : isBookingAttended(selectedBooking) ? (
-                <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Đã điểm danh — không thể hủy lịch
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                  Ca không còn hiệu lực — không thể hủy
-                </div>
-              )}
+            <div className="flex flex-wrap gap-3 justify-between w-full">
+              <div className="flex flex-wrap gap-2">
+                {isBookingCancellable(selectedBooking) && selectedBooking.status === 'confirmed' && (
+                  <Button variant="outline" onClick={openReassignModal}>
+                    <ArrowRightLeft className="w-4 h-4" />
+                    Chuyển dạy thay
+                  </Button>
+                )}
+                {isBookingCancellable(selectedBooking) ? (
+                  <Button variant="danger" loading={releasing} onClick={handleReleaseBooking}>
+                    <Trash2 className="w-4 h-4" />
+                    Hủy xếp lớp (Nhả lịch)
+                  </Button>
+                ) : isBookingAttended(selectedBooking) ? (
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Đã điểm danh — không thể hủy lịch
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                    Ca không còn hiệu lực — không thể hủy
+                  </div>
+                )}
+              </div>
               <Button variant="ghost" onClick={() => {
                 setShowDetailModal(false)
                 setSelectedBooking(null)
@@ -2887,6 +3082,78 @@ export function BookingSchedulesPage() {
                 </div>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {showReassignModal && selectedBooking && (
+        <Modal
+          open
+          onClose={() => {
+            if (reassigning) return
+            setShowReassignModal(false)
+            setReassignConflictMessage('')
+          }}
+          title="Chuyển gia sư dạy thay"
+          size="md"
+          footer={
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="ghost"
+                disabled={reassigning}
+                onClick={() => {
+                  setShowReassignModal(false)
+                  setReassignConflictMessage('')
+                }}
+              >
+                Hủy
+              </Button>
+              <Button
+                variant="primary"
+                loading={reassigning}
+                disabled={!reassignTeacherId}
+                onClick={handleReassignBookingTeacher}
+              >
+                Xác nhận chuyển ca
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-indigo-950">
+              <p>
+                Ca <strong>{selectedBooking.requestedDate} · {selectedBooking.requestedStart}-{selectedBooking.requestedEnd}</strong> của <strong>{selectedBooking.studentName}</strong> đang thuộc gia sư <strong>{selectedBooking.teacherName}</strong>.
+              </p>
+              <p className="mt-1 text-xs text-indigo-800">
+                Hệ thống sẽ chuyển chính booking này sang gia sư mới, giữ nguyên thời lượng và kim cương đã giữ; đồng thời kiểm tra trùng lịch trước khi lưu.
+              </p>
+            </div>
+            <label className="block text-sm font-bold text-slate-700">
+              Gia sư dạy thay
+              <select
+                value={reassignTeacherId}
+                onChange={(event) => {
+                  setReassignTeacherId(event.target.value)
+                  setReassignConflictMessage('')
+                }}
+                disabled={reassigning}
+                className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-100"
+              >
+                <option value="">-- Chọn gia sư --</option>
+                {teachers
+                  .filter((teacher) => teacher.id !== selectedBooking.teacherId && teacher.status === 'active')
+                  .map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name} ({teacher.code})
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {reassignConflictMessage && (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-semibold leading-5 text-rose-800">
+                {reassignConflictMessage}
+              </div>
+            )}
           </div>
         </Modal>
       )}

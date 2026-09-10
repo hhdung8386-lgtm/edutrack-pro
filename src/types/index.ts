@@ -503,6 +503,12 @@ export interface BookingRequest {
   classHuntCompensationInvalid?: boolean
   /** Parent portal marker: this Class Hunt booking must be changed through admin support. */
   parentRebookManaged?: boolean
+  /** Audit trail for an administrator-assigned substitute teacher. */
+  teacherReassignedFromId?: string
+  teacherReassignedFromCode?: string
+  teacherReassignedFromName?: string
+  teacherReassignedAt?: Timestamp
+  teacherReassignedBy?: string
 }
 
 export interface AdminLog {

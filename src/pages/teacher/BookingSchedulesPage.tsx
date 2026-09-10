@@ -44,6 +44,7 @@ import {
   canSubmitAttendance,
   getAttendanceDeadline,
 } from '@/lib/attendanceDeadline'
+import { withTransactionRetry } from '@/lib/transactionRetry'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
@@ -726,7 +727,7 @@ export function BookingSchedulesPage() {
       // Học viên vắng -> mọi ca còn lại trong ngày cũng vắng, nhưng KHÔNG tính tiền lần nữa.
       const followUpBookings = isPresent ? [] : absenceFollowUpBookings
 
-      await runTransaction(db, async (tx) => {
+      await withTransactionRetry(() => runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const teacherRef = doc(db, 'teachers', teacherId)
         const subjectRef = doc(db, 'subjects', expectedSubjectId)
@@ -945,7 +946,7 @@ export function BookingSchedulesPage() {
             lessonId: followUpLessonRef.id,
           })
         }
-      })
+      }))
 
       if (attendanceSubmissionAttemptRef.current !== submissionAttempt) return
 
@@ -990,7 +991,9 @@ export function BookingSchedulesPage() {
                   ? (lang === 'vi' ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.' : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
                 : errorMessage === 'STUDENT_EXPIRED'
                 ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
-                : errorMessage === 'TEACHER_NOT_FOUND'
+                 : ['aborted', 'failed-precondition', 'deadline-exceeded', 'unavailable'].includes(errorCode)
+                   ? (lang === 'vi' ? 'Kết nối hoặc lịch vừa thay đổi nên hệ thống chưa xác nhận được điểm danh. Vui lòng bấm gửi lại một lần.' : 'The connection or schedule changed before attendance was confirmed. Please submit once more.')
+                 : errorMessage === 'TEACHER_NOT_FOUND'
                   ? (lang === 'vi' ? 'Không tìm thấy hồ sơ gia sư. Vui lòng báo giáo vụ kiểm tra tài khoản.' : 'The teacher profile could not be found. Ask the academic team to check the account.')
                 : t('attendance.submit_fail')
       toast.error(failureMessage)
