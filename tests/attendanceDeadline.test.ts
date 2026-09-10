@@ -18,15 +18,16 @@ test('attendance deadline converts Vietnam wall-clock time and opens after five 
   const classEndMs = bookingClassEndMs(booking)
   assert.equal(classEndMs, Date.UTC(2026, 8, 10, 16, 50) - 7 * 60 * 60 * 1000)
   assert.equal(getAttendanceDeadline(booking, classEndMs! + ATTENDANCE_EARLIEST_SUBMISSION_DELAY_MS - 1).state, 'too_early')
+  assert.equal(canSubmitAttendance(booking, classEndMs! + ATTENDANCE_EARLIEST_SUBMISSION_DELAY_MS - 1), false)
   assert.equal(getAttendanceDeadline(booking, classEndMs! + ATTENDANCE_EARLIEST_SUBMISSION_DELAY_MS).state, 'open')
   assert.equal(canSubmitAttendance(booking, classEndMs! + ATTENDANCE_EARLIEST_SUBMISSION_DELAY_MS), true)
 })
 
-test('attendance deadline expires only after twelve hours and remains open at the boundary', () => {
+test('attendance deadline reports late status after twelve hours but still allows a confirmed booking to be submitted', () => {
   const classEndMs = bookingClassEndMs(booking)!
   assert.equal(getAttendanceDeadline(booking, classEndMs + ATTENDANCE_SUBMISSION_WINDOW_MS).state, 'open')
   assert.equal(getAttendanceDeadline(booking, classEndMs + ATTENDANCE_SUBMISSION_WINDOW_MS + 1).state, 'expired')
-  assert.equal(canSubmitAttendance(booking, classEndMs + ATTENDANCE_SUBMISSION_WINDOW_MS + 1), false)
+  assert.equal(canSubmitAttendance(booking, classEndMs + ATTENDANCE_SUBMISSION_WINDOW_MS + 1), true)
 })
 
 test('cross-midnight 24:xx and malformed legacy schedules fail safely', () => {

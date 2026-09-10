@@ -1,10 +1,14 @@
 import type { BookingRequest } from '@/types'
 
 /**
- * Attendance can be submitted shortly after a scheduled class ends, but never
- * more than twelve hours after that end time.  Booking times are stored as
- * Vietnam-local wall-clock values, so conversion stays in one place instead
- * of being reimplemented by each attendance surface.
+ * Attendance can be submitted shortly after a scheduled class ends.  The
+ * twelve-hour boundary is kept as a late-submission signal for the UI, not as
+ * a hard lock: a confirmed booking is still an unsettled financial hold until
+ * it is linked to a lesson and approved.  Hard-blocking it here caused a
+ * teacher who opened the schedule later in the day to lose the only valid
+ * attendance path, while the standalone attendance flow remained available.
+ * Booking times are stored as Vietnam-local wall-clock values, so conversion
+ * stays in one place instead of being reimplemented by each attendance surface.
  */
 export const ATTENDANCE_EARLIEST_SUBMISSION_DELAY_MS = 5 * 60 * 1000
 export const ATTENDANCE_SUBMISSION_WINDOW_MS = 12 * 60 * 60 * 1000
@@ -69,14 +73,18 @@ export function canSubmitAttendance(
   booking: Pick<BookingRequest, 'requestedDate' | 'requestedEnd'>,
   nowMs = Date.now(),
 ): boolean {
-  return getAttendanceDeadline(booking, nowMs).state === 'open'
+  const state = getAttendanceDeadline(booking, nowMs).state
+  // A late report is still safe to submit when the timetable row remains
+  // confirmed and unlinked; the final Firestore transaction rechecks both.
+  // Future and malformed schedules remain blocked.
+  return state === 'open' || state === 'expired'
 }
 
 export function attendanceDeadlineMessage(state: AttendanceDeadlineState, language: 'vi' | 'en' = 'vi'): string {
   if (state === 'expired') {
     return language === 'vi'
-      ? 'Đã quá 12 tiếng kể từ khi kết thúc ca. Vui lòng báo giáo vụ để được hỗ trợ.'
-      : 'More than 12 hours have passed since the class ended. Please contact the academic team for help.'
+      ? 'Ca đã quá 12 tiếng. Bạn vẫn có thể điểm danh muộn khi ca còn Đã xếp và chưa ghi nhận; hệ thống sẽ đối chiếu lại trước khi lưu.'
+      : 'The class ended more than 12 hours ago. You can still submit a late report while the booking is confirmed and unlinked; the system will re-check it before saving.'
   }
   if (state === 'too_early') {
     return language === 'vi'

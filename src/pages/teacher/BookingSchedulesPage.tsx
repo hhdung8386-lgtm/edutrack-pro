@@ -231,6 +231,8 @@ export function BookingSchedulesPage() {
   const [cancelledLessons, setCancelledLessons] = useState<Lesson[]>([])
   const [students, setStudents] = useState<Record<string, Student>>({})
   const [loading, setLoading] = useState(true)
+  const [bookingLoadError, setBookingLoadError] = useState(false)
+  const [bookingListenerRetry, setBookingListenerRetry] = useState(0)
   const [teacher, setTeacher] = useState<Teacher | null>(null)
 
   // Modals
@@ -440,6 +442,7 @@ export function BookingSchedulesPage() {
   useEffect(() => {
     if (!teacherId) {
       setConfirmedBookings([])
+      setBookingLoadError(false)
       return
     }
 
@@ -452,6 +455,7 @@ export function BookingSchedulesPage() {
     )
 
     const unsub = onSnapshot(q, (snap) => {
+      setBookingLoadError(false)
       const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
       setBookingRequests(list)
       setConfirmedBookings(list.filter((booking) => booking.status === 'confirmed'))
@@ -473,10 +477,14 @@ export function BookingSchedulesPage() {
       }
     }, (error) => {
       console.error('Error loading booking requests:', error)
+      // Never leave a teacher looking at an empty/stale timetable with no
+      // explanation. A listener failure is retriable and must not be treated
+      // as proof that there are no classes to attend.
+      setBookingLoadError(true)
     })
 
     return unsub
-  }, [teacherId])
+  }, [bookingListenerRetry, teacherId])
 
   const handleCellClick = (booking: BookingRequest) => {
     const displayBooking = localBookings.find((item) => item.id === booking.id) || booking
@@ -660,11 +668,6 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const expiredBooking = attendanceBookings.find((booking) => getAttendanceDeadline(booking, Date.now()).state === 'expired')
-    if (expiredBooking) {
-      toast.error(attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en'))
-      return
-    }
     const invalidDeadlineBooking = attendanceBookings.find((booking) => getAttendanceDeadline(booking, Date.now()).state === 'invalid')
     if (invalidDeadlineBooking) {
       toast.error(attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en'))
@@ -776,9 +779,6 @@ export function BookingSchedulesPage() {
         // write path consistent with the schedule list and button state.
         const freshDeadlineState = freshAttendanceBookings
           .map((booking) => getAttendanceDeadline(booking, Date.now()).state)
-        if (freshDeadlineState.some((state) => state === 'expired')) {
-          throw new Error('ATTENDANCE_WINDOW_EXPIRED')
-        }
         if (freshDeadlineState.some((state) => state === 'invalid')) {
           throw new Error('ATTENDANCE_WINDOW_INVALID')
         }
@@ -982,8 +982,6 @@ export function BookingSchedulesPage() {
               ? (lang === 'vi' ? 'Ca học không còn tồn tại. Vui lòng tải lại lịch.' : 'The booking no longer exists. Reload the schedule.')
                 : errorMessage === 'BOOKING_CLASS_CHANGED'
                   ? (lang === 'vi' ? 'Thông tin ca học vừa thay đổi. Vui lòng tải lại lịch trước khi điểm danh.' : 'The class details just changed. Reload the schedule before submitting attendance.')
-                : errorMessage === 'ATTENDANCE_WINDOW_EXPIRED'
-                  ? attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')
                 : errorMessage === 'ATTENDANCE_WINDOW_TOO_EARLY'
                   ? attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en')
                 : errorMessage === 'ATTENDANCE_WINDOW_INVALID'
@@ -1021,6 +1019,28 @@ export function BookingSchedulesPage() {
           </div>
         </div>
       </div>
+
+      {bookingLoadError && (
+        <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-bold">{lang === 'vi' ? 'Chưa tải được lịch dạy' : 'Teaching schedule could not be loaded'}</p>
+            <p className="mt-1 text-xs leading-5 text-rose-700">
+              {lang === 'vi'
+                ? 'Không xác định đây là lịch trống. Vui lòng thử lại trước khi điểm danh hoặc thao tác trên ca học.'
+                : 'This does not mean your schedule is empty. Retry before submitting attendance or changing a class.'}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setBookingListenerRetry((current) => current + 1)}
+            className="shrink-0 border-rose-300 text-rose-800 hover:bg-rose-100"
+          >
+            {lang === 'vi' ? 'Thử tải lại' : 'Retry'}
+          </Button>
+        </div>
+      )}
 
       {/* Filter and navigation controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1258,7 +1278,8 @@ export function BookingSchedulesPage() {
                   )
                 }
                 const attendanceDeadline = getAttendanceDeadline(selectedBooking, attendanceNow)
-                const allowed = attendanceDeadline.state === 'open'
+                const allowed = canSubmitAttendance(selectedBooking, attendanceNow)
+                const isLate = attendanceDeadline.state === 'expired'
                 return (
                   <div className="flex flex-col items-end gap-1.5">
                     <Button
@@ -1280,13 +1301,16 @@ export function BookingSchedulesPage() {
                       <PenSquare className="w-4 h-4" />
                       {t('sched.attendance_btn')}
                     </Button>
-                    {!allowed && (
-                      <span className={`max-w-[240px] text-right text-[10px] font-bold leading-tight ${attendanceDeadline.state === 'expired' ? 'text-rose-600' : 'text-amber-700'}`}>
-                        {attendanceDeadline.state === 'expired'
-                          ? attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')
-                          : attendanceDeadline.state === 'too_early'
-                            ? attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en')
-                            : attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en')}
+                    {isLate && (
+                      <span className="max-w-[260px] text-right text-[10px] font-bold leading-tight text-amber-700">
+                        {attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')}
+                      </span>
+                    )}
+                    {!allowed && !isLate && (
+                      <span className="max-w-[240px] text-right text-[10px] font-bold leading-tight text-amber-700">
+                        {attendanceDeadline.state === 'too_early'
+                          ? attendanceDeadlineMessage('too_early', lang === 'vi' ? 'vi' : 'en')
+                          : attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en')}
                       </span>
                     )}
                   </div>
@@ -1456,6 +1480,14 @@ export function BookingSchedulesPage() {
           }
         >
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
+            {getAttendanceDeadline(selectedBooking, attendanceNow).state === 'expired' && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-bold">{lang === 'vi' ? 'Đang điểm danh muộn' : 'Late attendance report'}</p>
+                <p className="mt-1 text-xs leading-5">
+                  {attendanceDeadlineMessage('expired', lang === 'vi' ? 'vi' : 'en')}
+                </p>
+              </div>
+            )}
             {attendanceSubmissionDelayed && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                 <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
