@@ -91,6 +91,13 @@ export interface ClassHunt {
 /** The teacher endpoint deliberately does not include a student object. */
 export type TeacherClassHunt = Omit<ClassHunt, 'student' | 'eligibleTeachers'>
 
+export type TeacherClassHuntFeedState = 'ready' | 'contract_required'
+
+export interface TeacherClassHuntFeed {
+  hunts: TeacherClassHunt[]
+  state: TeacherClassHuntFeedState
+}
+
 export interface ClassHuntLookupInput {
   studentCode: string
 }
@@ -401,6 +408,19 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
   }
 }
 
+function teacherHuntFeedFrom(value: unknown): TeacherClassHuntFeed {
+  const root = asRecord(value)
+  // Keep accepting the legacy array-shaped response while deployed callable
+  // instances roll forward. New responses carry a reason for an empty feed so
+  // a missing contract is not misreported as a synchronization failure.
+  const rawHunts = Array.isArray(value) ? value : asArray(root.hunts)
+  const state = root.state === 'contract_required' ? 'contract_required' : 'ready'
+  return {
+    hunts: rawHunts.map(teacherHuntFrom).filter((hunt) => Boolean(hunt.id)),
+    state,
+  }
+}
+
 export async function previewClassHunt(input: ClassHuntLookupInput | ClassHuntDraftInput): Promise<ClassHuntPreview> {
   const result = await invokePreviewCallable(input)
   return previewFrom(result.data)
@@ -418,10 +438,9 @@ export async function listAdminClassHunts(status?: ClassHuntStatus): Promise<Cla
   return asArray(root.hunts ?? result.data).map(huntFrom).filter((hunt) => Boolean(hunt.id))
 }
 
-export async function listTeacherClassHunts(): Promise<TeacherClassHunt[]> {
+export async function listTeacherClassHunts(): Promise<TeacherClassHuntFeed> {
   const result = await listCallable({ scope: 'teacher', status: 'open' })
-  const root = asRecord(result.data)
-  return asArray(root.hunts ?? result.data).map(teacherHuntFrom).filter((hunt) => Boolean(hunt.id))
+  return teacherHuntFeedFrom(result.data)
 }
 
 export async function cancelClassHunt(huntId: string): Promise<ClassHunt> {

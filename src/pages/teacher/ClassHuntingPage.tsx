@@ -20,11 +20,16 @@ import {
   classHuntErrorReason,
   isClassHuntTaken,
   listTeacherClassHunts,
+  type TeacherClassHuntFeedState,
   type TeacherClassHunt,
 } from '@/lib/classHunting'
 import type { DayOfWeek } from '@/types'
 
-const POLL_INTERVAL_MS = 120_000
+// Notifications are a refresh hint, not the source of truth. A short bounded
+// poll prevents a class created in another admin session from waiting two
+// minutes when a browser was opened after the broadcast or a realtime listener
+// was briefly unavailable.
+const POLL_INTERVAL_MS = 30_000
 
 const WEEKDAY_LABELS: Record<DayOfWeek, string> = {
   mon: 'Thứ 2',
@@ -92,6 +97,7 @@ function isClassHuntNotificationForTeacher(data: Record<string, unknown>, teache
 export function TeacherClassHuntingPage() {
   const teacherId = useAuthStore((state) => state.teacherId)
   const [hunts, setHunts] = useState<TeacherClassHunt[]>([])
+  const [feedState, setFeedState] = useState<TeacherClassHuntFeedState>('ready')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -115,11 +121,12 @@ export function TeacherClassHuntingPage() {
     setError('')
 
     try {
-      const nextHunts = await listTeacherClassHunts()
+      const feed = await listTeacherClassHunts()
       if (!mountedRef.current) return
       // The callable already scopes this to the signed-in teacher. Keep this
       // defensive client filter so stale responses cannot show closed offers.
-      setHunts(nextHunts.filter((hunt) => hunt.status === 'open'))
+      setFeedState(feed.state)
+      setHunts(feed.hunts.filter((hunt) => hunt.status === 'open'))
     } catch (loadError) {
       console.error('Load teacher class hunts failed:', loadError)
       if (mountedRef.current) {
@@ -154,13 +161,18 @@ export function TeacherClassHuntingPage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') void refresh(true)
     }
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') void refresh(true)
+    }
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
 
     return () => {
       mountedRef.current = false
       window.clearTimeout(initialLoad)
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [refresh])
 
@@ -271,10 +283,18 @@ export function TeacherClassHuntingPage() {
         </section>
       ) : hunts.length === 0 ? (
         <Card padding="none">
+          {feedState === 'contract_required' && (
+            <div className="m-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900" role="alert">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <p>Tài khoản gia sư chưa hoàn tất điều khoản hợp đồng nên chưa thể nhận CLASS HUNTING. Vui lòng xác nhận hợp đồng với Admin; sau khi hoàn tất, danh sách lớp sẽ tự đồng bộ.</p>
+            </div>
+          )}
           <EmptyState
             icon={<Target className="h-8 w-8" />}
             title="Chưa có lớp mới"
-            description="Chỉ lớp có mã môn khớp đúng chuyên môn và còn đủ điều kiện nhận mới hiển thị ở đây. Thông báo chung không đồng nghĩa lớp nào cũng phù hợp với hồ sơ của bạn."
+            description={feedState === 'contract_required'
+              ? 'Sau khi hoàn tất điều khoản, hãy làm mới để tải các lớp phù hợp.'
+              : 'Chỉ lớp có mã môn khớp đúng chuyên môn và còn đủ điều kiện nhận mới hiển thị ở đây. Thông báo chung không đồng nghĩa lớp nào cũng phù hợp với hồ sơ của bạn.'}
             action={{ label: 'Làm mới danh sách', onClick: () => void refresh() }}
           />
         </Card>

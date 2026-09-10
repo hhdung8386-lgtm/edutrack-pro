@@ -352,7 +352,7 @@ export function ClassHuntingPage() {
               : reason === 'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING' || reason === 'CLASS_HUNT_NO_REMAINING_SESSIONS'
                 ? 'Số buổi đã chọn không còn phù hợp với gói học hiện tại. Hãy kiểm tra lại gói và lịch.'
                 : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
-                  ? 'Chưa có gia sư online hoạt động nào được gắn đúng mã môn này. Hãy đồng bộ chuyên môn gia sư trước.'
+                  ? 'Chưa có gia sư đủ điều kiện nhận lớp cho mã môn này. Hãy kiểm tra chuyên môn, liên kết tài khoản và điều khoản hợp đồng trước.'
           : 'Chưa kiểm tra được lịch lớp. Dữ liệu chưa được tạo.')
     } finally {
       if (requestId === previewRequestRef.current) setPreviewing(false)
@@ -390,8 +390,8 @@ export function ClassHuntingPage() {
         ? 'Chỉ Admin được tạo CLASS HUNTING có đơn giá riêng.'
         : reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
           ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
-          : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
-            ? 'Chưa có gia sư online hoạt động nào được gắn đúng mã môn này. Hãy đồng bộ chuyên môn gia sư trước.'
+            : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
+            ? 'Chưa có gia sư đủ điều kiện nhận lớp cho mã môn này. Hãy kiểm tra chuyên môn, liên kết tài khoản và điều khoản hợp đồng trước.'
             : reason === 'CLASS_HUNT_ALL_DURATION_MISMATCH'
               ? 'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.'
           : 'Chưa đăng được CLASS HUNTING. Dữ liệu chưa bị trừ.')
@@ -742,12 +742,12 @@ export function ClassHuntingPage() {
                 {preview.matchingTeacherCount === 0 ? (
                   <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900" role="alert">
                     <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p>Chưa có hồ sơ gia sư online hoạt động được gắn đúng mã môn này. Không thể đăng lớp hoặc gửi thông báo chung trước khi dữ liệu chuyên môn được đồng bộ.</p>
+                    <p>Chưa có gia sư đủ điều kiện nhận lớp (đúng môn, hồ sơ hợp lệ, tài khoản chuẩn và đã hoàn tất điều khoản). Không thể đăng một yêu cầu mà mọi gia sư đều phải bị ẩn.</p>
                   </div>
                 ) : (
                   <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p>{preview.matchingTeacherCount ? `Đã tìm thấy ${preview.matchingTeacherCount} hồ sơ gia sư khớp đúng môn. ` : ''}Hệ thống không yêu cầu gia sư mở lịch rảnh trước; khi nhận lớp, hệ thống mới kiểm tra trùng ca dạy thực tế.</p>
+                    <p>{preview.matchingTeacherCount ? `Đã tìm thấy ${preview.matchingTeacherCount} gia sư đủ điều kiện nhận lớp. ` : ''}Hệ thống không yêu cầu gia sư mở lịch rảnh trước; khi nhận lớp, hệ thống mới kiểm tra trùng ca dạy thực tế.</p>
                   </div>
                 )}
                 <Button fullWidth type="button" onClick={() => setPublishConfirmOpen(true)} disabled={!canPublish} className="whitespace-nowrap">
