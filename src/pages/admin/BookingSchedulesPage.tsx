@@ -978,7 +978,12 @@ export function BookingSchedulesPage() {
       const endMin = startMin + duration
       const endStr = minutesToTime(endMin)
 
-      const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
+      const overlap = checkStudentOverlap(
+        selectedStudentBookings.filter((booking) => !repairedBookingIds.has(booking.id)),
+        slot.dateISO,
+        slot.time,
+        endStr,
+      )
       if (overlap) {
         const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${slot.time} - ${endStr}, ngày ${slot.dateISO}.`
         setScheduleConflictMessage(message)
