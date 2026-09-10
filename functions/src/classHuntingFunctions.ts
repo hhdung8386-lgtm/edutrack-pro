@@ -57,6 +57,7 @@ const CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT = 5000
 const FIRESTORE_MULTI_VALUE_QUERY_LIMIT = 30
 const CONTRACT_QUERY_LIMIT = 100
 const CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT = 100
+const CLASS_HUNT_CONTRACT_MATCH_SCAN_LIMIT = 200
 const CONTROL_CHARACTER_PATTERN = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
   'g',
@@ -791,30 +792,95 @@ async function buildOperatorContext(data: Record<string, unknown>, nowMs: number
   }
 }
 
+function canonicalTeacherLoginUid(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const uid = value.trim()
+  return uid.length > 0 && uid.length <= 128 && !uid.includes('/') ? uid : null
+}
+
+function chunks<T>(values: T[], size: number): T[][] {
+  const result: T[][] = []
+  for (let offset = 0; offset < values.length; offset += size) {
+    result.push(values.slice(offset, offset + size))
+  }
+  return result
+}
+
 /**
- * Class Hunting deliberately ignores declared availability. This preflight
- * only confirms that at least one active, online, profile-complete teacher has
- * the exact canonical subject ID. It prevents a broadcast that no teacher can
- * ever see, while the full contract, fund and real-calendar checks remain at
- * list/claim time.
+ * Class Hunting deliberately ignores declared availability. Publish
+ * preflight must nevertheless use the same identity, profile, subject and
+ * contract gates as the teacher feed/claim path. The previous implementation
+ * counted any matching profile, so an admin could successfully publish an
+ * offer that every teacher endpoint was required to hide.
  */
-async function countMatchingClassHuntTeachers(subjectId: string): Promise<number> {
+async function findEligibleClassHuntTeacherIds(subjectId: string): Promise<string[]> {
   const snapshot = await db.collection('teachers')
     .where('subjectIds', 'array-contains', subjectId)
     .limit(CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT + 1)
     .get()
-  const matching = snapshot.docs.filter((document) => {
+  if (snapshot.size > CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT) {
+    logger.warn('Class hunt matching teacher preflight reached its safety bound', {
+      subjectId,
+      scanned: snapshot.size,
+    })
+  }
+
+  const candidates = snapshot.docs.filter((document) => {
     const teacher = document.data() as ClassHuntTeacherLike
     return isEligibleOnlineClassHuntTeacher(teacher)
       && isClassHuntTeacherProfileComplete(teacher)
-  }).length
-  if (snapshot.size > CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT) {
-    logger.info('Class hunt matching teacher count reached its display bound', { subjectId })
-    // Do not falsely block an otherwise valid publish merely because the
-    // bounded preflight cannot inspect every historical teacher profile.
-    return Math.max(1, matching)
-  }
-  return matching
+      && Boolean(canonicalTeacherLoginUid(teacher.loginAccountUid))
+  })
+  if (candidates.length === 0) return []
+
+  const userSnapshots = await db.getAll(...candidates.map((document) => (
+    db.collection('users').doc(canonicalTeacherLoginUid((document.data() as ClassHuntTeacherLike).loginAccountUid) as string)
+  )))
+  const usersByUid = new Map(userSnapshots
+    .filter((document) => document.exists)
+    .map((document) => [document.id, document.data() || {}]))
+  const canonicalCandidates = candidates.filter((document) => {
+    const teacher = document.data() as ClassHuntTeacherLike
+    const uid = canonicalTeacherLoginUid(teacher.loginAccountUid)
+    const user = uid ? usersByUid.get(uid) : undefined
+    return Boolean(uid && user && hasCanonicalClassHuntTeacherLogin({
+      teacherId: document.id,
+      uid,
+      teacherLoginAccountUid: teacher.loginAccountUid,
+      userTeacherId: user.teacherId,
+      userRole: user.role,
+    }))
+  })
+  if (canonicalCandidates.length === 0) return []
+
+  const contractsByTeacherId = new Map<string, boolean>()
+  const teacherIds = canonicalCandidates.map((document) => document.id)
+  const contractSnapshots = await Promise.all(chunks(teacherIds, FIRESTORE_MULTI_VALUE_QUERY_LIMIT).map((ids) => (
+    db.collection('contracts')
+      .where('teacherId', 'in', ids)
+      .limit(CLASS_HUNT_CONTRACT_MATCH_SCAN_LIMIT + 1)
+      .get()
+  )))
+  contractSnapshots.forEach((contractSnapshot) => {
+    if (contractSnapshot.size > CLASS_HUNT_CONTRACT_MATCH_SCAN_LIMIT) {
+      logger.warn('Class hunt matching teacher contract preflight reached its safety bound', {
+        subjectId,
+        scanned: contractSnapshot.size,
+      })
+    }
+    contractSnapshot.docs.forEach((document) => {
+      const teacherId = document.data()?.teacherId
+      if (typeof teacherId === 'string' && hasAcceptedClassHuntContract(document.data() || {})) {
+        contractsByTeacherId.set(teacherId, true)
+      }
+    })
+  })
+
+  return teacherIds.filter((teacherId) => contractsByTeacherId.get(teacherId) === true)
+}
+
+async function countMatchingClassHuntTeachers(subjectId: string): Promise<number> {
+  return (await findEligibleClassHuntTeacherIds(subjectId)).length
 }
 
 function assertMatchingClassHuntTeacherCount(count: number): void {
@@ -822,7 +888,7 @@ function assertMatchingClassHuntTeacherCount(count: number): void {
   throw error(
     'failed-precondition',
     'CLASS_HUNT_NO_MATCHING_TEACHER',
-    'Chưa có hồ sơ gia sư online hoạt động nào được gắn đúng môn học này. Vui lòng đồng bộ chuyên môn gia sư trước khi đăng lớp.',
+    'Chưa có gia sư đủ điều kiện nhận lớp cho môn học này. Vui lòng kiểm tra chuyên môn, liên kết tài khoản và điều khoản hợp đồng trước khi đăng lớp.',
   )
 }
 
@@ -854,7 +920,7 @@ export const previewClassHunt = onCall({
   const context = await buildOperatorContext(data, nowMs)
   const matchingTeacherCount = await countMatchingClassHuntTeachers(context.draft.subjectId)
   const warnings = matchingTeacherCount === 0
-    ? ['Chưa có gia sư online hoạt động nào được gắn đúng mã môn này. Chưa thể đăng lớp; hãy đồng bộ chuyên môn gia sư trước.']
+    ? ['Chưa có gia sư đủ điều kiện nhận lớp cho mã môn này (cần hồ sơ hợp lệ, tài khoản chuẩn và điều khoản đã hoàn tất). Chưa thể đăng lớp.']
     : []
   return {
     student: serializeLookupStudent(context.draft.studentId, context.student, true),
@@ -896,7 +962,8 @@ export const publishClassHunt = onCall({
   if (existing) return { hunt: serializeAdminHunt(existing, Date.now(), actor.role === 'admin') }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const matchingTeacherCount = await countMatchingClassHuntTeachers(context.draft.subjectId)
+  const eligibleTeacherIds = await findEligibleClassHuntTeacherIds(context.draft.subjectId)
+  const matchingTeacherCount = eligibleTeacherIds.length
   assertMatchingClassHuntTeacherCount(matchingTeacherCount)
   const publishRequestRef = db.collection(CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION)
     .doc(classHuntPublishRequestDocumentId(actor.uid, clientRequestId))
@@ -1029,7 +1096,10 @@ export const publishClassHunt = onCall({
       iconName: 'Calendar',
       kind: 'class_hunt_available',
       targetType: 'teachers',
-      targetIds: [],
+      // Notify only canonical, profile-complete teachers with an accepted
+      // contract. The feed still re-checks funds and real schedule conflicts;
+      // this list is only a realtime refresh hint and contains no student data.
+      targetIds: eligibleTeacherIds,
       senderId: 'system:class-hunt',
       senderName: 'Hệ thống 123English',
       createdAt: FieldValue.serverTimestamp(),
@@ -1382,10 +1452,16 @@ export const listClassHunts = onCall({
     )
   }
   const contractAccepted = hasAcceptedContract(contractsSnapshot.docs)
-  if (!contractAccepted) return { hunts: [] }
+  if (!contractAccepted) {
+    return {
+      hunts: [],
+      state: 'contract_required' as const,
+    }
+  }
   const eligible = await loadVisibleClassHuntCandidates({ teacher, nowMs, contractAccepted })
   return {
     hunts: eligible.map((hunt) => serializeTeacherHunt(hunt)),
+    state: 'ready' as const,
   }
 })
 
