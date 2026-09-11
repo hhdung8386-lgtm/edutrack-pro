@@ -207,7 +207,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
   }
 
   if (role === 'teacher_manager') {
-    if (location.pathname.startsWith('/admin/students') || location.pathname === '/admin/class-hunting') {
+    if (location.pathname.startsWith('/admin/students') || location.pathname === '/admin/class-hunting' || location.pathname === '/admin/booking-ledger-repair') {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center">
           <div className="text-center">

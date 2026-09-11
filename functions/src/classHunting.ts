@@ -21,9 +21,12 @@ export const CLASS_HUNT_MAX_TTL_MINUTES = 7 * 24 * 60
  * ceiling and within the one-year schedule horizon; this is a transaction
  * safety boundary, not a UI-only product limit.
  */
-export const CLASS_HUNT_MAX_SESSIONS = 52
+export const CLASS_HUNT_MAX_SESSIONS = 120
 export const CLASS_HUNT_SESSION_HORIZON_DAYS = 366
 export const CLASS_HUNT_MINUTES = [25, 50, 75, 100] as const
+/** Each weekly timetable slot picked by an operator is one 25-minute lesson. */
+export const CLASS_HUNT_SLOT_MINUTES = 25
+export const CLASS_HUNT_TEACHER_TYPES = ['vn', 'ph', 'native'] as const
 export const CLASS_HUNT_COMPENSATION_VERSION = 1
 export const CLASS_HUNT_COMPENSATION_CURRENCY = 'VND' as const
 export const CLASS_HUNT_COMPENSATION_FORMULA = 'flat_per_minute' as const
@@ -39,6 +42,23 @@ const CONTROL_CHARACTER_PATTERN = new RegExp(
 
 export type ClassHuntDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
+export type ClassHuntTeacherType = typeof CLASS_HUNT_TEACHER_TYPES[number]
+export type ClassHuntTeacherGender = 'any' | 'female' | 'male'
+
+/**
+ * Optional operator request shown to every tutor. It never hides an offer:
+ * the feed lists every open class and only the claim rejects a mismatch.
+ */
+export interface ClassHuntTeacherRequirements {
+  teacherTypes: ClassHuntTeacherType[]
+  gender: ClassHuntTeacherGender
+}
+
+/** One weekly timetable cell. Every generated lesson is CLASS_HUNT_SLOT_MINUTES long. */
+export interface ClassHuntWeeklySlot {
+  day: ClassHuntDay
+  start: string
+}
 /** A legacy request without this field is treated as a specific-count request. */
 export type ClassHuntSessionSelectionMode = 'all_remaining' | 'specific'
 
@@ -71,6 +91,9 @@ export interface ClassHuntDraft {
   sessionSelectionMode: ClassHuntSessionSelectionMode
   expiresInMinutes: number
   sessions: ClassHuntSession[]
+  /** Present for plans built from the weekly slot grid (25-minute lessons). */
+  weeklySlots?: ClassHuntWeeklySlot[]
+  teacherRequirements: ClassHuntTeacherRequirements
   /**
    * Present only for newly published, admin-priced hunts. Its absence is a
    * deliberate compatibility path for offers created before class-level pay
@@ -114,6 +137,8 @@ export interface ClassHuntTeacherLike {
   bankAccountNo?: unknown
   bankAccountName?: unknown
   pointsPer25Minutes?: unknown
+  country?: unknown
+  teacherGrade?: unknown
 }
 
 export interface ClassHuntStudentLike {
@@ -425,6 +450,154 @@ export function normalizeClassHuntExpiryMinutes(value: unknown): number {
   return minutes
 }
 
+const CLASS_HUNT_DAY_ORDER: ClassHuntDay[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+// Mirrors the `native` group in src/lib/teacherCountries.ts, plus legacy aliases.
+const CLASS_HUNT_NATIVE_TEACHER_COUNTRIES = new Set(['GB', 'UK', 'US', 'US_EST', 'US_PST', 'CA', 'AU', 'NZ', 'IE', 'ZA'])
+
+export function defaultClassHuntTeacherRequirements(): ClassHuntTeacherRequirements {
+  return { teacherTypes: [...CLASS_HUNT_TEACHER_TYPES], gender: 'any' }
+}
+
+/** A historical offer without requirements is open to every tutor. */
+export function normalizeClassHuntTeacherRequirements(value: unknown): ClassHuntTeacherRequirements {
+  if (value === undefined || value === null) return defaultClassHuntTeacherRequirements()
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ClassHuntValidationError('CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID', 'Yêu cầu giáo viên không hợp lệ.')
+  }
+  const raw = value as { teacherTypes?: unknown; gender?: unknown }
+  const types = raw.teacherTypes === undefined ? [...CLASS_HUNT_TEACHER_TYPES] : raw.teacherTypes
+  if (!Array.isArray(types) || types.some((type) => !CLASS_HUNT_TEACHER_TYPES.includes(type as ClassHuntTeacherType))) {
+    throw new ClassHuntValidationError('CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID', 'Loại giáo viên yêu cầu không hợp lệ.')
+  }
+  const teacherTypes = CLASS_HUNT_TEACHER_TYPES.filter((type) => types.includes(type))
+  if (teacherTypes.length === 0) {
+    throw new ClassHuntValidationError('CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID', 'Chọn ít nhất một loại giáo viên.')
+  }
+  const gender = raw.gender === undefined || raw.gender === '' ? 'any' : raw.gender
+  if (gender !== 'any' && gender !== 'female' && gender !== 'male') {
+    throw new ClassHuntValidationError('CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID', 'Giới tính giáo viên yêu cầu không hợp lệ.')
+  }
+  return { teacherTypes, gender }
+}
+
+export function sameClassHuntTeacherRequirements(left: ClassHuntTeacherRequirements, right: ClassHuntTeacherRequirements): boolean {
+  return left.gender === right.gender
+    && left.teacherTypes.length === right.teacherTypes.length
+    && left.teacherTypes.every((type, index) => type === right.teacherTypes[index])
+}
+
+/** A profile without a country follows the app-wide Vietnam default. */
+export function classHuntTeacherType(teacher: Pick<ClassHuntTeacherLike, 'country' | 'teacherGrade'> | null | undefined): ClassHuntTeacherType | null {
+  const country = typeof teacher?.country === 'string' ? teacher.country.trim().toUpperCase() : ''
+  if (country === 'VN') return 'vn'
+  if (country === 'PH') return 'ph'
+  if (CLASS_HUNT_NATIVE_TEACHER_COUNTRIES.has(country)) return 'native'
+  if (country) return null
+  if (teacher?.teacherGrade === 'PH') return 'ph'
+  if (teacher?.teacherGrade === 'SA') return 'native'
+  return 'vn'
+}
+
+export type ClassHuntRequirementMismatch = 'gender' | 'teacher_type'
+
+/** Selecting every teacher type means "no type requirement", including other countries. */
+export function classHuntTeacherRequirementMismatch(
+  teacher: ClassHuntTeacherLike | null | undefined,
+  requirements: ClassHuntTeacherRequirements,
+): ClassHuntRequirementMismatch | null {
+  if (requirements.gender !== 'any' && teacher?.gender !== requirements.gender) return 'gender'
+  if (requirements.teacherTypes.length < CLASS_HUNT_TEACHER_TYPES.length) {
+    const type = classHuntTeacherType(teacher)
+    if (!type || !requirements.teacherTypes.includes(type)) return 'teacher_type'
+  }
+  return null
+}
+
+/** Every active, non-tester tutor sees an offer; the requirement only narrows who can claim it. */
+export function classHuntTeacherAudience(
+  teachers: ClassHuntTeacherLike[],
+  requirements: ClassHuntTeacherRequirements,
+): { activeTeacherCount: number; matchingTeacherCount: number } {
+  const active = teachers.filter((teacher) => teacher && teacher.status === 'active' && teacher.isTester !== true)
+  return {
+    activeTeacherCount: active.length,
+    matchingTeacherCount: active.filter((teacher) => !classHuntTeacherRequirementMismatch(teacher, requirements)).length,
+  }
+}
+
+export function normalizeClassHuntWeeklySlots(value: unknown): ClassHuntWeeklySlot[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ClassHuntValidationError('CLASS_HUNT_SLOTS_INVALID', 'Vui lòng chọn ít nhất một slot học.')
+  }
+  if (value.length > CLASS_HUNT_DAY_ORDER.length * 48) {
+    throw new ClassHuntValidationError('CLASS_HUNT_SLOTS_INVALID', 'Số slot học vượt giới hạn cho phép.')
+  }
+  const slots = value.map((item) => {
+    const raw = (item && typeof item === 'object' ? item : {}) as { day?: unknown; start?: unknown }
+    if (typeof raw.day !== 'string' || !CLASS_HUNT_DAY_ORDER.includes(raw.day as ClassHuntDay)) {
+      throw new ClassHuntValidationError('CLASS_HUNT_SLOTS_INVALID', 'Thứ học của slot không hợp lệ.')
+    }
+    const start = normalizeTime(raw.start, 'CLASS_HUNT_SLOTS_INVALID')
+    if (timeToMinutes(start) + CLASS_HUNT_SLOT_MINUTES > 24 * 60) {
+      throw new ClassHuntValidationError('CLASS_HUNT_SLOTS_INVALID', 'Slot học phải kết thúc trong ngày.')
+    }
+    return { day: raw.day as ClassHuntDay, start }
+  })
+  slots.sort((left, right) => CLASS_HUNT_DAY_ORDER.indexOf(left.day) - CLASS_HUNT_DAY_ORDER.indexOf(right.day)
+    || timeToMinutes(left.start) - timeToMinutes(right.start))
+  for (let index = 1; index < slots.length; index += 1) {
+    const previous = slots[index - 1]
+    const current = slots[index]
+    if (previous.day === current.day && timeToMinutes(current.start) - timeToMinutes(previous.start) < CLASS_HUNT_SLOT_MINUTES) {
+      throw new ClassHuntValidationError('CLASS_HUNT_SLOTS_INVALID', 'Các slot trong cùng một ngày không được trùng hoặc chồng giờ.')
+    }
+  }
+  return slots
+}
+
+/** Weekly slot grid: each selected cell becomes one 25-minute lesson in date order. */
+export function buildFutureClassHuntSlotSessions(input: {
+  startDate: unknown
+  weeklySlots: unknown
+  sessionCount: unknown
+  nowMs: number
+}): ClassHuntSession[] {
+  const start = parseDateISO(input.startDate, 'CLASS_HUNT_START_DATE_INVALID')
+  const weeklySlots = normalizeClassHuntWeeklySlots(input.weeklySlots)
+  const sessionCount = normalizeClassHuntSessionCount(input.sessionCount)
+  const vietnamNow = vietnamNowParts(input.nowMs)
+  if (formatDateISO(start) < vietnamNow.dateISO) {
+    throw new ClassHuntValidationError('CLASS_HUNT_START_DATE_PAST', 'Ngày bắt đầu không được ở quá khứ.')
+  }
+  const sessions: ClassHuntSession[] = []
+  for (let offset = 0; sessions.length < sessionCount && offset <= CLASS_HUNT_SESSION_HORIZON_DAYS; offset += 1) {
+    const date = addCalendarDays(start, offset)
+    const dateISO = formatDateISO(date)
+    const day = dayOfDate(date)
+    for (const slot of weeklySlots) {
+      if (slot.day !== day) continue
+      const startMinute = timeToMinutes(slot.start)
+      if (dateISO === vietnamNow.dateISO && startMinute <= vietnamNow.minuteOfDay) continue
+      sessions.push({
+        dateISO,
+        day,
+        requestedWeekStart: formatDateISO(mondayOf(date)),
+        requestedStart: slot.start,
+        requestedEnd: minutesToTime(startMinute + CLASS_HUNT_SLOT_MINUTES),
+        requestedMinutes: CLASS_HUNT_SLOT_MINUTES,
+      })
+      if (sessions.length === sessionCount) break
+    }
+  }
+  if (sessions.length !== sessionCount) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_SESSION_GENERATION_FAILED',
+      `Trong ${CLASS_HUNT_SESSION_HORIZON_DAYS} ngày tới, các slot đã chọn chỉ tạo được ${sessions.length} buổi. Hãy chọn thêm slot hoặc giảm số buổi.`,
+    )
+  }
+  return sessions
+}
+
 /** Build immutable Vietnam-calendar sessions. A passed slot is never silently moved. */
 export function buildFutureClassHuntSessions(input: {
   startDate: unknown
@@ -487,16 +660,25 @@ export function buildClassHuntDraft(input: {
   sessionSelectionMode?: unknown
   expiresInMinutes?: unknown
   compensationRatePerMinute?: unknown
+  weeklySlots?: unknown
+  teacherRequirements?: unknown
 }, nowMs: number): ClassHuntDraft {
   const studentId = requiredDocumentId(input.studentId, 'CLASS_HUNT_STUDENT_ID_INVALID')
   const subjectId = requiredDocumentId(input.subjectId, 'CLASS_HUNT_SUBJECT_ID_INVALID')
   const start = parseDateISO(input.startDate, 'CLASS_HUNT_START_DATE_INVALID')
-  const selectedDays = normalizeClassHuntDays(input.selectedDays)
-  const requestedStart = normalizeTime(input.requestedStart, 'CLASS_HUNT_TIME_INVALID')
-  const requestedMinutes = normalizeClassHuntDuration(input.requestedMinutes)
+  const usesWeeklySlots = input.weeklySlots !== undefined && input.weeklySlots !== null
+  const weeklySlots = usesWeeklySlots ? normalizeClassHuntWeeklySlots(input.weeklySlots) : undefined
+  // The slot grid replaces weekday + start time + duration. Legacy clients keep
+  // sending those fields and still get the original fixed-duration series.
+  const selectedDays = weeklySlots
+    ? CLASS_HUNT_DAY_ORDER.filter((day) => weeklySlots.some((slot) => slot.day === day))
+    : normalizeClassHuntDays(input.selectedDays)
+  const requestedStart = weeklySlots ? weeklySlots[0].start : normalizeTime(input.requestedStart, 'CLASS_HUNT_TIME_INVALID')
+  const requestedMinutes = weeklySlots ? CLASS_HUNT_SLOT_MINUTES : normalizeClassHuntDuration(input.requestedMinutes)
   const sessionCount = normalizeClassHuntSessionCount(input.sessionCount)
   const sessionSelectionMode = normalizeClassHuntSessionSelectionMode(input.sessionSelectionMode)
   const expiresInMinutes = normalizeClassHuntExpiryMinutes(input.expiresInMinutes)
+  const teacherRequirements = normalizeClassHuntTeacherRequirements(input.teacherRequirements)
   const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
   if (classHuntCompensation) {
     // Validate the whole class amount at creation time. No value is rounded or
@@ -504,9 +686,11 @@ export function buildClassHuntDraft(input: {
     // an immutable financial record.
     classHuntCompensationAmount(classHuntCompensation, requestedMinutes, sessionCount)
   }
-  const sessions = buildFutureClassHuntSessions({
-    startDate: formatDateISO(start), selectedDays, requestedStart, requestedMinutes, sessionCount, nowMs,
-  })
+  const sessions = weeklySlots
+    ? buildFutureClassHuntSlotSessions({ startDate: formatDateISO(start), weeklySlots, sessionCount, nowMs })
+    : buildFutureClassHuntSessions({
+      startDate: formatDateISO(start), selectedDays, requestedStart, requestedMinutes, sessionCount, nowMs,
+    })
   return {
     studentId,
     subjectId,
@@ -518,6 +702,8 @@ export function buildClassHuntDraft(input: {
     sessionSelectionMode,
     expiresInMinutes,
     sessions,
+    ...(weeklySlots ? { weeklySlots } : {}),
+    teacherRequirements,
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
@@ -534,6 +720,8 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     sessionSelectionMode: draft.sessionSelectionMode,
     expiresInMinutes: draft.expiresInMinutes,
     sessions: draft.sessions,
+    weeklySlots: draft.weeklySlots || null,
+    teacherRequirements: draft.teacherRequirements,
     classHuntCompensation: draft.classHuntCompensation || null,
   }), 'utf8').digest('hex')
 }
@@ -556,6 +744,8 @@ export function classHuntPublishRetryMatches(input: {
   sessionSelectionMode?: unknown
   expiresInMinutes?: unknown
   compensationRatePerMinute?: unknown
+  weeklySlots?: unknown
+  teacherRequirements?: unknown
 }, stored: {
   studentId: string
   studentCode: string
@@ -569,7 +759,43 @@ export function classHuntPublishRetryMatches(input: {
   createdAtMs: number
   expiresAtMs: number
   classHuntCompensation?: unknown
+  weeklySlots?: unknown
+  teacherRequirements?: unknown
 }): boolean {
+  let requirementsMatch = false
+  try {
+    requirementsMatch = sameClassHuntTeacherRequirements(
+      normalizeClassHuntTeacherRequirements(input.teacherRequirements),
+      normalizeClassHuntTeacherRequirements(stored.teacherRequirements),
+    )
+  } catch {
+    return false
+  }
+  if (!requirementsMatch) return false
+
+  const inputUsesSlots = input.weeklySlots !== undefined && input.weeklySlots !== null
+  const storedUsesSlots = stored.weeklySlots !== undefined && stored.weeklySlots !== null
+  if (inputUsesSlots !== storedUsesSlots) return false
+  if (inputUsesSlots) {
+    try {
+      const requestedSlots = normalizeClassHuntWeeklySlots(input.weeklySlots)
+      const storedSlots = normalizeClassHuntWeeklySlots(stored.weeklySlots)
+      if (requestedSlots.length !== storedSlots.length
+        || requestedSlots.some((slot, index) => slot.day !== storedSlots[index].day || slot.start !== storedSlots[index].start)) {
+        return false
+      }
+    } catch {
+      return false
+    }
+    // Keep the legacy weekday/time comparison below meaningful for slot plans.
+    input = {
+      ...input,
+      weekdays: [...new Set(stored.selectedDays)],
+      startTime: stored.requestedStart,
+      minutes: stored.requestedMinutes,
+    }
+  }
+
   if (!Array.isArray(input.weekdays)
     || !input.weekdays.every((day) => typeof day === 'string')
     || new Set(input.weekdays).size !== input.weekdays.length) return false
@@ -954,10 +1180,11 @@ export function hasAcceptedClassHuntContract(contract: unknown): boolean {
 }
 
 /**
- * A teacher profile is claimable only when its canonical login points back to
- * the same teacher record and the user document is still a teacher. Keep the
- * identity check pure so candidate discovery cannot drift from claim-time
- * authorization.
+ * The signed-in users/{uid} document must still be a teacher pointing at this
+ * teacher record (Rules forbid a teacher changing role or teacherId). Most
+ * existing profiles never stored `loginAccountUid`; when it is present it must
+ * match, when it is empty the users link is the source of truth. Keep the
+ * identity check pure so discovery cannot drift from claim-time authorization.
  */
 export function hasCanonicalClassHuntTeacherLogin(input: {
   teacherId: unknown
@@ -966,11 +1193,14 @@ export function hasCanonicalClassHuntTeacherLogin(input: {
   userTeacherId: unknown
   userRole: unknown
 }): boolean {
+  const teacherLoginAccountUid = typeof input.teacherLoginAccountUid === 'string'
+    ? input.teacherLoginAccountUid.trim()
+    : ''
   return typeof input.teacherId === 'string'
     && input.teacherId.length > 0
     && typeof input.uid === 'string'
     && input.uid.length > 0
-    && input.teacherLoginAccountUid === input.uid
+    && (!teacherLoginAccountUid || teacherLoginAccountUid === input.uid)
     && input.userTeacherId === input.teacherId
     && input.userRole === 'teacher'
 }

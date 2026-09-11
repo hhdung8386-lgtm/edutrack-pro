@@ -741,7 +741,7 @@ export function ApprovalsPage() {
       } else if (message === 'BOOKING_STATE_CHANGED') {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (message === 'BOOKING_SUBJECT_MISMATCH') {
-        toast.error('Môn của lịch đặt khác môn buổi điểm danh. Không tự trừ sang gói còn buổi khác; cần xác nhận chuyển môn/lịch sử trước.')
+        toast.error('Ca đặt đang ghi môn khác môn của buổi điểm danh (thường do học viên đã đổi gói). Vào Kế toán › Đồng bộ ca đã duyệt, tab "Ca trỏ môn cũ" để chuyển ca về đúng gói rồi duyệt lại.')
       } else if (message === 'BOOKING_RECONCILIATION_INVALID') {
         toast.error('Dữ liệu lịch hoặc gói môn vừa thay đổi. Đối soát chưa được ghi; vui lòng mở lại và kiểm tra.')
       } else if (message === 'CLASS_HUNT_COMPENSATION_INVALID') {

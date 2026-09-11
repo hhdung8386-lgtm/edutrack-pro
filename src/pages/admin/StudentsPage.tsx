@@ -15,7 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { Users, Plus, Search, Eye, MoreVertical, Trash2, CheckSquare, Copy, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
-import { getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { getBookingFinancialHoldPoints, getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
@@ -265,8 +265,13 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     }
   }, [currentExactSearchStudent])
 
+  // Kết quả tìm kiếm ngắn: đối chiếu số giữ với sổ booking thật thay vì số lưu trên hồ sơ
+  // (số lưu có thể lệch và từng hiện "đã giữ 250p" trong khi học viên không giữ ca nào).
+  const [searchLedgerHolds, setSearchLedgerHolds] = useState<{ key: string; holds: Record<string, number> }>({ key: '', holds: {} })
   const displayBookingHoldFor = (student: Student) => (
-    exactSearchBookingHold?.studentId === student.id ? exactSearchBookingHold.actualHeld : null
+    exactSearchBookingHold?.studentId === student.id
+      ? exactSearchBookingHold.actualHeld
+      : searchLedgerHolds.holds[student.id] ?? null
   )
   const searchableStudents = currentExactSearchStudent && !students.some((student) => student.id === currentExactSearchStudent.id)
     ? [currentExactSearchStudent, ...students]
@@ -324,6 +329,38 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     : sortBy === 'name_desc'
       ? [...filtered].sort((a, b) => b.name.localeCompare(a.name, 'vi'))
       : filtered
+
+  // Chỉ khi đang tìm và còn ít kết quả (≤ 30 hồ sơ = 1 truy vấn `in`) để không đọc sổ booking cả danh sách.
+  const ledgerHoldKey = search.trim() && sorted.length > 0 && sorted.length <= 30
+    ? sorted.map((student) => student.id).sort().join('|')
+    : ''
+  useEffect(() => {
+    if (!ledgerHoldKey) return
+    let cancelled = false
+    const studentIds = ledgerHoldKey.split('|')
+    const timer = window.setTimeout(() => {
+      getDocs(query(collection(db, 'bookingRequests'), where('studentId', 'in', studentIds)))
+        .then((snapshot) => settleBookingsByApprovedLessons(snapshot.docs.map((bookingDoc) => ({
+          id: bookingDoc.id,
+          ...bookingDoc.data(),
+        } as BookingRequest))))
+        .then(({ bookings }) => {
+          if (cancelled) return
+          const holds: Record<string, number> = Object.fromEntries(studentIds.map((studentId) => [studentId, 0]))
+          bookings.forEach((booking) => {
+            if (booking.studentId in holds) holds[booking.studentId] += getBookingFinancialHoldPoints(booking)
+          })
+          setSearchLedgerHolds({ key: ledgerHoldKey, holds })
+        })
+        .catch((error) => {
+          if (!cancelled) console.error('Error loading searched student booking holds:', error)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [ledgerHoldKey])
 
   const allVisibleSelected = sorted.length > 0 && sorted.every((student) => selectedStudentIds.has(student.id))
 

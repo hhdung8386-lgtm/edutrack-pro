@@ -233,7 +233,8 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
         </div>
       )}
 
-      <ul className={`divide-y divide-slate-100 ${compact ? 'max-h-48 overflow-y-auto pr-1' : ''}`}>
+      {/* No nested scroll on touch screens: inside a modal it hid the rows and buttons on iPad/phone. */}
+      <ul className={`divide-y divide-slate-100 ${compact ? 'xl:max-h-48 xl:overflow-y-auto xl:pr-1' : ''}`}>
         {rows.map(({ booking, state, canUnlink }) => {
           const meta = state ? STATE_META[state] : null
           const Icon = meta?.icon

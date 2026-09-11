@@ -44,3 +44,36 @@ export function allocateApprovedLearningMinutes(
   if (unmatchedMinutes > 0 && allocated.length > 0) allocated[0] += unmatchedMinutes
   return allocated
 }
+
+/**
+ * Phút còn lại phải đi theo kim cương còn lại, quy đổi đúng tỉ lệ lúc đăng ký gói
+ * (thường 25 kim cương = 25 phút). Trừ phút đã học khỏi phút đăng ký sẽ lệch khi
+ * gia sư tính cao hơn giá gói (vd 35 kim cương/25 phút) hoặc buổi vắng có phí.
+ */
+export function courseRemainingMinutes(input: {
+  registeredMinutes: number
+  registeredDiamonds: number
+  remainingDiamonds: number
+}): number {
+  const remainingDiamonds = Math.max(0, Number(input.remainingDiamonds) || 0)
+  const registeredMinutes = Number(input.registeredMinutes) || 0
+  const registeredDiamonds = Number(input.registeredDiamonds) || 0
+  if (registeredMinutes <= 0 || registeredDiamonds <= 0) return Math.round(remainingDiamonds)
+  return Math.round(remainingDiamonds * (registeredMinutes / registeredDiamonds))
+}
+
+/**
+ * Kim cương đã dùng vượt phần tương ứng với phút đã học (đơn giá gia sư cao hơn giá
+ * gói, buổi vắng không phép tính phí...). Chỉ để giải thích, không đổi số liệu.
+ */
+export function courseLearnedDiamondPremium(input: {
+  registeredMinutes: number
+  registeredDiamonds: number
+  learnedMinutes: number
+  learnedDiamonds: number
+}): number {
+  const registeredMinutes = Number(input.registeredMinutes) || 0
+  const registeredDiamonds = Number(input.registeredDiamonds) || 0
+  const ratio = registeredMinutes > 0 && registeredDiamonds > 0 ? registeredDiamonds / registeredMinutes : 1
+  return Math.round((Number(input.learnedDiamonds) || 0) - (Number(input.learnedMinutes) || 0) * ratio)
+}

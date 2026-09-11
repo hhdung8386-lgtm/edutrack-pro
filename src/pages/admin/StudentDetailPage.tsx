@@ -1789,7 +1789,9 @@ export function StudentDetailPage() {
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
             {awaitingApprovalHeldBookings.length > 0 && <> <strong>{awaitingApprovalHeldBookings.length} ca đã gắn buổi điểm danh</strong> vẫn giữ quỹ; trạng thái từng ca ở khung bên dưới.</>}
             {unmatchedHeldBookings.length > 0 && (
-              <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng vẫn bị chặn điểm danh đến khi giáo vụ sửa đúng môn.</>
+              <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng gia sư chưa điểm danh và giáo vụ chưa duyệt được đến khi chuyển ca về đúng gói.{' '}
+                <button type="button" onClick={() => navigate(`/admin/booking-ledger-repair?tab=subject&studentId=${id}`)} className="font-bold text-indigo-700 underline hover:text-indigo-900">Chuyển về đúng gói</button>
+              </>
             )}
           </p>
         </div>

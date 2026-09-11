@@ -38,6 +38,7 @@ const AdminEvaluationsPage = lazy(() => import('@/pages/admin/AdminEvaluationsPa
 const NotificationsPage = lazy(() => import('@/pages/admin/NotificationsPage').then(m => ({ default: m.NotificationsPage })))
 const FutureBookingsPage = lazy(() => import('@/pages/admin/FutureBookingsPage').then(m => ({ default: m.FutureBookingsPage })))
 const OverdueBookingsPage = lazy(() => import('@/pages/admin/OverdueBookingsPage').then(m => ({ default: m.OverdueBookingsPage })))
+const BookingLedgerRepairPage = lazy(() => import('@/pages/admin/BookingLedgerRepairPage').then(m => ({ default: m.BookingLedgerRepairPage })))
 const SiteContentPage = lazy(() => import('@/pages/admin/SiteContentPage').then(m => ({ default: m.SiteContentPage })))
 const QuotaReconcilePage = lazy(() => import('@/pages/admin/QuotaReconcilePage').then(m => ({ default: m.QuotaReconcilePage })))
 const StudentExperiencePage = lazy(() => import('@/pages/admin/StudentExperiencePage').then(m => ({ default: m.StudentExperiencePage })))
@@ -168,6 +169,7 @@ function App() {
             <Route path="online-classrooms" element={<OnlineClassroomOperationsPage />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="overdue-bookings" element={<OverdueBookingsPage />} />
+            <Route path="booking-ledger-repair" element={<BookingLedgerRepairPage />} />
             <Route path="site-content" element={<SiteContentPage />} />
             <Route path="quota-reconcile" element={<QuotaReconcilePage />} />
             <Route path="subjects" element={<SubjectsPage />} />

@@ -13,6 +13,7 @@ import {
   Monitor,
   RefreshCw,
   Target,
+  UserCheck,
   Users,
   XCircle,
 } from 'lucide-react'
@@ -25,11 +26,13 @@ import { useAuthStore } from '@/stores/authStore'
 import { calculateSalary, db } from '@/lib/firebase'
 import {
   claimClassHunt,
+  classHuntErrorDetails,
   classHuntErrorReason,
   isClassHuntTaken,
   listTeacherClassHunts,
   type TeacherClassHunt,
 } from '@/lib/classHunting'
+import { describeClassHuntTeacherRequirements } from '@/lib/classHuntSchedule'
 import type { DayOfWeek } from '@/types'
 
 const POLL_INTERVAL_MS = 120_000
@@ -146,6 +149,64 @@ interface HuntCard {
   taken: boolean
 }
 
+interface ClaimFailure {
+  title: string
+  message: string
+  conflicts: Array<{ date: string; start: string; end: string }>
+  /** The offer is gone for everyone; the list refreshes after closing. */
+  refresh: boolean
+}
+
+/** Every rejected claim ends in a popup that says exactly why nothing was booked. */
+function claimFailureFor(claimError: unknown): ClaimFailure {
+  const details = classHuntErrorDetails(claimError)
+  const reason = details.reason
+  if (isClassHuntTaken(claimError)) {
+    return { title: 'Lớp đã có gia sư khác nhận', message: 'Chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận. Mình săn lớp tiếp theo nha!', conflicts: [], refresh: true }
+  }
+  if (reason === 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT') {
+    return {
+      title: 'Nhận lớp không thành công',
+      message: 'Bạn đang có ca dạy trùng giờ với lớp này nên hệ thống chưa nhận lớp. Chưa có buổi nào được tạo.',
+      conflicts: details.conflicts,
+      refresh: false,
+    }
+  }
+  if (reason === 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT') {
+    return {
+      title: 'Nhận lớp không thành công',
+      message: 'Học viên vừa có lịch trùng với một số buổi của lớp này. Giáo vụ cần điều chỉnh lịch trước khi lớp được nhận.',
+      conflicts: details.conflicts,
+      refresh: true,
+    }
+  }
+  if (reason === 'CLASS_HUNT_TEACHER_GENDER_MISMATCH' || reason === 'CLASS_HUNT_TEACHER_TYPE_MISMATCH' || reason === 'CLASS_HUNT_TEACHER_TESTER') {
+    return { title: 'Nhận lớp không thành công', message: details.message || 'Hồ sơ của bạn chưa phù hợp yêu cầu giáo viên của lớp này.', conflicts: [], refresh: false }
+  }
+  if (reason === 'CLASS_HUNT_NOT_ENOUGH_POINTS') {
+    return {
+      title: 'Nhận lớp không thành công',
+      message: details.requiredPoints !== undefined && details.availablePoints !== undefined
+        ? `Theo đơn giá kim cương của bạn, lớp cần ${details.requiredPoints} kim cương nhưng học viên chỉ còn ${details.availablePoints} kim cương khả dụng. Chưa có buổi nào được tạo.`
+        : 'Quỹ kim cương của học viên không đủ cho lớp này theo đơn giá của bạn. Chưa có buổi nào được tạo.',
+      conflicts: [],
+      refresh: false,
+    }
+  }
+  if (reason === 'CLASS_HUNT_CONTRACT_REQUIRED') {
+    return { title: 'Nhận lớp không thành công', message: 'Bạn cần hoàn tất hợp đồng/điều khoản gia sư trước khi nhận lớp.', conflicts: [], refresh: false }
+  }
+  if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED', 'CLASS_HUNT_STUDENT_NOT_ELIGIBLE', 'CLASS_HUNT_SUBJECT_NOT_ELIGIBLE', 'CLASS_HUNT_COMPENSATION_INVALID'].includes(reason)) {
+    return { title: 'Lớp không còn nhận được', message: details.message || 'Lớp này đã đóng hoặc không còn hợp lệ. Danh sách sẽ được cập nhật.', conflicts: [], refresh: true }
+  }
+  return {
+    title: 'Nhận lớp không thành công',
+    message: reason.startsWith('CLASS_HUNT_') && details.message ? details.message : 'Chưa nhận được lớp do lỗi kết nối. Hãy làm mới danh sách và thử lại.',
+    conflicts: [],
+    refresh: false,
+  }
+}
+
 /**
  * The teacher endpoint returns a deliberately sanitized offer. This page must
  * never fetch classHunts from Firestore, derive eligibility locally, or render
@@ -165,6 +226,7 @@ export function TeacherClassHuntingPage() {
   const [showAllSlots, setShowAllSlots] = useState(false)
   const [confirmingHunt, setConfirmingHunt] = useState<TeacherClassHunt | null>(null)
   const [agreed, setAgreed] = useState(false)
+  const [claimFailure, setClaimFailure] = useState<ClaimFailure | null>(null)
   const mountedRef = useRef(false)
   const inFlightRef = useRef(false)
   const queuedRefreshRef = useRef(false)
@@ -317,37 +379,23 @@ export function TeacherClassHuntingPage() {
     try {
       const result = await claimClassHunt(hunt.id, requestId)
       const outcome = result.outcome || result.status || result.hunt?.status
+      setConfirmingHunt(null)
       if (outcome === 'taken') {
         markTaken(hunt)
-        toast.warning('Chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận. Mình săn lớp tiếp theo nha!')
+        setClaimFailure({ title: 'Lớp đã có gia sư khác nhận', message: 'Chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận. Mình săn lớp tiếp theo nha!', conflicts: [], refresh: false })
       } else {
         toast.success('Nhận lớp thành công! Lớp đã được thêm vào lịch dạy của bạn.')
       }
-      setConfirmingHunt(null)
       await refresh(true)
     } catch (claimError) {
       console.error('Claim class hunt failed:', claimError)
-      const reason = classHuntErrorReason(claimError)
-      if (isClassHuntTaken(claimError)) {
-        markTaken(hunt)
-        toast.warning('Chậm một nhịp rồi! Lớp này vừa được giáo viên khác nhận. Mình săn lớp tiếp theo nha!')
-        setConfirmingHunt(null)
-        await refresh(true)
-      } else if (reason === 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT') {
-        toast.warning('Bạn đã có ca dạy trùng khung giờ của lớp này nên chưa nhận được. Hãy chọn lớp khác phù hợp hơn.')
-        setConfirmingHunt(null)
-        await refresh(true)
-      } else if (reason === 'CLASS_HUNT_COMPENSATION_INVALID') {
-        toast.warning('Đơn giá của lớp này cần được Admin kiểm tra lại trước khi nhận. Danh sách đã được cập nhật.')
-        setConfirmingHunt(null)
-        await refresh(true)
-      } else if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED', 'CLASS_HUNT_SUBJECT_MISMATCH', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT', 'CLASS_HUNT_NOT_ENOUGH_POINTS'].includes(reason)) {
-        toast.warning('Lớp này không còn phù hợp hoặc đã đóng. Danh sách đã được cập nhật.')
-        setConfirmingHunt(null)
-        await refresh(true)
-      } else {
-        toast.error('Chưa nhận được lớp. Hãy làm mới danh sách và thử lại.')
-      }
+      const failure = claimFailureFor(claimError)
+      if (isClassHuntTaken(claimError)) markTaken(hunt)
+      // A retry with a fresh request id is safe after a definite rejection.
+      delete requestIdsRef.current[hunt.id]
+      setConfirmingHunt(null)
+      setClaimFailure(failure)
+      if (failure.refresh) await refresh(true)
     } finally {
       if (mountedRef.current) setClaimingId(null)
     }
@@ -471,6 +519,13 @@ export function TeacherClassHuntingPage() {
                           <span className="text-slate-300" aria-hidden="true">•</span>
                           <span>Bắt đầu {dayMonth(firstSlotDate(hunt))}</span>
                         </p>
+                        {describeClassHuntTeacherRequirements(hunt.teacherRequirements) && (
+                          <p className={`mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold ${hunt.requirementMatch === false ? 'bg-amber-50 text-amber-800' : 'bg-sky-50 text-sky-800'}`}>
+                            <UserCheck className="h-3.5 w-3.5" />
+                            Yêu cầu: {describeClassHuntTeacherRequirements(hunt.teacherRequirements)}
+                            {hunt.requirementMatch === false && <span className="font-semibold">(hồ sơ của bạn chưa khớp)</span>}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-3 border-t border-slate-100 pt-4 lg:border-l lg:border-t-0 lg:px-6 lg:pt-0">
@@ -601,6 +656,12 @@ export function TeacherClassHuntingPage() {
                 Thù lao dự kiến {formatAmount(confirmingPay.perLesson, confirmingPay.currency)}/buổi, tổng {formatAmount(confirmingPay.total, confirmingPay.currency)}. {confirmingPay.basis}
               </p>
             )}
+            {describeClassHuntTeacherRequirements(confirmingHunt.teacherRequirements) && (
+              <p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-600">
+                <UserCheck className="mt-1 h-4 w-4 shrink-0 text-sky-600" />
+                Lớp yêu cầu: {describeClassHuntTeacherRequirements(confirmingHunt.teacherRequirements)}. Hệ thống kiểm tra khi bạn xác nhận.
+              </p>
+            )}
             <div className="mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
               <AlertTriangle className="h-6 w-6 shrink-0 text-amber-500" />
               <div className="min-w-0">
@@ -620,6 +681,39 @@ export function TeacherClassHuntingPage() {
               />
               <span>Tôi đã kiểm tra lịch học, hiểu quy định hủy lớp và đồng ý nhận lớp.</span>
             </label>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(claimFailure)}
+        onClose={() => setClaimFailure(null)}
+        title={claimFailure?.title}
+        footer={(
+          <button type="button" onClick={() => setClaimFailure(null)} className={OUTLINE_BUTTON} data-modal-initial-focus>
+            Đã hiểu
+          </button>
+        )}
+      >
+        {claimFailure && (
+          <div role="alert">
+            <div className="flex gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4">
+              <XCircle className="h-6 w-6 shrink-0 text-rose-500" />
+              <p className="text-sm leading-6 text-rose-900">{claimFailure.message}</p>
+            </div>
+            {claimFailure.conflicts.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-bold text-slate-900">Các buổi bị trùng giờ</p>
+                <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  {claimFailure.conflicts.map((conflict) => (
+                    <li key={`${conflict.date}-${conflict.start}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                      <span className="text-slate-700">{dayMonth(conflict.date)}/{conflict.date.slice(0, 4)}</span>
+                      <span className="font-semibold tabular-nums text-slate-900">{conflict.start}{conflict.end ? ` – ${conflict.end}` : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </Modal>

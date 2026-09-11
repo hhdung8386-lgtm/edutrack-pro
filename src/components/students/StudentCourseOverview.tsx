@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { BookingRequest, Lesson, StudentSubject, TopUpBatch } from '@/types'
 import { getBookingPoints } from '@/lib/points'
-import { allocateApprovedLearningMinutes } from '@/lib/courseProgress'
+import { allocateApprovedLearningMinutes, courseLearnedDiamondPremium, courseRemainingMinutes } from '@/lib/courseProgress'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -58,6 +58,8 @@ interface CourseRow {
   registeredDiamonds: number
   learnedMinutes: number
   learnedDiamonds: number
+  /** Kim cương đã dùng vượt so với phút đã học theo tỉ lệ gói (đơn giá gia sư, buổi vắng có phí). */
+  learnedDiamondPremium: number
   bookedMinutes: number
   bookedDiamonds: number
   remainingMinutes: number
@@ -354,15 +356,19 @@ export function StudentCourseOverview({
       const bookedMinutes = subjectBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
       const bookedDiamonds = subjectBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
       const remainingDiamonds = Math.max(0, Number(subject.remainingMinutes || 0) - bookedDiamonds)
+      const registeredDiamonds = Number(subject.totalMinutes || 0)
+      const learnedDiamonds = Number(subject.usedMinutes || 0)
       return {
         subject,
         registeredMinutes,
-        registeredDiamonds: Number(subject.totalMinutes || 0),
+        registeredDiamonds,
         learnedMinutes,
-        learnedDiamonds: Number(subject.usedMinutes || 0),
+        learnedDiamonds,
+        learnedDiamondPremium: courseLearnedDiamondPremium({ registeredMinutes, registeredDiamonds, learnedMinutes, learnedDiamonds }),
         bookedMinutes,
         bookedDiamonds,
-        remainingMinutes: Math.max(0, registeredMinutes - learnedMinutes - bookedMinutes),
+        // Còn lại đi theo kim cương còn lại để hai con số luôn khớp nhau.
+        remainingMinutes: courseRemainingMinutes({ registeredMinutes, registeredDiamonds, remainingDiamonds }),
         remainingDiamonds,
         payments: payments.filter((payment) => payment.kind === 'payment'),
         gifts: payments.filter((payment) => payment.kind === 'gift'),
@@ -444,7 +450,7 @@ export function StudentCourseOverview({
             </article>)}
           </div>
           <div className="border-t border-indigo-100 bg-indigo-50/45 px-4 py-3 text-xs font-medium text-indigo-700 sm:px-5">Dùng nút “+” để cộng quyền học; nút “›” mở lịch sử và thông tin chi tiết.</div>
-          {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || (row.remainingMinutes > 0 && row.remainingDiamonds <= 0)) && (
+          {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || row.learnedDiamondPremium > 0) && (
             <ul className="space-y-1.5 border-t border-amber-100 bg-amber-50/60 px-4 py-3 text-xs leading-5 text-amber-900 sm:px-5">
               {activeRows.map((row) => {
                 const fund = Math.max(0, Number(row.subject.remainingMinutes || 0))
@@ -457,11 +463,11 @@ export function StudentCourseOverview({
                     </li>
                   )
                 }
-                if (row.remainingMinutes > 0 && row.remainingDiamonds <= 0) {
+                if (row.learnedDiamondPremium > 0) {
                   return (
                     <li key={row.subject.subjectId} className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span><strong>{row.subject.subjectName}</strong>: còn {number(row.remainingMinutes)} phút học nhưng không còn kim cương khả dụng, nên chưa đặt thêm được. Kim cương mới là số dùng để đặt lịch (gia sư có đơn giá cao hơn 1 kim cương/phút làm phút và kim cương lệch nhau).</span>
+                      <span><strong>{row.subject.subjectName}</strong>: đã học {number(row.learnedMinutes)} phút nhưng dùng {number(row.learnedDiamonds)} kim cương (nhiều hơn {number(row.learnedDiamondPremium)} kim cương) do có buổi với gia sư đơn giá cao hơn giá gói hoặc buổi vắng có tính phí. Cột “Còn lại” quy đổi từ kim cương còn lại nên phút và kim cương khớp nhau.</span>
                     </li>
                   )
                 }

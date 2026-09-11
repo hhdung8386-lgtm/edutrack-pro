@@ -1,6 +1,13 @@
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import type { DayOfWeek } from '@/types'
 import app from '@/lib/firebase'
+import {
+  CLASS_HUNT_TEACHER_TYPES,
+  defaultClassHuntTeacherRequirements,
+  type ClassHuntTeacherRequirements,
+  type ClassHuntTeacherType,
+  type ClassHuntWeeklySlot,
+} from '@/lib/classHuntSchedule'
 
 /**
  * CLASS HUNTING only talks to callable Functions. The browser must never read
@@ -111,6 +118,11 @@ export interface ClassHunt {
   bookingIds?: string[]
   classHuntCompensation?: ClassHuntCompensation
   subjectRate?: ClassHuntSubjectRate
+  teacherRequirements?: ClassHuntTeacherRequirements
+  weeklySlots?: ClassHuntWeeklySlot[]
+  activeTeacherCount?: number
+  /** Teacher feed only: false when this tutor does not meet the stated requirement. */
+  requirementMatch?: boolean
 }
 
 /** The teacher endpoint deliberately does not include a student object. */
@@ -125,12 +137,12 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   studentId: string
   subjectId: string
   startDate: string
-  weekdays: DayOfWeek[]
-  startTime: string
-  minutes: ClassHuntMinutes
+  /** Weekly timetable cells; every generated lesson is 25 minutes. */
+  weeklySlots: ClassHuntWeeklySlot[]
   sessionCount: number
   /** `all_remaining` is resolved by the server from the current package ledger. */
   sessionSelectionMode: ClassHuntSessionSelectionMode
+  teacherRequirements: ClassHuntTeacherRequirements
   // No `compensationRatePerMinute`: tutor pay follows the subject price. The
   // key must be absent (not undefined/null) or the server treats it as a rate.
 }
@@ -143,9 +155,20 @@ export interface ClassHuntPreview {
   eligibleTeachers: ClassHuntTeacherMatch[]
   eligibleTeacherCount?: number
   matchingTeacherCount?: number
+  activeTeacherCount?: number
+  teacherRequirements?: ClassHuntTeacherRequirements
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
   subjectRate?: ClassHuntSubjectRate
+}
+
+/** Structured reason attached by claimClassHunt so the tutor sees exactly why it failed. */
+export interface ClassHuntErrorDetails {
+  reason: string
+  message: string
+  conflicts: Array<{ date: string; start: string; end: string }>
+  requiredPoints?: number
+  availablePoints?: number
 }
 
 export interface ClaimClassHuntResult {
@@ -360,6 +383,26 @@ function dateFrom(value: unknown): string | undefined {
   return milliseconds !== undefined ? new Date(milliseconds).toISOString() : undefined
 }
 
+function teacherRequirementsFrom(value: unknown): ClassHuntTeacherRequirements {
+  const data = asRecord(value)
+  const types = asArray(data.teacherTypes).filter((type): type is ClassHuntTeacherType => (
+    CLASS_HUNT_TEACHER_TYPES.includes(type as ClassHuntTeacherType)
+  ))
+  const gender = data.gender === 'female' || data.gender === 'male' ? data.gender : 'any'
+  return types.length > 0
+    ? { teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => types.includes(type)), gender }
+    : { ...defaultClassHuntTeacherRequirements(), gender }
+}
+
+function weeklySlotsFrom(value: unknown): ClassHuntWeeklySlot[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const slots = value
+    .map(asRecord)
+    .filter((slot) => ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].includes(String(slot.day)) && typeof slot.start === 'string')
+    .map((slot) => ({ day: slot.day as ClassHuntWeeklySlot['day'], start: String(slot.start) }))
+  return slots.length > 0 ? slots : undefined
+}
+
 function previewFrom(value: unknown): ClassHuntPreview {
   const root = asRecord(value)
   const data = asRecord(root.preview ?? value)
@@ -369,6 +412,8 @@ function previewFrom(value: unknown): ClassHuntPreview {
   const subjectRate = subjectRateFrom(data.subjectRate)
   return {
     ...(subjectRate ? { subjectRate } : {}),
+    ...(typeof data.activeTeacherCount === 'number' ? { activeTeacherCount: data.activeTeacherCount } : {}),
+    ...(data.teacherRequirements ? { teacherRequirements: teacherRequirementsFrom(data.teacherRequirements) } : {}),
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
       .map(subjectFrom)
@@ -420,6 +465,9 @@ function huntFrom(value: unknown): ClassHunt {
     } : {}),
     ...(Array.isArray(data.bookingIds) ? { bookingIds: data.bookingIds.filter((id): id is string => typeof id === 'string') } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
+    teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
+    ...(weeklySlotsFrom(data.weeklySlots) ? { weeklySlots: weeklySlotsFrom(data.weeklySlots) } : {}),
+    ...(numberValue(data.activeTeacherCount) !== undefined ? { activeTeacherCount: numberValue(data.activeTeacherCount) } : {}),
   }
 }
 
@@ -438,6 +486,8 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(dateFrom(data.expiresAt ?? data.expiresAtMs) ? { expiresAt: dateFrom(data.expiresAt ?? data.expiresAtMs) } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
     ...(!classHuntCompensation && subjectRateFrom(data.subjectRate) ? { subjectRate: subjectRateFrom(data.subjectRate) } : {}),
+    teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
+    ...(typeof data.requirementMatch === 'boolean' ? { requirementMatch: data.requirementMatch } : {}),
   }
 }
 
@@ -493,6 +543,22 @@ export function classHuntErrorReason(error: unknown): string {
   const details = asRecord(data.details)
   const reason = details.reason ?? data.reason ?? data.code
   return typeof reason === 'string' ? reason.replace(/^functions\//, '').toUpperCase() : ''
+}
+
+export function classHuntErrorDetails(error: unknown): ClassHuntErrorDetails {
+  const data = asRecord(error)
+  const details = asRecord(data.details)
+  const conflicts = asArray(details.conflicts)
+    .map(asRecord)
+    .filter((conflict) => typeof conflict.date === 'string' && typeof conflict.start === 'string')
+    .map((conflict) => ({ date: String(conflict.date), start: String(conflict.start), end: String(conflict.end || '') }))
+  return {
+    reason: classHuntErrorReason(error),
+    message: typeof data.message === 'string' ? data.message : '',
+    conflicts,
+    ...(numberValue(details.requiredPoints) !== undefined ? { requiredPoints: numberValue(details.requiredPoints) } : {}),
+    ...(numberValue(details.availablePoints) !== undefined ? { availablePoints: numberValue(details.availablePoints) } : {}),
+  }
 }
 
 export function isClassHuntTaken(error: unknown): boolean {

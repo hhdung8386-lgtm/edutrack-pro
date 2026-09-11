@@ -790,6 +790,10 @@ export function BookingSchedulesPage() {
         // được phép tiếp tục điểm danh một gói môn đã hết/bảo lưu. Kiểm tra đúng
         // quỹ của môn này, không dùng số dư tổng của các khóa khác.
         const subjectFund = resolveStudentSubjectFund(studentData, subjectId)
+        if (!subjectFund && studentData.status !== 'reserved' && studentData.status !== 'expired') {
+          // The slot still points at a package the student no longer owns.
+          throw new Error('BOOKING_SUBJECT_NOT_IN_PACKAGE')
+        }
         const chargedPoints = isPresent
           ? freshAttendanceBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
           : (isUnexcused ? getTeacherPointsPer25Minutes(teacherData) : 0)
@@ -988,6 +992,8 @@ export function BookingSchedulesPage() {
                   ? attendanceDeadlineMessage('invalid', lang === 'vi' ? 'vi' : 'en')
                 : errorMessage === 'CLASS_HUNT_COMPENSATION_INVALID'
                   ? (lang === 'vi' ? 'Rate riêng của lớp chưa nhất quán. Chưa ghi nhận buổi; vui lòng liên hệ giáo vụ kiểm tra lớp.' : 'This class rate is inconsistent. No attendance was recorded; ask the academic team to check the class.')
+                : errorMessage === 'BOOKING_SUBJECT_NOT_IN_PACKAGE'
+                ? (lang === 'vi' ? 'Ca này đang gắn môn cũ không còn trong gói của học viên (học viên đã đổi gói). Vui lòng báo giáo vụ chuyển ca về đúng gói rồi điểm danh lại.' : 'This session still points to a package the student no longer has. Ask the academic team to move it to the current package, then submit attendance again.')
                 : errorMessage === 'STUDENT_EXPIRED'
                 ? (lang === 'vi' ? 'Học viên đã hết phút học hoặc đang bảo lưu nên không thể điểm danh.' : 'The student has no remaining minutes or is reserved, so attendance cannot be submitted.')
                 : errorMessage === 'TEACHER_NOT_FOUND'

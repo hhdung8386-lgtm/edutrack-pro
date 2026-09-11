@@ -18,6 +18,8 @@ import {
   classHuntPublishRetryMatches,
   classHuntPublishRequestDocumentId,
   classHuntDateTimeMs,
+  classHuntTeacherAudience,
+  classHuntTeacherRequirementMismatch,
   createClassHuntId,
   decideClassHuntClaim,
   effectiveClassHuntStatus,
@@ -28,19 +30,20 @@ import {
   hasSufficientClassHuntPointBalance,
   heldPointsForClassHuntSubject,
   isActiveIndividualOnlineStudent,
-  isClassHuntTeacherProfileComplete,
   isClassHuntCompensation,
   isClassHuntSessionShape,
-  isEligibleOnlineClassHuntTeacher,
   isSafeClassHuntClientRequestId,
   classHuntClaimConflictReason,
   normalizeClassHuntSessionSelectionMode,
+  normalizeClassHuntTeacherRequirements,
+  normalizeClassHuntWeeklySlots,
   pointsPer25Minutes,
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
   classHuntSubjectRate,
   type ClassHuntBookingLike,
   type ClassHuntCompensation,
+  type ClassHuntConflict,
   type ClassHuntDraft,
   type ClassHuntSession,
   type ClassHuntSessionSelectionMode,
@@ -48,6 +51,8 @@ import {
   type ClassHuntSubjectRate,
   type ClassHuntStudentLike,
   type ClassHuntTeacherLike,
+  type ClassHuntTeacherRequirements,
+  type ClassHuntWeeklySlot,
 } from './classHunting'
 import {
   activeLinkedLessonIds,
@@ -59,13 +64,12 @@ import {
 const db = new Firestore()
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
 const CLASS_HUNT_ADMIN_LIST_LIMIT = 100
-const CLASS_HUNT_TEACHER_LIST_LIMIT = 30
+const CLASS_HUNT_TEACHER_LIST_LIMIT = 100
 const CLASS_HUNT_OPEN_SCAN_LIMIT = 200
 const CLASS_HUNT_BOOKING_READ_LIMIT = 1000
-const CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT = 5000
-const FIRESTORE_MULTI_VALUE_QUERY_LIMIT = 30
+const FIRESTORE_GET_ALL_CHUNK = 100
 const CONTRACT_QUERY_LIMIT = 100
-const CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT = 100
+const CLASS_HUNT_CONFLICT_DETAIL_LIMIT = 10
 const readCachedLessonSettlementFacts = createApprovedLessonFactCache(10 * 60_000)
 
 /**
@@ -128,6 +132,9 @@ type StoredClassHunt = {
   bookingIds: string[]
   classHuntCompensation?: ClassHuntCompensation
   eligibleTeacherCount?: number
+  activeTeacherCount?: number
+  weeklySlots?: ClassHuntWeeklySlot[]
+  teacherRequirements: ClassHuntTeacherRequirements
   claimedByTeacherId?: string
   claimedByUid?: string
   claimedAtMs?: number
@@ -140,8 +147,9 @@ function error(
   code: 'aborted' | 'already-exists' | 'failed-precondition' | 'invalid-argument' | 'not-found' | 'permission-denied' | 'unauthenticated',
   reason: string,
   message: string,
+  extra: Record<string, unknown> = {},
 ): HttpsError {
-  return new HttpsError(code, message, { reason })
+  return new HttpsError(code, message, { ...extra, reason })
 }
 
 function cleanText(value: unknown, maxLength: number): string {
@@ -232,7 +240,23 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   if (status === 'claimed' && (bookingIds.length !== sessions.length || new Set(bookingIds).size !== bookingIds.length)) {
     throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Lớp đã nhận có danh sách lịch không hợp lệ.')
   }
+  let teacherRequirements: ClassHuntTeacherRequirements
+  let weeklySlots: ClassHuntWeeklySlot[] | undefined
+  try {
+    // Offers published before requirements existed are open to every tutor.
+    teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
+    weeklySlots = data.weeklySlots === undefined || data.weeklySlots === null
+      ? undefined
+      : normalizeClassHuntWeeklySlots(data.weeklySlots)
+  } catch {
+    throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Yêu cầu giáo viên hoặc slot học của lớp săn không hợp lệ.')
+  }
   return {
+    teacherRequirements,
+    ...(weeklySlots ? { weeklySlots } : {}),
+    ...(Number.isSafeInteger(Number(data.activeTeacherCount)) && Number(data.activeTeacherCount) >= 0
+      ? { activeTeacherCount: Number(data.activeTeacherCount) }
+      : {}),
     id,
     status,
     studentId,
@@ -286,12 +310,8 @@ function teacherIdentityFromDocuments(uid: string, userData: DocumentData, teach
   })) {
     throw error('permission-denied', 'CLASS_HUNT_TEACHER_IDENTITY_INVALID', 'Liên kết tài khoản gia sư không còn hợp lệ.')
   }
-  if (!isEligibleOnlineClassHuntTeacher(teacherData)) {
-    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_NOT_ELIGIBLE', 'Hồ sơ gia sư chưa đủ điều kiện nhận lớp online.')
-  }
-  if (!isClassHuntTeacherProfileComplete(teacherData)) {
-    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_PROFILE_INCOMPLETE', 'Vui lòng hoàn thiện hồ sơ và thông tin nhận lương trước khi nhận lớp.')
-  }
+  // No profile, subject, format or availability filter: every active tutor
+  // sees every open class and decides for themselves. Claim-time guards stay.
   return { uid, teacherId, teacher: teacherData as ClassHuntTeacherLike & DocumentData }
 }
 
@@ -400,6 +420,8 @@ function draftFromRequest(
         sessionSelectionMode,
         expiresInMinutes: data.expiresInMinutes,
         compensationRatePerMinute: data.compensationRatePerMinute,
+        weeklySlots: data.weeklySlots,
+        teacherRequirements: data.teacherRequirements,
       }, nowMs)
     } catch (cause) {
       if (cause instanceof ClassHuntValidationError) {
@@ -505,6 +527,26 @@ function assertNoStudentScheduleConflict(studentId: string, sessions: ClassHuntS
   }
 }
 
+/** Session times shown to the tutor in the failure popup (never another student's identity). */
+function conflictSessionDetails(conflicts: ClassHuntConflict[], reason: 'teacher' | 'student') {
+  const seen = new Set<string>()
+  return conflicts
+    .filter((conflict) => conflict.reasons.includes(reason))
+    .map((conflict) => ({
+      date: conflict.session.dateISO,
+      start: conflict.session.requestedStart,
+      end: conflict.session.requestedEnd,
+    }))
+    .filter((session) => {
+      const key = `${session.date}|${session.start}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((left, right) => left.date.localeCompare(right.date) || left.start.localeCompare(right.start))
+    .slice(0, CLASS_HUNT_CONFLICT_DETAIL_LIMIT)
+}
+
 function assertTeacherClaimContext(input: {
   hunt: StoredClassHunt
   teacherId: string
@@ -562,10 +604,14 @@ function assertTeacherClaimContext(input: {
   })
   const conflictReason = classHuntClaimConflictReason(conflicts)
   if (conflictReason === 'teacher') {
-    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT', 'Gia sư đã có ca dạy trùng với lớp này. Chưa tạo buổi nào.')
+    throw error('failed-precondition', 'CLASS_HUNT_TEACHER_BOOKING_CONFLICT', 'Gia sư đã có ca dạy trùng với lớp này. Chưa tạo buổi nào.', {
+      conflicts: conflictSessionDetails(conflicts, 'teacher'),
+    })
   }
   if (conflictReason === 'student') {
-    throw error('failed-precondition', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT', 'Học viên vừa có lịch trùng với lớp này. Chưa tạo buổi nào.')
+    throw error('failed-precondition', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT', 'Học viên vừa có lịch trùng với lớp này. Chưa tạo buổi nào.', {
+      conflicts: conflictSessionDetails(conflicts, 'student'),
+    })
   }
   const subjectFund = resolveClassHuntSubjectFund(student, hunt.subjectId)
   if (!subjectFund || subjectFund.remainingMinutes <= 0) {
@@ -582,7 +628,10 @@ function assertTeacherClaimContext(input: {
     availablePoints: effectiveHold.availablePoints,
     totalRequiredPoints,
   })) {
-    throw error('failed-precondition', 'CLASS_HUNT_NOT_ENOUGH_POINTS', 'Quỹ kim cương của học viên không còn đủ cho lớp này. Chưa giữ chỗ hay tạo buổi nào.')
+    throw error('failed-precondition', 'CLASS_HUNT_NOT_ENOUGH_POINTS', 'Quỹ kim cương của học viên không còn đủ cho lớp này. Chưa giữ chỗ hay tạo buổi nào.', {
+      requiredPoints: totalRequiredPoints,
+      availablePoints: Math.max(0, Math.min(subjectFund.remainingMinutes - subjectAlreadyHeld, effectiveHold.availablePoints)),
+    })
   }
   return {
     totalRequiredPoints,
@@ -670,6 +719,9 @@ function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now(), includeCo
     ...(includeCompensation && hunt.classHuntCompensation ? {
       classHuntCompensation: { ...hunt.classHuntCompensation },
     } : {}),
+    teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.weeklySlots ? { weeklySlots: hunt.weeklySlots } : {}),
+    ...(hunt.activeTeacherCount !== undefined ? { activeTeacherCount: hunt.activeTeacherCount } : {}),
     ...(hunt.eligibleTeacherCount !== undefined ? { eligibleTeacherCount: hunt.eligibleTeacherCount } : {}),
     ...(hunt.claimedByTeacherId ? {
       claimedTeacher: {
@@ -692,6 +744,7 @@ function serializeTeacherHunt(
   hunt: StoredClassHunt,
   subjectRate: ClassHuntSubjectRate | null = null,
   teacherLevel = 1,
+  requirementMatch?: boolean,
 ) {
   const sanitized = sanitizeClassHuntForTeacher({
     id: hunt.id,
@@ -718,6 +771,8 @@ function serializeTeacherHunt(
       // No class snapshot: approval pays the package subject price x level.
       subjectRate: { ...subjectRate, teacherLevel },
     } : {}),
+    teacherRequirements: hunt.teacherRequirements,
+    ...(requirementMatch === undefined ? {} : { requirementMatch }),
   }
 }
 
@@ -727,6 +782,8 @@ function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
     && data.weekdays === undefined
     && data.startTime === undefined
     && data.minutes === undefined
+    && data.weeklySlots === undefined
+    && data.teacherRequirements === undefined
     && data.sessionCount === undefined
     && data.sessionSelectionMode === undefined
     // A supplied rate is never a harmless lookup-only field: even a malformed
@@ -832,29 +889,20 @@ async function buildOperatorContext(data: Record<string, unknown>, nowMs: number
 }
 
 /**
- * Class Hunting deliberately ignores declared availability and subject tags.
- * This preflight only confirms that at least one active, online,
- * profile-complete tutor exists, so a broadcast is never sent to nobody. The
- * contract, fund and real-calendar checks remain at list/claim time.
+ * Class Hunting deliberately ignores declared availability, subject tags,
+ * profile completeness and teaching format. Every active tutor sees the offer;
+ * only the operator's explicit teacher-type/gender request narrows who can
+ * claim it. The count reads every active profile (no display cap).
  */
-async function countMatchingClassHuntTeachers(): Promise<number> {
+async function countClassHuntAudience(
+  requirements: ClassHuntTeacherRequirements,
+): Promise<{ activeTeacherCount: number; matchingTeacherCount: number }> {
   // Single-field equality: served by the automatic index, no composite index.
   const snapshot = await db.collection('teachers')
     .where('status', '==', 'active')
-    .limit(CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT + 1)
+    .select('status', 'isTester', 'country', 'teacherGrade', 'gender')
     .get()
-  const matching = snapshot.docs.filter((document) => {
-    const teacher = document.data() as ClassHuntTeacherLike
-    return isEligibleOnlineClassHuntTeacher(teacher)
-      && isClassHuntTeacherProfileComplete(teacher)
-  }).length
-  if (snapshot.size > CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT) {
-    logger.info('Class hunt eligible teacher count reached its display bound')
-    // Do not falsely block an otherwise valid publish merely because the
-    // bounded preflight cannot inspect every historical teacher profile.
-    return Math.max(1, matching)
-  }
-  return matching
+  return classHuntTeacherAudience(snapshot.docs.map((document) => document.data() as ClassHuntTeacherLike), requirements)
 }
 
 function assertMatchingClassHuntTeacherCount(count: number): void {
@@ -862,7 +910,7 @@ function assertMatchingClassHuntTeacherCount(count: number): void {
   throw error(
     'failed-precondition',
     'CLASS_HUNT_NO_MATCHING_TEACHER',
-    'Chưa có hồ sơ gia sư online nào đang hoạt động và đủ hồ sơ để nhận lớp.',
+    'Không có gia sư đang hoạt động nào phù hợp yêu cầu loại giáo viên/giới tính đã chọn. Hãy nới yêu cầu rồi đăng lại.',
   )
 }
 
@@ -892,9 +940,9 @@ export const previewClassHunt = onCall({
   }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const matchingTeacherCount = await countMatchingClassHuntTeachers()
+  const { activeTeacherCount, matchingTeacherCount } = await countClassHuntAudience(context.draft.teacherRequirements)
   const warnings = matchingTeacherCount === 0
-    ? ['Chưa có gia sư online nào đang hoạt động và đủ hồ sơ để nhận lớp. Chưa thể đăng lớp.']
+    ? ['Không có gia sư đang hoạt động nào phù hợp yêu cầu loại giáo viên/giới tính đã chọn. Hãy nới yêu cầu rồi đăng lại.']
     : []
   // Subject price is payroll-adjacent; mirror the class-rate policy and show
   // it only to a system admin.
@@ -911,9 +959,11 @@ export const previewClassHunt = onCall({
       classHuntCompensation: { ...context.draft.classHuntCompensation },
     } : {}),
     // Preserve this field for older clients without using it to preselect or
-    // reserve a tutor. Eligibility is checked when a tutor views and claims.
+    // reserve a tutor. Every active tutor sees the offer; claim re-checks.
     eligibleTeachers: [],
     matchingTeacherCount,
+    activeTeacherCount,
+    teacherRequirements: context.draft.teacherRequirements,
     ...(warnings.length > 0 ? { warnings } : {}),
   }
 })
@@ -942,7 +992,7 @@ export const publishClassHunt = onCall({
   if (existing) return { hunt: serializeAdminHunt(existing, Date.now(), actor.role === 'admin') }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const matchingTeacherCount = await countMatchingClassHuntTeachers()
+  const { activeTeacherCount, matchingTeacherCount } = await countClassHuntAudience(context.draft.teacherRequirements)
   assertMatchingClassHuntTeacherCount(matchingTeacherCount)
   const publishRequestRef = db.collection(CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION)
     .doc(classHuntPublishRequestDocumentId(actor.uid, clientRequestId))
@@ -1029,7 +1079,10 @@ export const publishClassHunt = onCall({
       sessionCount: draft.sessionCount,
       sessionSelectionMode: draft.sessionSelectionMode,
       sessions: draft.sessions,
+      ...(draft.weeklySlots ? { weeklySlots: draft.weeklySlots } : {}),
+      teacherRequirements: draft.teacherRequirements,
       eligibleTeacherCount: matchingTeacherCount,
+      activeTeacherCount,
       ...(draft.classHuntCompensation ? {
         classHuntCompensation: { ...draft.classHuntCompensation },
       } : {}),
@@ -1204,196 +1257,54 @@ export const cancelClassHunt = onCall({
   return { hunt: serializeAdminHunt(hunt, Date.now(), actor.role === 'admin') }
 })
 
-type TeacherHuntStudentContext = {
-  student?: ClassHuntStudentLike
-  bookings: ClassHuntBookingLike[]
-  scheduleBookings: ClassHuntBookingLike[]
-  complete: boolean
-}
-
-type TeacherHuntReadSet = {
-  students: Map<string, TeacherHuntStudentContext>
-}
-
 type VisibleClassHunt = {
   hunt: StoredClassHunt
   subjectRate: ClassHuntSubjectRate | null
 }
 
-async function loadVisibleClassHuntCandidates(input: {
-  teacher: CanonicalTeacherActor
-  nowMs: number
-  contractAccepted: boolean
-}): Promise<VisibleClassHunt[]> {
-  const { teacher, nowMs, contractAccepted } = input
-  const baseQuery = db.collection(CLASS_HUNTS_COLLECTION)
+/**
+ * The tutor feed lists every open, unexpired offer. It reads no booking, fund,
+ * contract or profile data: none of those may hide a class. The claim
+ * transaction alone decides whether this tutor can take it.
+ */
+async function loadOpenClassHuntsForTeacher(nowMs: number): Promise<VisibleClassHunt[]> {
+  const snapshot = await db.collection(CLASS_HUNTS_COLLECTION)
     // One automatically indexed range keeps TTL-expired documents out of the
     // scan without introducing a status + expiry composite index.
     .where('expiresAtMs', '>', nowMs)
     .orderBy('expiresAtMs', 'asc')
-  const visible: VisibleClassHunt[] = []
-  let pendingCandidates: StoredClassHunt[] = []
-  let scanned = 0
-  let cursor: QueryDocumentSnapshot | undefined
-
-  const evaluatePendingCandidates = async () => {
-    if (pendingCandidates.length === 0) return
-    const readSet = await loadTeacherHuntReadSet(teacher.teacherId, pendingCandidates)
-    if (!readSet) {
-      throw error(
-        'failed-precondition',
-        'CLASS_HUNT_FEED_SCAN_LIMIT',
-        'Không thể đối soát danh sách lớp an toàn ở thời điểm này. Vui lòng thử lại sau.',
-      )
+    .limit(CLASS_HUNT_OPEN_SCAN_LIMIT)
+    .get()
+  const open: StoredClassHunt[] = []
+  for (const document of snapshot.docs) {
+    try {
+      const hunt = requireStoredHunt(document.id, document.data() || {})
+      if (effectiveClassHuntStatus(hunt, nowMs) === 'open') open.push(hunt)
+    } catch {
+      // Invalid offers are not safe to expose.
     }
-    for (const hunt of pendingCandidates) {
-      if (teacherCanSeeHunt(teacher, hunt, nowMs, contractAccepted, readSet)) {
-        const student = readSet.students.get(hunt.studentId)?.student
-        visible.push({ hunt, subjectRate: student ? classHuntSubjectRate(student, hunt.subjectId) : null })
-      }
-      if (visible.length === CLASS_HUNT_TEACHER_LIST_LIMIT) break
-    }
-    pendingCandidates = []
+    if (open.length === CLASS_HUNT_TEACHER_LIST_LIMIT) break
+  }
+  if (snapshot.size === CLASS_HUNT_OPEN_SCAN_LIMIT) {
+    logger.warn('Class hunt open scan reached its safety bound', { returned: open.length })
   }
 
-  while (visible.length < CLASS_HUNT_TEACHER_LIST_LIMIT && scanned < CLASS_HUNT_OPEN_SCAN_LIMIT) {
-    const pageSize = Math.min(CLASS_HUNT_TEACHER_LIST_LIMIT, CLASS_HUNT_OPEN_SCAN_LIMIT - scanned)
-    const query = cursor ? baseQuery.startAfter(cursor).limit(pageSize) : baseQuery.limit(pageSize)
-    const snapshot = await query.get()
-    if (snapshot.empty) break
-    scanned += snapshot.size
-    cursor = snapshot.docs[snapshot.docs.length - 1]
-    for (const document of snapshot.docs) {
-      try {
-        const hunt = requireStoredHunt(document.id, document.data() || {})
-        if (effectiveClassHuntStatus(hunt, nowMs) === 'open') {
-          pendingCandidates.push(hunt)
-        }
-        // Evaluate a bounded group before it can hide later, claimable
-        // offers behind stale or underfunded records.
-        if (pendingCandidates.length === CLASS_HUNT_TEACHER_LIST_LIMIT) {
-          await evaluatePendingCandidates()
-          if (visible.length === CLASS_HUNT_TEACHER_LIST_LIMIT) break
-        }
-      } catch {
-        // Invalid offers are not safe to expose and do not consume a result slot.
-      }
-    }
-    if (snapshot.size < pageSize) break
-  }
-  await evaluatePendingCandidates()
-
-  if (scanned === CLASS_HUNT_OPEN_SCAN_LIMIT && visible.length < CLASS_HUNT_TEACHER_LIST_LIMIT) {
-    logger.warn('Class hunt open scan reached its safety bound', { scanned, returned: visible.length })
-    if (visible.length === 0) {
-      throw error(
-        'failed-precondition',
-        'CLASS_HUNT_FEED_SCAN_LIMIT',
-        'Không thể đối soát danh sách lớp an toàn ở thời điểm này. Vui lòng thử lại sau.',
-      )
-    }
-  }
-  return visible.sort((left, right) => left.hunt.expiresAtMs - right.hunt.expiresAtMs)
-}
-
-async function loadTeacherHuntReadSet(
-  teacherId: string,
-  hunts: StoredClassHunt[],
-): Promise<TeacherHuntReadSet | null> {
-  const studentIds = [...new Set(hunts.map((hunt) => hunt.studentId))]
-  if (studentIds.length > FIRESTORE_MULTI_VALUE_QUERY_LIMIT) {
-    logger.warn('Class hunt teacher feed exceeded the aggregate student bound', { teacherId, students: studentIds.length })
-    return null
-  }
-  const [studentSnapshots, directBookingsSnapshot, groupMemberBookingsSnapshot] = await Promise.all([
-    db.getAll(...studentIds.map((studentId) => db.collection('students').doc(studentId))),
-    db.collection('bookingRequests')
-      .where('studentId', 'in', studentIds)
-      .limit(CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT + 1)
-      .get(),
-    db.collection('bookingRequests')
-      .where('groupClassMemberIds', 'array-contains-any', studentIds)
-      .limit(CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT + 1)
-      .get(),
-  ])
-  if (directBookingsSnapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT
-    || groupMemberBookingsSnapshot.size > CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT) {
-    logger.warn('Class hunt aggregate booking scan reached its safety bound', {
-      teacherId,
-      directBookings: directBookingsSnapshot.size,
-      groupMemberBookings: groupMemberBookingsSnapshot.size,
+  // Student documents only supply the display pay rate (subject price x level).
+  const studentIds = [...new Set(open.map((hunt) => hunt.studentId))]
+  const students = new Map<string, ClassHuntStudentLike>()
+  for (let index = 0; index < studentIds.length; index += FIRESTORE_GET_ALL_CHUNK) {
+    const refs = studentIds
+      .slice(index, index + FIRESTORE_GET_ALL_CHUNK)
+      .map((studentId) => db.collection('students').doc(studentId))
+    const snapshots = await db.getAll(...refs)
+    snapshots.forEach((studentSnapshot) => {
+      if (studentSnapshot.exists) students.set(studentSnapshot.id, studentSnapshot.data() as ClassHuntStudentLike)
     })
-    return null
   }
-
-  const studentData = new Map(studentSnapshots
-    .filter((snapshot) => snapshot.exists)
-    .map((snapshot) => [snapshot.id, snapshot.data() as ClassHuntStudentLike]))
-  const directBookingsByStudent = new Map<string, ClassHuntBookingLike[]>()
-  const scheduleBookingsByStudent = new Map<string, ClassHuntBookingLike[]>()
-  studentIds.forEach((studentId) => {
-    directBookingsByStudent.set(studentId, [])
-    scheduleBookingsByStudent.set(studentId, [])
+  return open.map((hunt) => {
+    const student = students.get(hunt.studentId)
+    return { hunt, subjectRate: student ? classHuntSubjectRate(student, hunt.subjectId) : null }
   })
-  directBookingsSnapshot.docs.forEach((document) => {
-    const booking = { id: document.id, ...document.data() } as ClassHuntBookingLike
-    if (typeof booking.studentId !== 'string' || !directBookingsByStudent.has(booking.studentId)) return
-    directBookingsByStudent.get(booking.studentId)?.push(booking)
-    scheduleBookingsByStudent.get(booking.studentId)?.push(booking)
-  })
-  groupMemberBookingsSnapshot.docs.forEach((document) => {
-    const booking = { id: document.id, ...document.data() } as ClassHuntBookingLike
-    const memberIds = Array.isArray(booking.groupClassMemberIds)
-      ? booking.groupClassMemberIds.filter((memberId): memberId is string => typeof memberId === 'string')
-      : []
-    memberIds.forEach((studentId) => {
-      if (scheduleBookingsByStudent.has(studentId)) scheduleBookingsByStudent.get(studentId)?.push(booking)
-    })
-  })
-  const students = new Map<string, TeacherHuntStudentContext>()
-  // Settle legacy approved rows once for every student in the feed (order-preserving).
-  const settledDirectBookings = await settleBookingsForFunds(
-    studentIds.flatMap((studentId) => directBookingsByStudent.get(studentId) || []),
-  )
-  let settledOffset = 0
-  studentIds.forEach((studentId) => {
-    const directCount = (directBookingsByStudent.get(studentId) || []).length
-    const bookings = settledDirectBookings.slice(settledOffset, settledOffset + directCount)
-    settledOffset += directCount
-    const scheduleBookings = deduplicateBookings(scheduleBookingsByStudent.get(studentId) || [])
-    students.set(studentId, { student: studentData.get(studentId), bookings, scheduleBookings, complete: true })
-  })
-  return {
-    students,
-  }
-}
-
-function teacherCanSeeHunt(
-  teacher: CanonicalTeacherActor,
-  hunt: StoredClassHunt,
-  nowMs: number,
-  contractAccepted: boolean,
-  readSet: TeacherHuntReadSet,
-): boolean {
-  if (!contractAccepted || effectiveClassHuntStatus(hunt, nowMs) !== 'open') return false
-  const studentContext = readSet.students.get(hunt.studentId)
-  if (!studentContext?.student || !studentContext.complete) return false
-  try {
-    assertTeacherClaimContext({
-      hunt,
-      teacherId: teacher.teacherId,
-      teacher: teacher.teacher,
-      student: studentContext.student,
-      teacherBookings: [],
-      studentBookings: studentContext.bookings,
-      studentScheduleBookings: studentContext.scheduleBookings,
-      includeTeacherSchedule: false,
-      nowMs,
-    })
-    return true
-  } catch {
-    return false
-  }
 }
 
 export const listClassHunts = onCall({
@@ -1432,25 +1343,16 @@ export const listClassHunts = onCall({
   const teacherId = safeId(user.teacherId, 'CLASS_HUNT_TEACHER_LINK_INVALID', 'Tài khoản gia sư chưa được liên kết đúng hồ sơ.')
   const teacherSnapshot = await db.collection('teachers').doc(teacherId).get()
   const teacher = teacherIdentityFromDocuments(uid, user, teacherSnapshot.data())
-  const contractsSnapshot = await db.collection('contracts')
-    .where('teacherId', '==', teacher.teacherId)
-    .limit(CONTRACT_QUERY_LIMIT + 1)
-    .get()
-  if (contractsSnapshot.size > CONTRACT_QUERY_LIMIT) {
-    logger.warn('Class hunt teacher contract scan reached its safety bound', {
-      teacherId: teacher.teacherId,
-    })
-    throw error(
-      'failed-precondition',
-      'CLASS_HUNT_CONTRACT_SCAN_LIMIT',
-      'Không thể đối soát hợp đồng gia sư an toàn. Vui lòng liên hệ quản trị viên.',
-    )
-  }
-  const contractAccepted = hasAcceptedContract(contractsSnapshot.docs)
-  if (!contractAccepted) return { hunts: [] }
-  const eligible = await loadVisibleClassHuntCandidates({ teacher, nowMs, contractAccepted })
+  const level = teacherPayLevel(teacher.teacher)
+  const visible = await loadOpenClassHuntsForTeacher(nowMs)
   return {
-    hunts: eligible.map(({ hunt, subjectRate }) => serializeTeacherHunt(hunt, subjectRate, teacherPayLevel(teacher.teacher))),
+    hunts: visible.map(({ hunt, subjectRate }) => serializeTeacherHunt(
+      hunt,
+      subjectRate,
+      level,
+      // A hint only: the offer stays visible and clickable either way.
+      teacher.teacher.isTester !== true && !classHuntTeacherRequirementMismatch(teacher.teacher, hunt.teacherRequirements),
+    )),
   }
 })
 
@@ -1537,6 +1439,20 @@ export const claimClassHunt = onCall({
     }
     if (!hasAcceptedContract(contractsSnapshot.docs)) {
       throw error('failed-precondition', 'CLASS_HUNT_CONTRACT_REQUIRED', 'Gia sư chưa hoàn tất điều khoản cần thiết để nhận lớp.')
+    }
+    if (teacher.teacher.isTester === true) {
+      throw error('failed-precondition', 'CLASS_HUNT_TEACHER_TESTER', 'Tài khoản gia sư thử nghiệm không nhận lớp của học viên thật.')
+    }
+    // The operator's explicit request is the only profile rule; nothing else
+    // (subject tags, availability, profile completeness) blocks a claim.
+    const requirementMismatch = classHuntTeacherRequirementMismatch(teacher.teacher, hunt.teacherRequirements)
+    if (requirementMismatch === 'gender') {
+      throw error('failed-precondition', 'CLASS_HUNT_TEACHER_GENDER_MISMATCH', hunt.teacherRequirements.gender === 'female'
+        ? 'Lớp này yêu cầu giáo viên nữ nên hệ thống chưa nhận lớp cho bạn.'
+        : 'Lớp này yêu cầu giáo viên nam nên hệ thống chưa nhận lớp cho bạn.')
+    }
+    if (requirementMismatch === 'teacher_type') {
+      throw error('failed-precondition', 'CLASS_HUNT_TEACHER_TYPE_MISMATCH', 'Lớp này yêu cầu loại giáo viên khác với hồ sơ của bạn (Việt Nam / Philippines / bản ngữ) nên hệ thống chưa nhận lớp.')
     }
     const claimNowMs = Date.now()
     const finalClaimDecision = decideClassHuntClaim({

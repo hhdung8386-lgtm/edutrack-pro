@@ -46,6 +46,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/contracts': 'Hợp đồng',
   '/admin/student-experience': 'Quà tặng & nạp tiền',
   '/admin/quota-reconcile': 'Đối soát quỹ buổi',
+  '/admin/booking-ledger-repair': 'Đồng bộ ca đã duyệt',
   '/admin/site-content': 'Nội dung trang web',
   '/admin/notifications': 'Gửi thông báo',
   '/admin/settings': 'Cài đặt',

@@ -82,7 +82,9 @@ test('CLASS HUNTING generates a fixed future Vietnam-calendar series', () => {
 })
 
 test('CLASS HUNTING keeps its bounded atomic plan and validates selection modes', () => {
-  assert.equal(CLASS_HUNT_MAX_SESSIONS, 52)
+  // One claim writes one booking per session plus five bookkeeping documents,
+  // far below Firestore's 500-write transaction ceiling.
+  assert.equal(CLASS_HUNT_MAX_SESSIONS, 120)
   assert.equal(normalizeClassHuntSessionSelectionMode(undefined), 'specific')
   assert.equal(normalizeClassHuntSessionSelectionMode('all_remaining'), 'all_remaining')
   assert.throws(
@@ -90,9 +92,10 @@ test('CLASS HUNTING keeps its bounded atomic plan and validates selection modes'
     (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_SESSION_SELECTION_INVALID',
   )
 
+  const everyDay = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
   const weeklyPlan = buildFutureClassHuntSessions({
     startDate: '2026-09-07',
-    selectedDays: ['mon'],
+    selectedDays: everyDay,
     requestedStart: '19:00',
     requestedMinutes: 50,
     sessionCount: CLASS_HUNT_MAX_SESSIONS,
@@ -101,7 +104,7 @@ test('CLASS HUNTING keeps its bounded atomic plan and validates selection modes'
   assert.equal(weeklyPlan.length, CLASS_HUNT_MAX_SESSIONS)
   assert.throws(
     () => buildFutureClassHuntSessions({
-      startDate: '2026-09-07', selectedDays: ['mon'], requestedStart: '19:00', requestedMinutes: 50,
+      startDate: '2026-09-07', selectedDays: everyDay, requestedStart: '19:00', requestedMinutes: 50,
       sessionCount: CLASS_HUNT_MAX_SESSIONS + 1, nowMs: NOW_MS,
     }),
     (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_SESSION_COUNT_INVALID',
@@ -574,6 +577,124 @@ test('CLASS HUNTING only counts a teacher profile with its canonical claimable l
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, userTeacherId: 'teacher-b' }), false)
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, userRole: 'student_manager' }), false)
   assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, uid: '' }), false)
+  // 195 of 260 active production profiles never stored loginAccountUid; the
+  // users/{uid} teacher link alone must still identify them.
+  assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: undefined }), true)
+  assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: '  ' }), true)
+  assert.equal(hasCanonicalClassHuntTeacherLogin({ ...exact, teacherLoginAccountUid: undefined, userTeacherId: 'teacher-b' }), false)
+})
+
+test('CLASS HUNTING weekly slot grid builds one 25-minute lesson per selected cell in date order', () => {
+  const {
+    buildFutureClassHuntSlotSessions,
+    normalizeClassHuntWeeklySlots,
+  } = require('../lib/classHunting.js')
+  // Tuesday 01/09/2026 09:00 Vietnam. Monday 19:00+19:30, Wednesday 15:00, Friday 20:30.
+  const weeklySlots = [
+    { day: 'fri', start: '20:30' },
+    { day: 'mon', start: '19:30' },
+    { day: 'wed', start: '15:00' },
+    { day: 'mon', start: '19:00' },
+  ]
+  const sessions = buildFutureClassHuntSlotSessions({ startDate: '2026-09-01', weeklySlots, sessionCount: 6, nowMs: NOW_MS })
+  assert.deepEqual(sessions.map((session) => `${session.dateISO} ${session.requestedStart}-${session.requestedEnd}`), [
+    '2026-09-02 15:00-15:25',
+    '2026-09-04 20:30-20:55',
+    '2026-09-07 19:00-19:25',
+    '2026-09-07 19:30-19:55',
+    '2026-09-09 15:00-15:25',
+    '2026-09-11 20:30-20:55',
+  ])
+  assert.ok(sessions.every((session) => session.requestedMinutes === 25 && isClassHuntSessionShape(session)))
+
+  // A slot already passed today is skipped, never moved.
+  const today = buildFutureClassHuntSlotSessions({
+    startDate: '2026-09-01', weeklySlots: [{ day: 'tue', start: '08:30' }, { day: 'tue', start: '10:00' }], sessionCount: 2, nowMs: NOW_MS,
+  })
+  assert.deepEqual(today.map((session) => `${session.dateISO} ${session.requestedStart}`), ['2026-09-01 10:00', '2026-09-08 08:30'])
+
+  assert.throws(() => normalizeClassHuntWeeklySlots([]), (cause) => cause.reason === 'CLASS_HUNT_SLOTS_INVALID')
+  assert.throws(() => normalizeClassHuntWeeklySlots([{ day: 'mon', start: '19:00' }, { day: 'mon', start: '19:10' }]), (cause) => cause.reason === 'CLASS_HUNT_SLOTS_INVALID')
+  assert.throws(() => normalizeClassHuntWeeklySlots([{ day: 'mon', start: '23:50' }]), (cause) => cause.reason === 'CLASS_HUNT_SLOTS_INVALID')
+  assert.throws(
+    () => buildFutureClassHuntSlotSessions({ startDate: '2026-09-01', weeklySlots: [{ day: 'mon', start: '19:00' }], sessionCount: 60, nowMs: NOW_MS }),
+    (cause) => cause.reason === 'CLASS_HUNT_SESSION_GENERATION_FAILED',
+  )
+})
+
+test('CLASS HUNTING slot drafts, fingerprints and publish retries carry slots and teacher requirements', () => {
+  const draft = buildClassHuntDraft({
+    studentId: 'student-a',
+    subjectId: 'subject-a',
+    startDate: '2026-09-07',
+    weeklySlots: [{ day: 'mon', start: '19:30' }, { day: 'mon', start: '19:00' }],
+    sessionCount: 4,
+    sessionSelectionMode: 'specific',
+    teacherRequirements: { teacherTypes: ['native', 'vn'], gender: 'female' },
+  }, NOW_MS)
+  assert.equal(draft.requestedMinutes, 25)
+  assert.deepEqual(draft.selectedDays, ['mon'])
+  assert.equal(draft.requestedStart, '19:00')
+  assert.deepEqual(draft.teacherRequirements, { teacherTypes: ['vn', 'native'], gender: 'female' })
+  assert.equal(draft.sessions.length, 4)
+
+  const legacy = buildClassHuntDraft({
+    studentId: 'student-a', subjectId: 'subject-a', startDate: '2026-09-07', selectedDays: ['mon'],
+    requestedStart: '19:00', requestedMinutes: 50, sessionCount: 1,
+  }, NOW_MS)
+  assert.deepEqual(legacy.teacherRequirements, { teacherTypes: ['vn', 'ph', 'native'], gender: 'any' })
+  assert.equal(legacy.weeklySlots, undefined)
+  assert.notEqual(classHuntPublishFingerprint(draft), classHuntPublishFingerprint({ ...draft, teacherRequirements: legacy.teacherRequirements }))
+
+  const stored = {
+    studentId: 'student-a', studentCode: 'HS1', subjectId: 'subject-a', startDate: '2026-09-07',
+    selectedDays: draft.selectedDays, requestedStart: draft.requestedStart, requestedMinutes: 25, sessionCount: 4,
+    sessionSelectionMode: 'specific', createdAtMs: NOW_MS, expiresAtMs: NOW_MS + CLASS_HUNT_DEFAULT_TTL_MINUTES * 60_000,
+    weeklySlots: draft.weeklySlots, teacherRequirements: draft.teacherRequirements,
+  }
+  const retry = {
+    studentId: 'student-a', studentCode: 'HS1', subjectId: 'subject-a', startDate: '2026-09-07',
+    weeklySlots: [{ day: 'mon', start: '19:00' }, { day: 'mon', start: '19:30' }], sessionCount: 4,
+    sessionSelectionMode: 'specific', teacherRequirements: { teacherTypes: ['vn', 'native'], gender: 'female' },
+  }
+  assert.equal(classHuntPublishRetryMatches(retry, stored), true)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, teacherRequirements: { teacherTypes: ['vn'], gender: 'female' } }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, weeklySlots: [{ day: 'mon', start: '19:00' }] }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, weeklySlots: undefined, weekdays: ['mon'], startTime: '19:00', minutes: 25 }, stored), false)
+})
+
+test('CLASS HUNTING teacher requirements narrow only who can claim, never who can see', () => {
+  const {
+    classHuntTeacherAudience,
+    classHuntTeacherRequirementMismatch,
+    classHuntTeacherType,
+    normalizeClassHuntTeacherRequirements,
+  } = require('../lib/classHunting.js')
+  assert.equal(classHuntTeacherType({ country: 'VN' }), 'vn')
+  assert.equal(classHuntTeacherType({ country: 'ph' }), 'ph')
+  assert.equal(classHuntTeacherType({ country: 'ZA' }), 'native')
+  assert.equal(classHuntTeacherType({ country: 'UK' }), 'native')
+  assert.equal(classHuntTeacherType({ country: 'NG' }), null)
+  assert.equal(classHuntTeacherType({ teacherGrade: 'SA' }), 'native')
+  assert.equal(classHuntTeacherType({}), 'vn')
+
+  const any = normalizeClassHuntTeacherRequirements(undefined)
+  const femaleNative = normalizeClassHuntTeacherRequirements({ teacherTypes: ['native'], gender: 'female' })
+  assert.equal(classHuntTeacherRequirementMismatch({ country: 'NG', gender: 'male' }, any), null)
+  assert.equal(classHuntTeacherRequirementMismatch({ country: 'ZA', gender: 'female' }, femaleNative), null)
+  assert.equal(classHuntTeacherRequirementMismatch({ country: 'ZA', gender: 'male' }, femaleNative), 'gender')
+  assert.equal(classHuntTeacherRequirementMismatch({ country: 'VN', gender: 'female' }, femaleNative), 'teacher_type')
+  assert.throws(() => normalizeClassHuntTeacherRequirements({ teacherTypes: [] }), (cause) => cause.reason === 'CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID')
+  assert.throws(() => normalizeClassHuntTeacherRequirements({ gender: 'x' }), (cause) => cause.reason === 'CLASS_HUNT_TEACHER_REQUIREMENTS_INVALID')
+
+  const teachers = [
+    { status: 'active', country: 'VN', gender: 'female' },
+    { status: 'active', country: 'ZA', gender: 'female' },
+    { status: 'active', country: 'PH', gender: 'male', isTester: true },
+    { status: 'resigned', country: 'ZA', gender: 'female' },
+  ]
+  assert.deepEqual(classHuntTeacherAudience(teachers, any), { activeTeacherCount: 2, matchingTeacherCount: 2 })
+  assert.deepEqual(classHuntTeacherAudience(teachers, femaleNative), { activeTeacherCount: 2, matchingTeacherCount: 1 })
 })
 
 test('CLASS HUNTING rejects a 13-session request when its required point hold exceeds the fund', () => {

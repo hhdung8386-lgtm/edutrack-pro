@@ -347,7 +347,7 @@ export function AttendancePage() {
       if (audit) {
         if (audit.schedule.status === 'subject_mismatch') {
           toast.error(lang === 'vi'
-            ? 'Môn đang chọn không khớp lịch đặt của học viên. Vui lòng chọn đúng môn hoặc liên hệ giáo vụ để đối soát chuyển môn trước khi gửi điểm danh.'
+            ? 'Môn đang chọn không khớp lịch đặt của học viên (thường do học viên vừa đổi gói). Vui lòng báo giáo vụ chuyển ca về đúng gói rồi gửi điểm danh lại.'
             : 'The selected subject does not match the student\'s booking. Choose the correct subject or ask academic staff to reconcile the course transfer before submitting attendance.')
           return
         }
