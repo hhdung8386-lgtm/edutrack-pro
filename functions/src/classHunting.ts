@@ -680,8 +680,48 @@ export function isClassHuntTeacherProfileComplete(teacher: ClassHuntTeacherLike 
   })
 }
 
+/**
+ * Retained for historical tests and reporting only. Class Hunting no longer
+ * filters offers by a tutor's tagged subjects: every eligible tutor can see
+ * and claim a class, and decides from the subject name whether it fits.
+ */
 export function teacherMatchesClassHuntSubject(teacher: ClassHuntTeacherLike | null | undefined, subjectId: string): boolean {
   return Array.isArray(teacher?.subjectIds) && teacher.subjectIds.some((item) => item === subjectId)
+}
+
+export interface ClassHuntSubjectRate {
+  pricePerMinute: number
+  currency: string
+}
+
+/**
+ * Mirrors `getCanonicalSubjectRate` in src/lib/countryPricing.ts over the exact
+ * package row approval later debits. Display only: payroll still resolves the
+ * rate from that same row at approval time (price x tutor level).
+ */
+export function classHuntSubjectRate(student: ClassHuntStudentLike, subjectId: string): ClassHuntSubjectRate | null {
+  const sources = Array.isArray(student.subjects) && student.subjects.length > 0
+    ? student.subjects.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    : [student as Record<string, unknown>]
+  const matching = sources.filter((source) => cleanText(source.subjectId, 160) === subjectId)
+  if (matching.length !== 1) return null
+  const row = matching[0]
+  const countryPrices = row.countryPrices && typeof row.countryPrices === 'object' && !Array.isArray(row.countryPrices)
+    ? Object.values(row.countryPrices as Record<string, unknown>)
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    : []
+  const legacyDefault = countryPrices.find((rate) => rate.isDefault === true)
+    || (row.countryPrices as Record<string, Record<string, unknown> | undefined> | undefined)?.VN
+  const pricePerMinute = Number(row.pricePerMinute) > 0
+    ? Number(row.pricePerMinute)
+    : Number(row.pricePerMinuteVN) > 0
+      ? Number(row.pricePerMinuteVN)
+      : Number(legacyDefault?.price) || 0
+  if (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0) return null
+  return {
+    pricePerMinute,
+    currency: cleanText(row.currency, 10) || cleanText(legacyDefault?.currency, 10) || 'VND',
+  }
 }
 
 export function isActiveClassHuntBooking(booking: ClassHuntBookingLike): boolean {

@@ -20,6 +20,17 @@ export interface ClassHuntCompensation {
   formula: 'flat_per_minute'
 }
 
+/**
+ * Display-only subject price for offers without a class snapshot. Payroll
+ * resolves it again at approval: subject price x tutor level.
+ */
+export interface ClassHuntSubjectRate {
+  pricePerMinute: number
+  currency: string
+  /** Present only on the tutor feed, for the signed-in tutor. */
+  teacherLevel?: number
+}
+
 export interface ClassHuntStudent {
   id?: string
   code: string
@@ -86,6 +97,7 @@ export interface ClassHunt {
   claimedTeacher?: ClassHuntClaimedTeacher
   bookingIds?: string[]
   classHuntCompensation?: ClassHuntCompensation
+  subjectRate?: ClassHuntSubjectRate
 }
 
 /** The teacher endpoint deliberately does not include a student object. */
@@ -106,9 +118,8 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   sessionCount: number
   /** `all_remaining` is resolved by the server from the current package ledger. */
   sessionSelectionMode: ClassHuntSessionSelectionMode
-  /** Positive whole-VND rate. New UI always sends this; legacy stored hunts
-   * without a snapshot stay readable and claimable. */
-  compensationRatePerMinute: number
+  // No `compensationRatePerMinute`: tutor pay follows the subject price. The
+  // key must be absent (not undefined/null) or the server treats it as a rate.
 }
 
 export interface ClassHuntPreview {
@@ -121,6 +132,7 @@ export interface ClassHuntPreview {
   matchingTeacherCount?: number
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
+  subjectRate?: ClassHuntSubjectRate
 }
 
 export interface ClaimClassHuntResult {
@@ -222,6 +234,18 @@ function classHuntCompensationFrom(value: unknown): ClassHuntCompensation | unde
     ratePerMinute,
     currency: 'VND',
     formula: 'flat_per_minute',
+  }
+}
+
+function subjectRateFrom(value: unknown): ClassHuntSubjectRate | undefined {
+  const data = asRecord(value)
+  const pricePerMinute = numberValue(data.pricePerMinute)
+  if (pricePerMinute === undefined || pricePerMinute <= 0) return undefined
+  const teacherLevel = numberValue(data.teacherLevel)
+  return {
+    pricePerMinute,
+    currency: text(data.currency) || 'VND',
+    ...(teacherLevel !== undefined && teacherLevel > 0 ? { teacherLevel } : {}),
   }
 }
 
@@ -329,7 +353,9 @@ function previewFrom(value: unknown): ClassHuntPreview {
   const eligibleTeachers = teachersFrom(data.eligibleTeachers)
   const subject = subjectFrom(data.subject)
   const classHuntCompensation = classHuntCompensationFrom(data.classHuntCompensation)
+  const subjectRate = subjectRateFrom(data.subjectRate)
   return {
+    ...(subjectRate ? { subjectRate } : {}),
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
       .map(subjectFrom)
@@ -398,6 +424,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(sessionSelectionModeFrom(data.sessionSelectionMode) ? { sessionSelectionMode: sessionSelectionModeFrom(data.sessionSelectionMode) } : {}),
     ...(dateFrom(data.expiresAt ?? data.expiresAtMs) ? { expiresAt: dateFrom(data.expiresAt ?? data.expiresAtMs) } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
+    ...(!classHuntCompensation && subjectRateFrom(data.subjectRate) ? { subjectRate: subjectRateFrom(data.subjectRate) } : {}),
   }
 }
 

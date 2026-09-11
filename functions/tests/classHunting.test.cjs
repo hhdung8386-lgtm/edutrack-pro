@@ -630,3 +630,22 @@ test('effective CLASS HUNTING status expires stale open offers without changing 
     sessions: [future],
   }, NOW_MS), 'claimed')
 })
+
+test('CLASS HUNTING shows the package subject price without filtering by tutor subject', () => {
+  const { classHuntSubjectRate } = require('../lib/classHunting.js')
+  const student = {
+    subjects: [
+      { subjectId: 'BAO-LUU', subjectName: 'Học Viên Bảo Lưu', pricePerMinute: 1200, currency: 'VND' },
+      { subjectId: 'LEGACY', subjectName: 'Cũ', pricePerMinute: 0, countryPrices: { VN: { price: 900, currency: 'VND' } } },
+      { subjectId: 'NO-PRICE', subjectName: 'Chưa giá' },
+    ],
+  }
+  assert.deepEqual(classHuntSubjectRate(student, 'BAO-LUU'), { pricePerMinute: 1200, currency: 'VND' })
+  assert.deepEqual(classHuntSubjectRate(student, 'LEGACY'), { pricePerMinute: 900, currency: 'VND' })
+  assert.equal(classHuntSubjectRate(student, 'NO-PRICE'), null)
+  assert.equal(classHuntSubjectRate(student, 'MISSING'), null)
+  assert.equal(classHuntSubjectRate({ subjects: [
+    { subjectId: 'DUP', pricePerMinute: 1 },
+    { subjectId: 'DUP', pricePerMinute: 2 },
+  ] }, 'DUP'), null)
+})
