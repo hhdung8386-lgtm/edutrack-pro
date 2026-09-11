@@ -67,6 +67,22 @@ export function isBookingHoldingStudentFund(
 }
 
 /**
+ * Attendance for a 50/75/100-minute lesson can link several booking slots to
+ * one lesson. Group by lesson instead of presenting each slot as a separate
+ * approval item; unlinked bookings are intentionally excluded.
+ */
+export function groupAwaitingApprovalBookingHolds(bookings: BookingRequest[]): BookingRequest[][] {
+  const byLesson = new Map<string, BookingRequest[]>()
+  bookings.forEach((booking) => {
+    if (!isBookingHoldingStudentFund(booking) || !booking.lessonId) return
+    const current = byLesson.get(booking.lessonId) || []
+    current.push(booking)
+    byLesson.set(booking.lessonId, current)
+  })
+  return Array.from(byLesson.values())
+}
+
+/**
  * A parent self-service cancellation can keep the original diamonds locked
  * while the family must arrange a replacement lesson. This is no longer a
  * calendar booking, but it remains a financial hold until a replacement has

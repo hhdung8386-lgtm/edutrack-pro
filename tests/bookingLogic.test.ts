@@ -9,6 +9,7 @@ import {
   isBookingAttended,
   isBookingCancellable,
   isBookingFinancialHold,
+  groupAwaitingApprovalBookingHolds,
   isBookingHoldingStudentFund,
   isBookingPendingRebookFundHold,
   matchesLessonBookingSubject,
@@ -270,6 +271,21 @@ test('distinguishes scheduled bookings from attended and cancellable bookings', 
   assert.equal(isBookingAttended(completed), true)
   assert.equal(isBookingCancellable(completed), false)
   assert.equal(isBookingHoldingStudentFund(completed), false)
+})
+
+test('groups multiple held schedule slots into one pending approval lesson', () => {
+  const groups = groupAwaitingApprovalBookingHolds([
+    booking('first-slot', '20:00', { lessonId: 'lesson-1' }),
+    booking('second-slot', '20:30', { lessonId: 'lesson-1' }),
+    booking('another-lesson', '21:00', { lessonId: 'lesson-2' }),
+    booking('future', '21:30'),
+    booking('completed', '22:00', { lessonId: 'lesson-3', status: 'completed' }),
+  ])
+
+  assert.deepEqual(groups.map((group) => group.map((item) => item.id)), [
+    ['first-slot', 'second-slot'],
+    ['another-lesson'],
+  ])
 })
 
 test('retains a released pending-rebook obligation as a financial hold, not a calendar booking', () => {

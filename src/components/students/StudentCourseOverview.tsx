@@ -57,6 +57,10 @@ interface CourseRow {
   registeredDiamonds: number
   learnedMinutes: number
   learnedDiamonds: number
+  scheduledMinutes: number
+  scheduledDiamonds: number
+  awaitingApprovalMinutes: number
+  awaitingApprovalDiamonds: number
   bookedMinutes: number
   bookedDiamonds: number
   remainingMinutes: number
@@ -157,7 +161,8 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, o
   const summaryCards: Array<{ label: string; minutes: number; diamonds: number; icon: LucideIcon; tone: string }> = [
     { label: 'Đăng ký', minutes: row.registeredMinutes, diamonds: row.registeredDiamonds, icon: Clock3, tone: 'text-indigo-600 bg-indigo-50' },
     { label: 'Đã học', minutes: row.learnedMinutes, diamonds: row.learnedDiamonds, icon: BookOpen, tone: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Đã đặt', minutes: row.bookedMinutes, diamonds: row.bookedDiamonds, icon: CalendarDays, tone: 'text-amber-600 bg-amber-50' },
+    { label: 'Đã đặt lịch', minutes: row.scheduledMinutes, diamonds: row.scheduledDiamonds, icon: CalendarDays, tone: 'text-amber-600 bg-amber-50' },
+    { label: 'Chờ duyệt', minutes: row.awaitingApprovalMinutes, diamonds: row.awaitingApprovalDiamonds, icon: NotebookPen, tone: 'text-violet-600 bg-violet-50' },
     { label: 'Còn lại', minutes: row.remainingMinutes, diamonds: row.remainingDiamonds, icon: Trophy, tone: 'text-sky-600 bg-sky-50' },
   ]
 
@@ -350,8 +355,14 @@ export function StudentCourseOverview({
       const payments = paymentsBySubject[index]
       const registeredMinutes = registeredMinutesBySubject[index]
       const learnedMinutes = learnedMinutesBySubject[index]
-      const bookedMinutes = subjectBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
-      const bookedDiamonds = subjectBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const scheduledBookings = subjectBookings.filter((booking) => !booking.lessonId)
+      const awaitingApprovalBookings = subjectBookings.filter((booking) => Boolean(booking.lessonId))
+      const scheduledMinutes = scheduledBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
+      const scheduledDiamonds = scheduledBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const awaitingApprovalMinutes = awaitingApprovalBookings.reduce((sum, booking) => sum + Math.max(0, Number(booking.requestedMinutes || 0)), 0)
+      const awaitingApprovalDiamonds = awaitingApprovalBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+      const bookedMinutes = scheduledMinutes + awaitingApprovalMinutes
+      const bookedDiamonds = scheduledDiamonds + awaitingApprovalDiamonds
       const remainingDiamonds = Math.max(0, Number(subject.remainingMinutes || 0) - bookedDiamonds)
       return {
         subject,
@@ -359,6 +370,10 @@ export function StudentCourseOverview({
         registeredDiamonds: Number(subject.totalMinutes || 0),
         learnedMinutes,
         learnedDiamonds: Number(subject.usedMinutes || 0),
+        scheduledMinutes,
+        scheduledDiamonds,
+        awaitingApprovalMinutes,
+        awaitingApprovalDiamonds,
         bookedMinutes,
         bookedDiamonds,
         remainingMinutes: Math.max(0, registeredMinutes - learnedMinutes - bookedMinutes),
@@ -422,13 +437,14 @@ export function StudentCourseOverview({
         {activeRows.length > 0 ? <>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[900px] text-left">
-              <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Khóa học</th><th className="px-4 py-3">Đăng ký</th><th className="px-4 py-3">Đã học</th><th className="px-4 py-3">Đã đặt</th><th className="px-4 py-3">Còn lại</th><th className="px-4 py-3 text-center">Thao tác</th></tr></thead>
+              <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Khóa học</th><th className="px-4 py-3">Đăng ký</th><th className="px-4 py-3">Đã học</th><th className="px-4 py-3">Đã đặt lịch</th><th className="px-4 py-3">Chờ duyệt</th><th className="px-4 py-3">Còn lại</th><th className="px-4 py-3 text-center">Thao tác</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {activeRows.map((row) => <tr key={row.subject.subjectId} className="transition-colors hover:bg-indigo-50/35">
                   <td className="px-5 py-4"><CourseIdentity subject={row.subject} paymentCount={row.payments.length} /></td>
                   <td className="px-4 py-4"><Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} /></td>
                   <td className="px-4 py-4"><Metric minutes={row.learnedMinutes} diamonds={row.learnedDiamonds} tone="indigo" /></td>
-                  <td className="px-4 py-4"><Metric minutes={row.bookedMinutes} diamonds={row.bookedDiamonds} tone="amber" /></td>
+                  <td className="px-4 py-4"><Metric minutes={row.scheduledMinutes} diamonds={row.scheduledDiamonds} tone="amber" /></td>
+                  <td className="px-4 py-4"><Metric minutes={row.awaitingApprovalMinutes} diamonds={row.awaitingApprovalDiamonds} tone="indigo" /></td>
                   <td className="px-4 py-4"><Metric minutes={row.remainingMinutes} diamonds={row.remainingDiamonds} tone="emerald" /></td>
                   <td className="px-4 py-4"><div className="flex justify-center gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 transition hover:-translate-y-0.5 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Cộng thêm quyền học cho ${row.subject.subjectName}`}><Plus className="h-5 w-5" /></button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Xem chi tiết ${row.subject.subjectName}`}><ChevronRight className="h-5 w-5" /></button></div></td>
                 </tr>)}
@@ -438,7 +454,7 @@ export function StudentCourseOverview({
           <div className="divide-y divide-slate-100 md:hidden">
             {activeRows.map((row) => <article key={row.subject.subjectId} className="p-4">
               <CourseIdentity subject={row.subject} paymentCount={row.payments.length} />
-              <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đăng ký</p><Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã học</p><Metric minutes={row.learnedMinutes} diamonds={row.learnedDiamonds} tone="indigo" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã đặt</p><Metric minutes={row.bookedMinutes} diamonds={row.bookedDiamonds} tone="amber" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Còn lại</p><Metric minutes={row.remainingMinutes} diamonds={row.remainingDiamonds} tone="emerald" /></div></div>
+              <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đăng ký</p><Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã học</p><Metric minutes={row.learnedMinutes} diamonds={row.learnedDiamonds} tone="indigo" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã đặt lịch</p><Metric minutes={row.scheduledMinutes} diamonds={row.scheduledDiamonds} tone="amber" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Chờ duyệt</p><Metric minutes={row.awaitingApprovalMinutes} diamonds={row.awaitingApprovalDiamonds} tone="indigo" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Còn lại</p><Metric minutes={row.remainingMinutes} diamonds={row.remainingDiamonds} tone="emerald" /></div></div>
               <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 ring-1 ring-inset ring-indigo-100"><CirclePlus className="h-4 w-4" />Cộng thêm</button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white text-sm font-bold text-slate-700 ring-1 ring-inset ring-slate-200">Chi tiết<ChevronRight className="h-4 w-4" /></button></div>
             </article>)}
           </div>

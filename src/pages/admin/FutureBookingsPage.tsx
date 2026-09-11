@@ -12,8 +12,9 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ClipboardCheck } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
+import { groupAwaitingApprovalBookingHolds } from '@/lib/bookingLogic'
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -110,10 +111,24 @@ export function FutureBookingsPage() {
     [bookings, selectedStudentId],
   )
 
+  const selectedStudentAwaitingApprovalRows = useMemo(() => {
+    return groupAwaitingApprovalBookingHolds(selectedStudentAwaitingApprovalBookings).map((group) => ({
+      lessonId: group[0].lessonId || group[0].id,
+      booking: group[0],
+      slotCount: group.length,
+      minutes: group.reduce((sum, booking) => sum + Number(booking.requestedMinutes || 0), 0),
+      points: group.reduce((sum, booking) => sum + getBookingPoints(booking), 0),
+    })).sort((left, right) => {
+      const dateCompare = (right.booking.requestedDate || '').localeCompare(left.booking.requestedDate || '')
+      return dateCompare || (right.booking.requestedStart || '').localeCompare(left.booking.requestedStart || '')
+    })
+  }, [selectedStudentAwaitingApprovalBookings])
+
   const selectedStudentAwaitingApprovalStats = useMemo(() => ({
-    count: selectedStudentAwaitingApprovalBookings.length,
-    points: selectedStudentAwaitingApprovalBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0),
-  }), [selectedStudentAwaitingApprovalBookings])
+    count: selectedStudentAwaitingApprovalRows.length,
+    slots: selectedStudentAwaitingApprovalBookings.length,
+    points: selectedStudentAwaitingApprovalRows.reduce((sum, row) => sum + row.points, 0),
+  }), [selectedStudentAwaitingApprovalBookings.length, selectedStudentAwaitingApprovalRows])
 
   const selectedStudentOverdueBookings = useMemo(
     () => selectedStudentHeldBookings.filter((booking) =>
@@ -394,7 +409,7 @@ export function FutureBookingsPage() {
               </div>
             </div>
             <Button
-              onClick={() => navigate('/admin/approvals')}
+              onClick={() => navigate(`/admin/approvals?studentId=${selectedStudentId}`)}
               className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               <ShieldCheck className="w-4 h-4 mr-2" />
@@ -525,7 +540,7 @@ export function FutureBookingsPage() {
                 <>Bộ lọc: {futureBookings.length} ca học phù hợp</>
               ) : (
                 <>
-                  Học viên này đang giữ <strong className="text-slate-700">{selectedStudentHeldBookings.length} ca</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
+                  Học viên này có <strong className="text-slate-700">{selectedStudentHeldBookings.length} ca chưa điểm danh đang giữ lịch</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
                   {selectedStudentOverdueBookings.length > 0 && <>; <strong className="text-amber-700">{selectedStudentOverdueBookings.length} ca quá hạn</strong> nằm ở cảnh báo phía trên</>}.
                   {selectedStudentAwaitingApprovalStats.count > 0 && <> Còn <strong className="text-indigo-700">{selectedStudentAwaitingApprovalStats.count} ca đã điểm danh chờ duyệt</strong> vẫn giữ quỹ.</>}
                 </>
@@ -676,6 +691,53 @@ export function FutureBookingsPage() {
           </div>
         )}
       </Card>
+
+      {selectedStudentId !== 'all' && selectedStudentAwaitingApprovalRows.length > 0 && (
+        <Card padding="none" className="overflow-hidden border-indigo-200">
+          <div className="flex flex-col gap-3 border-b border-indigo-100 bg-indigo-50/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold text-indigo-950">
+                <ClipboardCheck className="h-4 w-4" />
+                Buổi đã điểm danh chờ duyệt ({selectedStudentAwaitingApprovalRows.length})
+              </h2>
+              <p className="mt-1 text-xs text-indigo-800">
+                {selectedStudentAwaitingApprovalStats.slots} ô lịch đang giữ {selectedStudentAwaitingApprovalStats.points.toLocaleString('vi-VN')} kim cương. Các dòng này không thể hủy như lịch tương lai; cần xử lý ở trang Duyệt buổi dạy.
+              </p>
+            </div>
+            <Button onClick={() => navigate(`/admin/approvals?studentId=${selectedStudentId}`)} className="shrink-0 bg-indigo-600 text-white hover:bg-indigo-700">
+              Mở đúng danh sách chờ duyệt
+            </Button>
+          </div>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                <tr><th className="px-5 py-3">Ngày học</th><th className="px-4 py-3">Gia sư</th><th className="px-4 py-3">Môn học</th><th className="px-4 py-3">Thời lượng</th><th className="px-4 py-3">Quỹ đang giữ</th><th className="px-5 py-3">Trạng thái</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {selectedStudentAwaitingApprovalRows.map((row) => (
+                  <tr key={row.lessonId} className="text-slate-700">
+                    <td className="px-5 py-3 font-semibold">{row.booking.requestedDate || 'Chưa có ngày'} · {row.booking.requestedStart || '—'}</td>
+                    <td className="px-4 py-3">{teacherNicks[row.booking.teacherId] || row.booking.teacherName || 'Chưa xác định'}</td>
+                    <td className="px-4 py-3">{row.booking.subjectName || 'Chưa xác định'}</td>
+                    <td className="px-4 py-3">{row.minutes} phút{row.slotCount > 1 ? ` (${row.slotCount} ô lịch)` : ''}</td>
+                    <td className="px-4 py-3 font-bold text-indigo-700">{row.points.toLocaleString('vi-VN')} kim cương</td>
+                    <td className="px-5 py-3"><span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">Chờ duyệt</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="divide-y divide-slate-100 md:hidden">
+            {selectedStudentAwaitingApprovalRows.map((row) => (
+              <article key={row.lessonId} className="space-y-2 p-4 text-sm">
+                <div className="flex items-start justify-between gap-3"><strong>{row.booking.requestedDate || 'Chưa có ngày'} · {row.booking.requestedStart || '—'}</strong><span className="rounded-full bg-indigo-100 px-2 py-1 text-xs font-bold text-indigo-700">Chờ duyệt</span></div>
+                <p className="text-slate-600">{teacherNicks[row.booking.teacherId] || row.booking.teacherName || 'Chưa xác định'} · {row.booking.subjectName || 'Chưa xác định môn'}</p>
+                <p className="font-semibold text-indigo-700">{row.minutes} phút · {row.points.toLocaleString('vi-VN')} kim cương đang giữ{row.slotCount > 1 ? ` · ${row.slotCount} ô lịch` : ''}</p>
+              </article>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <ConfirmDialog
         open={!!confirmTargets}

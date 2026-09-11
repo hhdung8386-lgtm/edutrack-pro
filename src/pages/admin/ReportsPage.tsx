@@ -197,7 +197,10 @@ export function ReportsPage() {
   const fundRows = useMemo(() => {
     const bookingsByStudent = new Map<string, BookingRequest[]>()
     bookingRequests
-      .filter((booking) => activeBookingStatuses.has(booking.status) && !booking.lessonId)
+      // Attendance links a lesson before approval, but the booking remains an
+      // active financial hold until approval settles it. Reports must use the
+      // same ledger definition as scheduling and student detail.
+      .filter((booking) => activeBookingStatuses.has(booking.status))
       .forEach((booking) => {
         const current = bookingsByStudent.get(booking.studentId) || []
         current.push(booking)
@@ -358,7 +361,7 @@ export function ReportsPage() {
       'Môn học': subject.subjectName,
       'Số học viên': subject.studentCount,
       'Phút khả dụng': subject.availableMinutes,
-      'Phút đã đặt': subject.bookedMinutes,
+      'Phút đang giữ quỹ': subject.bookedMinutes,
       'Tổng phút chưa học': subject.totalUnlearnedMinutes,
     })))
     const detailSheet = XLSX.utils.json_to_sheet(displayedRows.map((row) => ({
@@ -367,7 +370,7 @@ export function ReportsPage() {
       'Học viên': row.studentName,
       'Trạng thái': row.studentStatus === 'active' ? 'Đang học' : row.studentStatus === 'reserved' ? 'Bảo lưu' : row.studentStatus === 'expired' ? 'Hết buổi' : 'Tạm dừng',
       'Phút khả dụng': row.availableMinutes,
-      'Phút đã đặt': row.bookedMinutes,
+      'Phút đang giữ quỹ': row.bookedMinutes,
       'Tổng phút chưa học': row.totalUnlearnedMinutes,
     })))
     summarySheet['!cols'] = [{ wch: 34 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 22 }]
@@ -438,7 +441,7 @@ export function ReportsPage() {
               { label: 'Học viên còn quỹ', value: totals.students, icon: Users, tone: 'bg-sky-50 text-sky-700 ring-sky-100' },
               { label: 'Tổng phút chưa học', value: `${numberFormat(totals.totalUnlearnedMinutes)} phút`, icon: BarChart3, tone: 'bg-brand-50 text-brand-800 ring-brand-100' },
               { label: 'Phút khả dụng', value: `${numberFormat(totals.availableMinutes)} phút`, icon: Sparkles, tone: 'bg-emerald-50 text-emerald-700 ring-emerald-100' },
-              { label: 'Phút đã đặt', value: `${numberFormat(totals.bookedMinutes)} phút`, icon: CalendarDays, tone: 'bg-violet-50 text-violet-700 ring-violet-100' },
+              { label: 'Phút đang giữ quỹ', value: `${numberFormat(totals.bookedMinutes)} phút`, icon: CalendarDays, tone: 'bg-violet-50 text-violet-700 ring-violet-100' },
             ].map((metric) => {
               const Icon = metric.icon
               return (
@@ -466,7 +469,7 @@ export function ReportsPage() {
                       <Tooltip
                         cursor={{ fill: '#f8fafc' }}
                         contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 12px 24px -16px rgba(15, 23, 42, .38)' }}
-                        formatter={(value, name) => [`${numberFormat(Number(value || 0))} phút`, name === 'available' ? 'Khả dụng' : 'Đã đặt']}
+                        formatter={(value, name) => [`${numberFormat(Number(value || 0))} phút`, name === 'available' ? 'Khả dụng' : 'Đang giữ quỹ']}
                       />
                       <Bar dataKey="available" stackId="fund" fill="#34d399" radius={[0, 0, 0, 0]} name="available" />
                       <Bar dataKey="booked" stackId="fund" fill="#a78bfa" radius={[0, 6, 6, 0]} name="booked" />
@@ -480,8 +483,8 @@ export function ReportsPage() {
               <div className="flex items-center gap-2 text-slate-950"><BookOpen className="h-5 w-5 text-brand-600" /><h2 className="font-black">Cách tính báo cáo</h2></div>
               <div className="mt-4 space-y-4 text-sm leading-6 text-slate-600">
                 <p><strong className="text-slate-900">Khả dụng</strong> là số phút còn lại trong gói sau khi trừ các lịch đang chờ hoặc đã được giữ chỗ.</p>
-                <p><strong className="text-slate-900">Đã đặt</strong> gồm lịch ở trạng thái chờ xác nhận và đã xác nhận, chưa chuyển thành buổi học.</p>
-                <div className="rounded-xl border border-brand-100 bg-brand-50 p-3 text-xs font-semibold leading-5 text-brand-900">Tổng phút chưa học = phút khả dụng + phút đã đặt. Mỗi học viên được gom đúng theo môn đang đăng ký.</div>
+                <p><strong className="text-slate-900">Đang giữ quỹ</strong> gồm lịch chờ xác nhận, lịch đã xác nhận và buổi đã điểm danh đang chờ duyệt. Quỹ chỉ được tất toán khi duyệt buổi.</p>
+                <div className="rounded-xl border border-brand-100 bg-brand-50 p-3 text-xs font-semibold leading-5 text-brand-900">Tổng phút chưa học = phút khả dụng + phút đang giữ quỹ. Mỗi học viên được gom đúng theo môn đang đăng ký.</div>
               </div>
             </Card>
           </section>
@@ -542,7 +545,7 @@ export function ReportsPage() {
                       </div>
                       <div className="grid grid-cols-3 gap-3 text-right sm:gap-7">
                         <FundMetric label="Khả dụng" value={subject.availableMinutes} className="text-emerald-600" />
-                        <FundMetric label="Đã đặt" value={subject.bookedMinutes} className="text-violet-600" />
+                        <FundMetric label="Đang giữ" value={subject.bookedMinutes} className="text-violet-600" />
                         <FundMetric label="Tổng chưa học" value={subject.totalUnlearnedMinutes} className="text-slate-950" />
                       </div>
                       <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -556,7 +559,7 @@ export function ReportsPage() {
                                 <th className="px-5 py-3">Học viên</th>
                                 <th className="px-4 py-3">Trạng thái</th>
                                 <th className="px-4 py-3 text-right">Khả dụng</th>
-                                <th className="px-4 py-3 text-right">Đã đặt</th>
+                                <th className="px-4 py-3 text-right">Đang giữ</th>
                                 <th className="px-5 py-3 text-right">Tổng chưa học</th>
                               </tr>
                             </thead>
@@ -646,7 +649,7 @@ function FundStudentRow({ row }: { row: StudentFundRow }) {
 }
 
 function FundStudentCard({ row }: { row: StudentFundRow }) {
-  return <div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{row.studentName}</p><p className="mt-0.5 font-mono text-[11px] text-slate-500">{row.studentCode}</p></div><StatusBadge status={row.studentStatus} /></div><div className="mt-3 grid grid-cols-3 gap-2 text-center"><FundMetric label="Khả dụng" value={row.availableMinutes} className="text-emerald-600" /><FundMetric label="Đã đặt" value={row.bookedMinutes} className="text-violet-600" /><FundMetric label="Tổng" value={row.totalUnlearnedMinutes} className="text-slate-950" /></div></div>
+  return <div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{row.studentName}</p><p className="mt-0.5 font-mono text-[11px] text-slate-500">{row.studentCode}</p></div><StatusBadge status={row.studentStatus} /></div><div className="mt-3 grid grid-cols-3 gap-2 text-center"><FundMetric label="Khả dụng" value={row.availableMinutes} className="text-emerald-600" /><FundMetric label="Đang giữ" value={row.bookedMinutes} className="text-violet-600" /><FundMetric label="Tổng" value={row.totalUnlearnedMinutes} className="text-slate-950" /></div></div>
 }
 
 function EmptyFundState({ large = false }: { large?: boolean }) {

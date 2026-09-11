@@ -28,6 +28,7 @@ import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHun
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import {
   assertAutomaticReconciliationRollbackAllowed,
+  groupAwaitingApprovalBookingHolds,
   isBookingHoldingStudentFund,
   requiresIndividualSubjectReconciliation,
 } from '@/lib/bookingLogic'
@@ -312,7 +313,7 @@ export function StudentDetailPage() {
   )
 
   const upcomingHeldBookings = useMemo(
-    () => heldBookings.filter((booking) => (booking.requestedDate || '') >= todayISO),
+    () => heldBookings.filter((booking) => !booking.lessonId && (booking.requestedDate || '') >= todayISO),
     [heldBookings, todayISO],
   )
 
@@ -328,6 +329,11 @@ export function StudentDetailPage() {
   const awaitingApprovalHeldBookings = useMemo(
     () => heldBookings.filter((booking) => Boolean(booking.lessonId)),
     [heldBookings],
+  )
+
+  const awaitingApprovalLessonCount = useMemo(
+    () => groupAwaitingApprovalBookingHolds(awaitingApprovalHeldBookings).length,
+    [awaitingApprovalHeldBookings],
   )
 
   const handleCancelSpecificBookings = async (targetBookings: BookingRequest[]) => {
@@ -1776,21 +1782,31 @@ export function StudentDetailPage() {
             Lịch học đã đặt
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
+            Học viên này hiện có <strong>{heldBookings.length} ô lịch/nghĩa vụ đang giữ quỹ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
-            {awaitingApprovalHeldBookings.length > 0 && <> <strong>{awaitingApprovalHeldBookings.length} ca đã điểm danh đang chờ duyệt</strong> vẫn được giữ quỹ cho đến khi duyệt.</>}
+            {awaitingApprovalLessonCount > 0 && <> <strong>{awaitingApprovalLessonCount} buổi đã điểm danh đang chờ duyệt</strong> ({awaitingApprovalHeldBookings.length} ô lịch) vẫn được giữ quỹ cho đến khi duyệt.</>}
             {unmatchedHeldBookings.length > 0 && (
               <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng vẫn bị chặn điểm danh đến khi giáo vụ sửa đúng môn.</>
             )}
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => navigate(`/admin/future-bookings?studentId=${id}`)}
-          className="text-xs font-bold border-indigo-200 hover:border-indigo-500 text-indigo-600 hover:text-indigo-700 bg-white shadow-sm flex items-center gap-1 flex-shrink-0"
-        >
-          Xem & Quản lý lịch đặt ➔
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {awaitingApprovalLessonCount > 0 && (
+            <Button
+              onClick={() => navigate(`/admin/approvals?studentId=${id}`)}
+              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex-shrink-0"
+            >
+              Mở {awaitingApprovalLessonCount} buổi chờ duyệt
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/admin/future-bookings?studentId=${id}`)}
+            className="text-xs font-bold border-indigo-200 hover:border-indigo-500 text-indigo-600 hover:text-indigo-700 bg-white shadow-sm flex items-center gap-1 flex-shrink-0"
+          >
+            Quản lý {upcomingHeldBookings.length} lịch tương lai
+          </Button>
+        </div>
       </Card>
 
       {/* Lesson history */}

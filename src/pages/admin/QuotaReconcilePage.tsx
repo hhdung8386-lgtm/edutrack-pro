@@ -16,7 +16,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, AlertCircle, Search, Download, Calculator, CalendarX2, CheckCircle2, Wrench } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Search, Download, Calculator, CalendarX2, CheckCircle2, Wrench, ClipboardCheck, ShieldCheck } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 
 /**
@@ -180,6 +180,7 @@ export function QuotaReconcilePage() {
   const selectedRows = filtered.filter((r) => selectedIds.includes(r.student.id))
   const selectedDriftRows = selectedRows.filter((r) => r.drift !== 0)
   const selectedOverRows = selectedRows.filter((r) => r.overByActual > 0)
+  const selectedCancellableRows = selectedOverRows.filter((r) => r.futureBookings.length > 0)
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -372,7 +373,15 @@ export function QuotaReconcilePage() {
       ...filtered.map((r) => [
         r.student.code, r.student.name, r.remainingMinutes, r.storedHeld, r.actualHeld, r.drift,
         Math.max(0, r.overByActual), r.pastHeld, r.awaitingApprovalHeld, r.pendingRebookHeld, r.futureHeld,
-        r.drift !== 0 ? 'Tính lại số liệu' : r.overByActual > 0 ? 'Huỷ bớt lịch tương lai' : 'Theo dõi',
+        r.drift !== 0
+          ? 'Tính lại số liệu'
+          : r.futureBookings.length > 0
+            ? 'Huỷ bớt lịch tương lai'
+            : r.awaitingApprovalHeld > 0
+              ? 'Xử lý buổi chờ duyệt'
+              : r.pastHeld > 0
+                ? 'Rà soát ca quá hạn'
+                : 'Theo dõi',
       ]),
     ]
     const csv = '﻿' + rowsCsv.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -401,7 +410,7 @@ export function QuotaReconcilePage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Hồ sơ cần xử lý</p><p className="mt-1 text-2xl font-bold text-slate-900">{stats.total}</p></Card>
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Sai số liệu</p><p className="mt-1 text-2xl font-bold text-sky-600">{driftRows.length}</p></Card>
-        <Card><p className="text-xs font-semibold uppercase text-slate-500">Đặt vượt quỹ thật</p><p className="mt-1 text-2xl font-bold text-rose-600">{stats.overBooked}</p></Card>
+        <Card><p className="text-xs font-semibold uppercase text-slate-500">Đang giữ vượt quỹ</p><p className="mt-1 text-2xl font-bold text-rose-600">{stats.overBooked}</p></Card>
         <Card><p className="text-xs font-semibold uppercase text-slate-500">Kim cương vượt quỹ</p><p className="mt-1 text-2xl font-bold text-amber-600">{stats.overMinutes.toLocaleString('vi-VN')}</p></Card>
       </div>
 
@@ -476,12 +485,12 @@ export function QuotaReconcilePage() {
                 <Calculator className="w-4 h-4 mr-2" />Tính lại ({selectedDriftRows.length})
               </Button>
               <Button
-                onClick={() => setConfirmBulkCancel(selectedOverRows)}
+                onClick={() => setConfirmBulkCancel(selectedCancellableRows)}
                 loading={processing}
-                disabled={selectedOverRows.length === 0}
+                disabled={selectedCancellableRows.length === 0}
                 className="bg-rose-600 hover:bg-rose-700 text-white"
               >
-                <CalendarX2 className="w-4 h-4 mr-2" />Huỷ bớt lịch ({selectedOverRows.length})
+                <CalendarX2 className="w-4 h-4 mr-2" />Huỷ bớt lịch ({selectedCancellableRows.length})
               </Button>
               <button type="button" onClick={() => setSelectedIds([])} className="px-3 text-sm font-semibold text-slate-600 hover:text-slate-900">
                 Bỏ chọn
@@ -573,11 +582,26 @@ export function QuotaReconcilePage() {
                             <Calculator className="w-3 h-3" />Tính lại
                           </button>
                         )}
-                        {r.overByActual > 0 && (
+                        {r.overByActual > 0 && r.futureBookings.length > 0 && (
                           <button type="button" disabled={processing} onClick={() => setConfirmCancel(r)}
                             className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
                             <CalendarX2 className="w-3 h-3" />Huỷ bớt lịch
                           </button>
+                        )}
+                        {r.awaitingApprovalHeld > 0 && (
+                          <Link to={`/admin/approvals?studentId=${r.student.id}`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                            <ClipboardCheck className="w-3 h-3" />Mở chờ duyệt
+                          </Link>
+                        )}
+                        {r.pastHeld > 0 && (
+                          <Link to={`/admin/overdue-bookings?studentId=${r.student.id}`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100">
+                            <ShieldCheck className="w-3 h-3" />Rà soát quá hạn
+                          </Link>
+                        )}
+                        {r.overByActual > 0 && r.futureBookings.length === 0 && r.awaitingApprovalHeld <= 0 && r.pastHeld <= 0 && (
+                          <span className="text-[11px] font-semibold text-slate-500">Không có lịch tương lai có thể huỷ</span>
                         )}
                       </div>
                     </td>

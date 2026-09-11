@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   collection, query, where, onSnapshot, orderBy,
   runTransaction, doc, serverTimestamp, addDoc, collection as col,
-  getCountFromServer, limit, getDoc,
+  getCountFromServer, limit, getDoc, deleteField,
 } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Lesson, Student, StudentSubject, Subject } from '@/types'
@@ -88,6 +88,8 @@ function AuditNotice({ message, compactWhenFine = false }: { message: AuditMessa
 
 export function ApprovalsPage() {
   const { user, role } = useAuthStore()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const studentIdFilter = searchParams.get('studentId') || ''
   const [tab, setTab] = useState<string>('pending')
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
@@ -321,8 +323,10 @@ export function ApprovalsPage() {
   // gõ đúng tên mà không ra kết quả sau khi màn hình đổi sang hiển thị nickname.
   const filteredLessons = lessons.filter(l => {
     const keyword = search.toLowerCase()
+    if (studentIdFilter && l.studentId !== studentIdFilter) return false
     if (!keyword) return true
     return l.studentName.toLowerCase().includes(keyword)
+      || (l.studentCode || '').toLowerCase().includes(keyword)
       || (l.teacherName || '').toLowerCase().includes(keyword)
       || (l.teacherCode || '').toLowerCase().includes(keyword)
   })
@@ -771,19 +775,84 @@ export function ApprovalsPage() {
     }
     setRejecting(true)
     try {
-      const lessonRef = doc(db, 'lessons', rejectingLesson.id)
-      const { updateDoc } = await import('firebase/firestore')
-      await updateDoc(lessonRef, {
-        status: 'rejected',
-        rejectedReason: rejectReason,
-        updatedAt: serverTimestamp(),
+      const matchedBookings = await resolveLessonBookings({
+        id: rejectingLesson.id,
+        bookingRequestId: rejectingLesson.bookingRequestId,
+        bookingRequestIds: rejectingLesson.bookingRequestIds,
+        scheduleCheck: rejectingLesson.scheduleCheck,
+        studentId: rejectingLesson.studentId,
+        teacherId: rejectingLesson.teacherId,
+        date: rejectingLesson.date,
+        minutes: rejectingLesson.minutes,
+        subjectId: rejectingLesson.subjectId,
+        subjectName: rejectingLesson.subjectName,
+        groupClassId: rejectingLesson.groupClassId,
+        isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(rejectingLesson),
       })
-      toast.success('Đã từ chối buổi dạy')
+
+      await runTransaction(db, async (tx) => {
+        const lessonRef = doc(db, 'lessons', rejectingLesson.id)
+        const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
+        const [lessonSnap, ...bookingSnaps] = await Promise.all([
+          tx.get(lessonRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
+        if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
+        const lessonNow = { id: lessonSnap.id, ...lessonSnap.data() } as Lesson
+        if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
+        const bookingNows = bookingSnaps
+          .filter((bookingSnap) => bookingSnap.exists())
+          .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
+        if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
+        assertBookingsAvailableForApproval(bookingNows, rejectingLesson.id)
+        assertBookingsMatchLessonForApproval(bookingNows, lessonNow)
+
+        tx.update(lessonRef, {
+          status: 'rejected',
+          rejectedReason: rejectReason.trim(),
+          updatedAt: serverTimestamp(),
+        })
+        bookingSnaps.forEach((bookingSnap) => {
+          if (!bookingSnap.exists() || bookingSnap.data().lessonId !== rejectingLesson.id) return
+          tx.update(bookingSnap.ref, {
+            lessonId: deleteField(),
+            updatedAt: serverTimestamp(),
+          })
+        })
+        tx.set(doc(col(db, 'adminLogs')), {
+          adminId: user?.uid ?? '',
+          action: 'REJECT_LESSON_AND_REOPEN_BOOKINGS',
+          targetType: 'lesson',
+          targetId: rejectingLesson.id,
+          changes: {
+            studentId: rejectingLesson.studentId,
+            teacherId: rejectingLesson.teacherId,
+            lessonDate: rejectingLesson.date,
+            reopenedBookingIds: bookingNows.map((booking) => booking.id),
+            reason: rejectReason.trim(),
+          },
+          createdAt: serverTimestamp(),
+        })
+      }, { maxAttempts: 3 })
+      toast.success(matchedBookings.length > 0
+        ? 'Đã từ chối buổi dạy và mở lại ca để gia sư điểm danh lại'
+        : 'Đã từ chối buổi dạy')
       setRejectingLesson(null)
       setRejectReason('')
       refreshCounts()
-    } catch {
-      toast.error('Có lỗi xảy ra')
+    } catch (err: unknown) {
+      console.error('[reject-lesson]', err)
+      const message = (err as { message?: string })?.message || ''
+      const code = (err as { code?: string })?.code || ''
+      if (message === 'LESSON_ALREADY_PROCESSED') {
+        toast.warning('Buổi dạy đã được xử lý trước đó')
+      } else if (message === 'BOOKING_STATE_CHANGED' || message === 'BOOKING_REFERENCE_INVALID') {
+        toast.error('Ca đặt lịch vừa thay đổi hoặc không còn khớp buổi điểm danh. Chưa từ chối dữ liệu; hãy tải lại và kiểm tra.')
+      } else if (code === 'permission-denied') {
+        toast.error('Bạn không có quyền từ chối buổi dạy này')
+      } else {
+        toast.error('Từ chối buổi dạy không thành công, vui lòng thử lại')
+      }
     } finally {
       setRejecting(false)
       fetchCounts()
@@ -815,6 +884,22 @@ export function ApprovalsPage() {
 
       {/* Tabs and Search */}
       <Card className="border-slate-200/80 shadow-sm">
+        {studentIdFilter && (
+          <div className="mb-4 flex flex-col gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-semibold">Đang chỉ hiển thị buổi của học viên đã chọn ({filteredLessons.length} buổi trong trạng thái này).</span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams)
+                next.delete('studentId')
+                setSearchParams(next, { replace: true })
+              }}
+              className="min-h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+            >
+              Bỏ lọc học viên
+            </button>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-4 justify-between">
           <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit flex-wrap">
             {TABS.map((t) => (
@@ -852,11 +937,13 @@ export function ApprovalsPage() {
 
       {loading ? (
         <LoadingSpinner />
-      ) : lessons.length === 0 ? (
+      ) : filteredLessons.length === 0 ? (
         <EmptyState
           icon={<ClipboardCheck className="w-8 h-8" />}
-          title="Không có buổi dạy nào"
-          description={tab === 'pending' ? 'Tất cả buổi dạy đã được duyệt' : 'Chưa có dữ liệu'}
+          title={studentIdFilter ? 'Học viên này không có buổi ở trạng thái đã chọn' : 'Không có buổi dạy nào'}
+          description={studentIdFilter
+            ? 'Bạn có thể đổi trạng thái hoặc bỏ lọc học viên để xem danh sách khác.'
+            : tab === 'pending' ? 'Tất cả buổi dạy đã được duyệt' : 'Chưa có dữ liệu'}
         />
       ) : (
         <div className="space-y-4">
