@@ -506,7 +506,7 @@ export function BookingSchedulesPage() {
       collection(db, 'bookingRequests'),
       where('studentId', '==', selectedStudent.id),
     )
-    getDocs(q).then((snap) => {
+    const unsubscribe = onSnapshot(q, (snap) => {
       // Filter lifecycle status after the single-field read. This avoids a
       // production-only composite-index failure that made a student with
       // remaining sessions look unable to schedule.
@@ -534,9 +534,10 @@ export function BookingSchedulesPage() {
           return better ? better.subjectId : currentId
         })
       }
-    }).catch((error) => {
+    }, (error) => {
       console.error('Error loading student booking requests:', error)
     })
+    return unsubscribe
   }, [selectedStudent])
 
   // Fetch all future booking requests for selected student when detail modal opens
@@ -884,10 +885,30 @@ export function BookingSchedulesPage() {
       return
     }
 
+    // A schedule may have been released while this modal stayed open. Always
+    // refresh the financial ledger from the server before the early balance
+    // gate; otherwise a stale modal can keep counting already-released rows
+    // and block a valid replacement/makeup booking.
+    let schedulingPrecheckBookings: BookingRequest[]
+    try {
+      const precheckSnapshot = await getDocsFromServer(query(
+        collection(db, 'bookingRequests'),
+        where('studentId', '==', selectedStudent.id),
+      ))
+      schedulingPrecheckBookings = precheckSnapshot.docs
+        .map((document) => ({ id: document.id, ...document.data() } as BookingRequest))
+        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
+      setSelectedStudentBookings(schedulingPrecheckBookings)
+    } catch (error) {
+      console.error('Unable to refresh student booking ledger before scheduling:', error)
+      toast.error('Chưa tải được sổ lịch mới nhất của học viên. Hệ thống chưa tạo ca nào; vui lòng thử lại.')
+      return
+    }
+
     const pointsPer25Minutes = getTeacherPointsPer25Minutes(selectedTeacher)
     const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
     const totalRequiredPoints = selectedSlots.length * pointsPerLesson
-    const bookedPointsForSubject = selectedStudentBookings
+    const bookedPointsForSubject = schedulingPrecheckBookings
       .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
       .reduce((sum, b) => sum + getBookingPoints(b), 0)
     const availableSubjectPoints = Math.max(0, sub.remainingMinutes - bookedPointsForSubject)
@@ -951,7 +972,7 @@ export function BookingSchedulesPage() {
       const endMin = startMin + duration
       const endStr = minutesToTime(endMin)
 
-      const overlap = checkStudentOverlap(selectedStudentBookings, slot.dateISO, slot.time, endStr)
+      const overlap = checkStudentOverlap(schedulingPrecheckBookings, slot.dateISO, slot.time, endStr)
       if (overlap) {
         const message = `Không thể xếp lớp: học viên đã có lịch với ${overlap.teacherName} lúc ${slot.time} - ${endStr}, ngày ${slot.dateISO}.`
         setScheduleConflictMessage(message)
