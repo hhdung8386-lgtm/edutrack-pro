@@ -14,6 +14,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
+import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -96,24 +97,41 @@ export function FutureBookingsPage() {
     [bookings, todayISO]
   )
 
+  // Giáo vụ thường gõ mã học viên vào ô tìm kiếm thay vì chọn ở bộ lọc. Khi tìm
+  // khớp ít học viên, dùng luôn phạm vi đó để cho biết quỹ đang bị giữ ở đâu.
+  const scopeStudentIds = useMemo<Set<string> | null>(() => {
+    if (selectedStudentId !== 'all') return new Set([selectedStudentId])
+    const queryLower = searchQuery.toLowerCase().trim()
+    if (queryLower.length < 3) return null
+    const matched = students.filter((student) => (
+      (student.code || '').toLowerCase().includes(queryLower)
+      || (student.name || '').toLowerCase().includes(queryLower)
+    ))
+    return matched.length > 0 && matched.length <= 5 ? new Set(matched.map((student) => student.id)) : null
+  }, [selectedStudentId, searchQuery, students])
+  const scopeSingleStudentId = scopeStudentIds && scopeStudentIds.size === 1
+    ? Array.from(scopeStudentIds)[0]
+    : null
+
   const selectedStudentHeldBookings = useMemo(
     () => bookings.filter((booking) =>
-      !booking.lessonId && (selectedStudentId === 'all' || booking.studentId === selectedStudentId),
+      !booking.lessonId && (!scopeStudentIds || scopeStudentIds.has(booking.studentId)),
     ),
-    [bookings, selectedStudentId],
+    [bookings, scopeStudentIds],
   )
 
-  const selectedStudentAwaitingApprovalBookings = useMemo(
-    () => bookings.filter((booking) =>
-      Boolean(booking.lessonId) && (selectedStudentId === 'all' || booking.studentId === selectedStudentId),
-    ),
-    [bookings, selectedStudentId],
+  // Ca đã gắn buổi điểm danh vẫn giữ quỹ; chỉ nạp trạng thái buổi dạy khi phạm vi đã thu hẹp.
+  const scopedLinkedBookings = useMemo(
+    () => (scopeStudentIds
+      ? bookings.filter((booking) => Boolean(booking.lessonId) && scopeStudentIds.has(booking.studentId))
+      : []),
+    [bookings, scopeStudentIds],
   )
 
   const selectedStudentAwaitingApprovalStats = useMemo(() => ({
-    count: selectedStudentAwaitingApprovalBookings.length,
-    points: selectedStudentAwaitingApprovalBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0),
-  }), [selectedStudentAwaitingApprovalBookings])
+    count: scopedLinkedBookings.length,
+    points: scopedLinkedBookings.reduce((sum, booking) => sum + getBookingPoints(booking), 0),
+  }), [scopedLinkedBookings])
 
   const selectedStudentOverdueBookings = useMemo(
     () => selectedStudentHeldBookings.filter((booking) =>
@@ -122,7 +140,7 @@ export function FutureBookingsPage() {
     [selectedStudentHeldBookings, todayISO],
   )
 
-  const overdueReviewScope = selectedStudentId === 'all' ? overdueBookings : selectedStudentOverdueBookings
+  const overdueReviewScope = scopeStudentIds ? selectedStudentOverdueBookings : overdueBookings
   const overdueStats = useMemo(() => ({
     count: overdueReviewScope.length,
     points: overdueReviewScope.reduce((sum, b) => sum + getBookingPoints(b), 0),
@@ -325,6 +343,13 @@ export function FutureBookingsPage() {
     }
   }
 
+  // Lựa chọn cũ có thể chứa ca vừa bị lọc ẩn hoặc vừa được xử lý ở màn hình khác.
+  // Chỉ thao tác trên ca đang hiển thị để nút hủy không bấm mà "không có gì xảy ra".
+  const visibleSelectedBookings = useMemo(
+    () => futureBookings.filter((booking) => selectedBookingIds.includes(booking.id)),
+    [futureBookings, selectedBookingIds],
+  )
+
   // Compute stats for current filtered list
   const totalMinutes = useMemo(() => {
     return futureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
@@ -366,7 +391,7 @@ export function FutureBookingsPage() {
               </div>
             </div>
             <Button
-              onClick={() => navigate(`/admin/overdue-bookings${selectedStudentId === 'all' ? '' : `?studentId=${selectedStudentId}`}`)}
+              onClick={() => navigate(`/admin/overdue-bookings${scopeSingleStudentId ? `?studentId=${scopeSingleStudentId}` : ''}`)}
               className="flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
             >
               <ShieldCheck className="w-4 h-4 mr-2" />
@@ -376,32 +401,8 @@ export function FutureBookingsPage() {
         </div>
       )}
 
-      {selectedStudentId !== 'all' && selectedStudentAwaitingApprovalStats.count > 0 && (
-        <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-6 h-6 text-indigo-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold text-indigo-950">
-                  Học viên còn {selectedStudentAwaitingApprovalStats.count} ca đã điểm danh đang chờ duyệt
-                </p>
-                <p className="text-sm text-indigo-900 mt-1 leading-relaxed">
-                  {selectedStudentAwaitingApprovalStats.points.toLocaleString('vi-VN')} kim cương của các ca này vẫn đang giữ quỹ cho đến khi duyệt. Vì vậy nhả ca tương lai có thể hoàn một phần nhưng chưa chắc mở đủ quỹ để đặt ca mới.
-                </p>
-                <p className="text-xs text-indigo-700 mt-1.5 font-semibold">
-                  Đây là quy tắc bảo vệ quỹ, không phải lỗi mất buổi; mở Duyệt để xử lý các ca đã điểm danh.
-                </p>
-              </div>
-            </div>
-            <Button
-              onClick={() => navigate('/admin/approvals')}
-              className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              <ShieldCheck className="w-4 h-4 mr-2" />
-              Mở trang duyệt
-            </Button>
-          </div>
-        </div>
+      {scopedLinkedBookings.length > 0 && (
+        <LinkedBookingHoldsPanel bookings={scopedLinkedBookings} showStudent={!scopeSingleStudentId} />
       )}
 
       {/* Filter and stats card */}
@@ -521,13 +522,13 @@ export function FutureBookingsPage() {
           {/* Stats Bar */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <div className="text-xs font-medium text-slate-500">
-              {selectedStudentId === 'all' ? (
+              {!scopeStudentIds ? (
                 <>Bộ lọc: {futureBookings.length} ca học phù hợp</>
               ) : (
                 <>
-                  Học viên này đang giữ <strong className="text-slate-700">{selectedStudentHeldBookings.length} ca</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
+                  {scopeSingleStudentId ? 'Học viên này' : `${scopeStudentIds.size} học viên phù hợp`} đang giữ <strong className="text-slate-700">{selectedStudentHeldBookings.length + selectedStudentAwaitingApprovalStats.count} ca</strong>; hiển thị {futureBookings.length} ca từ hôm nay trở đi
                   {selectedStudentOverdueBookings.length > 0 && <>; <strong className="text-amber-700">{selectedStudentOverdueBookings.length} ca quá hạn</strong> nằm ở cảnh báo phía trên</>}.
-                  {selectedStudentAwaitingApprovalStats.count > 0 && <> Còn <strong className="text-indigo-700">{selectedStudentAwaitingApprovalStats.count} ca đã điểm danh chờ duyệt</strong> vẫn giữ quỹ.</>}
+                  {selectedStudentAwaitingApprovalStats.count > 0 && <> Còn <strong className="text-indigo-700">{selectedStudentAwaitingApprovalStats.count} ca đã gắn buổi điểm danh ({selectedStudentAwaitingApprovalStats.points.toLocaleString('vi-VN')} kim cương)</strong> ở khung phía trên.</>}
                 </>
               )}
             </div>
@@ -557,19 +558,16 @@ export function FutureBookingsPage() {
                 Đang xử lý {cancelProgress.done}/{cancelProgress.total} học viên
               </span>
             )}
-            {selectedBookingIds.length > 0 && (
+            {visibleSelectedBookings.length > 0 && (
               <Button
                 variant="danger"
                 size="sm"
                 loading={cancelling}
-                onClick={() => {
-                  const targets = futureBookings.filter((b) => selectedBookingIds.includes(b.id))
-                  if (targets.length > 0) setConfirmTargets(targets)
-                }}
+                onClick={() => setConfirmTargets(visibleSelectedBookings)}
                 className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold flex items-center gap-1.5"
               >
                 <Trash2 className="w-4 h-4" />
-                Hủy {selectedBookingIds.length} ca đã chọn
+                Hủy {visibleSelectedBookings.length} ca đã chọn
               </Button>
             )}
           </div>
@@ -589,7 +587,7 @@ export function FutureBookingsPage() {
                     <input
                       type="checkbox"
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                      checked={futureBookings.length > 0 && selectedBookingIds.length === futureBookings.length}
+                      checked={futureBookings.length > 0 && visibleSelectedBookings.length === futureBookings.length}
                       onChange={(e) => {
                         if (e.target.checked) {
                           setSelectedBookingIds(futureBookings.map((b) => b.id))

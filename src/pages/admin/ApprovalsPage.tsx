@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom'
 import {
   collection, query, where, onSnapshot, orderBy,
   runTransaction, doc, serverTimestamp, addDoc, collection as col,
-  getCountFromServer, limit, getDoc,
+  getCountFromServer, limit, getDoc, getDocs, deleteField,
 } from 'firebase/firestore'
+import { bookingsToReopenOnLessonReject, lessonRejectBookingIds } from '@/lib/linkedBookingHolds'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Lesson, Student, StudentSubject, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -772,18 +773,59 @@ export function ApprovalsPage() {
     setRejecting(true)
     try {
       const lessonRef = doc(db, 'lessons', rejectingLesson.id)
-      const { updateDoc } = await import('firebase/firestore')
-      await updateDoc(lessonRef, {
-        status: 'rejected',
-        rejectedReason: rejectReason,
-        updatedAt: serverTimestamp(),
+      // Trước đây từ chối chỉ đổi trạng thái buổi dạy, ca đặt vẫn giữ `lessonId` nên
+      // bị ẩn khỏi Lịch đã đặt, không hủy/nhả được mà vẫn giữ kim cương. Mở lại ca
+      // trong cùng transaction (giống luồng gia sư tự hủy điểm danh); không đụng quỹ.
+      // Dữ liệu cũ có thể chỉ lưu con trỏ ở phía booking nên đọc thêm theo lessonId.
+      const pointerSnap = await getDocs(query(
+        collection(db, 'bookingRequests'),
+        where('lessonId', '==', rejectingLesson.id),
+      ))
+      const candidateIds = Array.from(new Set([
+        ...lessonRejectBookingIds(rejectingLesson),
+        ...pointerSnap.docs.map((bookingDoc) => bookingDoc.id),
+      ]))
+      const reopenedCount = await runTransaction(db, async (tx) => {
+        const bookingRefs = candidateIds.map((bookingId) => doc(db, 'bookingRequests', bookingId))
+        const [lessonSnap, ...bookingSnaps] = await Promise.all([
+          tx.get(lessonRef),
+          ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
+        ])
+        if (!lessonSnap.exists()) throw new Error('LESSON_NOT_FOUND')
+        const lessonNow = { id: lessonSnap.id, ...lessonSnap.data() } as Lesson
+        if (lessonNow.status !== 'pending') throw new Error('LESSON_ALREADY_PROCESSED')
+        const currentBookings = bookingSnaps
+          .filter((bookingSnap) => bookingSnap.exists())
+          .map((bookingSnap) => ({ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest))
+        const bookingsToReopen = bookingsToReopenOnLessonReject(lessonNow, currentBookings)
+
+        tx.update(lessonRef, {
+          status: 'rejected',
+          rejectedReason: rejectReason,
+          updatedAt: serverTimestamp(),
+        })
+        for (const booking of bookingsToReopen) {
+          tx.update(doc(db, 'bookingRequests', booking.id), {
+            lessonId: deleteField(),
+            updatedAt: serverTimestamp(),
+          })
+        }
+        return bookingsToReopen.length
       })
-      toast.success('Đã từ chối buổi dạy')
+      toast.success(reopenedCount > 0
+        ? `Đã từ chối buổi dạy và mở lại ${reopenedCount} ca trên lịch (kim cương vẫn giữ cho tới khi hủy ca hoặc điểm danh lại).`
+        : 'Đã từ chối buổi dạy')
       setRejectingLesson(null)
       setRejectReason('')
       refreshCounts()
-    } catch {
-      toast.error('Có lỗi xảy ra')
+    } catch (err: unknown) {
+      console.error('Reject lesson failed:', err)
+      const message = err instanceof Error ? err.message : ''
+      if (message === 'LESSON_NOT_FOUND') toast.error('Buổi dạy không tồn tại, có thể đã bị xóa')
+      else if (message === 'LESSON_ALREADY_PROCESSED') {
+        toast.warning('Buổi dạy đã được xử lý trước đó')
+        setRejectingLesson(null)
+      } else toast.error('Có lỗi xảy ra')
     } finally {
       setRejecting(false)
       fetchCounts()

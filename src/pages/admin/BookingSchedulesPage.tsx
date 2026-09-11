@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { collection, doc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
 import {
   AlertTriangle,
@@ -44,6 +44,7 @@ import {
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } from '@/lib/bookingLogic'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
   buildFutureRecurringSlots,
@@ -280,6 +281,7 @@ export function BookingSchedulesPage() {
   const [scheduling, setScheduling] = useState(false)
   const [scheduleConflictMessage, setScheduleConflictMessage] = useState('')
   const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
+  const [studentBookingsReloadKey, setStudentBookingsReloadKey] = useState(0)
   const [studentFutureBookings, setStudentFutureBookings] = useState<BookingRequest[]>([])
   const [cancellingAll, setCancellingAll] = useState(false)
 
@@ -537,7 +539,7 @@ export function BookingSchedulesPage() {
     }).catch((error) => {
       console.error('Error loading student booking requests:', error)
     })
-  }, [selectedStudent])
+  }, [selectedStudent, studentBookingsReloadKey])
 
   // Fetch all future booking requests for selected student when detail modal opens
   useEffect(() => {
@@ -2503,22 +2505,29 @@ export function BookingSchedulesPage() {
                   const requiredPoints = selectedSlots.length * pointsForOneLesson
                   const totalDurationMinutes = selectedSlots.length * duration
                   const isEnough = availableForSubject >= requiredPoints
-                  const subjectFutureBookings = selectedStudentBookings
+                  const todayISO = getVietnamNowParts().dateISO
+                  const unattendedSubjectBookings = selectedStudentBookings
                     .filter((booking) => (
                       booking.subjectId === selectedSubjectId
                       && isBookingHoldingStudentFund(booking)
                       && !booking.lessonId
                     ))
                     .sort((a, b) => (a.requestedDate || '').localeCompare(b.requestedDate || ''))
-                  const awaitingApprovalBookings = selectedStudentBookings
+                  // Ca đã qua ngày không còn là "tương lai": tách riêng để giáo vụ biết
+                  // phải vào trang rà soát quá hạn chứ không tìm ở Lịch đã đặt.
+                  const subjectFutureBookings = unattendedSubjectBookings
+                    .filter((booking) => (booking.requestedDate || '') >= todayISO)
+                  const subjectOverdueBookings = unattendedSubjectBookings
+                    .filter((booking) => (booking.requestedDate || '') < todayISO)
+                  const linkedSubjectBookings = selectedStudentBookings
                     .filter((booking) => (
                       booking.subjectId === selectedSubjectId
                       && isBookingHoldingStudentFund(booking)
                       && Boolean(booking.lessonId)
                     ))
-                  const awaitingApprovalPoints = awaitingApprovalBookings
-                    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
                   const futureCancellablePoints = subjectFutureBookings
+                    .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
+                  const overduePoints = subjectOverdueBookings
                     .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
 
                   return (
@@ -2557,16 +2566,43 @@ export function BookingSchedulesPage() {
                           {bookedPointsForSubject > 0 && (
                             <>
                               <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
-                                * Tổng {bookedPointsForSubject} kim cương đang được giữ. Trong đó {futureCancellablePoints} kim cương thuộc {subjectFutureBookings.length} ca tương lai còn có thể hủy.
+                                * Tổng {bookedPointsForSubject} kim cương đang được giữ. Trong đó {futureCancellablePoints} kim cương thuộc {subjectFutureBookings.length} ca từ hôm nay trở đi còn có thể hủy.
                               </p>
-                              {awaitingApprovalPoints > 0 && (
+                              {subjectOverdueBookings.length > 0 && (
                                 <p className="text-[10px] pl-5 leading-normal font-semibold opacity-90">
-                                  * {awaitingApprovalPoints} kim cương thuộc {awaitingApprovalBookings.length} ca đã điểm danh, đang chờ duyệt; các ca này không thể hủy ở đây.
+                                  * {overduePoints} kim cương thuộc {subjectOverdueBookings.length} ca đã qua ngày mà chưa điểm danh.{' '}
+                                  <Link
+                                    to={`/admin/overdue-bookings?studentId=${selectedStudent.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline font-bold"
+                                  >
+                                    Mở trang rà soát quá hạn
+                                  </Link>
                                 </p>
                               )}
+                              {linkedSubjectBookings.length > 0 && (
+                                <div className="pl-5 pt-1">
+                                  <LinkedBookingHoldsPanel
+                                    bookings={linkedSubjectBookings}
+                                    compact
+                                    onChanged={() => setStudentBookingsReloadKey((value) => value + 1)}
+                                  />
+                                </div>
+                              )}
+                              <p className="text-[10px] pl-5 leading-normal font-semibold">
+                                <Link
+                                  to={`/admin/future-bookings?studentId=${selectedStudent.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline font-bold"
+                                >
+                                  Xem toàn bộ lịch đã đặt của học viên
+                                </Link>
+                              </p>
                               {subjectFutureBookings.length > 0 && (
                                 <div className="mt-2 text-[10px] pl-5 space-y-1 text-slate-500 max-h-[120px] overflow-y-auto border-t border-rose-100 pt-1.5 font-semibold">
-                                  <p className="text-rose-500 font-bold">Danh sách ca tương lai đã đặt ({subjectFutureBookings.length}):</p>
+                                  <p className="text-rose-500 font-bold">Danh sách ca từ hôm nay đã đặt ({subjectFutureBookings.length}):</p>
                                   {subjectFutureBookings.map((b, idx) => (
                                     <div key={b.id || idx} className="flex justify-between pr-2">
                                       <span>{idx + 1}. {DAY_LABELS[b.requestedDay as DayOfWeek] || b.requestedDay} ({b.requestedDate})</span>
@@ -2767,6 +2803,11 @@ export function BookingSchedulesPage() {
               </p>
               <p className="text-xs text-slate-500 font-semibold">Gia sư: {selectedBooking.teacherName} ({selectedBooking.teacherCode})</p>
             </div>
+
+            {/* Ca "đã điểm danh" có thể trỏ tới buổi đã bị từ chối/hủy: cho biết trạng thái thật. */}
+            {isBookingHoldingStudentFund(selectedBooking) && selectedBooking.lessonId && (
+              <LinkedBookingHoldsPanel bookings={[selectedBooking]} compact />
+            )}
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
               <p className="text-xs font-semibold uppercase text-slate-400">Thông tin học viên</p>

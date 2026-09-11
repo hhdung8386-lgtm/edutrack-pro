@@ -26,6 +26,7 @@ import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
+import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import {
   assertAutomaticReconciliationRollbackAllowed,
   isBookingHoldingStudentFund,
@@ -1778,7 +1779,7 @@ export function StudentDetailPage() {
           <p className="text-xs text-slate-500 mt-1">
             Học viên này hiện có <strong>{heldBookings.length} ca đang giữ chỗ</strong>: {upcomingHeldBookings.length} ca từ hôm nay trở đi
             {overdueHeldBookings.length > 0 && <> và <strong className="text-amber-700">{overdueHeldBookings.length} ca quá hạn chưa điểm danh</strong></>}.
-            {awaitingApprovalHeldBookings.length > 0 && <> <strong>{awaitingApprovalHeldBookings.length} ca đã điểm danh đang chờ duyệt</strong> vẫn được giữ quỹ cho đến khi duyệt.</>}
+            {awaitingApprovalHeldBookings.length > 0 && <> <strong>{awaitingApprovalHeldBookings.length} ca đã gắn buổi điểm danh</strong> vẫn giữ quỹ; trạng thái từng ca ở khung bên dưới.</>}
             {unmatchedHeldBookings.length > 0 && (
               <> <strong className="text-rose-700">Có {unmatchedHeldBookings.length} ca đang trỏ môn cũ/khác</strong>; các ca này đã được cộng vào tổng “Đã đặt” để không lệch số, nhưng vẫn bị chặn điểm danh đến khi giáo vụ sửa đúng môn.</>
             )}
@@ -1792,6 +1793,10 @@ export function StudentDetailPage() {
           Xem & Quản lý lịch đặt ➔
         </Button>
       </Card>
+
+      {awaitingApprovalHeldBookings.length > 0 && (
+        <LinkedBookingHoldsPanel bookings={awaitingApprovalHeldBookings} />
+      )}
 
       {/* Lesson history */}
       <Card padding="none">
