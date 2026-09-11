@@ -135,7 +135,7 @@ export function TeacherClassHuntingPage() {
           ? 'Hệ thống chưa thể đối soát lịch sử hợp đồng an toàn. Vui lòng liên hệ quản trị viên để kiểm tra hồ sơ.'
           : reason === 'CLASS_HUNT_FEED_SCAN_LIMIT'
             ? 'Hệ thống chưa thể đối soát danh sách lớp an toàn. Vui lòng làm mới để thử lại.'
-            : 'Chưa tải được danh sách lớp phù hợp. Vui lòng làm mới để thử lại.')
+            : 'Chưa tải được danh sách CLASS HUNTING đang mở. Vui lòng làm mới để thử lại.')
       }
     } finally {
       if (mountedRef.current) {
@@ -255,7 +255,7 @@ export function TeacherClassHuntingPage() {
             </div>
             <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Lớp mới vừa lên sóng! Giáo viên phù hợp và nhanh tay xác nhận trước sẽ được nhận lớp nha.
+              Lớp mới vừa lên sóng! Tất cả giáo viên đủ điều kiện đều thấy lớp; ai xác nhận trước và vượt qua kiểm tra nhận lớp sẽ được xếp lịch.
             </p>
           </div>
           <Button type="button" variant="outline" onClick={() => void refresh()} loading={refreshing} className="self-start whitespace-nowrap sm:self-auto">
@@ -293,8 +293,8 @@ export function TeacherClassHuntingPage() {
             icon={<Target className="h-8 w-8" />}
             title="Chưa có lớp mới"
             description={feedState === 'contract_required'
-              ? 'Sau khi hoàn tất điều khoản, hãy làm mới để tải các lớp phù hợp.'
-              : 'Chỉ lớp có mã môn khớp đúng chuyên môn và còn đủ điều kiện nhận mới hiển thị ở đây. Thông báo chung không đồng nghĩa lớp nào cũng phù hợp với hồ sơ của bạn.'}
+              ? 'Sau khi hoàn tất điều khoản, hãy làm mới để tải các lớp đang mở.'
+              : 'Khi có lớp đang mở, lớp sẽ hiển thị cho mọi giáo viên đủ điều kiện. Hệ thống chỉ kiểm tra chuyên môn, lịch trùng và quỹ học khi bạn bấm nhận lớp.'}
             action={{ label: 'Làm mới danh sách', onClick: () => void refresh() }}
           />
         </Card>
@@ -359,7 +359,7 @@ export function TeacherClassHuntingPage() {
 
                 <div className="flex items-start gap-2 text-xs leading-5 text-slate-500">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <p>Không cần mở lịch rảnh cho khung này. Hệ thống sẽ kiểm tra chuyên môn và ca dạy trùng ngay khi bạn nhận lớp. Không chia sẻ thông tin học viên ngoài buổi học được phân công.</p>
+                  <p>Lớp mở sẽ hiện cho tất cả giáo viên đủ điều kiện, không cần mở lịch rảnh trước. Hệ thống chỉ kiểm tra chuyên môn, ca dạy trùng và điều kiện gói học khi bạn nhận lớp.</p>
                 </div>
               </div>
             </article>

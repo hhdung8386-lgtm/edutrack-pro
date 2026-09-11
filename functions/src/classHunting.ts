@@ -680,6 +680,15 @@ export function isClassHuntTeacherProfileComplete(teacher: ClassHuntTeacherLike 
   })
 }
 
+/**
+ * Discovery is intentionally broader than claim eligibility. A Class Hunt is
+ * an open offer: every teacher who is allowed to receive online work may see
+ * it, while subject, balance and timetable checks remain claim-time guards.
+ */
+export function isClassHuntTeacherDiscoverable(teacher: ClassHuntTeacherLike | null | undefined): boolean {
+  return isEligibleOnlineClassHuntTeacher(teacher) && isClassHuntTeacherProfileComplete(teacher)
+}
+
 export function teacherMatchesClassHuntSubject(teacher: ClassHuntTeacherLike | null | undefined, subjectId: string): boolean {
   return Array.isArray(teacher?.subjectIds) && teacher.subjectIds.some((item) => item === subjectId)
 }

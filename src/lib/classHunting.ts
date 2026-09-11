@@ -4,8 +4,9 @@ import app from '@/lib/firebase'
 
 /**
  * CLASS HUNTING only talks to callable Functions. The browser must never read
- * or write the raw hunt documents because an open offer contains student and
- * scheduling data that is not appropriate for every teacher.
+ * or write the raw hunt documents. The teacher callable returns a sanitized
+ * open offer to every authenticated teacher who is allowed to receive online
+ * work; claim-time authorization remains entirely server-side.
  */
 
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'

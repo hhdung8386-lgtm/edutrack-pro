@@ -32,6 +32,7 @@ const {
   heldPointsForClassHuntSubject,
   isActiveIndividualOnlineStudent,
   isClassHuntTeacherProfileComplete,
+  isClassHuntTeacherDiscoverable,
   isClassHuntCompensation,
   isClassHuntSessionShape,
   isEligibleOnlineClassHuntTeacher,
@@ -391,6 +392,18 @@ test('CLASS HUNTING keeps required teacher-profile eligibility separate from ava
   assert.equal(isClassHuntTeacherProfileComplete({ ...completeProfile, teachingYears: 0 }), false)
   // There is intentionally no availability field in this predicate.
   assert.equal(isClassHuntTeacherProfileComplete({ ...completeProfile, teachingFormats: ['online'] }), true)
+  assert.equal(isClassHuntTeacherDiscoverable({
+    ...completeProfile,
+    status: 'active',
+    subjectIds: [],
+    teachingFormats: ['online'],
+  }), true)
+  assert.equal(isClassHuntTeacherDiscoverable({
+    ...completeProfile,
+    status: 'active',
+    subjectIds: [],
+    teachingFormats: ['offline'],
+  }), false)
 })
 
 test('booking conflict scan uses half-open absolute intervals, including 24:xx crossover', () => {

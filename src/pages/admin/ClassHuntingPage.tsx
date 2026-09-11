@@ -352,7 +352,7 @@ export function ClassHuntingPage() {
               : reason === 'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING' || reason === 'CLASS_HUNT_NO_REMAINING_SESSIONS'
                 ? 'Số buổi đã chọn không còn phù hợp với gói học hiện tại. Hãy kiểm tra lại gói và lịch.'
                 : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
-                  ? 'Chưa có gia sư đủ điều kiện nhận lớp cho mã môn này. Hãy kiểm tra chuyên môn, liên kết tài khoản và điều khoản hợp đồng trước.'
+                  ? 'Chưa có gia sư đủ điều kiện xem và nhận lớp. Hãy kiểm tra hồ sơ, liên kết tài khoản và điều khoản hợp đồng trước.'
           : 'Chưa kiểm tra được lịch lớp. Dữ liệu chưa được tạo.')
     } finally {
       if (requestId === previewRequestRef.current) setPreviewing(false)
@@ -381,7 +381,7 @@ export function ClassHuntingPage() {
       setPublishConfirmOpen(false)
       clearSchedulePreview()
       delete publishRequestIdsRef.current[publishKey]
-      toast.success('Đã mở CLASS HUNTING. Gia sư đúng chuyên môn sẽ thấy lớp và có thể nhận ngay.')
+      toast.success('Đã mở CLASS HUNTING. Lớp sẽ hiện cho mọi gia sư đủ điều kiện; hệ thống kiểm tra chuyên môn và lịch trùng khi gia sư nhận lớp.')
       await loadHunts()
     } catch (error) {
       console.error('Publish class hunt failed:', error)
@@ -391,7 +391,7 @@ export function ClassHuntingPage() {
         : reason === 'CLASS_HUNT_COMPENSATION_RATE_INVALID'
           ? 'Đơn giá lớp phải là số nguyên VND lớn hơn 0.'
             : reason === 'CLASS_HUNT_NO_MATCHING_TEACHER'
-            ? 'Chưa có gia sư đủ điều kiện nhận lớp cho mã môn này. Hãy kiểm tra chuyên môn, liên kết tài khoản và điều khoản hợp đồng trước.'
+            ? 'Chưa có gia sư đủ điều kiện xem và nhận lớp. Hãy kiểm tra hồ sơ, liên kết tài khoản và điều khoản hợp đồng trước.'
             : reason === 'CLASS_HUNT_ALL_DURATION_MISMATCH'
               ? 'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.'
           : 'Chưa đăng được CLASS HUNTING. Dữ liệu chưa bị trừ.')
@@ -440,7 +440,7 @@ export function ClassHuntingPage() {
             </div>
             <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Gia sư đúng chuyên môn có thể nhận lớp dù chưa mở lịch rảnh ở khung giờ này; hệ thống chỉ chặn ca dạy thực tế bị trùng.
+              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Lớp mở sẽ hiện cho mọi giáo viên đủ điều kiện dù chưa mở lịch rảnh; chuyên môn, quỹ học và ca dạy thực tế chỉ được kiểm tra khi giáo viên nhận lớp.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
@@ -742,12 +742,12 @@ export function ClassHuntingPage() {
                 {preview.matchingTeacherCount === 0 ? (
                   <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900" role="alert">
                     <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p>Chưa có gia sư đủ điều kiện nhận lớp (đúng môn, hồ sơ hợp lệ, tài khoản chuẩn và đã hoàn tất điều khoản). Không thể đăng một yêu cầu mà mọi gia sư đều phải bị ẩn.</p>
+                    <p>Chưa có gia sư đủ điều kiện xem và nhận lớp (hồ sơ hợp lệ, tài khoản chuẩn và đã hoàn tất điều khoản). Không thể đăng khi chưa có người nhận hợp lệ.</p>
                   </div>
                 ) : (
                   <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p>{preview.matchingTeacherCount ? `Đã tìm thấy ${preview.matchingTeacherCount} gia sư đủ điều kiện nhận lớp. ` : ''}Hệ thống không yêu cầu gia sư mở lịch rảnh trước; khi nhận lớp, hệ thống mới kiểm tra trùng ca dạy thực tế.</p>
+                    <p>{preview.matchingTeacherCount ? `Đã tìm thấy ${preview.matchingTeacherCount} gia sư đủ điều kiện nhìn thấy lớp. ` : ''}Lớp sẽ hiển thị cho toàn bộ nhóm này, không yêu cầu mở lịch rảnh trước; khi nhận lớp, hệ thống mới kiểm tra chuyên môn, quỹ học và trùng ca dạy thực tế.</p>
                   </div>
                 )}
                 <Button fullWidth type="button" onClick={() => setPublishConfirmOpen(true)} disabled={!canPublish} className="whitespace-nowrap">
@@ -867,7 +867,7 @@ export function ClassHuntingPage() {
         onClose={() => setPublishConfirmOpen(false)}
         onConfirm={() => void handlePublish()}
         title="Đăng CLASS HUNTING?"
-        description={selectedSubject ? `Yêu cầu sẽ mở cho gia sư đúng chuyên môn với gói ${selectedSubject.name}; không yêu cầu họ đã mở lịch rảnh tại khung giờ này.${preview?.classHuntCompensation ? ` Đơn giá riêng ${formatVND(preview.classHuntCompensation.ratePerMinute)}/phút sẽ được khóa cho lớp.` : ''}` : undefined}
+        description={selectedSubject ? `Yêu cầu sẽ hiển thị cho mọi giáo viên đủ điều kiện, không yêu cầu họ đã mở lịch rảnh tại khung giờ này. Khi nhận lớp ${selectedSubject.name}, hệ thống mới kiểm tra chuyên môn, quỹ học và lịch trùng.${preview?.classHuntCompensation ? ` Đơn giá riêng ${formatVND(preview.classHuntCompensation.ratePerMinute)}/phút sẽ được khóa cho lớp.` : ''}` : undefined}
         consequence="Lịch và quỹ buổi chỉ được tạo khi một gia sư nhận lớp thành công và không có ca dạy trùng. Lương của lớp dùng đơn giá riêng theo phút, không nhân level gia sư."
         confirmLabel="Đăng yêu cầu"
         loading={publishing}
