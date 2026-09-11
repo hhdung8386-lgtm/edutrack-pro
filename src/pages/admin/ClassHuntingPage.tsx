@@ -381,7 +381,7 @@ export function ClassHuntingPage() {
       setPublishConfirmOpen(false)
       clearSchedulePreview()
       delete publishRequestIdsRef.current[publishKey]
-      toast.success('Đã mở CLASS HUNTING. Lớp sẽ hiện cho mọi gia sư đủ điều kiện; hệ thống kiểm tra chuyên môn và lịch trùng khi gia sư nhận lớp.')
+      toast.success('Đã mở CLASS HUNTING. Lớp sẽ hiện cho gia sư khớp chuyên môn; hệ thống kiểm tra lại lịch trùng khi gia sư nhận lớp.')
       await loadHunts()
     } catch (error) {
       console.error('Publish class hunt failed:', error)
@@ -440,7 +440,7 @@ export function ClassHuntingPage() {
             </div>
             <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Lớp mở sẽ hiện cho mọi giáo viên đủ điều kiện dù chưa mở lịch rảnh; chuyên môn, quỹ học và ca dạy thực tế chỉ được kiểm tra khi giáo viên nhận lớp.
+              Tạo một yêu cầu lớp cho đúng học viên, đúng gói và đúng lịch. Lớp mở sẽ hiện cho giáo viên khớp chuyên môn dù chưa mở lịch rảnh; quỹ học và ca dạy thực tế được kiểm tra lại khi giáo viên nhận lớp.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
@@ -867,7 +867,7 @@ export function ClassHuntingPage() {
         onClose={() => setPublishConfirmOpen(false)}
         onConfirm={() => void handlePublish()}
         title="Đăng CLASS HUNTING?"
-        description={selectedSubject ? `Yêu cầu sẽ hiển thị cho mọi giáo viên đủ điều kiện, không yêu cầu họ đã mở lịch rảnh tại khung giờ này. Khi nhận lớp ${selectedSubject.name}, hệ thống mới kiểm tra chuyên môn, quỹ học và lịch trùng.${preview?.classHuntCompensation ? ` Đơn giá riêng ${formatVND(preview.classHuntCompensation.ratePerMinute)}/phút sẽ được khóa cho lớp.` : ''}` : undefined}
+        description={selectedSubject ? `Yêu cầu sẽ hiển thị cho giáo viên có mã môn khớp chuyên môn, không yêu cầu họ đã mở lịch rảnh tại khung giờ này. Khi nhận lớp ${selectedSubject.name}, hệ thống kiểm tra lại quỹ học và lịch trùng.${preview?.classHuntCompensation ? ` Đơn giá riêng ${formatVND(preview.classHuntCompensation.ratePerMinute)}/phút sẽ được khóa cho lớp.` : ''}` : undefined}
         consequence="Lịch và quỹ buổi chỉ được tạo khi một gia sư nhận lớp thành công và không có ca dạy trùng. Lương của lớp dùng đơn giá riêng theo phút, không nhân level gia sư."
         confirmLabel="Đăng yêu cầu"
         loading={publishing}

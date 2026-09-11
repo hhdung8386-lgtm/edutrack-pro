@@ -1,7 +1,11 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { isActiveBooking } from '@/lib/bookingConflicts'
-import { matchesLessonBookingSubject, selectUniqueContiguousBookingSet } from '@/lib/bookingLogic'
+import {
+  matchesLessonBookingSubject,
+  selectUniqueContiguousBookingSet,
+  totalBookingMinutes,
+} from '@/lib/bookingLogic'
 import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getTeacherAttendanceAuditData } from '@/lib/teacherBookingActions'
 import type { BookingRequest, Lesson, LessonScheduleCheckSnapshot } from '@/types'
@@ -40,6 +44,18 @@ export interface AttendanceAudit {
   sameDayLessons: Lesson[]
   /** Trong đó, số buổi do chính gia sư đang xét ghi nhận. */
   sameDayByTeacher: number
+}
+
+type AttendanceScheduleLesson = {
+  id?: string
+  teacherId: string
+  studentId?: string
+  subjectId?: string
+  date: string
+  minutes?: number
+  bookingRequestId?: string
+  bookingRequestIds?: string[]
+  scheduleCheck?: Pick<LessonScheduleCheckSnapshot, 'bookingId' | 'bookingIds'>
 }
 
 const INACTIVE_LESSON_STATUSES = new Set(['rejected', 'cancelled'])
@@ -113,7 +129,7 @@ export async function fetchStudentBookingsAround(
 
 export function evaluateLessonSchedule(
   bookings: BookingRequest[],
-  lesson: { id?: string; teacherId: string; studentId?: string; subjectId?: string; date: string; minutes?: number },
+  lesson: AttendanceScheduleLesson,
   windowDays: number = SCHEDULE_MATCH_WINDOW_DAYS,
 ): LessonScheduleCheck {
   const base: Pick<LessonScheduleCheck, 'checkedAt' | 'windowDays' | 'scheduledDates'> = {
@@ -136,11 +152,31 @@ export function evaluateLessonSchedule(
 
   if (sameDayOwn.length > 0) {
     const eligibleOwn = sameDayOwn.filter((booking) => !booking.lessonId || booking.lessonId === lesson.id)
-    const uniqueContiguousBookings = selectUniqueContiguousBookingSet(eligibleOwn, Number(lesson.minutes))
+    const referencedIds = Array.from(new Set([
+      ...(lesson.bookingRequestIds || []),
+      ...(lesson.scheduleCheck?.bookingIds || []),
+      lesson.bookingRequestId,
+      lesson.scheduleCheck?.bookingId,
+    ].filter((id): id is string => Boolean(id))))
+    const referencedIdSet = new Set(referencedIds)
+    const explicitlyBoundBookings = referencedIds.length > 0
+      ? sameDayOwn.filter((booking) => referencedIdSet.has(booking.id))
+      : lesson.id
+        ? sameDayOwn.filter((booking) => booking.lessonId === lesson.id)
+        : []
+    const explicitBindingIsComplete = explicitlyBoundBookings.length > 0
+      && (referencedIds.length === 0 || explicitlyBoundBookings.length === referencedIds.length)
+      && (
+        Number(lesson.minutes) <= 0
+        || totalBookingMinutes(explicitlyBoundBookings) === Number(lesson.minutes)
+      )
+    const uniqueContiguousBookings = explicitBindingIsComplete
+      ? [...explicitlyBoundBookings].sort((left, right) => (left.requestedStart || '').localeCompare(right.requestedStart || ''))
+      : selectUniqueContiguousBookingSet(eligibleOwn, Number(lesson.minutes))
     // A fallback match is safe only when every eligible active row belongs to
     // that one class block. A separate same-day row without an explicit saved
     // reference remains ambiguous rather than being silently ignored.
-    const matchedBookings = uniqueContiguousBookings.length === eligibleOwn.length
+    const matchedBookings = explicitBindingIsComplete || uniqueContiguousBookings.length === eligibleOwn.length
       ? uniqueContiguousBookings
       : []
     const matched = matchedBookings[0] || sameDayOwn[0]

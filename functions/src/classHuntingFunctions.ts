@@ -805,17 +805,16 @@ function chunks<T>(values: T[], size: number): T[][] {
 }
 
 /**
- * Class Hunting is an open offer board. Publish preflight therefore counts
- * every discoverable online teacher, not only teachers whose subject list or
- * availability happens to match the offer. Subject, timetable and package
- * checks belong to the atomic claim transaction.
+ * Class Hunting is an open offer board for teachers whose configured subject
+ * matches the offer. Declared availability is intentionally not required;
+ * timetable and package checks still belong to the atomic claim transaction.
  *
  * Keep the identity/contract checks here in sync with teacher list access so a
  * newly published offer can actually reach every teacher who is allowed to
  * receive it. Legacy teacher records without loginAccountUid are resolved
  * through users.teacherId instead of being silently dropped.
  */
-async function findClassHuntDiscoveryTeacherIds(): Promise<string[]> {
+async function findClassHuntDiscoveryTeacherIds(subjectId?: string): Promise<string[]> {
   const snapshot = await db.collection('teachers')
     .where('status', '==', 'active')
     .get()
@@ -823,6 +822,7 @@ async function findClassHuntDiscoveryTeacherIds(): Promise<string[]> {
   const candidates = snapshot.docs.filter((document) => {
     const teacher = document.data() as ClassHuntTeacherLike
     return isClassHuntTeacherDiscoverable(teacher)
+      && (!subjectId || teacherMatchesClassHuntSubject(teacher, subjectId))
   })
   if (candidates.length === 0) return []
 
@@ -897,8 +897,8 @@ async function findClassHuntDiscoveryTeacherIds(): Promise<string[]> {
   return discoverableTeacherIds.filter((teacherId) => contractsByTeacherId.get(teacherId) === true)
 }
 
-async function countClassHuntDiscoveryTeachers(): Promise<number> {
-  return (await findClassHuntDiscoveryTeacherIds()).length
+async function countClassHuntDiscoveryTeachers(subjectId: string): Promise<number> {
+  return (await findClassHuntDiscoveryTeacherIds(subjectId)).length
 }
 
 function assertMatchingClassHuntTeacherCount(count: number): void {
@@ -936,7 +936,7 @@ export const previewClassHunt = onCall({
   }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const matchingTeacherCount = await countClassHuntDiscoveryTeachers()
+  const matchingTeacherCount = await countClassHuntDiscoveryTeachers(context.draft.subjectId)
   const warnings = matchingTeacherCount === 0
     ? ['Chưa có gia sư đủ điều kiện xem và nhận CLASS HUNTING (cần hồ sơ hợp lệ, tài khoản chuẩn và điều khoản đã hoàn tất). Chưa thể đăng lớp.']
     : []
@@ -980,7 +980,7 @@ export const publishClassHunt = onCall({
   if (existing) return { hunt: serializeAdminHunt(existing, Date.now(), actor.role === 'admin') }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
-  const eligibleTeacherIds = await findClassHuntDiscoveryTeacherIds()
+  const eligibleTeacherIds = await findClassHuntDiscoveryTeacherIds(context.draft.subjectId)
   const matchingTeacherCount = eligibleTeacherIds.length
   assertMatchingClassHuntTeacherCount(matchingTeacherCount)
   const publishRequestRef = db.collection(CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION)
@@ -1109,7 +1109,7 @@ export const publishClassHunt = onCall({
     // access and contains no student, class, subject, or schedule information.
     transaction.create(notificationRef, {
       title: 'Có lớp mới đang chờ nhận',
-      content: 'Có yêu cầu CLASS HUNTING mới trên hệ thống. Lớp đang mở sẽ hiển thị cho mọi gia sư đủ điều kiện; hệ thống chỉ kiểm tra chuyên môn và lịch trùng khi gia sư bấm nhận lớp.',
+      content: 'Có yêu cầu CLASS HUNTING mới phù hợp với chuyên môn của bạn. Hệ thống sẽ kiểm tra lịch trùng khi bạn bấm nhận lớp.',
       color: 'sky',
       iconName: 'Calendar',
       kind: 'class_hunt_available',
@@ -1240,11 +1240,11 @@ export const cancelClassHunt = onCall({
 })
 
 async function loadVisibleClassHuntCandidates(input: {
-  teacherId: string
+  teacher: CanonicalTeacherActor
   nowMs: number
   contractAccepted: boolean
 }): Promise<StoredClassHunt[]> {
-  const { teacherId, nowMs, contractAccepted } = input
+  const { teacher, nowMs, contractAccepted } = input
   if (!contractAccepted) return []
   const baseQuery = db.collection(CLASS_HUNTS_COLLECTION)
     // One automatically indexed range keeps TTL-expired documents out of the
@@ -1265,11 +1265,13 @@ async function loadVisibleClassHuntCandidates(input: {
     for (const document of snapshot.docs) {
       try {
         const hunt = requireStoredHunt(document.id, document.data() || {})
-        // This is deliberately discovery-only. Do not call the claim guard
-        // here: a teacher may see an open offer even when their subject,
-        // calendar, or the student's package changed after publication.
-        // Those conditions are checked atomically after they press Claim.
-        if (effectiveClassHuntStatus(hunt, nowMs) === 'open') visible.push(hunt)
+        // Filter the stable subject requirement before rendering a Claim
+        // button. Calendar and package state can race after this read, so those
+        // conditions are still re-checked atomically after the teacher claims.
+        if (
+          effectiveClassHuntStatus(hunt, nowMs) === 'open'
+          && teacherMatchesClassHuntSubject(teacher.teacher, hunt.subjectId)
+        ) visible.push(hunt)
         if (visible.length === CLASS_HUNT_TEACHER_LIST_LIMIT) break
       } catch {
         // Invalid offers are not safe to expose and do not consume a result slot.
@@ -1279,7 +1281,7 @@ async function loadVisibleClassHuntCandidates(input: {
   }
 
   if (scanned === CLASS_HUNT_OPEN_SCAN_LIMIT && visible.length < CLASS_HUNT_TEACHER_LIST_LIMIT) {
-    logger.warn('Class hunt open scan reached its safety bound', { teacherId, scanned, returned: visible.length })
+    logger.warn('Class hunt open scan reached its safety bound', { teacherId: teacher.teacherId, scanned, returned: visible.length })
     if (visible.length === 0) {
       throw error(
         'failed-precondition',
@@ -1348,7 +1350,7 @@ export const listClassHunts = onCall({
       state: 'contract_required' as const,
     }
   }
-  const eligible = await loadVisibleClassHuntCandidates({ teacherId: teacher.teacherId, nowMs, contractAccepted })
+  const eligible = await loadVisibleClassHuntCandidates({ teacher, nowMs, contractAccepted })
   return {
     hunts: eligible.map((hunt) => serializeTeacherHunt(hunt)),
     state: 'ready' as const,

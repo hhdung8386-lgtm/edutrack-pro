@@ -232,7 +232,19 @@ export function TeacherClassHuntingPage() {
         toast.warning('Đơn giá của lớp này cần được Admin kiểm tra lại trước khi nhận. Danh sách đã được cập nhật.')
         setConfirmingHunt(null)
         await refresh(true)
-      } else if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED', 'CLASS_HUNT_SUBJECT_MISMATCH', 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT'].includes(reason)) {
+      } else if (reason === 'CLASS_HUNT_SUBJECT_MISMATCH') {
+        toast.warning('Môn của lớp chưa được gán trong chuyên môn của cô. Danh sách đã được cập nhật; vui lòng báo học vụ nếu hồ sơ chuyên môn đang thiếu.')
+        setConfirmingHunt(null)
+        await refresh(true)
+      } else if (reason === 'CLASS_HUNT_NOT_ENOUGH_POINTS') {
+        toast.warning('Quỹ học của học viên không còn đủ để giữ toàn bộ lịch lớp này. Chưa tạo buổi hay giữ thêm kim cương.')
+        setConfirmingHunt(null)
+        await refresh(true)
+      } else if (reason === 'CLASS_HUNT_STUDENT_BOOKING_CONFLICT') {
+        toast.warning('Học viên vừa có lịch trùng với lớp này. Chưa tạo buổi nào; danh sách đã được cập nhật.')
+        setConfirmingHunt(null)
+        await refresh(true)
+      } else if (['CLASS_HUNT_EXPIRED', 'CLASS_HUNT_NOT_OPEN', 'CLASS_HUNT_NOT_FOUND', 'CLASS_HUNT_SESSION_PASSED'].includes(reason)) {
         toast.warning('Lớp này không còn phù hợp hoặc đã đóng. Danh sách đã được cập nhật.')
         setConfirmingHunt(null)
         await refresh(true)
@@ -255,7 +267,7 @@ export function TeacherClassHuntingPage() {
             </div>
             <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">CLASS HUNTING 🎯</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Lớp mới vừa lên sóng! Tất cả giáo viên đủ điều kiện đều thấy lớp; ai xác nhận trước và vượt qua kiểm tra nhận lớp sẽ được xếp lịch.
+              Lớp mới vừa lên sóng! Giáo viên có chuyên môn phù hợp đều thấy lớp; ai xác nhận trước và vượt qua kiểm tra lịch sẽ được xếp lớp.
             </p>
           </div>
           <Button type="button" variant="outline" onClick={() => void refresh()} loading={refreshing} className="self-start whitespace-nowrap sm:self-auto">
@@ -294,7 +306,7 @@ export function TeacherClassHuntingPage() {
             title="Chưa có lớp mới"
             description={feedState === 'contract_required'
               ? 'Sau khi hoàn tất điều khoản, hãy làm mới để tải các lớp đang mở.'
-              : 'Khi có lớp đang mở, lớp sẽ hiển thị cho mọi giáo viên đủ điều kiện. Hệ thống chỉ kiểm tra chuyên môn, lịch trùng và quỹ học khi bạn bấm nhận lớp.'}
+              : 'Khi có lớp đang mở, lớp sẽ hiển thị cho giáo viên có mã môn khớp chuyên môn và đủ điều kiện nhận lớp.'}
             action={{ label: 'Làm mới danh sách', onClick: () => void refresh() }}
           />
         </Card>
@@ -359,7 +371,7 @@ export function TeacherClassHuntingPage() {
 
                 <div className="flex items-start gap-2 text-xs leading-5 text-slate-500">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <p>Lớp mở sẽ hiện cho tất cả giáo viên đủ điều kiện, không cần mở lịch rảnh trước. Hệ thống chỉ kiểm tra chuyên môn, ca dạy trùng và điều kiện gói học khi bạn nhận lớp.</p>
+                  <p>Không cần mở lịch rảnh trước. Danh sách đã lọc theo chuyên môn; hệ thống đối chiếu lại ca dạy trùng và điều kiện gói học ngay khi bạn nhận lớp.</p>
                 </div>
               </div>
             </article>
