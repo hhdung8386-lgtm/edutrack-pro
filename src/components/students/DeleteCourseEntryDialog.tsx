@@ -3,7 +3,8 @@ import { collection, doc, getDocs, query, runTransaction, serverTimestamp, where
 import { CalendarDays, Gift, ReceiptText } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import type { BookingRequest, Student } from '@/types'
-import { isBookingFinancialHold } from '@/lib/bookingLogic'
+import { isBookingFinancialHold, settleApprovedLessonBookings } from '@/lib/bookingLogic'
+import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { getBookingFinancialHoldPoints } from '@/lib/studentMinutes'
 import { deleteCourseEntry, getBatchDiamonds, getBatchLearningMinutes, getCourseEntry, getStudentSubjects } from '@/lib/studentCourseLedger'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -45,6 +46,10 @@ export function DeleteCourseEntryDialog({ student, subjectId, batchId, onClose }
         where('studentId', '==', student.id),
       ))
       const bookingRefs = bookingSnapshot.docs.map((bookingDocument) => bookingDocument.ref)
+      // Ca cũ còn confirmed nhưng đã có buổi được duyệt không còn giữ kim cương.
+      const { facts: lessonFacts } = await settleBookingsByApprovedLessons(bookingSnapshot.docs.map((bookingDocument) => (
+        { id: bookingDocument.id, ...bookingDocument.data() } as BookingRequest
+      )))
       const studentRef = doc(db, 'students', student.id)
       const topUpTransactionRef = doc(db, 'topUpTransactions', batchId)
       const logRef = doc(collection(db, 'adminLogs'))
@@ -59,13 +64,9 @@ export function DeleteCourseEntryDialog({ student, subjectId, batchId, onClose }
 
         const currentStudent = { id: studentSnapshot.id, ...studentSnapshot.data() } as Student
         const currentSubjects = getStudentSubjects(currentStudent)
-        const activeBookings = bookingSnapshots.flatMap((bookingSnapshot) => {
-          if (!bookingSnapshot.exists()) return []
-          const booking = { id: bookingSnapshot.id, ...bookingSnapshot.data() } as BookingRequest
-          return isBookingFinancialHold(booking)
-            ? [booking]
-            : []
-        })
+        const activeBookings = settleApprovedLessonBookings(bookingSnapshots.flatMap((bookingSnapshot) => (
+          bookingSnapshot.exists() ? [{ id: bookingSnapshot.id, ...bookingSnapshot.data() } as BookingRequest] : []
+        )), lessonFacts).filter(isBookingFinancialHold)
         const heldPointsForSubject = activeBookings.reduce((sum, booking) => {
           const belongsToSubject = booking.subjectId === subjectId
             || (currentSubjects.length === 1 && !currentSubjects.some((subject) => subject.subjectId === booking.subjectId))

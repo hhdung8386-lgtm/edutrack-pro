@@ -9,7 +9,15 @@ import {
   getStudentPackageMinuteSummary,
   type StudentQuotaBreakdown,
 } from '@/lib/studentMinutes'
-import { isBookingCancellable, isBookingFinancialHold, isBookingHoldingStudentFund, isBookingPendingRebookFundHold } from '@/lib/bookingLogic'
+import {
+  isBookingCancellable,
+  isBookingFinancialHold,
+  isBookingHoldingStudentFund,
+  isBookingPendingRebookFundHold,
+  settleApprovedLessonBookings,
+  type LessonSettlementFacts,
+} from '@/lib/bookingLogic'
+import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { Card } from '@/components/ui/Card'
@@ -67,6 +75,7 @@ export function QuotaReconcilePage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [confirmBulkRecalc, setConfirmBulkRecalc] = useState<Row[] | null>(null)
   const [confirmBulkCancel, setConfirmBulkCancel] = useState<Row[] | null>(null)
+  const [lessonFacts, setLessonFacts] = useState<LessonSettlementFacts>(() => new Map())
 
   const todayISO = useMemo(
     () => new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -95,9 +104,13 @@ export function QuotaReconcilePage() {
       // Do not load every released historical row merely to find the small
       // subset whose diamonds are intentionally held for a replacement.
       getDocs(query(collection(db, 'bookingRequests'), where('pendingRebook', '==', true))),
-    ]).then((snapshots) => {
+    ]).then((snapshots) => settleBookingsByApprovedLessons(
+      snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))),
+    )).then(({ bookings: settled, facts }) => {
       if (!active) return
-      setBookings(snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))))
+      // Ca duyệt trước 10/08/2026 còn confirmed nhưng buổi đã duyệt: không tính là đang giữ.
+      setBookings(settled)
+      setLessonFacts(facts)
       setLoadingB(false)
     }).catch((e) => { console.error(e); setLoadingB(false) })
     return () => { active = false }
@@ -199,9 +212,10 @@ export function QuotaReconcilePage() {
       const fresh = { id: sSnap.id, ...sSnap.data() } as Student
       const currentStoredHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
       if (currentStoredHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
-      const currentActualHeld = bookingSnaps.reduce((sum, bookingSnap) => {
-        if (!bookingSnap.exists()) return sum
-        const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
+      const freshBookings = settleApprovedLessonBookings(bookingSnaps.flatMap((bookingSnap) => (
+        bookingSnap.exists() ? [{ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest] : []
+      )), lessonFacts)
+      const currentActualHeld = freshBookings.reduce((sum, booking) => {
         if (
           booking.studentId !== row.student.id
           || !isBookingFinancialHold(booking)
@@ -264,14 +278,9 @@ export function QuotaReconcilePage() {
       const fresh = { id: sSnap.id, ...sSnap.data() } as Student
       const curHeld = fresh.reservedMinutes ?? fresh.heldMinutes ?? 0
       if (curHeld !== row.storedHeld) throw new Error('DATA_CHANGED_RELOAD')
-      const financialHoldBookings = bookingSnaps.flatMap((bookingSnap) => {
-        if (!bookingSnap.exists()) return []
-        const booking = { id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest
-        return booking.studentId === row.student.id
-          && isBookingFinancialHold(booking)
-          ? [booking]
-          : []
-      })
+      const financialHoldBookings = settleApprovedLessonBookings(bookingSnaps.flatMap((bookingSnap) => (
+        bookingSnap.exists() ? [{ id: bookingSnap.id, ...bookingSnap.data() } as BookingRequest] : []
+      )), lessonFacts).filter((booking) => booking.studentId === row.student.id && isBookingFinancialHold(booking))
       const freshQuota = getStudentBookingQuotaBreakdown(fresh, financialHoldBookings)
       if (freshQuota.overByActual <= 0) return 0
       // Không vừa sửa sai số vừa huỷ lịch trong cùng thao tác: bắt buộc đồng bộ

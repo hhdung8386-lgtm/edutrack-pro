@@ -30,7 +30,9 @@ import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerP
 import {
   assertAutomaticReconciliationRollbackAllowed,
   isBookingHoldingStudentFund,
+  lessonSettlementFacts,
   requiresIndividualSubjectReconciliation,
+  settleApprovedLessonBookings,
 } from '@/lib/bookingLogic'
 
 /**
@@ -297,15 +299,21 @@ export function StudentDetailPage() {
   // A booking in either pending or confirmed state is still holding the student's fund.
   // Keep this total separate from the "future" list: attendance attaches a
   // lessonId before approval, but that booking is still holding the fund.
+  // Duyệt buổi trước 10/08/2026 không đóng ca: ca confirmed trỏ về buổi ĐÃ DUYỆT
+  // của chính học viên này là buổi đã học, không còn giữ kim cương.
+  const settledBookingRequests = useMemo(
+    () => settleApprovedLessonBookings(bookingRequests, lessonSettlementFacts(lessons)),
+    [bookingRequests, lessons],
+  )
   const heldBookings = useMemo(() => {
-    const list = bookingRequests.filter(isBookingHoldingStudentFund)
+    const list = settledBookingRequests.filter(isBookingHoldingStudentFund)
     return [...list].sort((a: BookingRequest, b: BookingRequest) => {
       const dateA = a.requestedDate || ''
       const dateB = b.requestedDate || ''
       if (dateA !== dateB) return dateA.localeCompare(dateB)
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
-  }, [bookingRequests])
+  }, [settledBookingRequests])
 
   const todayISO = useMemo(
     () => new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0],

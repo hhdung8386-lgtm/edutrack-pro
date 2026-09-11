@@ -49,6 +49,12 @@ import {
   type ClassHuntStudentLike,
   type ClassHuntTeacherLike,
 } from './classHunting'
+import {
+  activeLinkedLessonIds,
+  createApprovedLessonFactCache,
+  readLessonSettlementFacts,
+  settleApprovedLessonBookings,
+} from './bookingLessonSettlement'
 
 const db = new Firestore()
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
@@ -60,6 +66,25 @@ const CLASS_HUNT_AGGREGATE_BOOKING_READ_LIMIT = 5000
 const FIRESTORE_MULTI_VALUE_QUERY_LIMIT = 30
 const CONTRACT_QUERY_LIMIT = 100
 const CLASS_HUNT_MATCHING_TEACHER_SCAN_LIMIT = 100
+const readCachedLessonSettlementFacts = createApprovedLessonFactCache(10 * 60_000)
+
+/**
+ * Ca duyệt trước 10/08/2026 vẫn `confirmed` dù buổi đã được duyệt (đã trừ quỹ).
+ * Chỉ dùng cho phép tính kim cương; kiểm tra trùng lịch vẫn dùng ca gốc. Trong
+ * transaction luôn đọc mới, ngoài transaction dùng cache buổi đã duyệt.
+ */
+async function settleBookingsForFunds(
+  bookings: ClassHuntBookingLike[],
+  transaction?: Transaction,
+): Promise<ClassHuntBookingLike[]> {
+  const ids = activeLinkedLessonIds(bookings)
+  if (ids.length === 0) return bookings
+  const refs = (chunk: string[]) => chunk.map((id) => db.collection('lessons').doc(id))
+  const facts = transaction
+    ? await readLessonSettlementFacts(ids, (chunk) => transaction.getAll(...refs(chunk)))
+    : await readCachedLessonSettlementFacts(ids, (chunk) => db.getAll(...refs(chunk)))
+  return settleApprovedLessonBookings(bookings, facts)
+}
 const CONTROL_CHARACTER_PATTERN = new RegExp(
   `[${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
   'g',
@@ -725,10 +750,10 @@ async function classHuntLookupPreview(data: Record<string, unknown>) {
       bookings = undefined
       warnings.push('Lịch học viên quá lớn để tính chính xác quỹ đang giữ khi tra cứu. Hệ thống sẽ đối soát lại an toàn trước khi đăng lớp.')
     } else {
-      bookings = bookingsSnapshot.docs.map((document) => ({
+      bookings = await settleBookingsForFunds(bookingsSnapshot.docs.map((document) => ({
         id: document.id,
         ...document.data(),
-      } as ClassHuntBookingLike))
+      } as ClassHuntBookingLike)))
     }
   }
   const subjects = lookupSubjects(student, baseEligible, bookings)
@@ -790,7 +815,7 @@ async function buildOperatorContext(data: Record<string, unknown>, nowMs: number
     studentBookings,
     groupMemberBookingsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() } as ClassHuntBookingLike)),
   )
-  const draft = draftFromRequest(data, found.id, student, studentBookings, nowMs)
+  const draft = draftFromRequest(data, found.id, student, await settleBookingsForFunds(studentBookings), nowMs)
   // `draftFromRequest` validates the same canonical subject ID. Keep this
   // fail-closed assertion in case that helper is later refactored.
   if (draft.subjectId !== requestedSubjectId) {
@@ -976,7 +1001,13 @@ export const publishClassHunt = onCall({
     // change after preview must never let a stale browser plan overbook the
     // subject ledger.
     const transactionNowMs = Date.now()
-    const draft = draftFromRequest(data, context.draft.studentId, student, studentBookings, transactionNowMs)
+    const draft = draftFromRequest(
+      data,
+      context.draft.studentId,
+      student,
+      await settleBookingsForFunds(studentBookings, transaction),
+      transactionNowMs,
+    )
     const { subjectName } = assertStudentCanBeHunted(student, draft.subjectId)
     assertNoStudentScheduleConflict(context.draft.studentId, draft.sessions, studentScheduleBookings)
 
@@ -1320,8 +1351,15 @@ async function loadTeacherHuntReadSet(
     })
   })
   const students = new Map<string, TeacherHuntStudentContext>()
+  // Settle legacy approved rows once for every student in the feed (order-preserving).
+  const settledDirectBookings = await settleBookingsForFunds(
+    studentIds.flatMap((studentId) => directBookingsByStudent.get(studentId) || []),
+  )
+  let settledOffset = 0
   studentIds.forEach((studentId) => {
-    const bookings = directBookingsByStudent.get(studentId) || []
+    const directCount = (directBookingsByStudent.get(studentId) || []).length
+    const bookings = settledDirectBookings.slice(settledOffset, settledOffset + directCount)
+    settledOffset += directCount
     const scheduleBookings = deduplicateBookings(scheduleBookingsByStudent.get(studentId) || [])
     students.set(studentId, { student: studentData.get(studentId), bookings, scheduleBookings, complete: true })
   })
@@ -1527,7 +1565,7 @@ export const claimClassHunt = onCall({
       teacher: teacher.teacher,
       student,
       teacherBookings,
-      studentBookings,
+      studentBookings: await settleBookingsForFunds(studentBookings, transaction),
       studentScheduleBookings,
       nowMs: claimNowMs,
     })

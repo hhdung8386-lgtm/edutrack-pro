@@ -16,6 +16,7 @@ import { Users, Plus, Search, Eye, MoreVertical, Trash2, CheckSquare, Copy, Mail
 import { useNavigate } from 'react-router-dom'
 import { getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { getStudentBookingQuotaBreakdown, getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
+import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { isGroupClass } from '@/lib/groupClasses'
 import { parseStoredStudentListLimit, studentListLimitStorageKey } from '@/lib/studentList'
@@ -244,12 +245,12 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
 
     let cancelled = false
     getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', student.id)))
-      .then((snapshot) => {
+      .then((snapshot) => settleBookingsByApprovedLessons(snapshot.docs.map((bookingDoc) => ({
+        id: bookingDoc.id,
+        ...bookingDoc.data(),
+      } as BookingRequest))))
+      .then(({ bookings }) => {
         if (cancelled) return
-        const bookings = snapshot.docs.map((bookingDoc) => ({
-          id: bookingDoc.id,
-          ...bookingDoc.data(),
-        } as BookingRequest))
         const actualHeld = getStudentBookingQuotaBreakdown(student, bookings).actualHeld
         setExactSearchBookingHold({ studentId: student.id, actualHeld })
       })

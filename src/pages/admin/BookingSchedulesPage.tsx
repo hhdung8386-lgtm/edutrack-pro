@@ -43,6 +43,7 @@ import {
 } from '@/lib/teacherSubjects'
 import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } from '@/lib/bookingLogic'
+import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
@@ -504,16 +505,20 @@ export function BookingSchedulesPage() {
       setSelectedStudentBookings([])
       return
     }
+    let active = true
     const q = query(
       collection(db, 'bookingRequests'),
       where('studentId', '==', selectedStudent.id),
     )
-    getDocs(q).then((snap) => {
+    getDocs(q).then((snap) => settleBookingsByApprovedLessons(
+      snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest)),
+    )).then(({ bookings: settledBookings }) => {
+      if (!active) return
       // Filter lifecycle status after the single-field read. This avoids a
       // production-only composite-index failure that made a student with
-      // remaining sessions look unable to schedule.
-      const list = snap.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+      // remaining sessions look unable to schedule. Legacy rows already settled
+      // by an approved lesson are no longer pending/confirmed here.
+      const list = settledBookings
         .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       setSelectedStudentBookings(list)
 
@@ -539,6 +544,7 @@ export function BookingSchedulesPage() {
     }).catch((error) => {
       console.error('Error loading student booking requests:', error)
     })
+    return () => { active = false }
   }, [selectedStudent, studentBookingsReloadKey])
 
   // Fetch all future booking requests for selected student when detail modal opens
@@ -974,8 +980,11 @@ export function BookingSchedulesPage() {
           where('studentId', '==', studentId),
         )
       )
-      const studentBookingsList = bookingsSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as BookingRequest))
+      // Ca cũ còn confirmed nhưng đã có buổi được duyệt không còn giữ kim cương.
+      const { bookings: settledStudentBookings } = await settleBookingsByApprovedLessons(
+        bookingsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest)),
+      )
+      const studentBookingsList = settledStudentBookings
         .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       const latestHeldPoints = studentBookingsList
         .filter(isBookingHoldingStudentFund)

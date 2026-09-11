@@ -18,6 +18,7 @@ import {
   type OverdueDiagnosis,
 } from '@/lib/overdueBookingDiagnosis'
 import { releasePendingRebookHold, releaseUnlinkedBookingHold, type HoldActionResult } from '@/lib/bookingHoldActions'
+import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 
 const DAY_LABELS: Record<string, string> = {
   mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật',
@@ -87,9 +88,11 @@ export function StudentHoldLedgerPanel({ studentId, refreshKey, futureLocation =
   useEffect(() => {
     let active = true
     getDocsFromServer(query(collection(db, 'bookingRequests'), where('studentId', '==', studentId)))
-      .then((snap) => {
+      // Ca còn confirmed nhưng đã có buổi được duyệt là buổi đã học, không phải ca đang giữ.
+      .then((snap) => settleBookingsByApprovedLessons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))))
+      .then(({ bookings: settled }) => {
         if (!active) return
-        setBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest)))
+        setBookings(settled)
         setLessons(null)
         setLoadError(false)
         setLoadedFor(studentId)

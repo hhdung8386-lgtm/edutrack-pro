@@ -11,6 +11,7 @@ import {
   parentBusySlotResponse,
   parentCancellationResponse,
 } from './parentBookingAccess'
+import { activeLinkedLessonIds, isBookingSettledByApprovedLesson, readLessonSettlementFacts } from './bookingLessonSettlement'
 
 const db = new Firestore()
 
@@ -125,9 +126,23 @@ export const getParentBookingState = onCall({
   busySnapshots.forEach((snapshot) => completeQuery(snapshot, 'PARENT_BOOKING_TEACHER_HISTORY_TOO_LARGE')
     .forEach((booking) => busyById.set(booking.id, booking)))
   const cancellations = completeQuery(cancellationSnapshot, 'PARENT_BOOKING_CANCELLATIONS_TOO_LARGE')
+  // Ca duyệt trước 10/08/2026 vẫn `confirmed` dù buổi đã được duyệt: đó là buổi
+  // đã học, không trả về như lịch đang giữ kim cương của phụ huynh.
+  const ownBookings = [...ownById.values()] as Array<DocumentData & {
+    id: string
+    status?: unknown
+    lessonId?: unknown
+    studentId?: unknown
+  }>
+  const lessonFacts = await readLessonSettlementFacts(
+    activeLinkedLessonIds(ownBookings),
+    (ids) => db.getAll(...ids.map((id) => db.collection('lessons').doc(id))),
+  )
 
   return {
-    bookings: [...ownById.values()].map((booking) => parentBookingResponse(booking.id, booking)),
+    bookings: ownBookings
+      .filter((booking) => !isBookingSettledByApprovedLesson(booking, lessonFacts))
+      .map((booking) => parentBookingResponse(booking.id, booking)),
     busySlots: [...busyById.values()].map((booking) => parentBusySlotResponse(booking.id, booking)),
     cancellationRequests: cancellations.map((item) => parentCancellationResponse(item.id, item)),
     studentPatch: {

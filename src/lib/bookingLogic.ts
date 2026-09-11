@@ -93,6 +93,59 @@ export function isBookingFinancialHold(
   return isBookingHoldingStudentFund(booking) || isBookingPendingRebookFundHold(booking)
 }
 
+/**
+ * Trước 10/08/2026 duyệt buổi chỉ gắn `lessonId` mà không đóng ca đặt lịch, nên
+ * còn nhiều ca `confirmed` trỏ về buổi ĐÃ DUYỆT. Buổi đó đã trừ quỹ; nếu vẫn coi
+ * ca là đang giữ thì học viên bị tính hai lần ("hết kim cương" dù còn quỹ, sổ
+ * báo "đã đặt" nhưng Lịch đã đặt trống). Mọi phép tính quỹ phải chạy qua
+ * `settleApprovedLessonBookings` khi có dữ liệu buổi dạy. Buổi chưa đọc được,
+ * không tồn tại, chưa duyệt hoặc thuộc học viên khác giữ nguyên ca (không nhả nhầm).
+ */
+export interface LessonSettlementFact {
+  status: string
+  studentId: string
+}
+
+export type LessonSettlementFacts = ReadonlyMap<string, LessonSettlementFact>
+
+export function lessonSettlementFacts(
+  lessons: ReadonlyArray<{ id: string; status?: string; studentId?: string }>,
+): Map<string, LessonSettlementFact> {
+  return new Map(lessons.map((lesson) => [lesson.id, { status: lesson.status || '', studentId: lesson.studentId || '' }]))
+}
+
+export function activeLinkedLessonIds(
+  bookings: ReadonlyArray<Pick<BookingRequest, 'status' | 'lessonId'>>,
+): string[] {
+  return Array.from(new Set(bookings.flatMap((booking) => (
+    isBookingHoldingStudentFund(booking) && booking.lessonId ? [booking.lessonId] : []
+  )))).sort()
+}
+
+export function isBookingSettledByApprovedLesson(
+  booking: Pick<BookingRequest, 'status' | 'lessonId' | 'studentId'>,
+  facts: LessonSettlementFacts,
+): boolean {
+  if (!isBookingHoldingStudentFund(booking) || !booking.lessonId || !booking.studentId) return false
+  const fact = facts.get(booking.lessonId)
+  return fact?.status === 'approved' && fact.studentId === booking.studentId
+}
+
+/** Bản sao coi ca đã có buổi được duyệt là `completed`; không ghi dữ liệu. */
+export function settleApprovedLessonBookings<T extends Pick<BookingRequest, 'status' | 'lessonId' | 'studentId'>>(
+  bookings: T[],
+  facts: LessonSettlementFacts,
+): T[] {
+  if (facts.size === 0) return bookings
+  let changed = false
+  const next = bookings.map((booking) => {
+    if (!isBookingSettledByApprovedLesson(booking, facts)) return booking
+    changed = true
+    return { ...booking, status: 'completed' as const }
+  })
+  return changed ? next : bookings
+}
+
 const ACTIVE_BOOKING_STATUSES = new Set<BookingRequest['status']>(['pending', 'confirmed'])
 
 /**

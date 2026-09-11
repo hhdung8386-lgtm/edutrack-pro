@@ -16,6 +16,8 @@ import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck }
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
+import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
+import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -149,12 +151,18 @@ export function FutureBookingsPage() {
     [bookings, scopeStudentIds],
   )
 
-  // Ca đã gắn buổi điểm danh vẫn giữ quỹ; chỉ nạp trạng thái buổi dạy khi phạm vi đã thu hẹp.
-  const scopedLinkedBookings = useMemo(
+  // Ca đã gắn buổi điểm danh chưa duyệt vẫn giữ quỹ; chỉ nạp trạng thái buổi dạy khi
+  // phạm vi đã thu hẹp. Ca trỏ về buổi ĐÃ DUYỆT là buổi đã học, không tính là đang giữ.
+  const scopedLinkedCandidates = useMemo(
     () => (scopeStudentIds
       ? bookings.filter((booking) => Boolean(booking.lessonId) && scopeStudentIds.has(booking.studentId))
       : []),
     [bookings, scopeStudentIds],
+  )
+  const scopedLessonFacts = useLessonSettlementFacts(scopedLinkedCandidates)
+  const scopedLinkedBookings = useMemo(
+    () => scopedLinkedCandidates.filter((booking) => !isBookingSettledByApprovedLesson(booking, scopedLessonFacts)),
+    [scopedLinkedCandidates, scopedLessonFacts],
   )
 
   const selectedStudentAwaitingApprovalStats = useMemo(() => ({

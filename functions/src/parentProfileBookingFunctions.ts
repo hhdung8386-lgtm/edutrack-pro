@@ -24,6 +24,7 @@ import {
   type ParentProfileBookingRequest,
   type ParentProfileBookingStudentLike,
 } from './parentProfileBooking'
+import { activeLinkedLessonIds, readLessonSettlementFacts, settleApprovedLessonBookings } from './bookingLessonSettlement'
 
 const db = new Firestore()
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/
@@ -258,7 +259,19 @@ export const createParentProfileBooking = onCall({
     }
     const rate = normalizeParentBookingPointRate(teacher.pointsPer25Minutes)
     const requestedPoints = parentBookingPoints(request.requestedMinutes, rate)
-    const holds = effectiveParentBookingHolds(student, allBookings, request.subjectId, request.studentId)
+    // Ca duyệt trước 10/08/2026 vẫn `confirmed` dù buổi đã được duyệt (đã trừ quỹ):
+    // không được tính là đang giữ kim cương. Trùng lịch vẫn kiểm tra trên ca gốc ở trên.
+    const ownLinkedLessonIds = activeLinkedLessonIds(allBookings.filter((booking) => booking.studentId === request.studentId))
+    const lessonFacts = await readLessonSettlementFacts(
+      ownLinkedLessonIds,
+      (ids) => transaction.getAll(...ids.map((id) => db.collection('lessons').doc(id))),
+    )
+    const holds = effectiveParentBookingHolds(
+      student,
+      settleApprovedLessonBookings(allBookings, lessonFacts),
+      request.subjectId,
+      request.studentId,
+    )
 
     const rebookId = text(student.pendingRebookBookingId, 160)
     const pendingRebookPoints = Number(student.pendingRebookPoints || 0)
