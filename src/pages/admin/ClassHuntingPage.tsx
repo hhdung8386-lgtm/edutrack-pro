@@ -502,7 +502,9 @@ export function ClassHuntingPage() {
               <table className="w-full min-w-[640px] border-separate border-spacing-0 text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr>
-                    <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-bold text-slate-600">Giờ bắt đầu</th>
+                    <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-2 py-2 text-left font-bold text-slate-600 sm:px-3">
+                      <span className="sm:hidden">Giờ</span><span className="hidden sm:inline">Giờ bắt đầu</span>
+                    </th>
                     {CLASS_HUNT_DAY_ORDER.map((day) => (
                       <th key={day} className="border-b border-slate-200 px-1 py-2 text-center font-bold text-slate-600">{CLASS_HUNT_DAY_LABELS[day]}</th>
                     ))}
