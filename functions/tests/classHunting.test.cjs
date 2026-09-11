@@ -8,6 +8,7 @@ const {
   CLASS_HUNT_COMPENSATION_FORMULA,
   CLASS_HUNT_COMPENSATION_VERSION,
   ClassHuntValidationError,
+  affordableClassHuntSessionCount,
   availableClassHuntSessionCount,
   buildClassHuntDraft,
   classHuntSubjectAvailability,
@@ -136,6 +137,43 @@ test('all-remaining counts only package sessions not already held by a booking',
     subjectId: 'legacy',
     bookings: [],
   }), null)
+})
+
+test('hunt size follows spendable diamonds, not the drifting session counter', () => {
+  // Reported case: "Học Viên Bảo Lưu" had 430 spendable diamonds while the
+  // legacy counter said 1 session, so "all remaining" published one lesson.
+  const student = {
+    subjects: [{
+      subjectId: 'bao-luu',
+      subjectName: 'Học Viên Bảo Lưu',
+      totalSessions: 9,
+      usedSessions: 8,
+      minutesPerSession: 50,
+      totalMinutes: 430,
+      usedMinutes: 0,
+    }],
+    reservedMinutes: 0,
+  }
+  const availability = classHuntSubjectAvailability({ student, subjectId: 'bao-luu', bookings: [] })
+  assert.equal(availability.remainingSessions, 1)
+  assert.equal(availability.availablePoints, 430)
+  assert.equal(affordableClassHuntSessionCount(availability.availablePoints, 50), 8)
+  assert.equal(affordableClassHuntSessionCount(availability.availablePoints, 25), 17)
+  assert.equal(affordableClassHuntSessionCount(49, 50), 0)
+  assert.equal(affordableClassHuntSessionCount(100, 50), 2)
+  assert.equal(affordableClassHuntSessionCount(0, 25), 0)
+  assert.equal(affordableClassHuntSessionCount(Number.NaN, 25), 0)
+
+  const held = classHuntSubjectAvailability({
+    student,
+    subjectId: 'bao-luu',
+    bookings: [
+      { id: 'b1', subjectId: 'bao-luu', status: 'confirmed', requestedMinutes: 50, pointsPer25Minutes: 25 },
+      { id: 'r1', subjectId: 'bao-luu', status: 'released', pendingRebook: true, rebookHoldPoints: 30 },
+    ],
+  })
+  assert.equal(held.availablePoints, 350)
+  assert.equal(affordableClassHuntSessionCount(held.availablePoints, 50), 7)
 })
 
 test('subject availability retains attendance-pending and pending-rebook fund holds', () => {

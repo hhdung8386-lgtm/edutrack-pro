@@ -1,5 +1,6 @@
 import type { BookingRequest, Lesson } from '../types/index.ts'
 import { isBookingHoldingStudentFund, lessonReferencedBookingIds } from './bookingLogic.ts'
+import { getBookingPoints } from './points.ts'
 
 /**
  * Một ca đặt lịch đang giữ kim cương (pending/confirmed) nhưng đã gắn `lessonId`
@@ -46,9 +47,37 @@ export function canUnlinkStaleLessonFromBooking(booking: BookingRequest, lesson:
   if (!isLinkedBookingHold(booking)) return false
   const state = classifyLinkedBookingHold(booking, lesson)
   if (state === 'lesson_missing') return true
+  if (state === 'link_mismatch') {
+    // Con trỏ tới buổi của học viên/gia sư khác. Chỉ gỡ khi buổi đó không còn chờ
+    // duyệt và không tự ghi nhận ca này, để việc duyệt/hoàn tác của buổi kia không đổi.
+    return Boolean(lesson)
+      && lesson?.status !== 'pending'
+      && !lessonReferencedBookingIds(lesson as Lesson).includes(booking.id)
+      && !lesson?.bookingSubjectReconciliation
+  }
   if (state !== 'lesson_rejected' && state !== 'lesson_cancelled') return false
   // Buổi hạch toán chuyển môn là ngoại lệ đã chốt, không xử lý bằng thao tác chung.
   return !lesson?.bookingSubjectReconciliation
+}
+
+/**
+ * Buổi đã duyệt (đã trừ quỹ) nhưng ca đặt vẫn `confirmed` nên tiếp tục giữ kim cương:
+ * học viên bị tính hai lần (đã học + đã đặt). Đóng ca là an toàn vì không đụng quỹ.
+ */
+export function canSettleApprovedLinkedBooking(booking: BookingRequest, lesson: Lesson | null): boolean {
+  if (!lesson || !isLinkedBookingHold(booking)) return false
+  if (classifyLinkedBookingHold(booking, lesson) !== 'lesson_approved_unsettled') return false
+  return !lesson.bookingSubjectReconciliation
+}
+
+/**
+ * Số kim cương giữ chỗ cần nhả khi đóng ca. Nếu lúc duyệt buổi đã ghi nhận đúng ca
+ * này và đã nhả giữ chỗ (`bookingHoldConsumed`) thì không nhả lần hai.
+ */
+export function approvedLinkedBookingHoldToRelease(booking: BookingRequest, lesson: Lesson): number {
+  const consumedAtApproval = lesson.bookingHoldConsumed === true
+    && lessonReferencedBookingIds(lesson).includes(booking.id)
+  return consumedAtApproval ? 0 : getBookingPoints(booking)
 }
 
 /** Các ca đang trỏ về đúng buổi dạy này và vẫn giữ quỹ, dùng khi từ chối buổi dạy. */

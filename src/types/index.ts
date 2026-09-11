@@ -503,6 +503,10 @@ export interface BookingRequest {
   classHuntCompensationInvalid?: boolean
   /** Parent portal marker: this Class Hunt booking must be changed through admin support. */
   parentRebookManaged?: boolean
+  /** Giáo vụ xử lý phần kim cương đang giữ từ Sổ giữ kim cương (có ghi adminLogs). */
+  holdResolution?: 'overdue_released' | 'undated_released' | 'approved_lesson_settled' | 'pending_rebook_released'
+  holdResolvedAt?: Timestamp
+  holdResolvedBy?: string
 }
 
 export interface AdminLog {

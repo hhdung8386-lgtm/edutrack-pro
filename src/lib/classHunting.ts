@@ -12,6 +12,19 @@ export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
 export type ClassHuntMinutes = 25 | 50 | 75 | 100
 export type ClassHuntSessionSelectionMode = 'all_remaining' | 'specific'
 
+/** Mirrors the backend: a hunt has no tutor yet, so it is sized at 25 kim cương / 25 phút. */
+export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
+
+/**
+ * Number of lessons the spendable diamonds cover. The server resolves the
+ * same figure again when publishing; the legacy session counter is not used.
+ */
+export function classHuntAffordableSessions(availablePoints: number, minutes: number): number {
+  const pointsPerLesson = Math.round((minutes / 25) * CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES * 100) / 100
+  if (!Number.isFinite(availablePoints) || availablePoints <= 0 || !(pointsPerLesson > 0)) return 0
+  return Math.floor((availablePoints + 1e-6) / pointsPerLesson)
+}
+
 /** Immutable teacher-pay snapshot supplied only by the Class Hunting backend. */
 export interface ClassHuntCompensation {
   version: 1

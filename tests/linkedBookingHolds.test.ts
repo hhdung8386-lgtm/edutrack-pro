@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  approvedLinkedBookingHoldToRelease,
   bookingsToReopenOnLessonReject,
+  canSettleApprovedLinkedBooking,
   canUnlinkStaleLessonFromBooking,
   classifyLinkedBookingHold,
   isLinkedBookingHold,
@@ -71,6 +73,34 @@ test('unlink is allowed only for dead lessons and never for pending/approved/mis
     booking(),
     lesson({ status: 'rejected', bookingSubjectReconciliation: { kind: 'prelinked_subject_mismatch' } as Lesson['bookingSubjectReconciliation'] }),
   ), false)
+})
+
+test('a mismatched pointer can be unlinked only when that lesson is settled and does not own the booking', () => {
+  const otherPupilLesson = { bookingRequestId: 'other-booking', studentId: 'student-2' }
+  assert.equal(canUnlinkStaleLessonFromBooking(booking(), lesson({ ...otherPupilLesson, status: 'approved' })), true)
+  assert.equal(canUnlinkStaleLessonFromBooking(booking(), lesson({ ...otherPupilLesson, status: 'pending' })), false)
+  assert.equal(canUnlinkStaleLessonFromBooking(booking(), lesson({ studentId: 'student-2', status: 'approved' })), false)
+})
+
+test('an approved lesson whose booking never closed can be settled without a second hold release', () => {
+  const approved = lesson({ status: 'approved' })
+  assert.equal(canSettleApprovedLinkedBooking(booking(), approved), true)
+  assert.equal(canSettleApprovedLinkedBooking(booking(), lesson()), false)
+  assert.equal(canSettleApprovedLinkedBooking(booking({ status: 'completed' }), approved), false)
+  assert.equal(canSettleApprovedLinkedBooking(booking(), null), false)
+  assert.equal(canSettleApprovedLinkedBooking(
+    booking(),
+    lesson({ status: 'approved', bookingSubjectReconciliation: { kind: 'prelinked_subject_mismatch' } as Lesson['bookingSubjectReconciliation'] }),
+  ), false)
+
+  // Approval consumed exactly this booking's hold already: close it, release nothing.
+  assert.equal(approvedLinkedBookingHoldToRelease(booking(), lesson({ status: 'approved', bookingHoldConsumed: true })), 0)
+  // Approval never released this row (not referenced or hold not consumed): release its points once.
+  assert.equal(approvedLinkedBookingHoldToRelease(booking(), lesson({ status: 'approved', bookingHoldConsumed: false })), 25)
+  assert.equal(approvedLinkedBookingHoldToRelease(
+    booking({ id: 'booking-2' }),
+    lesson({ status: 'approved', bookingHoldConsumed: true }),
+  ), 25)
 })
 
 test('reject reopens only active bookings pointing at the rejected lesson', () => {

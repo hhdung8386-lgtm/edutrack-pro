@@ -1011,6 +1011,23 @@ export function classHuntLessonPoints(minutes: number, rate: unknown): number {
   return Math.round((minutes / 25) * pointsPer25Minutes(rate) * 100) / 100
 }
 
+/** A hunt has no tutor yet, so its plan is priced at the standard tutor rate. */
+export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
+
+/**
+ * Diamonds are the canonical package balance. The legacy session counters
+ * (`totalSessions`/`usedSessions`) drift whenever a lesson length or tutor rate
+ * differs from the package default, so they must never size a hunt: a package
+ * with 430 spendable diamonds is 8 standard 50-minute lessons, not whatever the
+ * stale counter says. Claim time still re-checks the claiming tutor's own rate.
+ */
+export function affordableClassHuntSessionCount(availablePoints: number, minutes: number): number {
+  const pointsPerLesson = classHuntLessonPoints(minutes, CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES)
+  if (!Number.isFinite(availablePoints) || availablePoints <= 0 || !(pointsPerLesson > 0)) return 0
+  // Guard binary rounding (e.g. 99.99999 for 100) without rounding a real shortfall up.
+  return Math.floor((availablePoints + 1e-6) / pointsPerLesson)
+}
+
 export function classHuntBookingPoints(booking: ClassHuntBookingLike): number {
   const minutes = Number(booking.requestedMinutes)
   if (!Number.isFinite(minutes) || minutes <= 0) return 0

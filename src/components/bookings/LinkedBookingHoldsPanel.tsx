@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   collection, deleteField, doc, getDocFromServer, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
-import { AlertTriangle, ClipboardCheck, Hourglass, Link2Off, ShieldAlert, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Hourglass, Link2Off, ShieldAlert, XCircle } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, Lesson } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { getBookingPoints } from '@/lib/points'
 import {
+  canSettleApprovedLinkedBooking,
   canUnlinkStaleLessonFromBooking,
   classifyLinkedBookingHold,
   isLinkedBookingHold,
   type LinkedBookingHoldState,
 } from '@/lib/linkedBookingHolds'
+import { settleApprovedLinkedBooking } from '@/lib/bookingHoldActions'
 
 const DAY_LABELS: Record<string, string> = {
   mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật',
@@ -49,13 +51,13 @@ const STATE_META: Record<LinkedBookingHoldState, { label: string; hint: string; 
   },
   lesson_approved_unsettled: {
     label: 'Buổi đã duyệt nhưng ca chưa đóng',
-    hint: 'Cần giáo vụ đối soát thủ công; hệ thống không tự nhả để tránh lệch quỹ.',
+    hint: 'Buổi đã trừ quỹ nhưng ca vẫn giữ kim cương nên học viên bị tính hai lần. Đóng ca để nhả phần giữ; buổi dạy và lương giữ nguyên.',
     badge: 'bg-amber-50 text-amber-800 border-amber-200',
     icon: ShieldAlert,
   },
   link_mismatch: {
     label: 'Liên kết sai học viên/gia sư',
-    hint: 'Cần giáo vụ đối soát thủ công; hệ thống không tự sửa.',
+    hint: 'Gỡ liên kết được khi buổi kia không còn chờ duyệt và không ghi nhận ca này; trường hợp khác cần đối soát thủ công.',
     badge: 'bg-amber-50 text-amber-800 border-amber-200',
     icon: ShieldAlert,
   },
@@ -95,6 +97,7 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
   const [loadError, setLoadError] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [confirmTargets, setConfirmTargets] = useState<BookingRequest[] | null>(null)
+  const [settleTarget, setSettleTarget] = useState<BookingRequest | null>(null)
   const [processing, setProcessing] = useState(false)
 
   useEffect(() => {
@@ -128,7 +131,8 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
     const lesson = ready ? (lessons[booking.lessonId as string] ?? null) : undefined
     const state = lesson === undefined ? null : classifyLinkedBookingHold(booking, lesson)
     const canUnlink = lesson !== undefined && canUnlinkStaleLessonFromBooking(booking, lesson)
-    return { booking, state, canUnlink }
+    const canSettle = lesson !== undefined && canSettleApprovedLinkedBooking(booking, lesson)
+    return { booking, state, canUnlink, canSettle }
   })
   const staleRows = rows.filter((row) => row.canUnlink)
   const totalPoints = linked.reduce((sum, booking) => sum + getBookingPoints(booking), 0)
@@ -188,6 +192,23 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
     }
   }
 
+  const settle = async (target: BookingRequest) => {
+    setProcessing(true)
+    try {
+      const result = await settleApprovedLinkedBooking({ bookingId: target.id, actorUid: user?.uid ?? 'admin' })
+      if (result === 'done') toast.success('Đã đóng ca đã duyệt. Phần kim cương giữ trùng đã được nhả; quỹ đã học giữ nguyên.')
+      else toast.warning('Ca hoặc buổi dạy vừa thay đổi ở thao tác khác nên hệ thống bỏ qua, không ghi đè.')
+      setSettleTarget(null)
+    } catch (error) {
+      console.error('Settle approved linked booking failed:', error)
+      toast.error('Chưa đóng được ca này. Vui lòng thử lại.')
+    } finally {
+      setProcessing(false)
+      setReloadToken((value) => value + 1)
+      onChanged?.()
+    }
+  }
+
   return (
     <div className={`rounded-2xl border border-indigo-200 bg-white ${compact ? 'p-3' : 'p-4 sm:p-5'} space-y-3`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -221,7 +242,7 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
       )}
 
       <ul className={`divide-y divide-slate-100 ${compact ? 'max-h-48 overflow-y-auto pr-1' : ''}`}>
-        {rows.map(({ booking, state, canUnlink }) => {
+        {rows.map(({ booking, state, canUnlink, canSettle }) => {
           const meta = state ? STATE_META[state] : null
           const Icon = meta?.icon
           return (
@@ -270,6 +291,17 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
                     <Link2Off className="h-3.5 w-3.5" />Gỡ liên kết
                   </Button>
                 )}
+                {canSettle && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={processing}
+                    onClick={() => setSettleTarget(booking)}
+                    className="text-xs font-bold text-amber-800 border-amber-200 hover:bg-amber-50"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />Đóng ca đã duyệt
+                  </Button>
+                )}
               </div>
             </li>
           )
@@ -284,6 +316,19 @@ export function LinkedBookingHoldsPanel({ bookings, showStudent = false, compact
         description="Ca sẽ quay về trạng thái chưa điểm danh. Hệ thống kiểm tra lại buổi dạy ngay lúc ghi và bỏ qua ca vừa thay đổi."
         consequence="Không hoàn và không trừ kim cương ở bước này. Sau đó bạn có thể hủy ca tương lai, rà soát ca quá hạn, hoặc để gia sư điểm danh lại."
         confirmLabel="Gỡ liên kết"
+        loading={processing}
+      />
+
+      <ConfirmDialog
+        open={!!settleTarget}
+        onClose={() => { if (!processing) setSettleTarget(null) }}
+        onConfirm={() => { if (settleTarget) void settle(settleTarget) }}
+        title="Đóng ca đã có buổi dạy được duyệt"
+        description={settleTarget
+          ? `Ca ${settleTarget.requestedDate || ''} ${settleTarget.requestedStart || ''} với ${settleTarget.teacherName || 'gia sư'} đã có buổi dạy được duyệt nhưng vẫn đang giữ ${getBookingPoints(settleTarget)} kim cương.`
+          : ''}
+        consequence="Ca chuyển sang đã hoàn tất. Hệ thống chỉ nhả phần giữ chưa từng được nhả lúc duyệt; không cộng quỹ, không đổi buổi dạy hay lương."
+        confirmLabel="Đóng ca"
         loading={processing}
       />
     </div>

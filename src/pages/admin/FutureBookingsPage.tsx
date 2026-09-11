@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
+import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -77,6 +78,11 @@ export function FutureBookingsPage() {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
       setBookings(list)
       setLoading(false)
+    }, (error) => {
+      // Không để trang quay vòng mãi: báo lỗi rõ để giáo vụ tải lại.
+      console.error('Load held bookings failed:', error)
+      setLoading(false)
+      toast.error('Không tải được danh sách ca đang giữ chỗ. Vui lòng tải lại trang.')
     })
     return unsub
   }, [])
@@ -103,15 +109,38 @@ export function FutureBookingsPage() {
     if (selectedStudentId !== 'all') return new Set([selectedStudentId])
     const queryLower = searchQuery.toLowerCase().trim()
     if (queryLower.length < 3) return null
-    const matched = students.filter((student) => (
-      (student.code || '').toLowerCase().includes(queryLower)
-      || (student.name || '').toLowerCase().includes(queryLower)
-    ))
-    return matched.length > 0 && matched.length <= 5 ? new Set(matched.map((student) => student.id)) : null
-  }, [selectedStudentId, searchQuery, students])
+    const matchedIds = new Set(students
+      .filter((student) => (
+        (student.code || '').toLowerCase().includes(queryLower)
+        || (student.name || '').toLowerCase().includes(queryLower)
+      ))
+      .map((student) => student.id))
+    // Danh sách hồ sơ chưa tải xong hoặc không đọc được: dùng mã/tên lưu trên chính ca đặt.
+    if (matchedIds.size === 0) {
+      bookings.forEach((booking) => {
+        if (
+          booking.studentId
+          && ((booking.studentCode || '').toLowerCase().includes(queryLower)
+            || (booking.studentName || '').toLowerCase().includes(queryLower))
+        ) matchedIds.add(booking.studentId)
+      })
+    }
+    return matchedIds.size > 0 && matchedIds.size <= 5 ? matchedIds : null
+  }, [selectedStudentId, searchQuery, students, bookings])
   const scopeSingleStudentId = scopeStudentIds && scopeStudentIds.size === 1
     ? Array.from(scopeStudentIds)[0]
     : null
+  // Chỉ tải lại Sổ giữ kim cương khi ca của đúng học viên này thay đổi.
+  const scopeSingleStudentHoldSignature = useMemo(
+    () => (scopeSingleStudentId
+      ? bookings
+        .filter((booking) => booking.studentId === scopeSingleStudentId)
+        .map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}`)
+        .sort()
+        .join('|')
+      : ''),
+    [bookings, scopeSingleStudentId],
+  )
 
   const selectedStudentHeldBookings = useMemo(
     () => bookings.filter((booking) =>
@@ -401,8 +430,14 @@ export function FutureBookingsPage() {
         </div>
       )}
 
-      {scopedLinkedBookings.length > 0 && (
-        <LinkedBookingHoldsPanel bookings={scopedLinkedBookings} showStudent={!scopeSingleStudentId} />
+      {scopeSingleStudentId ? (
+        <StudentHoldLedgerPanel
+          studentId={scopeSingleStudentId}
+          refreshKey={scopeSingleStudentHoldSignature}
+          futureLocation="below"
+        />
+      ) : scopedLinkedBookings.length > 0 && (
+        <LinkedBookingHoldsPanel bookings={scopedLinkedBookings} showStudent />
       )}
 
       {/* Filter and stats card */}

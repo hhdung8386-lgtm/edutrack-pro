@@ -19,6 +19,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import {
   cancelClassHunt,
+  classHuntAffordableSessions,
   classHuntErrorReason,
   listAdminClassHunts,
   previewClassHunt,
@@ -172,6 +173,11 @@ export function ClassHuntingPage() {
   )
   const selectedSubjectHasNoAvailablePoints = selectedSubject?.availablePoints !== undefined
     && selectedSubject.availablePoints <= 0
+  // null = the lookup could not total the holds (very large calendar); the
+  // server still resolves the exact count before publishing.
+  const affordableSessions = selectedSubject?.availablePoints !== undefined
+    ? classHuntAffordableSessions(selectedSubject.availablePoints, form.minutes)
+    : null
 
   const loadHunts = useCallback(async () => {
     setHuntsError('')
@@ -297,27 +303,19 @@ export function ClassHuntingPage() {
       return false
     }
     if (draft.sessionSelectionMode === 'all_remaining') {
-      if (selectedSubject.remainingSessions === undefined) {
-        toast.error('Gói học chưa có số buổi còn lại chính xác. Hãy chọn số buổi nhất định hoặc cập nhật gói học.')
+      if (affordableSessions !== null && affordableSessions < 1) {
+        toast.error(`Gói còn ${selectedSubject.availablePoints} kim cương khả dụng, chưa đủ cho 1 buổi ${draft.minutes} phút.`)
         return false
       }
-      if (selectedSubject.minutesPerSession !== undefined && selectedSubject.minutesPerSession !== draft.minutes) {
-        toast.error('Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.')
-        return false
-      }
-      if (selectedSubject.remainingSessions < 1) {
-        toast.error('Gói học không còn buổi chưa được xếp.')
-        return false
-      }
-      if (selectedSubject.remainingSessions > CLASS_HUNT_MAX_SESSIONS) {
-        toast.error(`Gói còn ${selectedSubject.remainingSessions} buổi. Một CLASS HUNTING chỉ có thể tạo an toàn tối đa ${CLASS_HUNT_MAX_SESSIONS} buổi; hãy tách kế hoạch.`)
+      if (affordableSessions !== null && affordableSessions > CLASS_HUNT_MAX_SESSIONS) {
+        toast.error(`Kim cương khả dụng đủ cho ${affordableSessions} buổi. Một CLASS HUNTING chỉ có thể tạo an toàn tối đa ${CLASS_HUNT_MAX_SESSIONS} buổi; hãy chọn số buổi nhất định.`)
         return false
       }
     } else if (!Number.isInteger(draft.sessionCount) || draft.sessionCount < 1 || draft.sessionCount > CLASS_HUNT_MAX_SESSIONS) {
       toast.error(`Số buổi phải từ 1 đến ${CLASS_HUNT_MAX_SESSIONS}.`)
       return false
-    } else if (selectedSubject.remainingSessions !== undefined && draft.sessionCount > selectedSubject.remainingSessions) {
-      toast.error(`Gói học hiện còn ${selectedSubject.remainingSessions} buổi. Hãy chọn số buổi phù hợp.`)
+    } else if (affordableSessions !== null && draft.sessionCount > affordableSessions) {
+      toast.error(`Kim cương khả dụng chỉ đủ cho ${affordableSessions} buổi ${draft.minutes} phút. Hãy chọn số buổi phù hợp.`)
       return false
     }
     return true
@@ -522,7 +520,9 @@ export function ClassHuntingPage() {
                   <option value="">Chọn gói học</option>
                   {(lookup?.subjects || []).map((subject) => (
                     <option key={subject.id} value={subject.id} disabled={subject.eligibleForHunt === false}>
-                      {subject.name}{subject.remainingSessions !== undefined ? ` - theo gói ${subject.remainingSessions} buổi` : ''}{subject.remainingPoints !== undefined ? ` (${subject.remainingPoints} kim cương)` : ''}
+                      {subject.name}{subject.availablePoints !== undefined
+                        ? ` - khả dụng ${subject.availablePoints} kim cương`
+                        : subject.remainingPoints !== undefined ? ` - còn ${subject.remainingPoints} kim cương` : ''}
                     </option>
                   ))}
                 </select>
@@ -575,7 +575,10 @@ export function ClassHuntingPage() {
                     />
                     <span>
                       <span className="block text-sm font-extrabold text-slate-900">Xếp toàn bộ buổi còn lại</span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-600">Hệ thống chốt số buổi theo gói học tại thời điểm kiểm tra; không lấy số nhập tay.</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600">
+                        Hệ thống chốt số buổi theo kim cương khả dụng tại thời điểm đăng; không lấy số nhập tay.
+                        {affordableSessions !== null && ` Hiện đủ cho ${affordableSessions} buổi ${form.minutes} phút.`}
+                      </span>
                     </span>
                   </label>
                   <label className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${form.sessionSelectionMode === 'specific' ? 'border-indigo-500 bg-indigo-50/70' : 'border-slate-200 bg-white hover:border-indigo-200'}`}>
@@ -610,14 +613,13 @@ export function ClassHuntingPage() {
                   <p className={`mt-2 text-xs leading-5 ${selectedSubjectHasNoAvailablePoints ? 'font-semibold text-amber-800' : 'text-slate-500'}`}>
                     {selectedSubject.availablePoints !== undefined
                       ? <>
-                          Gói ghi nhận {selectedSubject.remainingSessions ?? '—'} buổi / {selectedSubject.remainingPoints ?? 0} kim cương;
-                          {' '}đã giữ {selectedSubject.heldBookingCount ?? 0} ca / {selectedSubject.heldPoints ?? 0} kim cương;
-                          {' '}khả dụng {selectedSubject.availablePoints} kim cương.
+                          Gói còn {selectedSubject.remainingPoints ?? 0} kim cương;
+                          {' '}đang giữ {selectedSubject.heldBookingCount ?? 0} ca / {selectedSubject.heldPoints ?? 0} kim cương;
+                          {' '}khả dụng {selectedSubject.availablePoints} kim cương, đủ cho <strong>{affordableSessions ?? 0} buổi {form.minutes} phút</strong> theo giá chuẩn 25 kim cương/25 phút.
                           {selectedSubjectHasNoAvailablePoints && ' Cần giải phóng lịch đã đặt hoặc cộng thêm quyền học trước khi mở CLASS HUNTING.'}
                         </>
-                      : selectedSubject.remainingSessions === undefined
-                        ? 'Gói này chưa có số buổi còn lại chính xác; chỉ nên xếp số buổi nhất định sau khi kiểm tra gói.'
-                        : `Gói đang ghi nhận còn ${selectedSubject.remainingSessions} buổi. Hệ thống sẽ trừ thêm các buổi đã được giữ trước khi chốt lịch.`}
+                      : 'Lịch học viên quá lớn để tính nhanh kim cương đang giữ; hệ thống sẽ đối soát chính xác khi kiểm tra lịch.'}
+                    {' '}Gia sư có đơn giá kim cương cao hơn chỉ thấy lớp khi quỹ đủ cho đơn giá của họ.
                     {' '}Một yêu cầu CLASS HUNTING tạo tối đa {CLASS_HUNT_MAX_SESSIONS} buổi để việc nhận lớp luôn nguyên tử và an toàn.
                   </p>
                 )}

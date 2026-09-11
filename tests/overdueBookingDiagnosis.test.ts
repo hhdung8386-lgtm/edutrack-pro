@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  canManuallyReleaseDiagnosedOverdueBookingHold,
   canReleaseDiagnosedOverdueBookingHold,
   diagnoseOverdueBookings,
 } from '../src/lib/overdueBookingDiagnosis.ts'
@@ -52,6 +53,35 @@ function lesson(overrides: Partial<Lesson> = {}): Lesson {
     ...overrides,
   }
 }
+
+test('manual release covers another tutor or a settled ambiguous same-tutor lesson only', () => {
+  const today = '2026-08-16'
+  const [otherTeacher] = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({ teacherId: 'teacher-mai', teacherName: 'Mai Hoàng', status: 'pending' })],
+    today,
+  )
+  assert.equal(otherTeacher.diagnosis, 'other_teacher_lesson')
+  assert.equal(canReleaseDiagnosedOverdueBookingHold(otherTeacher), false)
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(otherTeacher), true)
+
+  const [ambiguousSettled] = diagnoseOverdueBookings([booking()], [lesson({ minutes: 50 })], today)
+  assert.equal(ambiguousSettled.diagnosis, 'ambiguous_lesson')
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(ambiguousSettled), true)
+
+  // A same-tutor lesson still waiting for approval may yet consume this booking.
+  const [ambiguousPending] = diagnoseOverdueBookings([booking()], [lesson({ minutes: 50, status: 'pending' })], today)
+  assert.equal(ambiguousPending.diagnosis, 'ambiguous_lesson')
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(ambiguousPending), false)
+
+  const [pendingExplicit] = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({ status: 'pending', bookingRequestId: 'booking-1' })],
+    today,
+  )
+  assert.equal(pendingExplicit.diagnosis, 'pending_lesson')
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(pendingExplicit), false)
+})
 
 test('does not match a lesson from another teacher on the same student and date', () => {
   const result = diagnoseOverdueBookings(

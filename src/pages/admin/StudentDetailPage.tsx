@@ -26,7 +26,7 @@ import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
-import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
+import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 import {
   assertAutomaticReconciliationRollbackAllowed,
   isBookingHoldingStudentFund,
@@ -1794,8 +1794,12 @@ export function StudentDetailPage() {
         </Button>
       </Card>
 
-      {awaitingApprovalHeldBookings.length > 0 && (
-        <LinkedBookingHoldsPanel bookings={awaitingApprovalHeldBookings} />
+      {id && (
+        <StudentHoldLedgerPanel
+          studentId={id}
+          refreshKey={bookingRequests.map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}`).join('|')}
+          futureLocation="link"
+        />
       )}
 
       {/* Lesson history */}

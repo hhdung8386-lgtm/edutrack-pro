@@ -35,6 +35,25 @@ export function canReleaseDiagnosedOverdueBookingHold(item: DiagnosedOverdueBook
   )
 }
 
+/**
+ * Row-level release after a person has compared the lessons shown on screen.
+ * Wider than the bulk predicate only for two cases where no attendance record
+ * owns this booking, so releasing its hold can never double-charge or refund:
+ * - `other_teacher_lesson`: the pupil was taught by another tutor that day; that
+ *   lesson is approved against its own tutor and never consumes this booking.
+ * - `ambiguous_lesson` with no pending lesson left: any same-tutor lesson is
+ *   already settled, so this extra hold is not waiting for an approval.
+ */
+export function canManuallyReleaseDiagnosedOverdueBookingHold(item: DiagnosedOverdueBooking): boolean {
+  if (canReleaseDiagnosedOverdueBookingHold(item)) return true
+  if (item.relatedLessons.some((lesson) => (
+    lesson.bookingSubjectReconciliation || explicitlyReferencesBooking(lesson, item.booking.id)
+  ))) return false
+  if (item.diagnosis === 'other_teacher_lesson') return true
+  return item.diagnosis === 'ambiguous_lesson'
+    && item.relatedLessons.every((lesson) => lesson.status !== 'pending')
+}
+
 const ACTIVE_LESSON_STATUSES = new Set<Lesson['status']>(['pending', 'approved', 'rejected'])
 
 function lessonBookingIds(lesson: Lesson): string[] {

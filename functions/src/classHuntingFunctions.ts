@@ -5,8 +5,10 @@ import {
   CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION,
   CLASS_HUNT_SCHEMA_VERSION,
   CLASS_HUNT_MAX_SESSIONS,
+  CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES,
   CLASS_HUNTS_COLLECTION,
   ClassHuntValidationError,
+  affordableClassHuntSessionCount,
   buildClassHuntDraft,
   classHuntSubjectAvailability,
   classHuntCompensationAmount,
@@ -327,14 +329,20 @@ async function existingPublishedHuntForRetry(
   return hunt
 }
 
-function noRemainingClassHuntSessionMessage(availability: ReturnType<typeof classHuntSubjectAvailability>): string {
-  if (availability
-    && availability.remainingSessions !== undefined
-    && availability.remainingSessions > 0
-    && availability.heldBookingCount > 0) {
-    return `Gói học đang ghi nhận còn ${availability.remainingSessions} buổi, nhưng ${availability.heldBookingCount} ca đã được giữ; không còn buổi khả dụng để xếp thêm.`
-  }
-  return 'Gói học không còn buổi chưa được xếp.'
+function classHuntFundSummary(availability: NonNullable<ReturnType<typeof classHuntSubjectAvailability>>, minutes: number): string {
+  const perLesson = classHuntLessonPoints(minutes, CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES)
+  const held = availability.heldBookingCount > 0
+    ? ` sau khi trừ ${availability.heldBookingCount} ca đang giữ ${availability.heldPoints} kim cương`
+    : ''
+  return `Gói học còn ${availability.availablePoints} kim cương khả dụng${held}; mỗi buổi ${minutes} phút cần ${perLesson} kim cương.`
+}
+
+function noRemainingClassHuntSessionMessage(
+  availability: ReturnType<typeof classHuntSubjectAvailability>,
+  minutes: number,
+): string {
+  if (!availability) return 'Gói học không còn kim cương khả dụng để xếp thêm buổi.'
+  return `${classHuntFundSummary(availability, minutes)} Không đủ cho 1 buổi.`
 }
 
 function draftFromRequest(
@@ -376,6 +384,9 @@ function draftFromRequest(
     }
   }
 
+  // Session counts are derived from spendable diamonds (the same balance that
+  // booking, approval and the claim guard use), never from the legacy package
+  // session counters, which drift and once turned a 430-diamond plan into 1 lesson.
   if (sessionSelectionMode === 'specific') {
     const draft = build(data.sessionCount)
     const availability = classHuntSubjectAvailability({
@@ -383,18 +394,16 @@ function draftFromRequest(
       subjectId: draft.subjectId,
       bookings: studentBookings,
     })
-    const remainingSessionCount = availability?.availableSessionCount ?? null
-    if (remainingSessionCount !== null) {
-      if (remainingSessionCount < 1) {
-        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability))
+    if (availability) {
+      const affordable = affordableClassHuntSessionCount(availability.availablePoints, draft.requestedMinutes)
+      if (affordable < 1) {
+        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, draft.requestedMinutes))
       }
-      if (draft.sessionCount > remainingSessionCount) {
+      if (draft.sessionCount > affordable) {
         throw error(
           'failed-precondition',
           'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING',
-          availability && availability.heldBookingCount > 0
-            ? `Gói học chỉ còn ${remainingSessionCount} buổi khả dụng sau khi trừ ${availability.heldBookingCount} ca đã được giữ.`
-            : `Gói học chỉ còn ${remainingSessionCount} buổi chưa được xếp.`,
+          `${classHuntFundSummary(availability, draft.requestedMinutes)} Chỉ xếp được tối đa ${affordable} buổi.`,
         )
       }
     }
@@ -408,28 +417,21 @@ function draftFromRequest(
   if (!subjectFund || subjectFund.remainingMinutes <= 0) {
     throw error('failed-precondition', 'CLASS_HUNT_SUBJECT_NOT_ELIGIBLE', 'Học viên không có gói môn đang hoạt động phù hợp để săn lớp.')
   }
-  if (subjectFund.minutesPerSession !== provisional.requestedMinutes) {
-    throw error(
-      'failed-precondition',
-      'CLASS_HUNT_ALL_DURATION_MISMATCH',
-      'Để xếp toàn bộ buổi còn lại, thời lượng mỗi buổi phải khớp thời lượng của gói học.',
-    )
-  }
   const availability = classHuntSubjectAvailability({
     student,
     subjectId: provisional.subjectId,
     bookings: studentBookings,
   })
-  const remainingSessionCount = availability?.availableSessionCount ?? null
-  if (remainingSessionCount === null) {
+  if (!availability) {
     throw error(
       'failed-precondition',
       'CLASS_HUNT_ALL_SESSION_LEDGER_UNAVAILABLE',
-      'Gói học chưa có số buổi còn lại chính xác. Vui lòng chọn số buổi nhất định hoặc cập nhật gói học.',
+      'Gói học đang trùng dữ liệu nên chưa tính được kim cương khả dụng. Vui lòng đối soát gói học trước.',
     )
   }
+  const remainingSessionCount = affordableClassHuntSessionCount(availability.availablePoints, provisional.requestedMinutes)
   if (remainingSessionCount < 1) {
-    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability))
+    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, provisional.requestedMinutes))
   }
   if (remainingSessionCount > CLASS_HUNT_MAX_SESSIONS) {
     throw error(

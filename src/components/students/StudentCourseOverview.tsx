@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
+  AlertTriangle,
   BookOpen,
   BookMarked,
   CalendarDays,
@@ -443,6 +444,31 @@ export function StudentCourseOverview({
             </article>)}
           </div>
           <div className="border-t border-indigo-100 bg-indigo-50/45 px-4 py-3 text-xs font-medium text-indigo-700 sm:px-5">Dùng nút “+” để cộng quyền học; nút “›” mở lịch sử và thông tin chi tiết.</div>
+          {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || (row.remainingMinutes > 0 && row.remainingDiamonds <= 0)) && (
+            <ul className="space-y-1.5 border-t border-amber-100 bg-amber-50/60 px-4 py-3 text-xs leading-5 text-amber-900 sm:px-5">
+              {activeRows.map((row) => {
+                const fund = Math.max(0, Number(row.subject.remainingMinutes || 0))
+                const overHeld = row.bookedDiamonds - fund
+                if (overHeld > 0) {
+                  return (
+                    <li key={row.subject.subjectId} className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span><strong>{row.subject.subjectName}</strong>: đang giữ {number(row.bookedDiamonds)} kim cương nhưng quỹ chỉ còn {number(fund)} (vượt {number(overHeld)}). Kiểm tra “Sổ giữ kim cương” bên dưới để đóng hoặc nhả các ca treo.</span>
+                    </li>
+                  )
+                }
+                if (row.remainingMinutes > 0 && row.remainingDiamonds <= 0) {
+                  return (
+                    <li key={row.subject.subjectId} className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span><strong>{row.subject.subjectName}</strong>: còn {number(row.remainingMinutes)} phút học nhưng không còn kim cương khả dụng, nên chưa đặt thêm được. Kim cương mới là số dùng để đặt lịch (gia sư có đơn giá cao hơn 1 kim cương/phút làm phút và kim cương lệch nhau).</span>
+                    </li>
+                  )
+                }
+                return null
+              })}
+            </ul>
+          )}
         </> : <div className="px-5 py-9 text-center text-sm font-medium text-slate-500">Chưa có khóa học đang hoạt động.</div>}
       </section>
 
