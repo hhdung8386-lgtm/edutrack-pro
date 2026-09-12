@@ -663,6 +663,46 @@ test('CLASS HUNTING slot drafts, fingerprints and publish retries carry slots an
   assert.equal(classHuntPublishRetryMatches({ ...retry, weeklySlots: undefined, weekdays: ['mon'], startTime: '19:00', minutes: 25 }, stored), false)
 })
 
+test('CLASS HUNTING operator note is normalized, fingerprinted only when present, and must match on retry', () => {
+  const { normalizeClassHuntNote, storedClassHuntNote, CLASS_HUNT_NOTE_MAX_LENGTH } = require('../lib/classHunting.js')
+  assert.equal(normalizeClassHuntNote(undefined), '')
+  assert.equal(normalizeClassHuntNote(null), '')
+  assert.equal(normalizeClassHuntNote('   '), '')
+  assert.equal(normalizeClassHuntNote('  Môn Toán lớp 5  \r\n\r\n\r\n bé mất gốc\tphân số '), 'Môn Toán lớp 5\n\nbé mất gốc phân số')
+  assert.throws(() => normalizeClassHuntNote(5), (cause) => cause.reason === 'CLASS_HUNT_NOTE_INVALID')
+  assert.throws(() => normalizeClassHuntNote('x'.repeat(CLASS_HUNT_NOTE_MAX_LENGTH + 1)), (cause) => cause.reason === 'CLASS_HUNT_NOTE_TOO_LONG')
+  assert.equal(storedClassHuntNote({ bad: true }), '')
+  assert.equal(storedClassHuntNote('x'.repeat(CLASS_HUNT_NOTE_MAX_LENGTH + 20)).length, CLASS_HUNT_NOTE_MAX_LENGTH)
+
+  const base = {
+    studentId: 'student-a', subjectId: 'subject-a', startDate: '2026-09-07',
+    weeklySlots: [{ day: 'mon', start: '19:00' }], sessionCount: 2, sessionSelectionMode: 'specific',
+  }
+  const plain = buildClassHuntDraft(base, NOW_MS)
+  const blank = buildClassHuntDraft({ ...base, note: '  ' }, NOW_MS)
+  const noted = buildClassHuntDraft({ ...base, note: 'Môn Toán lớp 5, bé hỏng kiến thức' }, NOW_MS)
+  assert.equal('note' in plain, false)
+  assert.equal('note' in blank, false)
+  assert.equal(noted.note, 'Môn Toán lớp 5, bé hỏng kiến thức')
+  // A note-less draft keeps the exact fingerprint it had before notes existed.
+  assert.equal(classHuntPublishFingerprint(plain), classHuntPublishFingerprint(blank))
+  assert.notEqual(classHuntPublishFingerprint(plain), classHuntPublishFingerprint(noted))
+
+  const stored = {
+    studentId: 'student-a', studentCode: 'HS1', subjectId: 'subject-a', startDate: '2026-09-07',
+    selectedDays: plain.selectedDays, requestedStart: plain.requestedStart, requestedMinutes: 25, sessionCount: 2,
+    sessionSelectionMode: 'specific', createdAtMs: NOW_MS, expiresAtMs: NOW_MS + CLASS_HUNT_DEFAULT_TTL_MINUTES * 60_000,
+    weeklySlots: plain.weeklySlots, teacherRequirements: plain.teacherRequirements,
+  }
+  const retry = { ...base, studentCode: 'HS1' }
+  // Cached clients that never send a note still recover a note-less publish.
+  assert.equal(classHuntPublishRetryMatches(retry, stored), true)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, note: '' }, stored), true)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, note: 'Toán lớp 5' }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, note: ' Toán lớp 5 ' }, { ...stored, note: 'Toán lớp 5' }), true)
+  assert.equal(classHuntPublishRetryMatches(retry, { ...stored, note: 'Toán lớp 5' }), false)
+})
+
 test('CLASS HUNTING teacher requirements narrow only who can claim, never who can see', () => {
   const {
     classHuntTeacherAudience,

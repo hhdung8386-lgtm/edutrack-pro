@@ -384,7 +384,8 @@ export function TeacherLayout() {
       {/* Chừa chỗ cho header cố định: mobile 56+14, desktop 64+16 */}
       <main className={`min-h-screen transition-[padding] duration-200 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         <div className="pt-[84px] pb-20 px-4 py-6 sm:px-6 lg:pb-6 lg:pt-6">
-          <ZaloUrgentNotice lang={lang} />
+          {/* Class Hunting shows its own feature announcement in this spot. */}
+          {location.pathname !== '/teacher/class-hunting' && <ZaloUrgentNotice lang={lang} />}
           {profileMissingCount !== null && profileMissingCount > 0 && (
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-rose-950 shadow-sm">
               <p className="text-sm font-bold">
@@ -538,6 +539,7 @@ export function TeacherLayout() {
 // ─── THÔNG BÁO KHẨN: chuyển liên lạc từ Facebook sang Zalo ───
 // Banner hiện trên mọi trang gia sư (mobile + desktop) cho đến khi
 // thầy/cô bấm "Đã hiểu" (ghi nhớ theo thiết bị bằng localStorage).
+// Riêng trang Class Hunting thay bằng thông báo tính năng Class Hunting.
 // Muốn gỡ thông báo: xóa <ZaloUrgentNotice /> ở <main> phía trên.
 const ZALO_NOTICE_KEY = 'teacher-notice-zalo-migration-2026-07'
 const ZALO_PHONE_DISPLAY = '039.399.8733'

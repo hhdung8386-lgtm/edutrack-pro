@@ -94,10 +94,14 @@ export interface ClassHuntTeacherMatch {
 
 export interface ClassHuntClaimedTeacher {
   id: string
+  /** Nickname (teachers.code); admins see it first. */
   code?: string
   name: string
   photoURL?: string
 }
+
+/** Mirrors CLASS_HUNT_NOTE_MAX_LENGTH in functions/src/classHunting.ts. */
+export const CLASS_HUNT_NOTE_MAX_LENGTH = 500
 
 export interface ClassHunt {
   id: string
@@ -123,10 +127,22 @@ export interface ClassHunt {
   activeTeacherCount?: number
   /** Teacher feed only: false when this tutor does not meet the stated requirement. */
   requirementMatch?: boolean
+  /** Operator note shown to tutors before they claim (subject, level, learner needs). */
+  note?: string
 }
 
 /** The teacher endpoint deliberately does not include a student object. */
-export type TeacherClassHunt = Omit<ClassHunt, 'student' | 'eligibleTeachers'>
+export type TeacherClassHunt = Omit<ClassHunt, 'student' | 'eligibleTeachers'> & {
+  /** Recently taken offers only: the claiming tutor's public nickname. */
+  claimedTeacherCode?: string
+  claimedByMe?: boolean
+}
+
+export interface TeacherClassHuntFeed {
+  open: TeacherClassHunt[]
+  /** Offers claimed in the last few days (empty on an older backend). */
+  claimed: TeacherClassHunt[]
+}
 
 export interface ClassHuntLookupInput {
   studentCode: string
@@ -143,6 +159,8 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   /** `all_remaining` is resolved by the server from the current package ledger. */
   sessionSelectionMode: ClassHuntSessionSelectionMode
   teacherRequirements: ClassHuntTeacherRequirements
+  /** Omit when empty so a note-less publish keeps its original retry identity. */
+  note?: string
   // No `compensationRatePerMinute`: tutor pay follows the subject price. The
   // key must be absent (not undefined/null) or the server treats it as a rate.
 }
@@ -157,6 +175,7 @@ export interface ClassHuntPreview {
   matchingTeacherCount?: number
   activeTeacherCount?: number
   teacherRequirements?: ClassHuntTeacherRequirements
+  note?: string
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
   subjectRate?: ClassHuntSubjectRate
@@ -249,6 +268,13 @@ async function invokePreviewCallable(input: ClassHuntLookupInput | ClassHuntDraf
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/** Keeps the operator's line breaks; the server already normalized it. */
+function noteFrom(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, CLASS_HUNT_NOTE_MAX_LENGTH)
+    : undefined
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -414,6 +440,7 @@ function previewFrom(value: unknown): ClassHuntPreview {
     ...(subjectRate ? { subjectRate } : {}),
     ...(typeof data.activeTeacherCount === 'number' ? { activeTeacherCount: data.activeTeacherCount } : {}),
     ...(data.teacherRequirements ? { teacherRequirements: teacherRequirementsFrom(data.teacherRequirements) } : {}),
+    ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
       .map(subjectFrom)
@@ -466,6 +493,7 @@ function huntFrom(value: unknown): ClassHunt {
     ...(Array.isArray(data.bookingIds) ? { bookingIds: data.bookingIds.filter((id): id is string => typeof id === 'string') } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
+    ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
     ...(weeklySlotsFrom(data.weeklySlots) ? { weeklySlots: weeklySlotsFrom(data.weeklySlots) } : {}),
     ...(numberValue(data.activeTeacherCount) !== undefined ? { activeTeacherCount: numberValue(data.activeTeacherCount) } : {}),
   }
@@ -488,6 +516,10 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(!classHuntCompensation && subjectRateFrom(data.subjectRate) ? { subjectRate: subjectRateFrom(data.subjectRate) } : {}),
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
     ...(typeof data.requirementMatch === 'boolean' ? { requirementMatch: data.requirementMatch } : {}),
+    ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
+    ...(dateFrom(data.claimedAt ?? data.claimedAtMs) ? { claimedAt: dateFrom(data.claimedAt ?? data.claimedAtMs) } : {}),
+    ...(text(data.claimedTeacherCode) ? { claimedTeacherCode: text(data.claimedTeacherCode) } : {}),
+    ...(typeof data.claimedByMe === 'boolean' ? { claimedByMe: data.claimedByMe } : {}),
   }
 }
 
@@ -508,10 +540,18 @@ export async function listAdminClassHunts(status?: ClassHuntStatus): Promise<Cla
   return asArray(root.hunts ?? result.data).map(huntFrom).filter((hunt) => Boolean(hunt.id))
 }
 
-export async function listTeacherClassHunts(): Promise<TeacherClassHunt[]> {
+export async function listTeacherClassHunts(): Promise<TeacherClassHuntFeed> {
   const result = await listCallable({ scope: 'teacher', status: 'open' })
   const root = asRecord(result.data)
-  return asArray(root.hunts ?? result.data).map(teacherHuntFrom).filter((hunt) => Boolean(hunt.id))
+  const open = asArray(root.hunts ?? result.data).map(teacherHuntFrom).filter((hunt) => Boolean(hunt.id))
+  const openIds = new Set(open.map((hunt) => hunt.id))
+  return {
+    open,
+    claimed: asArray(root.claimedHunts)
+      .map(teacherHuntFrom)
+      .filter((hunt) => Boolean(hunt.id) && !openIds.has(hunt.id))
+      .map((hunt) => ({ ...hunt, status: 'claimed' as const })),
+  }
 }
 
 export async function cancelClassHunt(huntId: string): Promise<ClassHunt> {

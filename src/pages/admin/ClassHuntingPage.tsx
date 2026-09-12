@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  NotebookPen,
   RefreshCw,
   Search,
   Send,
@@ -21,6 +22,7 @@ import { toast } from '@/stores/toastStore'
 import { db } from '@/lib/firebase'
 import { isGroupClass } from '@/lib/groupClasses'
 import {
+  CLASS_HUNT_NOTE_MAX_LENGTH,
   cancelClassHunt,
   classHuntAffordableSessions,
   classHuntErrorReason,
@@ -144,6 +146,7 @@ export function ClassHuntingPage() {
   const [sessionCount, setSessionCount] = useState(1)
   const [teacherTypes, setTeacherTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
   const [gender, setGender] = useState<ClassHuntTeacherGender>('any')
+  const [note, setNote] = useState('')
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   const [checking, setChecking] = useState(false)
@@ -267,8 +270,9 @@ export function ClassHuntingPage() {
       list.push(`Trong 1 năm tới các slot đã chọn chỉ tạo được ${plan.length} buổi. Hãy chọn thêm slot hoặc giảm số buổi.`)
     }
     if (teacherTypes.length === 0) list.push('Chọn ít nhất một loại giáo viên.')
+    if (note.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH) list.push(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
     return list
-  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, teacherTypes.length, weeklySlots.length])
+  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, teacherTypes.length, weeklySlots.length])
 
   const selectStudent = async (student: Student | null) => {
     const requestId = lookupRequestRef.current + 1
@@ -315,7 +319,9 @@ export function ClassHuntingPage() {
 
   const buildDraft = (): ClassHuntDraftInput | null => {
     if (!selectedStudent || !lookupStudent?.id || !selectedSubject) return null
+    const trimmedNote = note.trim()
     return {
+      ...(trimmedNote ? { note: trimmedNote } : {}),
       studentCode: selectedStudent.code.trim().toUpperCase(),
       studentId: lookupStudent.id,
       subjectId: selectedSubject.id,
@@ -370,6 +376,7 @@ export function ClassHuntingPage() {
       delete publishRequestIdsRef.current[key]
       setConfirm(null)
       setWeeklySlots([])
+      setNote('')
       toast.success(`Đã đăng CLASS HUNTING. Toàn bộ ${confirm.preview.activeTeacherCount ?? ''} gia sư đang hoạt động đều thấy lớp.`)
       await Promise.all([loadHunts(), selectedStudent ? selectStudent(selectedStudent) : Promise.resolve()])
     } catch (error) {
@@ -595,6 +602,28 @@ export function ClassHuntingPage() {
                   </div>
                 </fieldset>
               </div>
+              <label className="block border-t border-slate-100 pt-4">
+                <span className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                    <NotebookPen className="h-3.5 w-3.5 text-rose-600" />
+                    Ghi chú cho gia sư
+                  </span>
+                  <span className={`text-[11px] tabular-nums ${note.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH ? 'font-bold text-rose-600' : 'text-slate-400'}`}>
+                    {note.trim().length}/{CLASS_HUNT_NOTE_MAX_LENGTH}
+                  </span>
+                </span>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={3}
+                  maxLength={CLASS_HUNT_NOTE_MAX_LENGTH + 50}
+                  className={`${FIELD} min-h-[5.5rem] resize-y py-2.5 leading-6`}
+                  placeholder="VD: Môn Toán lớp 5, bé hỏng kiến thức phần phân số, cần giáo viên kiên nhẫn."
+                />
+                <span className="mt-1.5 block text-xs leading-5 text-slate-500">
+                  Ghi rõ môn học, trình độ, tình trạng học viên. Nội dung hiện màu đỏ cho gia sư đọc trước khi bấm nhận lớp.
+                </span>
+              </label>
             </Card>
           </div>
         </div>
@@ -642,6 +671,12 @@ export function ClassHuntingPage() {
             </p>
             {requirementsText && (
               <p className="flex items-start gap-2 text-xs text-slate-600"><UserCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />Yêu cầu: {requirementsText}</p>
+            )}
+            {note.trim() && (
+              <p className="flex items-start gap-2 whitespace-pre-line rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">
+                <NotebookPen className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">{note.trim()}</span>
+              </p>
             )}
             {issues.length > 0 && (
               <ul className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
@@ -732,7 +767,16 @@ export function ClassHuntingPage() {
                         </div>
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gia sư</p>
-                          <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.claimedTeacher?.name || 'Đang chờ nhận'}</p>
+                          {hunt.claimedTeacher ? (
+                            <>
+                              <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.claimedTeacher.code || hunt.claimedTeacher.name}</p>
+                              {hunt.claimedTeacher.code && hunt.claimedTeacher.name && hunt.claimedTeacher.name !== hunt.claimedTeacher.code && (
+                                <p className="mt-0.5 break-words text-xs text-slate-500">{hunt.claimedTeacher.name}</p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="mt-1 text-sm font-extrabold text-slate-900">Đang chờ nhận</p>
+                          )}
                           {requirement && <p className="mt-0.5 text-xs text-slate-500">Yêu cầu: {requirement}</p>}
                         </div>
                         <div>
@@ -749,6 +793,12 @@ export function ClassHuntingPage() {
                           )}
                         </div>
                       </div>
+                      {hunt.note && (
+                        <p className="mt-3 flex items-start gap-2 whitespace-pre-line rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
+                          <NotebookPen className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 break-words">{hunt.note}</span>
+                        </p>
+                      )}
                       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-600"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />{formatSlots(hunt, true)}</p>
                     </div>
                     {hunt.status === 'open' && (
@@ -794,6 +844,12 @@ export function ClassHuntingPage() {
                   : '.'}
               </span>
             </p>
+            {confirm.draft.note && (
+              <p className="flex items-start gap-2 whitespace-pre-line rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
+                <NotebookPen className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">Ghi chú hiện cho gia sư: {confirm.draft.note}</span>
+              </p>
+            )}
           </div>
         )}
       </ConfirmDialog>

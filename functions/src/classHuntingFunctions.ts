@@ -40,6 +40,7 @@ import {
   pointsPer25Minutes,
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
+  storedClassHuntNote,
   classHuntSubjectRate,
   type ClassHuntBookingLike,
   type ClassHuntCompensation,
@@ -70,6 +71,9 @@ const CLASS_HUNT_BOOKING_READ_LIMIT = 1000
 const FIRESTORE_GET_ALL_CHUNK = 100
 const CONTRACT_QUERY_LIMIT = 100
 const CLASS_HUNT_CONFLICT_DETAIL_LIMIT = 10
+/** Tutors also see recently claimed offers so they know a class was taken. */
+const CLASS_HUNT_RECENT_CLAIMED_DAYS = 7
+const CLASS_HUNT_RECENT_CLAIMED_LIMIT = 30
 const readCachedLessonSettlementFacts = createApprovedLessonFactCache(10 * 60_000)
 
 /**
@@ -135,10 +139,13 @@ type StoredClassHunt = {
   activeTeacherCount?: number
   weeklySlots?: ClassHuntWeeklySlot[]
   teacherRequirements: ClassHuntTeacherRequirements
+  note?: string
   claimedByTeacherId?: string
   claimedByUid?: string
   claimedAtMs?: number
   claimedTeacherName?: string
+  /** Nickname at claim time; older claims only have the teacher id. */
+  claimedTeacherCode?: string
   cancelledByUid?: string
   cancelledAtMs?: number
 }
@@ -251,8 +258,10 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   } catch {
     throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Yêu cầu giáo viên hoặc slot học của lớp săn không hợp lệ.')
   }
+  const note = storedClassHuntNote(data.note)
   return {
     teacherRequirements,
+    ...(note ? { note } : {}),
     ...(weeklySlots ? { weeklySlots } : {}),
     ...(Number.isSafeInteger(Number(data.activeTeacherCount)) && Number(data.activeTeacherCount) >= 0
       ? { activeTeacherCount: Number(data.activeTeacherCount) }
@@ -284,6 +293,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
     ...(typeof data.claimedByUid === 'string' ? { claimedByUid: data.claimedByUid } : {}),
     ...(timestampMillis(data.claimedAtMs ?? data.claimedAt) !== null ? { claimedAtMs: timestampMillis(data.claimedAtMs ?? data.claimedAt)! } : {}),
     ...(typeof data.claimedTeacherName === 'string' ? { claimedTeacherName: cleanText(data.claimedTeacherName, 160) } : {}),
+    ...(cleanText(data.claimedTeacherCode, 80) ? { claimedTeacherCode: cleanText(data.claimedTeacherCode, 80) } : {}),
     ...(typeof data.cancelledByUid === 'string' ? { cancelledByUid: data.cancelledByUid } : {}),
     ...(timestampMillis(data.cancelledAtMs ?? data.cancelledAt) !== null ? { cancelledAtMs: timestampMillis(data.cancelledAtMs ?? data.cancelledAt)! } : {}),
   }
@@ -422,6 +432,7 @@ function draftFromRequest(
         compensationRatePerMinute: data.compensationRatePerMinute,
         weeklySlots: data.weeklySlots,
         teacherRequirements: data.teacherRequirements,
+        note: data.note,
       }, nowMs)
     } catch (cause) {
       if (cause instanceof ClassHuntValidationError) {
@@ -703,7 +714,41 @@ function serializeLookupStudent(id: string, student: ClassHuntStudentLike, eligi
  * scheduling lifecycle, but the rate itself is returned only to a system
  * admin (or separately to the teacher who is deciding whether to claim).
  */
-function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now(), includeCompensation = false) {
+type TeacherNickname = { code: string; name: string }
+
+/** Current nickname per tutor (a nickname can be reissued after a claim). */
+async function loadTeacherNicknames(teacherIds: string[]): Promise<Map<string, TeacherNickname>> {
+  const ids = [...new Set(teacherIds.filter((id) => SAFE_ID_PATTERN.test(id)))]
+  const nicknames = new Map<string, TeacherNickname>()
+  for (let index = 0; index < ids.length; index += FIRESTORE_GET_ALL_CHUNK) {
+    const refs = ids
+      .slice(index, index + FIRESTORE_GET_ALL_CHUNK)
+      .map((teacherId) => db.collection('teachers').doc(teacherId))
+    const snapshots = await db.getAll(...refs, { fieldMask: ['code', 'releasedNickname', 'name'] })
+    snapshots.forEach((snapshot) => {
+      if (!snapshot.exists) return
+      const data = snapshot.data() || {}
+      nicknames.set(snapshot.id, {
+        code: cleanText(data.code, 80) || cleanText(data.releasedNickname, 80),
+        name: cleanText(data.name, 160),
+      })
+    })
+  }
+  return nicknames
+}
+
+function claimedTeacherNickname(hunt: StoredClassHunt, nicknames?: Map<string, TeacherNickname>): string {
+  const profile = hunt.claimedByTeacherId ? nicknames?.get(hunt.claimedByTeacherId) : undefined
+  return profile?.code || hunt.claimedTeacherCode || ''
+}
+
+function serializeAdminHunt(
+  hunt: StoredClassHunt,
+  nowMs = Date.now(),
+  includeCompensation = false,
+  nicknames?: Map<string, TeacherNickname>,
+) {
+  const claimedCode = claimedTeacherNickname(hunt, nicknames)
   return {
     id: hunt.id,
     status: effectiveClassHuntStatus(hunt, nowMs),
@@ -720,13 +765,15 @@ function serializeAdminHunt(hunt: StoredClassHunt, nowMs = Date.now(), includeCo
       classHuntCompensation: { ...hunt.classHuntCompensation },
     } : {}),
     teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.note ? { note: hunt.note } : {}),
     ...(hunt.weeklySlots ? { weeklySlots: hunt.weeklySlots } : {}),
     ...(hunt.activeTeacherCount !== undefined ? { activeTeacherCount: hunt.activeTeacherCount } : {}),
     ...(hunt.eligibleTeacherCount !== undefined ? { eligibleTeacherCount: hunt.eligibleTeacherCount } : {}),
     ...(hunt.claimedByTeacherId ? {
       claimedTeacher: {
         id: hunt.claimedByTeacherId,
-        name: hunt.claimedTeacherName || 'Gia sư',
+        name: hunt.claimedTeacherName || nicknames?.get(hunt.claimedByTeacherId)?.name || claimedCode || 'Gia sư',
+        ...(claimedCode ? { code: claimedCode } : {}),
       },
     } : {}),
     ...(hunt.claimedAtMs ? { claimedAt: isoFromMillis(hunt.claimedAtMs) } : {}),
@@ -772,7 +819,38 @@ function serializeTeacherHunt(
       subjectRate: { ...subjectRate, teacherLevel },
     } : {}),
     teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.note ? { note: hunt.note } : {}),
     ...(requirementMatch === undefined ? {} : { requirementMatch }),
+  }
+}
+
+/**
+ * A recently taken offer, so tutors know it is gone. It carries no pay figure,
+ * no student data and only the claiming tutor's public nickname (never a name).
+ */
+function serializeTeacherClaimedHunt(hunt: StoredClassHunt, viewerTeacherId: string, nickname: string) {
+  const sanitized = sanitizeClassHuntForTeacher({
+    id: hunt.id,
+    status: hunt.status,
+    subjectName: hunt.subjectName,
+    requestedMinutes: hunt.requestedMinutes,
+    sessions: hunt.sessions,
+    expiresAtMs: hunt.expiresAtMs,
+  })
+  if (!sanitized) return null
+  return {
+    id: sanitized.id,
+    status: 'claimed' as const,
+    subject: { id: hunt.subjectId, name: sanitized.subjectName },
+    slots: sanitized.sessions.map(classHuntPublicSlot),
+    minutes: sanitized.requestedMinutes,
+    sessionCount: sanitized.sessions.length,
+    sessionSelectionMode: hunt.sessionSelectionMode,
+    teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.note ? { note: hunt.note } : {}),
+    ...(hunt.claimedAtMs ? { claimedAt: isoFromMillis(hunt.claimedAtMs) } : {}),
+    ...(nickname ? { claimedTeacherCode: nickname } : {}),
+    claimedByMe: Boolean(hunt.claimedByTeacherId) && hunt.claimedByTeacherId === viewerTeacherId,
   }
 }
 
@@ -784,6 +862,7 @@ function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
     && data.minutes === undefined
     && data.weeklySlots === undefined
     && data.teacherRequirements === undefined
+    && data.note === undefined
     && data.sessionCount === undefined
     && data.sessionSelectionMode === undefined
     // A supplied rate is never a harmless lookup-only field: even a malformed
@@ -964,6 +1043,7 @@ export const previewClassHunt = onCall({
     matchingTeacherCount,
     activeTeacherCount,
     teacherRequirements: context.draft.teacherRequirements,
+    ...(context.draft.note ? { note: context.draft.note } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   }
 })
@@ -1081,6 +1161,7 @@ export const publishClassHunt = onCall({
       sessions: draft.sessions,
       ...(draft.weeklySlots ? { weeklySlots: draft.weeklySlots } : {}),
       teacherRequirements: draft.teacherRequirements,
+      ...(draft.note ? { note: draft.note } : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
       ...(draft.classHuntCompensation ? {
@@ -1121,6 +1202,7 @@ export const publishClassHunt = onCall({
         expiresAtMs,
         eligibleTeacherCount: matchingTeacherCount,
         classHuntCompensation: draft.classHuntCompensation || null,
+        note: draft.note || null,
       },
       createdAt: FieldValue.serverTimestamp(),
     })
@@ -1307,6 +1389,25 @@ async function loadOpenClassHuntsForTeacher(nowMs: number): Promise<VisibleClass
   })
 }
 
+/** Offers claimed in the last few days; one automatically indexed range, no composite index. */
+async function loadRecentClaimedClassHunts(nowMs: number): Promise<StoredClassHunt[]> {
+  const snapshot = await db.collection(CLASS_HUNTS_COLLECTION)
+    .where('claimedAtMs', '>=', nowMs - CLASS_HUNT_RECENT_CLAIMED_DAYS * 24 * 60 * 60_000)
+    .orderBy('claimedAtMs', 'desc')
+    .limit(CLASS_HUNT_RECENT_CLAIMED_LIMIT)
+    .get()
+  const claimed: StoredClassHunt[] = []
+  for (const document of snapshot.docs) {
+    try {
+      const hunt = requireStoredHunt(document.id, document.data() || {})
+      if (hunt.status === 'claimed') claimed.push(hunt)
+    } catch {
+      // Invalid offers are not safe to expose.
+    }
+  }
+  return claimed
+}
+
 export const listClassHunts = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 60,
@@ -1329,14 +1430,20 @@ export const listClassHunts = onCall({
     // Do not combine status + ordering: that would add a Firestore composite
     // index, which this backend-only MVP deliberately avoids.
     const snapshot = await db.collection(CLASS_HUNTS_COLLECTION).orderBy('createdAt', 'desc').limit(CLASS_HUNT_ADMIN_LIST_LIMIT).get()
-    const hunts = snapshot.docs
+    const stored = snapshot.docs
       .map((document) => {
         try { return requireStoredHunt(document.id, document.data() || {}) } catch { return null }
       })
       .filter((hunt): hunt is StoredClassHunt => hunt !== null)
       .filter((hunt) => !requestedStatus || effectiveClassHuntStatus(hunt, nowMs) === requestedStatus)
-      .map((hunt) => serializeAdminHunt(hunt, nowMs, user.role === 'admin'))
-    return { hunts }
+    let nicknames = new Map<string, TeacherNickname>()
+    try {
+      nicknames = await loadTeacherNicknames(stored.map((hunt) => hunt.claimedByTeacherId || ''))
+    } catch (nicknameError) {
+      // Display only: fall back to the nickname stored on the claim.
+      logger.warn('Class hunt nickname lookup failed', { error: String(nicknameError) })
+    }
+    return { hunts: stored.map((hunt) => serializeAdminHunt(hunt, nowMs, user.role === 'admin', nicknames)) }
   }
 
   if (scope !== 'teacher') throw error('permission-denied', 'CLASS_HUNT_SCOPE_INVALID', 'Gia sư chỉ được xem lớp phù hợp của chính mình.')
@@ -1344,7 +1451,22 @@ export const listClassHunts = onCall({
   const teacherSnapshot = await db.collection('teachers').doc(teacherId).get()
   const teacher = teacherIdentityFromDocuments(uid, user, teacherSnapshot.data())
   const level = teacherPayLevel(teacher.teacher)
-  const visible = await loadOpenClassHuntsForTeacher(nowMs)
+  const [visible, recentClaimed] = await Promise.all([
+    loadOpenClassHuntsForTeacher(nowMs),
+    // The taken list is informational; it must never break the open feed.
+    loadRecentClaimedClassHunts(nowMs).catch((claimedError) => {
+      logger.warn('Recent claimed class hunt lookup failed', { error: String(claimedError) })
+      return [] as StoredClassHunt[]
+    }),
+  ])
+  let nicknames = new Map<string, TeacherNickname>()
+  try {
+    nicknames = await loadTeacherNicknames(recentClaimed
+      .filter((hunt) => !hunt.claimedTeacherCode)
+      .map((hunt) => hunt.claimedByTeacherId || ''))
+  } catch (nicknameError) {
+    logger.warn('Class hunt nickname lookup failed', { error: String(nicknameError) })
+  }
   return {
     hunts: visible.map(({ hunt, subjectRate }) => serializeTeacherHunt(
       hunt,
@@ -1353,6 +1475,9 @@ export const listClassHunts = onCall({
       // A hint only: the offer stays visible and clickable either way.
       teacher.teacher.isTester !== true && !classHuntTeacherRequirementMismatch(teacher.teacher, hunt.teacherRequirements),
     )),
+    claimedHunts: recentClaimed
+      .map((hunt) => serializeTeacherClaimedHunt(hunt, teacher.teacherId, claimedTeacherNickname(hunt, nicknames)))
+      .filter((hunt): hunt is NonNullable<ReturnType<typeof serializeTeacherClaimedHunt>> => hunt !== null),
   }
 })
 
@@ -1562,6 +1687,7 @@ export const claimClassHunt = onCall({
       claimedByTeacherId: teacher.teacherId,
       claimedByUid: uid,
       claimedTeacherName: teacherName,
+      ...(teacherCode ? { claimedTeacherCode: teacherCode } : {}),
       claimedAt: FieldValue.serverTimestamp(),
       claimedAtMs: claimNowMs,
       claimClientRequestId: clientRequestId,
@@ -1619,6 +1745,7 @@ export const claimClassHunt = onCall({
         claimedByTeacherId: teacher.teacherId,
         claimedByUid: uid,
         claimedTeacherName: teacherName,
+        ...(teacherCode ? { claimedTeacherCode: teacherCode } : {}),
         claimedAtMs: claimNowMs,
         bookingIds,
       },

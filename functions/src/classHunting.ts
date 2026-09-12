@@ -27,6 +27,8 @@ export const CLASS_HUNT_MINUTES = [25, 50, 75, 100] as const
 /** Each weekly timetable slot picked by an operator is one 25-minute lesson. */
 export const CLASS_HUNT_SLOT_MINUTES = 25
 export const CLASS_HUNT_TEACHER_TYPES = ['vn', 'ph', 'native'] as const
+/** Free-text operator note shown to every tutor before claiming (e.g. "Toán lớp 5, bé mất gốc"). */
+export const CLASS_HUNT_NOTE_MAX_LENGTH = 500
 export const CLASS_HUNT_COMPENSATION_VERSION = 1
 export const CLASS_HUNT_COMPENSATION_CURRENCY = 'VND' as const
 export const CLASS_HUNT_COMPENSATION_FORMULA = 'flat_per_minute' as const
@@ -94,6 +96,8 @@ export interface ClassHuntDraft {
   /** Present for plans built from the weekly slot grid (25-minute lessons). */
   weeklySlots?: ClassHuntWeeklySlot[]
   teacherRequirements: ClassHuntTeacherRequirements
+  /** Present only when the operator wrote a note; older offers have none. */
+  note?: string
   /**
    * Present only for newly published, admin-priced hunts. Its absence is a
    * deliberate compatibility path for offers created before class-level pay
@@ -194,6 +198,7 @@ export interface ClassHuntStoredLike {
   subjectId?: unknown
   studentId?: unknown
   classHuntCompensation?: unknown
+  note?: unknown
 }
 
 export class ClassHuntValidationError extends Error {
@@ -450,6 +455,47 @@ export function normalizeClassHuntExpiryMinutes(value: unknown): number {
   return minutes
 }
 
+const NOTE_CONTROL_CHARACTER_PATTERN = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(9)}${String.fromCharCode(11)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`,
+  'g',
+)
+
+/**
+ * Keep the operator's line breaks but strip control characters and trailing
+ * blanks. Absent and blank notes both normalize to ''. An over-long note is
+ * rejected instead of silently truncated so the tutor never sees half a rule.
+ */
+export function normalizeClassHuntNote(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string') {
+    throw new ClassHuntValidationError('CLASS_HUNT_NOTE_INVALID', 'Ghi chú lớp không hợp lệ.')
+  }
+  const note = value
+    .replace(/\r\n?/g, '\n')
+    .replace(NOTE_CONTROL_CHARACTER_PATTERN, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[  ]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (note.length > CLASS_HUNT_NOTE_MAX_LENGTH) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_NOTE_TOO_LONG',
+      `Ghi chú lớp tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`,
+    )
+  }
+  return note
+}
+
+/** Lenient read of a stored note: malformed legacy data is hidden, never fatal. */
+export function storedClassHuntNote(value: unknown): string {
+  try {
+    return normalizeClassHuntNote(value)
+  } catch {
+    return typeof value === 'string' ? value.slice(0, CLASS_HUNT_NOTE_MAX_LENGTH).trim() : ''
+  }
+}
+
 const CLASS_HUNT_DAY_ORDER: ClassHuntDay[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 // Mirrors the `native` group in src/lib/teacherCountries.ts, plus legacy aliases.
 const CLASS_HUNT_NATIVE_TEACHER_COUNTRIES = new Set(['GB', 'UK', 'US', 'US_EST', 'US_PST', 'CA', 'AU', 'NZ', 'IE', 'ZA'])
@@ -662,6 +708,7 @@ export function buildClassHuntDraft(input: {
   compensationRatePerMinute?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  note?: unknown
 }, nowMs: number): ClassHuntDraft {
   const studentId = requiredDocumentId(input.studentId, 'CLASS_HUNT_STUDENT_ID_INVALID')
   const subjectId = requiredDocumentId(input.subjectId, 'CLASS_HUNT_SUBJECT_ID_INVALID')
@@ -679,6 +726,7 @@ export function buildClassHuntDraft(input: {
   const sessionSelectionMode = normalizeClassHuntSessionSelectionMode(input.sessionSelectionMode)
   const expiresInMinutes = normalizeClassHuntExpiryMinutes(input.expiresInMinutes)
   const teacherRequirements = normalizeClassHuntTeacherRequirements(input.teacherRequirements)
+  const note = normalizeClassHuntNote(input.note)
   const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
   if (classHuntCompensation) {
     // Validate the whole class amount at creation time. No value is rounded or
@@ -704,6 +752,7 @@ export function buildClassHuntDraft(input: {
     sessions,
     ...(weeklySlots ? { weeklySlots } : {}),
     teacherRequirements,
+    ...(note ? { note } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
@@ -723,6 +772,8 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     weeklySlots: draft.weeklySlots || null,
     teacherRequirements: draft.teacherRequirements,
     classHuntCompensation: draft.classHuntCompensation || null,
+    // Only present when written, so note-less fingerprints stay unchanged.
+    ...(draft.note ? { note: draft.note } : {}),
   }), 'utf8').digest('hex')
 }
 
@@ -746,6 +797,7 @@ export function classHuntPublishRetryMatches(input: {
   compensationRatePerMinute?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  note?: unknown
 }, stored: {
   studentId: string
   studentCode: string
@@ -761,7 +813,14 @@ export function classHuntPublishRetryMatches(input: {
   classHuntCompensation?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  note?: unknown
 }): boolean {
+  try {
+    // A cached client never sends a note; that equals a stored offer without one.
+    if (normalizeClassHuntNote(input.note) !== storedClassHuntNote(stored.note)) return false
+  } catch {
+    return false
+  }
   let requirementsMatch = false
   try {
     requirementsMatch = sameClassHuntTeacherRequirements(
