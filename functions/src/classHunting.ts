@@ -1009,6 +1009,50 @@ export function classHuntSubjectRate(student: ClassHuntStudentLike, subjectId: s
   }
 }
 
+const CLASS_HUNT_CURRICULUM_LINK_MAX_LENGTH = 2048
+
+/** Only an http(s) link may reach a tutor; a bare domain gets https:// (same rule as reminder emails). */
+function classHuntCurriculumUrl(value: unknown): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (!trimmed || trimmed.length > CLASS_HUNT_CURRICULUM_LINK_MAX_LENGTH) return ''
+  const rawCandidate = trimmed.match(/https?:\/\/[^\s<>"']+/i)?.[0] || trimmed
+  const candidate = /^https?:\/\//i.test(rawCandidate)
+    ? rawCandidate
+    : /^[\w.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(rawCandidate)
+      ? `https://${rawCandidate}`
+      : ''
+  if (!candidate) return ''
+  try {
+    const url = new URL(candidate)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+export interface ClassHuntCurriculumLinks {
+  curriculumLink?: string
+  supplementaryCurriculumLink?: string
+}
+
+/**
+ * Textbook links of the offer's package so tutors can check the material before
+ * claiming. Same single-row rule as the pay rate: an ambiguous package exposes nothing.
+ */
+export function classHuntCurriculumLinks(student: ClassHuntStudentLike, subjectId: string): ClassHuntCurriculumLinks {
+  const sources = Array.isArray(student.subjects) && student.subjects.length > 0
+    ? student.subjects.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    : [student as Record<string, unknown>]
+  const matching = sources.filter((source) => cleanText(source.subjectId, 160) === subjectId)
+  if (matching.length !== 1) return {}
+  const curriculumLink = classHuntCurriculumUrl(matching[0].curriculumLink)
+  const supplementaryCurriculumLink = classHuntCurriculumUrl(matching[0].supplementaryCurriculumLink)
+  return {
+    ...(curriculumLink ? { curriculumLink } : {}),
+    ...(supplementaryCurriculumLink && supplementaryCurriculumLink !== curriculumLink ? { supplementaryCurriculumLink } : {}),
+  }
+}
+
 export function isActiveClassHuntBooking(booking: ClassHuntBookingLike): boolean {
   return (booking.status === 'pending' || booking.status === 'confirmed')
     && !(booking.status === 'pending' && booking.teacherResponse === 'declined')

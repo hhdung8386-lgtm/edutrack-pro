@@ -39,6 +39,7 @@ import {
   normalizeClassHuntWeeklySlots,
   pointsPer25Minutes,
   resolveClassHuntSubjectFund,
+  classHuntCurriculumLinks,
   sanitizeClassHuntForTeacher,
   storedClassHuntNote,
   normalizeClassHuntNote,
@@ -797,6 +798,7 @@ function serializeTeacherHunt(
   subjectRate: ClassHuntSubjectRate | null = null,
   teacherLevel = 1,
   requirementMatch?: boolean,
+  curriculum: ReturnType<typeof classHuntCurriculumLinks> = {},
 ) {
   const sanitized = sanitizeClassHuntForTeacher({
     id: hunt.id,
@@ -825,6 +827,7 @@ function serializeTeacherHunt(
     } : {}),
     teacherRequirements: hunt.teacherRequirements,
     ...(hunt.note ? { note: hunt.note } : {}),
+    ...curriculum,
     ...(requirementMatch === undefined ? {} : { requirementMatch }),
   }
 }
@@ -1476,6 +1479,7 @@ export const updateClassHunt = onCall({
 type VisibleClassHunt = {
   hunt: StoredClassHunt
   subjectRate: ClassHuntSubjectRate | null
+  curriculum: ReturnType<typeof classHuntCurriculumLinks>
 }
 
 /**
@@ -1505,7 +1509,8 @@ async function loadOpenClassHuntsForTeacher(nowMs: number): Promise<VisibleClass
     logger.warn('Class hunt open scan reached its safety bound', { returned: open.length })
   }
 
-  // Student documents only supply the display pay rate (subject price x level).
+  // Student documents only supply the display pay rate (subject price x level)
+  // and the package textbook links.
   const studentIds = [...new Set(open.map((hunt) => hunt.studentId))]
   const students = new Map<string, ClassHuntStudentLike>()
   for (let index = 0; index < studentIds.length; index += FIRESTORE_GET_ALL_CHUNK) {
@@ -1519,7 +1524,11 @@ async function loadOpenClassHuntsForTeacher(nowMs: number): Promise<VisibleClass
   }
   return open.map((hunt) => {
     const student = students.get(hunt.studentId)
-    return { hunt, subjectRate: student ? classHuntSubjectRate(student, hunt.subjectId) : null }
+    return {
+      hunt,
+      subjectRate: student ? classHuntSubjectRate(student, hunt.subjectId) : null,
+      curriculum: student ? classHuntCurriculumLinks(student, hunt.subjectId) : {},
+    }
   })
 }
 
@@ -1604,12 +1613,13 @@ export const listClassHunts = onCall({
     logger.warn('Class hunt nickname lookup failed', { error: String(nicknameError) })
   }
   return {
-    hunts: visible.map(({ hunt, subjectRate }) => serializeTeacherHunt(
+    hunts: visible.map(({ hunt, subjectRate, curriculum }) => serializeTeacherHunt(
       hunt,
       subjectRate,
       level,
       // A hint only: the offer stays visible and clickable either way.
       teacher.teacher.isTester !== true && !classHuntTeacherRequirementMismatch(teacher.teacher, hunt.teacherRequirements),
+      curriculum,
     )),
     claimedHunts: recentClaimed
       .map((hunt) => serializeTeacherClaimedHunt(hunt, teacher.teacherId, claimedTeacherNickname(hunt, nicknames)))

@@ -136,6 +136,9 @@ export type TeacherClassHunt = Omit<ClassHunt, 'student' | 'eligibleTeachers'> &
   /** Recently taken offers only: the claiming tutor's public nickname. */
   claimedTeacherCode?: string
   claimedByMe?: boolean
+  /** Open offers only: textbook links of the package (absent on an older backend). */
+  curriculumLink?: string
+  supplementaryCurriculumLink?: string
 }
 
 export interface TeacherClassHuntFeed {
@@ -277,6 +280,18 @@ function noteFrom(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim()
     ? value.trim().slice(0, CLASS_HUNT_NOTE_MAX_LENGTH)
     : undefined
+}
+
+/** Only an http(s) link may become an href; the server already normalized it. */
+function externalLinkFrom(value: unknown): string | undefined {
+  const raw = text(value)
+  if (!raw) return undefined
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -519,6 +534,8 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
     ...(typeof data.requirementMatch === 'boolean' ? { requirementMatch: data.requirementMatch } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
+    ...(externalLinkFrom(data.curriculumLink) ? { curriculumLink: externalLinkFrom(data.curriculumLink) } : {}),
+    ...(externalLinkFrom(data.supplementaryCurriculumLink) ? { supplementaryCurriculumLink: externalLinkFrom(data.supplementaryCurriculumLink) } : {}),
     ...(dateFrom(data.claimedAt ?? data.claimedAtMs) ? { claimedAt: dateFrom(data.claimedAt ?? data.claimedAtMs) } : {}),
     ...(text(data.claimedTeacherCode) ? { claimedTeacherCode: text(data.claimedTeacherCode) } : {}),
     ...(typeof data.claimedByMe === 'boolean' ? { claimedByMe: data.claimedByMe } : {}),

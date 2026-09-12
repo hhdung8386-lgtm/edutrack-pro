@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
+  BookOpen,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -66,7 +67,9 @@ const OUTLINE_BUTTON = 'inline-flex min-h-[46px] w-full items-center justify-cen
 const PRIMARY_BUTTON = 'inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-sm font-extrabold uppercase tracking-wide text-white shadow-sm transition hover:bg-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-orange-300'
 const CONFIRM_BUTTON = PRIMARY_BUTTON.replace('uppercase tracking-wide ', '')
 const TAKEN_BUTTON = 'inline-flex min-h-[46px] w-full cursor-not-allowed items-center justify-center rounded-xl bg-slate-200 px-4 text-sm font-bold text-slate-500'
-const MINE_BUTTON = 'inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-white px-4 text-sm font-bold text-emerald-700 transition hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2'
+const CURRICULUM_BUTTON = 'inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-indigo-600 bg-white px-4 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2'
+const NO_CURRICULUM_LABEL = 'inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-sm font-semibold text-slate-400'
+const MINE_BUTTON ='inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-white px-4 text-sm font-bold text-emerald-700 transition hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2'
 
 function firstSlotDate(hunt: TeacherClassHunt): string {
   return hunt.slots.map((slot) => slot.date).filter(Boolean).sort()[0] || ''
@@ -234,6 +237,43 @@ function ClassNote({ note, compact = false }: { note?: string; compact?: boolean
         <p className="text-[11px] font-extrabold uppercase tracking-wide text-rose-600">Lưu ý của lớp</p>
         <p className={`mt-0.5 whitespace-pre-line break-words font-bold text-rose-700 ${compact ? 'text-[13px] leading-5' : 'text-sm leading-6'}`}>{note}</p>
       </div>
+    </div>
+  )
+}
+
+/** Opens the package textbook in a new tab so tutors can judge the material before claiming. */
+function CurriculumButton({ hunt }: { hunt: TeacherClassHunt }) {
+  const link = hunt.curriculumLink || hunt.supplementaryCurriculumLink
+  if (!link) {
+    return (
+      <span className={NO_CURRICULUM_LABEL} title="Lớp này chưa được gắn link giáo trình">
+        <BookOpen className="h-4 w-4" aria-hidden="true" />Chưa có giáo trình
+      </span>
+    )
+  }
+  return (
+    <a href={link} target="_blank" rel="noopener noreferrer" className={CURRICULUM_BUTTON}>
+      <BookOpen className="h-4 w-4" aria-hidden="true" />Xem giáo trình
+    </a>
+  )
+}
+
+/** Every textbook link of the offer, including the supplementary one, inside the schedule popup. */
+function CurriculumLinks({ hunt }: { hunt: TeacherClassHunt }) {
+  if (!hunt.curriculumLink && !hunt.supplementaryCurriculumLink) return null
+  const linkClass = 'inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400'
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {hunt.curriculumLink && (
+        <a href={hunt.curriculumLink} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          <BookOpen className="h-4 w-4" aria-hidden="true" />Xem giáo trình
+        </a>
+      )}
+      {hunt.supplementaryCurriculumLink && (
+        <a href={hunt.supplementaryCurriculumLink} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          <BookOpen className="h-4 w-4" aria-hidden="true" />Giáo trình bổ trợ
+        </a>
+      )}
     </div>
   )
 }
@@ -606,6 +646,7 @@ export function TeacherClassHuntingPage() {
                             <button type="button" onClick={() => openSchedule(hunt)} className={OUTLINE_BUTTON}>
                               Xem lịch {hunt.sessionCount} buổi
                             </button>
+                            <CurriculumButton hunt={hunt} />
                             <button type="button" onClick={() => openConfirm(hunt)} disabled={Boolean(claimingId)} className={PRIMARY_BUTTON}>
                               {claimingId === hunt.id && <Loader2 className="h-4 w-4 animate-spin" />}
                               Nhận lớp
@@ -730,6 +771,7 @@ export function TeacherClassHuntingPage() {
               <span className="text-slate-300" aria-hidden="true">•</span>
               <span>{scheduleHunt.minutes} phút/buổi</span>
             </p>
+            {!scheduleTaken && <CurriculumLinks hunt={scheduleHunt} />}
             <ol className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white" aria-label="Các buổi học">
               {visibleSlots.map((slot, index) => (
                 <li key={`${slot.date}-${slot.start}`} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-3 text-[13px] sm:gap-4 sm:px-4 sm:text-sm">
