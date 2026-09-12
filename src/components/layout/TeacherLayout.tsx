@@ -311,7 +311,8 @@ export function TeacherLayout() {
                       }
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      {!isSidebarCollapsed && <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span>}
+                      {/* Wrap instead of truncating: some labels are long ("Yêu cầu lớp từ học viên"). */}
+                      {!isSidebarCollapsed && <span className="min-w-0 flex-1 break-words leading-snug">{t(item.labelKey)}</span>}
                       {!isSidebarCollapsed && item.locked && (
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
                           {lang === 'vi' ? 'Khóa' : 'Locked'}
