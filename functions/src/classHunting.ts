@@ -1408,6 +1408,19 @@ export function decideClassHuntClaim(input: {
   return 'claimable'
 }
 
+export type ClassHuntArchiveDecision = 'archivable' | 'open' | 'claimed'
+
+/**
+ * Only an offer nobody can take any more (cancelled or expired) may be hidden
+ * from the operator list. An open offer must be cancelled first, and a claimed
+ * one stays visible because bookings and payroll point back to it.
+ */
+export function classHuntArchiveDecision(effectiveStatus: ClassHuntStatus): ClassHuntArchiveDecision {
+  if (effectiveStatus === 'claimed') return 'claimed'
+  if (effectiveStatus === 'open') return 'open'
+  return 'archivable'
+}
+
 export function isClassHuntSessionShape(value: unknown): value is ClassHuntSession {
   if (!value || typeof value !== 'object') return false
   const session = value as Partial<ClassHuntSession>

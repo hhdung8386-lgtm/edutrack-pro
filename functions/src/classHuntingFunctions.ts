@@ -41,6 +41,8 @@ import {
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
   storedClassHuntNote,
+  normalizeClassHuntNote,
+  classHuntArchiveDecision,
   classHuntSubjectRate,
   type ClassHuntBookingLike,
   type ClassHuntCompensation,
@@ -146,6 +148,8 @@ type StoredClassHunt = {
   claimedTeacherName?: string
   /** Nickname at claim time; older claims only have the teacher id. */
   claimedTeacherCode?: string
+  /** Hidden from the operator list (cancelled/expired only); the document is kept. */
+  archivedAtMs?: number
   cancelledByUid?: string
   cancelledAtMs?: number
 }
@@ -294,6 +298,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
     ...(timestampMillis(data.claimedAtMs ?? data.claimedAt) !== null ? { claimedAtMs: timestampMillis(data.claimedAtMs ?? data.claimedAt)! } : {}),
     ...(typeof data.claimedTeacherName === 'string' ? { claimedTeacherName: cleanText(data.claimedTeacherName, 160) } : {}),
     ...(cleanText(data.claimedTeacherCode, 80) ? { claimedTeacherCode: cleanText(data.claimedTeacherCode, 80) } : {}),
+    ...(timestampMillis(data.archivedAtMs) !== null ? { archivedAtMs: timestampMillis(data.archivedAtMs)! } : {}),
     ...(typeof data.cancelledByUid === 'string' ? { cancelledByUid: data.cancelledByUid } : {}),
     ...(timestampMillis(data.cancelledAtMs ?? data.cancelledAt) !== null ? { cancelledAtMs: timestampMillis(data.cancelledAtMs ?? data.cancelledAt)! } : {}),
   }
@@ -1339,6 +1344,135 @@ export const cancelClassHunt = onCall({
   return { hunt: serializeAdminHunt(hunt, Date.now(), actor.role === 'admin') }
 })
 
+/**
+ * Hide a cancelled or expired offer from the operator list ("Xoá"). This is a
+ * soft delete: the hunt document, its publish-request idempotency record and
+ * the audit trail stay, so nothing that references the hunt can break.
+ */
+export const archiveClassHunt = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 5,
+}, async (request) => {
+  const actor = await requireClassHuntOperator(request.auth?.uid)
+  const huntId = safeId(request.data?.huntId, 'CLASS_HUNT_ID_INVALID', 'Mã lớp săn không hợp lệ.')
+  const huntRef = db.collection(CLASS_HUNTS_COLLECTION).doc(huntId)
+  const auditRef = db.collection('adminLogs').doc()
+  const hunt = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(huntRef)
+    if (!snapshot.exists) throw error('not-found', 'CLASS_HUNT_NOT_FOUND', 'Không tìm thấy lớp săn.')
+    const current = requireStoredHunt(snapshot.id, snapshot.data() || {})
+    if (current.archivedAtMs !== undefined) return current
+    const nowMs = Date.now()
+    const effectiveStatus = effectiveClassHuntStatus(current, nowMs)
+    const decision = classHuntArchiveDecision(effectiveStatus)
+    if (decision === 'claimed') {
+      throw error('failed-precondition', 'CLASS_HUNT_ARCHIVE_CLAIMED', 'Lớp đã có gia sư nhận nên không thể xoá.')
+    }
+    if (decision === 'open') {
+      throw error('failed-precondition', 'CLASS_HUNT_ARCHIVE_OPEN', 'Lớp đang mở. Hãy hủy yêu cầu trước khi xoá.')
+    }
+    transaction.update(huntRef, {
+      // An expired offer can still say "open" in storage; close it for good so
+      // no claim path can ever reach a hidden offer.
+      ...(current.status === 'open' ? { status: 'expired' } : {}),
+      archivedAt: FieldValue.serverTimestamp(),
+      archivedAtMs: nowMs,
+      archivedByUid: actor.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+    transaction.create(auditRef, {
+      adminId: actor.uid,
+      actorUid: actor.uid,
+      actorRole: actor.role,
+      action: 'ARCHIVE_CLASS_HUNT',
+      targetType: 'classHunt',
+      targetId: current.id,
+      changes: {
+        effectiveStatus,
+        studentId: current.studentId,
+        subjectId: current.subjectId,
+        sessionCount: current.sessions.length,
+      },
+      createdAt: FieldValue.serverTimestamp(),
+    })
+    return {
+      ...current,
+      status: current.status === 'open' ? 'expired' as const : current.status,
+      archivedAtMs: nowMs,
+    }
+  })
+  return { hunt: serializeAdminHunt(hunt, Date.now(), actor.role === 'admin'), archived: true }
+})
+
+/**
+ * Edit an open offer's note and teacher requirement. Schedule, session count
+ * and pay are immutable once published: a tutor may be confirming them right
+ * now, so changing those means cancel + publish again.
+ */
+export const updateClassHunt = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 5,
+}, async (request) => {
+  const actor = await requireClassHuntOperator(request.auth?.uid)
+  const data = (request.data || {}) as Record<string, unknown>
+  const huntId = safeId(data.huntId, 'CLASS_HUNT_ID_INVALID', 'Mã lớp săn không hợp lệ.')
+  let note: string
+  let teacherRequirements: ClassHuntTeacherRequirements
+  try {
+    note = normalizeClassHuntNote(data.note)
+    teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
+  } catch (cause) {
+    if (cause instanceof ClassHuntValidationError) throw error('invalid-argument', cause.reason, cause.message)
+    throw cause
+  }
+  const { activeTeacherCount, matchingTeacherCount } = await countClassHuntAudience(teacherRequirements)
+  assertMatchingClassHuntTeacherCount(matchingTeacherCount)
+  const huntRef = db.collection(CLASS_HUNTS_COLLECTION).doc(huntId)
+  const auditRef = db.collection('adminLogs').doc()
+  const hunt = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(huntRef)
+    if (!snapshot.exists) throw error('not-found', 'CLASS_HUNT_NOT_FOUND', 'Không tìm thấy lớp săn.')
+    const current = requireStoredHunt(snapshot.id, snapshot.data() || {})
+    if (current.archivedAtMs !== undefined || effectiveClassHuntStatus(current, Date.now()) !== 'open') {
+      throw error('failed-precondition', 'CLASS_HUNT_NOT_OPEN', 'Lớp không còn mở (đã có gia sư nhận, đã hủy hoặc hết hạn) nên không sửa được.')
+    }
+    transaction.update(huntRef, {
+      note: note ? note : FieldValue.delete(),
+      teacherRequirements,
+      eligibleTeacherCount: matchingTeacherCount,
+      activeTeacherCount,
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+    transaction.create(auditRef, {
+      adminId: actor.uid,
+      actorUid: actor.uid,
+      actorRole: actor.role,
+      action: 'UPDATE_CLASS_HUNT',
+      targetType: 'classHunt',
+      targetId: current.id,
+      changes: {
+        before: { note: current.note || null, teacherRequirements: current.teacherRequirements },
+        after: { note: note || null, teacherRequirements },
+      },
+      createdAt: FieldValue.serverTimestamp(),
+    })
+    const { note: _previousNote, ...rest } = current
+    void _previousNote
+    return {
+      ...rest,
+      ...(note ? { note } : {}),
+      teacherRequirements,
+      eligibleTeacherCount: matchingTeacherCount,
+      activeTeacherCount,
+    }
+  })
+  return { hunt: serializeAdminHunt(hunt, Date.now(), actor.role === 'admin') }
+})
+
 type VisibleClassHunt = {
   hunt: StoredClassHunt
   subjectRate: ClassHuntSubjectRate | null
@@ -1435,6 +1569,8 @@ export const listClassHunts = onCall({
         try { return requireStoredHunt(document.id, document.data() || {}) } catch { return null }
       })
       .filter((hunt): hunt is StoredClassHunt => hunt !== null)
+      // "Xoá" only hides a cancelled/expired offer; the document and audit remain.
+      .filter((hunt) => hunt.archivedAtMs === undefined)
       .filter((hunt) => !requestedStatus || effectiveClassHuntStatus(hunt, nowMs) === requestedStatus)
     let nicknames = new Map<string, TeacherNickname>()
     try {

@@ -38,7 +38,9 @@ import {
 import {
   AbsenceReportDraft, emptyAbsenceReport, validateAbsenceReport,
   composeAbsenceComment, composeAbsenceHomeworkText, absenceReportFields,
+  validateExcusedAbsenceNote, composeExcusedAbsenceComment, excusedAbsenceFields,
 } from '@/components/lessons/absenceReport'
+import { ExcusedAbsenceNoteForm } from '@/components/lessons/ExcusedAbsenceNoteForm'
 import {
   attendanceDeadlineMessage,
   canSubmitAttendance,
@@ -638,6 +640,15 @@ export function BookingSchedulesPage() {
       }
     }
 
+    // Vắng có phép: dặn dò + bài tập tuỳ chọn, chỉ chặn khi vượt giới hạn
+    if (attendanceStatus === 'with_permission') {
+      const errKey = validateExcusedAbsenceNote(absence)
+      if (errKey) {
+        toast.warning(t(errKey))
+        return
+      }
+    }
+
     // Vắng không phép vẫn được tính 25 phút -> bắt buộc dặn dò + bài tập + ảnh minh chứng
     if (isUnexcused) {
       const uploadedImages = images.filter((i) => i.storageURL).length
@@ -866,10 +877,11 @@ export function BookingSchedulesPage() {
             // bản có cấu trúc (pages/report/rating) lưu kèm bên dưới.
             comment: isPresent
               ? composeLessonComment(report)
-              : (isUnexcused ? composeAbsenceComment(absence) : ''),
+              : (isUnexcused ? composeAbsenceComment(absence) : composeExcusedAbsenceComment(absence)),
             homework: isPresent
               ? composeHomeworkText(report.homeworkItems)
-              : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
+              // Vắng (có phép hoặc không phép): bài tập gia sư giao cho buổi vắng.
+              : composeAbsenceHomeworkText(absence),
             book: bookTitle,
             ...(isPresent
               ? lessonReportFields(report)
@@ -877,7 +889,8 @@ export function BookingSchedulesPage() {
                 // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
                 // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
                 ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
-                : { pages: '', report: null, rating: null, homeworkItems: [] }),
+                // Vắng có phép: dặn dò + bài tập tuỳ chọn (rỗng nếu gia sư không nhập).
+                : { pages: '', report: null, rating: null, ...excusedAbsenceFields(absence) }),
             imageURLs: images.map((i) => i.storageURL).filter(Boolean),
             attendanceStatus,
             pointsPer25Minutes: getTeacherPointsPer25Minutes(teacherData),
@@ -1733,6 +1746,11 @@ export function BookingSchedulesPage() {
             {/* Structured lesson report (only when student is present) */}
             {attendanceStatus === 'present' && (
               <LessonReportForm value={report} onChange={setReport} />
+            )}
+
+            {/* Vắng có phép: dặn dò + bài tập không bắt buộc */}
+            {attendanceStatus === 'with_permission' && (
+              <ExcusedAbsenceNoteForm value={absence} onChange={setAbsence} />
             )}
 
             {/* Vắng không phép: bắt buộc dặn dò + bài tập + ảnh minh chứng */}

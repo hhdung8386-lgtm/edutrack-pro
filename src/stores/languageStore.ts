@@ -129,6 +129,12 @@ const translations: Record<string, Record<Lang, string>> = {
   'absence.err_advice_long': { vi: 'Phần dặn dò không được quá 1000 ký tự', en: 'The advice must not exceed 1000 characters' },
   'absence.err_homework': { vi: 'Học viên vắng không phép: vui lòng chọn ít nhất 1 loại bài tập và nhập nội dung giao', en: 'Unexcused absence: please choose at least 1 homework type and enter its content' },
   'absence.err_image': { vi: 'Học viên vắng không phép: vui lòng tải lên ít nhất 1 ảnh minh chứng', en: 'Unexcused absence: please upload at least 1 proof image' },
+  'excused.title': { vi: 'Dặn dò & bài tập cho buổi vắng có phép (không bắt buộc)', en: 'Advice & homework for an excused absence (optional)' },
+  'excused.subtitle': { vi: 'Buổi vắng có phép không tính phút. Nếu có giao bài tập hoặc dặn dò, hãy ghi tại đây để giáo vụ duyệt, phụ huynh xem được và nút Copy gửi đầy đủ.', en: 'An excused absence is not paid. If you assign homework or leave advice, write it here so admins, parents and the Copy button can see it.' },
+  'excused.advice_label': { vi: 'Dặn dò cho học viên & phụ huynh', en: 'Advice for the student & parents' },
+  'excused.advice_placeholder': { vi: 'VD: Con nghỉ có phép hôm nay. Nhờ phụ huynh nhắc con ôn lại Unit 3 và làm bài tập bên dưới trước buổi sau.', en: 'E.g., The student was excused today. Please remind them to review Unit 3 and complete the homework below before the next session.' },
+  'excused.homework_label': { vi: 'Bài tập về nhà', en: 'Homework' },
+  'excused.homework_hint': { vi: 'Chọn tối đa 2 loại bài tập và ghi rõ nội dung. Bỏ trống nếu không giao bài.', en: 'Choose up to 2 homework types and describe them. Leave empty if no homework.' },
 
   // LessonHistoryPage
   'history.title': { vi: 'Lịch sử buổi dạy', en: 'Lesson history' },

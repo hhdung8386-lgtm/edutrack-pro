@@ -1254,6 +1254,8 @@ export {
   publishClassHunt,
   listClassHunts,
   cancelClassHunt,
+  archiveClassHunt,
+  updateClassHunt,
   claimClassHunt,
   markTeacherNotificationsRead,
 } from './classHuntingFunctions'

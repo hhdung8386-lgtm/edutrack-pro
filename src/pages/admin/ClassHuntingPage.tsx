@@ -6,15 +6,19 @@ import {
   Check,
   CheckCircle2,
   NotebookPen,
+  Pencil,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Target,
+  Trash2,
   UserCheck,
   XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { useAuthStore } from '@/stores/authStore'
@@ -23,7 +27,9 @@ import { db } from '@/lib/firebase'
 import { isGroupClass } from '@/lib/groupClasses'
 import {
   CLASS_HUNT_NOTE_MAX_LENGTH,
+  archiveClassHunt,
   cancelClassHunt,
+  updateClassHunt,
   classHuntAffordableSessions,
   classHuntErrorReason,
   listAdminClassHunts,
@@ -159,6 +165,13 @@ export function ClassHuntingPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [cancelTarget, setCancelTarget] = useState<ClassHunt | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [archiveTarget, setArchiveTarget] = useState<ClassHunt | null>(null)
+  const [archiving, setArchiving] = useState(false)
+  const [editTarget, setEditTarget] = useState<ClassHunt | null>(null)
+  const [editNote, setEditNote] = useState('')
+  const [editTypes, setEditTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
+  const [editGender, setEditGender] = useState<ClassHuntTeacherGender>('any')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const lookupRequestRef = useRef(0)
   const publishRequestIdsRef = useRef<Record<string, string>>({})
@@ -274,7 +287,7 @@ export function ClassHuntingPage() {
     return list
   }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, teacherTypes.length, weeklySlots.length])
 
-  const selectStudent = async (student: Student | null) => {
+  const selectStudent = async (student: Student | null, preferredSubjectId?: string) => {
     const requestId = lookupRequestRef.current + 1
     lookupRequestRef.current = requestId
     setSelectedStudentId(student?.id || '')
@@ -290,7 +303,8 @@ export function ClassHuntingPage() {
       if (requestId !== lookupRequestRef.current) return
       setLookup(result)
       const eligible = result.subjects.filter((subject) => subject.eligibleForHunt !== false)
-      if (eligible.length === 1) setSubjectId(eligible[0].id)
+      if (preferredSubjectId && eligible.some((subject) => subject.id === preferredSubjectId)) setSubjectId(preferredSubjectId)
+      else if (eligible.length === 1) setSubjectId(eligible[0].id)
       if (result.student?.eligibleForHunt === false) {
         toast.warning(result.warnings?.[0] || 'Học viên này chưa đủ điều kiện mở CLASS HUNTING.')
       }
@@ -402,6 +416,88 @@ export function ClassHuntingPage() {
     } finally {
       setCancelling(false)
     }
+  }
+
+  const openEdit = (hunt: ClassHunt) => {
+    setEditTarget(hunt)
+    setEditNote(hunt.note || '')
+    setEditTypes(hunt.teacherRequirements?.teacherTypes?.length ? [...hunt.teacherRequirements.teacherTypes] : [...CLASS_HUNT_TEACHER_TYPES])
+    setEditGender(hunt.teacherRequirements?.gender || 'any')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editTarget) return
+    if (editTypes.length === 0) {
+      toast.error('Chọn ít nhất một loại giáo viên.')
+      return
+    }
+    if (editNote.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH) {
+      toast.error(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
+      return
+    }
+    setSavingEdit(true)
+    try {
+      await updateClassHunt(editTarget.id, {
+        note: editNote.trim(),
+        teacherRequirements: {
+          teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => editTypes.includes(type)),
+          gender: editGender,
+        },
+      })
+      toast.success('Đã lưu ghi chú và yêu cầu giáo viên. Gia sư thấy nội dung mới khi danh sách làm mới.')
+      setEditTarget(null)
+      await loadHunts()
+    } catch (error) {
+      console.error('Update class hunt failed:', error)
+      toast.error(serverMessage(error, 'Chưa lưu được thay đổi. Yêu cầu có thể vừa được nhận hoặc đã đóng.'))
+      await loadHunts()
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleArchive = async () => {
+    if (!archiveTarget) return
+    setArchiving(true)
+    try {
+      await archiveClassHunt(archiveTarget.id)
+      toast.success('Đã xoá yêu cầu khỏi danh sách.')
+      setArchiveTarget(null)
+      await loadHunts()
+    } catch (error) {
+      console.error('Archive class hunt failed:', error)
+      toast.error(serverMessage(error, 'Chưa xoá được yêu cầu này. Danh sách đã được tải lại.'))
+      await loadHunts()
+    } finally {
+      setArchiving(false)
+    }
+  }
+
+  /** Refill the form from a cancelled/expired offer so the operator can adjust and publish again. */
+  const repostHunt = async (hunt: ClassHunt) => {
+    const student = students.find((item) => item.id === hunt.student?.id)
+      || students.find((item) => item.code === hunt.student?.code)
+    if (!student) {
+      toast.error('Học viên của yêu cầu này không còn là học viên 1 kèm 1 online đang học nên không đăng lại được.')
+      return
+    }
+    setStudentSearch(student.code)
+    setStartDate(todayInVietnam())
+    setWeeklySlots(hunt.weeklySlots ? sortClassHuntWeeklySlots(hunt.weeklySlots) : [])
+    if (hunt.sessionSelectionMode === 'specific') {
+      setSessionMode('specific')
+      setSessionCount(Math.max(1, Math.min(CLASS_HUNT_MAX_SESSIONS, hunt.sessionCount)))
+    } else {
+      setSessionMode('all_remaining')
+    }
+    setTeacherTypes(hunt.teacherRequirements?.teacherTypes?.length ? [...hunt.teacherRequirements.teacherTypes] : [...CLASS_HUNT_TEACHER_TYPES])
+    setGender(hunt.teacherRequirements?.gender || 'any')
+    setNote(hunt.note || '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    await selectStudent(student, hunt.subject.id)
+    toast.success(hunt.weeklySlots
+      ? 'Đã điền lại thông tin lớp. Kiểm tra ngày bắt đầu, slot học rồi bấm Đăng CLASS HUNTING.'
+      : 'Đã điền lại học viên, gói và yêu cầu. Yêu cầu cũ dùng lịch dạng cũ nên hãy chọn lại slot học.')
   }
 
   const filteredHunts = useMemo(
@@ -802,10 +898,28 @@ export function ClassHuntingPage() {
                       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-600"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />{formatSlots(hunt, true)}</p>
                     </div>
                     {hunt.status === 'open' && (
-                      <Button type="button" variant="danger" size="sm" onClick={() => setCancelTarget(hunt)} className="self-start whitespace-nowrap">
-                        <XCircle className="h-4 w-4" />
-                        Hủy yêu cầu
-                      </Button>
+                      <div className="flex flex-wrap gap-2 self-start lg:flex-col lg:items-stretch">
+                        <Button type="button" variant="outline" size="sm" onClick={() => openEdit(hunt)} className="whitespace-nowrap">
+                          <Pencil className="h-4 w-4" />
+                          Sửa
+                        </Button>
+                        <Button type="button" variant="danger" size="sm" onClick={() => setCancelTarget(hunt)} className="whitespace-nowrap">
+                          <XCircle className="h-4 w-4" />
+                          Hủy yêu cầu
+                        </Button>
+                      </div>
+                    )}
+                    {(hunt.status === 'cancelled' || hunt.status === 'expired') && (
+                      <div className="flex flex-wrap gap-2 self-start lg:flex-col lg:items-stretch">
+                        <Button type="button" variant="outline" size="sm" onClick={() => void repostHunt(hunt)} className="whitespace-nowrap">
+                          <RotateCcw className="h-4 w-4" />
+                          Đăng lại
+                        </Button>
+                        <Button type="button" variant="danger" size="sm" onClick={() => setArchiveTarget(hunt)} className="whitespace-nowrap">
+                          <Trash2 className="h-4 w-4" />
+                          Xoá
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </article>
@@ -864,6 +978,87 @@ export function ClassHuntingPage() {
         confirmVariant="danger"
         loading={cancelling}
       />
+      <ConfirmDialog
+        open={Boolean(archiveTarget)}
+        onClose={() => { if (!archiving) setArchiveTarget(null) }}
+        onConfirm={() => void handleArchive()}
+        title="Xoá yêu cầu khỏi danh sách?"
+        description={archiveTarget ? `${archiveTarget.student?.name || 'Học viên'} · ${archiveTarget.subject.name} · ${archiveTarget.status === 'cancelled' ? 'Đã hủy' : 'Đã hết hạn'}` : undefined}
+        consequence="Yêu cầu sẽ ẩn khỏi Danh sách yêu cầu. Không ảnh hưởng lịch học, kim cương hay gia sư; hệ thống vẫn lưu nhật ký để đối soát."
+        confirmLabel="Xoá"
+        confirmVariant="danger"
+        loading={archiving}
+      />
+      <Modal
+        open={Boolean(editTarget)}
+        onClose={() => { if (!savingEdit) setEditTarget(null) }}
+        title="Sửa yêu cầu CLASS HUNTING"
+        footer={(
+          <div className="grid grid-cols-2 gap-3">
+            <Button type="button" variant="outline" onClick={() => setEditTarget(null)} disabled={savingEdit}>Đóng</Button>
+            <Button type="button" onClick={() => void handleSaveEdit()} loading={savingEdit}>Lưu thay đổi</Button>
+          </div>
+        )}
+      >
+        {editTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              <strong className="text-slate-950">{editTarget.student?.name || 'Học viên'}</strong> · {editTarget.subject.name} · {editTarget.sessionCount} buổi
+            </p>
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+              Lớp đang mở chỉ sửa được ghi chú và yêu cầu giáo viên. Muốn đổi lịch học hoặc số buổi: bấm Hủy yêu cầu, sau đó bấm Đăng lại.
+            </p>
+            <label className="block">
+              <span className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                  <NotebookPen className="h-3.5 w-3.5 text-rose-600" />
+                  Ghi chú cho gia sư
+                </span>
+                <span className={`text-[11px] tabular-nums ${editNote.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH ? 'font-bold text-rose-600' : 'text-slate-400'}`}>
+                  {editNote.trim().length}/{CLASS_HUNT_NOTE_MAX_LENGTH}
+                </span>
+              </span>
+              <textarea
+                value={editNote}
+                onChange={(event) => setEditNote(event.target.value)}
+                rows={3}
+                maxLength={CLASS_HUNT_NOTE_MAX_LENGTH + 50}
+                className={`${FIELD} min-h-[5.5rem] resize-y py-2.5 leading-6`}
+                placeholder="VD: Môn Toán lớp 5, bé hỏng kiến thức phần phân số, cần giáo viên kiên nhẫn."
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <fieldset>
+                <legend className="mb-2 text-xs font-bold text-slate-700">Loại giáo viên</legend>
+                <div className="space-y-2">
+                  {CLASS_HUNT_TEACHER_TYPES.map((type) => (
+                    <label key={type} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={editTypes.includes(type)}
+                        onChange={() => setEditTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])}
+                        className="h-4 w-4 accent-blue-700"
+                      />
+                      {CLASS_HUNT_TEACHER_TYPE_LABELS[type]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend className="mb-2 text-xs font-bold text-slate-700">Giới tính</legend>
+                <div className="space-y-2">
+                  {(['any', 'female', 'male'] as ClassHuntTeacherGender[]).map((value) => (
+                    <label key={value} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-slate-800">
+                      <input type="radio" name="class-hunt-edit-gender" checked={editGender === value} onChange={() => setEditGender(value)} className="h-4 w-4 accent-blue-700" />
+                      {CLASS_HUNT_GENDER_LABELS[value]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

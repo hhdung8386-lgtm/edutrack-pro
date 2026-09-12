@@ -213,6 +213,8 @@ const previewCallable = httpsCallable<ClassHuntLookupInput | ClassHuntDraftInput
 const publishCallable = httpsCallable<ClassHuntPublishInput, unknown>(functions, 'publishClassHunt')
 const listCallable = httpsCallable<{ scope: 'admin' | 'teacher'; status?: ClassHuntStatus }, unknown>(functions, 'listClassHunts')
 const cancelCallable = httpsCallable<{ huntId: string }, unknown>(functions, 'cancelClassHunt')
+const archiveCallable = httpsCallable<{ huntId: string }, unknown>(functions, 'archiveClassHunt')
+const updateCallable = httpsCallable<{ huntId: string; note: string; teacherRequirements: ClassHuntTeacherRequirements }, unknown>(functions, 'updateClassHunt')
 const claimCallable = httpsCallable<{ huntId: string; clientRequestId: string }, unknown>(functions, 'claimClassHunt')
 const markTeacherNotificationsReadCallable = httpsCallable<{ notificationIds: string[] }, unknown>(
   functions,
@@ -556,6 +558,23 @@ export async function listTeacherClassHunts(): Promise<TeacherClassHuntFeed> {
 
 export async function cancelClassHunt(huntId: string): Promise<ClassHunt> {
   const result = await cancelCallable({ huntId })
+  const root = asRecord(result.data)
+  return huntFrom(root.hunt ?? result.data)
+}
+
+/** Hide a cancelled/expired offer from the operator list (soft delete). */
+export async function archiveClassHunt(huntId: string): Promise<ClassHunt> {
+  const result = await archiveCallable({ huntId })
+  const root = asRecord(result.data)
+  return huntFrom(root.hunt ?? result.data)
+}
+
+/** Edit an open offer's note and teacher requirement; schedule and pay stay locked. */
+export async function updateClassHunt(
+  huntId: string,
+  changes: { note: string; teacherRequirements: ClassHuntTeacherRequirements },
+): Promise<ClassHunt> {
+  const result = await updateCallable({ huntId, note: changes.note, teacherRequirements: changes.teacherRequirements })
   const root = asRecord(result.data)
   return huntFrom(root.hunt ?? result.data)
 }

@@ -77,6 +77,33 @@ export function composeAbsenceHomeworkText(d: AbsenceReportDraft): string {
   return composeHomeworkText(d.homeworkItems)
 }
 
+/**
+ * Vắng CÓ PHÉP (0 phút, không tính tiền): dặn dò + bài tập là TUỲ CHỌN.
+ * Chỉ chặn khi vượt giới hạn độ dài/số loại — bỏ trống vẫn gửi được như trước.
+ */
+export function validateExcusedAbsenceNote(d: AbsenceReportDraft): string | null {
+  if (d.advice.length > MAX_ABSENCE_ADVICE_CHARS) return 'absence.err_advice_long'
+  const homework = normalizeHomeworkItems(d.homeworkItems)
+  if (homework.length > MAX_HOMEWORK_TYPES) return 'report.err_homework_max'
+  if (homework.some((item) => item.content.length > MAX_HOMEWORK_CONTENT_CHARS)) return 'report.err_homework_long'
+  return null
+}
+
+/** `comment` cho buổi vắng có phép: rỗng khi gia sư không dặn dò (giữ nguyên hiển thị cũ). */
+export function composeExcusedAbsenceComment(d: AbsenceReportDraft): string {
+  const advice = d.advice.trim()
+  return advice ? `📌 Dặn dò của gia sư: ${advice}` : ''
+}
+
+/** Field có cấu trúc cho buổi vắng có phép — chỉ ghi absenceReport khi thật sự có dặn dò. */
+export function excusedAbsenceFields(d: AbsenceReportDraft) {
+  const advice = d.advice.trim()
+  return {
+    homeworkItems: normalizeHomeworkItems(d.homeworkItems),
+    ...(advice ? { absenceReport: { advice } } : {}),
+  }
+}
+
 /** Các field có cấu trúc để lưu kèm lesson (không chứa undefined — an toàn cho Firestore). */
 export function absenceReportFields(d: AbsenceReportDraft) {
   return {

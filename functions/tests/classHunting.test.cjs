@@ -703,6 +703,14 @@ test('CLASS HUNTING operator note is normalized, fingerprinted only when present
   assert.equal(classHuntPublishRetryMatches(retry, { ...stored, note: 'Toán lớp 5' }), false)
 })
 
+test('CLASS HUNTING only hides offers nobody can claim any more', () => {
+  const { classHuntArchiveDecision } = require('../lib/classHunting.js')
+  assert.equal(classHuntArchiveDecision('cancelled'), 'archivable')
+  assert.equal(classHuntArchiveDecision('expired'), 'archivable')
+  assert.equal(classHuntArchiveDecision('open'), 'open')
+  assert.equal(classHuntArchiveDecision('claimed'), 'claimed')
+})
+
 test('CLASS HUNTING teacher requirements narrow only who can claim, never who can see', () => {
   const {
     classHuntTeacherAudience,

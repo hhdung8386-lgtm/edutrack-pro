@@ -68,7 +68,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
   const initialSubject = studentSubjects.find((subject) => subject.subjectId === initialSubjectId) || studentSubjects[0]
   const nextPaymentNumber = (initialSubject?.batches || []).filter((batch) => batch.kind !== 'gift').length + 1
 
-  const { register, control, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormInput, unknown, FormData>({
+  const { register, control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormInput, unknown, FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       subjectId: initialSubject?.subjectId || '',
@@ -216,6 +216,37 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
             <Input type="number" min={1} error={errors.diamonds?.message} {...register('diamonds')} />
             <p className="mt-2 text-xs text-slate-500">Quỹ thực tế dùng để đặt và duyệt buổi.</p>
           </div>
+        </div>
+
+        {/* Kim cương bị trừ theo đơn giá của gia sư dạy, không theo số phút: gói cho
+            gia sư 35 KC/25 phút cần nhiều kim cương hơn số phút. Nút chỉ điền giúp. */}
+        <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+          <p className="text-sm font-extrabold text-slate-900">Quy đổi kim cương theo đơn giá gia sư</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            Mỗi buổi 25 phút trừ kim cương theo đơn giá của gia sư dạy (gia sư Việt Nam/Philippines thường 25 KC, gia sư Nam Phi 35 KC). Bấm để tính kim cương từ số phút đã nhập.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[25, 35].map((rate) => {
+              const converted = Math.round((minutesToAdd * rate) / 25)
+              return (
+                <button
+                  key={rate}
+                  type="button"
+                  onClick={() => setValue('diamonds', converted, { shouldValidate: true, shouldDirty: true })}
+                  disabled={minutesToAdd <= 0}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-800 transition hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <DiamondPointsIcon className="h-3.5 w-3.5" />
+                  {rate} KC / 25 phút: {converted.toLocaleString('vi-VN')} KC
+                </button>
+              )
+            })}
+          </div>
+          {minutesToAdd > 0 && diamondsToAdd > 0 && (
+            <p className="mt-2 text-xs font-semibold text-slate-600">
+              Đợt này đang tương đương <strong className="text-slate-900">{(Math.round((diamondsToAdd / minutesToAdd) * 25 * 10) / 10).toLocaleString('vi-VN')} KC / 25 phút</strong>.
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-[1fr_190px]">
