@@ -28,6 +28,8 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
+import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { calculateSalary, db } from '@/lib/firebase'
@@ -362,6 +364,7 @@ export function TeacherClassHuntingPage() {
   }, [claimedHunts, takenHunts])
   const takenIds = useMemo(() => new Set(takenList.map((hunt) => hunt.id)), [takenList])
   const openHunts = useMemo(() => hunts.filter((hunt) => !takenIds.has(hunt.id)), [hunts, takenIds])
+  const subjectNotes = useSubjectTeacherNotes(openHunts.map((hunt) => hunt.subject.id))
 
   const monthKeys = useMemo(() => Array.from(new Set([...openHunts, ...takenList].map(monthKeyOf)))
     .sort((left, right) => {
@@ -560,6 +563,7 @@ export function TeacherClassHuntingPage() {
                               </span>
                             </div>
                             <h3 className="mt-3 break-words text-xl font-black text-slate-950 sm:text-2xl">{hunt.subject.name}</h3>
+                            <SubjectTeacherNote note={subjectNotes[hunt.subject.id]} className="mt-2" />
                             <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
                               <span className="inline-flex items-center gap-1.5"><Monitor className="h-4 w-4 text-slate-500" />Online</span>
                               <span className="text-slate-300" aria-hidden="true">•</span>

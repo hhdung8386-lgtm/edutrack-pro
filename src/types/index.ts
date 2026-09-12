@@ -213,6 +213,8 @@ export interface Subject {
   status: 'active' | 'inactive'
   createdAt: Timestamp
   currency?: string
+  /** Chú thích môn do admin nhập, hiển thị cho gia sư; môn cũ không có field này. */
+  teacherNote?: string
   /** Soft delete: giữ document làm tombstone để mọi dữ liệu lịch sử còn đọc được. */
   isDeleted?: boolean
   deletedAt?: Timestamp

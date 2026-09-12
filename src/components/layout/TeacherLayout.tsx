@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { Suspense, useEffect, useState } from 'react'
 import { missingTeacherFields, REQUIRED_TEACHER_FIELDS } from '@/lib/teacherProfile'
-import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole, Target, Trophy, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { PenLine, History, User, LogOut, FileText, Globe, CalendarClock, ClipboardCheck, CalendarRange, CircleAlert, ArrowRight, CheckCircle2, Megaphone, Copy, X, ExternalLink, LockKeyhole, Target, Trophy, PanelLeftClose, PanelLeft, LayoutGrid } from 'lucide-react'
 import { doc, collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore'
 import { BookingRequest } from '@/types'
 import { signOut } from '@/lib/auth'
@@ -47,6 +47,10 @@ export function TeacherLayout() {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('teacher_sidebar_collapsed') === 'true'
   })
+  // Lưu đường dẫn lúc mở menu "Thêm": chuyển sang trang khác thì menu tự đóng.
+  const [mobileMenuPath, setMobileMenuPath] = useState<string | null>(null)
+  const isMobileMenuOpen = mobileMenuPath === location.pathname
+  const setIsMobileMenuOpen = (open: boolean) => setMobileMenuPath(open ? location.pathname : null)
   const { enabled: teacherAttendanceEnabled, loading: loadingAttendanceFeature } = useTeacherAttendanceAccess(teacherId)
   
   // Real-time clock and timezone states
@@ -120,7 +124,6 @@ export function TeacherLayout() {
   useEffect(() => {
     window.localStorage.setItem('teacher_sidebar_collapsed', String(isSidebarCollapsed))
   }, [isSidebarCollapsed])
-
   // Clock tick interval
   useEffect(() => {
     const timer = setInterval(() => {
@@ -436,6 +439,60 @@ export function TeacherLayout() {
         </div>
       </main>
 
+      {/* Menu "Thêm" trên mobile: đủ mọi mục như sidebar desktop (Lịch rảnh, Đánh giá, Lịch sử, Hợp đồng...) */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={lang === 'vi' ? 'Tất cả chức năng' : 'All features'}>
+          <button
+            type="button"
+            className="absolute inset-0 h-full w-full bg-slate-900/40"
+            onClick={() => setIsMobileMenuOpen(false)}
+            aria-label={lang === 'vi' ? 'Đóng menu' : 'Close menu'}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white px-4 pt-3 shadow-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-200" aria-hidden="true" />
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-base font-black text-slate-900">{lang === 'vi' ? 'Tất cả chức năng' : 'All features'}</p>
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+                aria-label={lang === 'vi' ? 'Đóng menu' : 'Close menu'}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {navGroups.map((group) => (
+                <section key={group.title.vi}>
+                  <p className="mb-1.5 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{group.title[lang === 'vi' ? 'vi' : 'en']}</p>
+                  <div className="grid gap-1.5">
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={({ isActive }) =>
+                          `flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold transition ${isActive ? 'bg-brand-100 text-brand-800' : 'bg-slate-50 text-slate-700 active:bg-slate-100'}`
+                        }
+                      >
+                        <item.icon className="h-5 w-5 shrink-0" />
+                        <span className="min-w-0 flex-1 break-words leading-snug">{t(item.labelKey)}</span>
+                        {item.locked && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                            {lang === 'vi' ? 'Khóa' : 'Locked'}
+                          </span>
+                        )}
+                        {!!item.badge && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{item.badge}</span>}
+                      </NavLink>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile bottom nav — nhãn rút gọn 1 dòng, không để chữ dài xuống hàng làm lệch thanh */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-flow-col auto-cols-fr h-14">
@@ -452,7 +509,8 @@ export function TeacherLayout() {
                 <>
                   <item.icon className={`w-5 h-5 ${isActive ? 'text-brand-600' : ''}`} />
                   {!!item.badge && <span className="absolute right-1 top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{item.badge}</span>}
-                  <span className="max-w-full truncate px-0.5 leading-none">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
+                  {/* 7 ô trên máy 360px: bỏ padding + chữ khít nhẹ để "Điểm danh" không bị cắt. */}
+                  <span className="max-w-full truncate leading-none tracking-[-0.02em]">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
                   {isActive && (
                     <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-500 rounded-full" />
                   )}
@@ -460,6 +518,16 @@ export function TeacherLayout() {
               )}
             </NavLink>
           ))}
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={isMobileMenuOpen}
+            className={`min-w-0 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium relative whitespace-nowrap ${isMobileMenuOpen ? 'text-brand-700' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <LayoutGrid className={`w-5 h-5 ${isMobileMenuOpen ? 'text-brand-600' : ''}`} />
+            <span className="max-w-full truncate leading-none tracking-[-0.02em]">{lang === 'vi' ? 'Thêm' : 'More'}</span>
+          </button>
         </div>
       </nav>
 

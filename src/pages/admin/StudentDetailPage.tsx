@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { courseDeletionBlock, courseDeletionBlockMessage, studentFieldsAfterCourseRemoval } from '@/lib/courseDeletion'
 import { getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
@@ -123,6 +124,7 @@ export function StudentDetailPage() {
   const [reconciling, setReconciling] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [actioning, setActioning] = useState(false)
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
   const [cancellingSpecific, setCancellingSpecific] = useState(false)
 
@@ -803,48 +805,89 @@ export function StudentDetailPage() {
     }
   }
 
+  const courseDeleteBlockFor = (subjectId: string) => courseDeletionBlock(
+    subjectId,
+    lessons,
+    // Hồ sơ chỉ còn một khóa: ca mang mã môn cũ cũng đang giữ quỹ của khóa đó.
+    storedSubjects.length === 1
+      ? heldBookings.map((booking) => (activeSubjectIds.has(booking.subjectId || '') ? booking : { ...booking, subjectId }))
+      : heldBookings,
+  )
+
   const handleDeleteSubject = async (subjectId: string) => {
     if (!student) return
-    const hasHistory = lessons.some((l) => l.subjectId === subjectId)
-    if (hasHistory) {
-      toast.error('Không thể xóa môn học đã có lịch sử học')
+    const block = courseDeleteBlockFor(subjectId)
+    if (block) {
+      toast.error(courseDeletionBlockMessage(block))
+      return
+    }
+    setDeletingCourseId(subjectId)
+  }
+
+  const confirmDeleteCourse = async () => {
+    if (!student || !deletingCourseId) return
+    const subjectId = deletingCourseId
+    const block = courseDeleteBlockFor(subjectId)
+    if (block) {
+      toast.error(courseDeletionBlockMessage(block))
+      setDeletingCourseId(null)
       return
     }
 
-    if (!confirm('Bạn có chắc chắn muốn xóa môn học này?')) return
-
     setActioning(true)
     try {
-      const updatedSubjects = (student.subjects || []).filter(s => s.subjectId !== subjectId)
-      
-      // Recalculate aggregates
-      const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
-      const aggUsedSessions = updatedSubjects.reduce((sum, s) => sum + s.usedSessions, 0)
-      const aggRemainingSessions = updatedSubjects.reduce((sum, s) => sum + s.remainingSessions, 0)
-      const aggTotalMinutes = updatedSubjects.reduce((sum, s) => sum + s.totalMinutes, 0)
-      const aggUsedMinutes = updatedSubjects.reduce((sum, sumS) => sum + sumS.usedMinutes, 0)
-      const aggRemainingMinutes = updatedSubjects.reduce((sum, sumS) => sum + sumS.remainingMinutes, 0)
+      const studentRef = doc(db, 'students', student.id)
+      const logRef = doc(collection(db, 'adminLogs'))
+      // Đọc lại hồ sơ trong transaction để không ghi đè khóa học hoặc số dư
+      // vừa được người khác cập nhật sau khi trang được mở.
+      const removedName = await runTransaction(db, async (tx) => {
+        const snapshot = await tx.get(studentRef)
+        if (!snapshot.exists()) throw new Error('STUDENT_NOT_FOUND')
+        const fresh = snapshot.data() as Student
+        const freshSubjects = fresh.subjects || []
+        const removed = freshSubjects.find((subject) => subject.subjectId === subjectId)
+        if (!removed) throw new Error('COURSE_ALREADY_REMOVED')
 
-      const primarySubject = updatedSubjects[0] || null
-
-      await updateDoc(doc(db, 'students', student.id), {
-        subjects: updatedSubjects,
-        totalSessions: aggTotalSessions,
-        usedSessions: aggUsedSessions,
-        remainingSessions: aggRemainingSessions,
-        totalMinutes: aggTotalMinutes,
-        usedMinutes: aggUsedMinutes,
-        remainingMinutes: aggRemainingMinutes,
-        subjectId: primarySubject ? primarySubject.subjectId : '',
-        subjectName: primarySubject ? primarySubject.subjectName : '',
-        minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 50,
-        status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
-        updatedAt: serverTimestamp(),
+        const next = studentFieldsAfterCourseRemoval(freshSubjects, subjectId, fresh.status)
+        tx.update(studentRef, { ...next, updatedAt: serverTimestamp() })
+        tx.set(logRef, {
+          adminId: user?.uid || '',
+          action: 'DELETE_STUDENT_COURSE',
+          targetType: 'student',
+          targetId: student.id,
+          changes: {
+            // Bản chụp đầy đủ để khôi phục thủ công nếu xóa nhầm.
+            removedCourse: removed,
+            previous: {
+              totalMinutes: fresh.totalMinutes ?? null,
+              usedMinutes: fresh.usedMinutes ?? null,
+              remainingMinutes: fresh.remainingMinutes ?? null,
+              subjectId: fresh.subjectId || '',
+              status: fresh.status || '',
+            },
+            next: {
+              totalMinutes: next.totalMinutes,
+              usedMinutes: next.usedMinutes,
+              remainingMinutes: next.remainingMinutes,
+              subjectId: next.subjectId,
+              status: next.status,
+            },
+            nonCountingLessons: lessons.filter((lesson) => lesson.subjectId === subjectId).length,
+          },
+          createdAt: serverTimestamp(),
+        })
+        return removed.subjectName || 'khóa học'
       })
-      toast.success('Đã xóa môn học thành công')
+      toast.success(`Đã xóa ${removedName} khỏi hồ sơ học viên`)
+      setDeletingCourseId(null)
     } catch (err) {
       console.error(err)
-      toast.error('Xóa môn học thất bại')
+      if (err instanceof Error && err.message === 'COURSE_ALREADY_REMOVED') {
+        toast.info('Khóa học này đã được xóa trước đó')
+        setDeletingCourseId(null)
+      } else {
+        toast.error('Xóa khóa học thất bại; dữ liệu hiện tại chưa bị thay đổi')
+      }
     } finally {
       setActioning(false)
     }
@@ -1521,7 +1564,8 @@ export function StudentDetailPage() {
             const pkgPct = pkg.totalMinutes > 0
               ? Math.min(100, Math.round((pkg.usedMinutes / pkg.totalMinutes) * 100))
               : 0;
-            const hasHistory = lessons.some(l => l.subjectId === pkg.subjectId);
+            const deleteBlock = courseDeleteBlockFor(pkg.subjectId);
+            const hasHistory = deleteBlock !== null;
             const isExpanded = expandedSubjectId === pkg.subjectId;
             const studentCreatedAtFallback = student?.createdAt
               ? new Date((student.createdAt as any).seconds * 1000).toLocaleDateString('vi-VN')
@@ -2121,6 +2165,36 @@ export function StudentDetailPage() {
           }}
         />
       )}
+
+      {/* Delete course confirm */}
+      {deletingCourseId && (() => {
+        const course = activeSubjects.find((subject) => subject.subjectId === deletingCourseId)
+        return (
+          <ConfirmDialog
+            open
+            onClose={() => setDeletingCourseId(null)}
+            onConfirm={confirmDeleteCourse}
+            title={`Xóa khóa học "${course?.subjectName || 'này'}" khỏi hồ sơ?`}
+            confirmLabel="Xóa khóa học"
+            confirmVariant="danger"
+            loading={actioning}
+          >
+            <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-600">Quyền học đăng ký</span>
+                <span className="font-semibold tabular-nums text-slate-800">{Math.round(Number(course?.totalMinutes || 0)).toLocaleString('vi-VN')} kim cương</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-600">Kim cương còn lại sẽ gỡ khỏi hồ sơ</span>
+                <span className="font-bold tabular-nums text-rose-700">− {Math.round(Number(course?.remainingMinutes || 0)).toLocaleString('vi-VN')}</span>
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Chỉ gỡ khóa học khỏi hồ sơ học viên; buổi học bị từ chối, lịch sử đặt lịch và lương cũ vẫn được giữ. Bản chụp khóa học được ghi vào nhật ký quản trị để có thể khôi phục nếu xóa nhầm.
+            </p>
+          </ConfirmDialog>
+        )
+      })()}
 
       {/* Reverse approval confirm */}
       {reversingLesson && (

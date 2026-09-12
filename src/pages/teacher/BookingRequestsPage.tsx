@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { respondToBookingRequest } from '@/lib/teacherBookingActions'
+import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
+import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
 
 type TeacherResponseFilter = 'pending' | 'accepted' | 'declined' | 'all'
 
@@ -86,6 +88,7 @@ export function TeacherBookingRequestsPage() {
       return matchesFilter && (!keyword || haystack.includes(keyword))
     })
   }, [requests, filter, search])
+  const subjectNotes = useSubjectTeacherNotes(filtered.map((request) => request.subjectId))
 
   const respond = async (request: BookingRequest, response: 'accepted' | 'declined') => {
     if (!teacherId || request.teacherId !== teacherId || request.status !== 'pending') return
@@ -161,6 +164,9 @@ export function TeacherBookingRequestsPage() {
                         <p className="mt-0.5 font-mono text-xs font-bold text-indigo-500">{request.studentCode}</p>
                         <p className="mt-2 text-sm font-semibold text-slate-700">{request.subjectName || (lang === 'vi' ? 'Chưa xếp môn học' : 'Subject not assigned')}</p>
                       </div>
+                    </div>
+                    <div>
+                      <SubjectTeacherNote note={subjectNotes[request.subjectId || '']} lang={lang} className="mt-3" />
                     </div>
                     <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
                       <span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-sky-600" />{dayLabel}{request.requestedDate ? ` ${request.requestedDate}` : ''}, {request.requestedStart}-{request.requestedEnd} ({request.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})</span>

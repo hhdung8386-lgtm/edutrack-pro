@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
+import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
+import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { getVietnamDateISO } from '@/lib/constants'
 import { getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
@@ -242,6 +244,7 @@ export function BookingSchedulesPage() {
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [showBatchPickerModal, setShowBatchPickerModal] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<TeacherBookingView | null>(null)
+  const selectedSubjectNotes = useSubjectTeacherNotes([selectedBooking?.subjectId])
   const [selectedBatchBookingIds, setSelectedBatchBookingIds] = useState<string[]>([])
 
   // Attendance Form States
@@ -1380,6 +1383,7 @@ export function BookingSchedulesPage() {
                   </span>
                 </div>
               </div>
+              <SubjectTeacherNote note={selectedSubjectNotes[selectedBooking.subjectId || '']} lang={lang} />
 
               {/* Classroom URL & Curriculum Link display */}
               {(() => {
@@ -1532,6 +1536,7 @@ export function BookingSchedulesPage() {
                 </span>
               </div>
             </div>
+            <SubjectTeacherNote note={selectedSubjectNotes[selectedBooking.subjectId || '']} lang={lang} />
 
             {attendanceStatus === 'present' && batchBookingCandidates.length > 1 && (
               <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">

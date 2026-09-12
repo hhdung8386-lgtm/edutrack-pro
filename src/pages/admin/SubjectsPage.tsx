@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { collection, addDoc, updateDoc, deleteField, doc, onSnapshot, query, orderBy, serverTimestamp, where, getDocs, runTransaction } from 'firebase/firestore'
@@ -20,41 +20,13 @@ import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isDeletedSubject, isVisibleSubject } from '@/lib/subjectLifecycle'
 import { sortSubjectsByName, SubjectSortDirection } from '@/lib/subjectSorting'
 import { syncSubjectNameReferences } from '@/lib/subjectNameSync'
-
-function parseCurrencyInput(str: string, currency: string): number {
-  if (!str.trim()) return 0
-  const curr = (currency || 'VND').toUpperCase()
-  let clean = str.trim().replace(/\s+/g, '')
-
-  if (curr === 'VND') {
-    // VND mới chỉ nhận số nguyên và khoảng trắng. Vẫn đọc được dữ liệu nhập kiểu
-    // cũ 2.500 / 2,500, nhưng từ chối 833.33 để không vô tình lưu thành 83 333.
-    if (/^\d+$/.test(clean)) return Number(clean)
-    if (/^\d{1,3}(?:[.,]\d{3})+$/.test(clean)) return Number(clean.replace(/[.,]/g, ''))
-    return Number.NaN
-  }
-
-  // Ngoại tệ: khoảng trắng nhóm hàng nghìn, dấu chấm là phần thập phân.
-  // Chấp nhận dấu phẩy cũ chỉ khi rõ ràng là nhóm hàng nghìn.
-  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(clean)) clean = clean.replace(/,/g, '')
-  else if (clean.includes(',')) return Number.NaN
-  if (!/^\d+(?:\.\d+)?$/.test(clean)) return Number.NaN
-  return Number(clean)
-}
-
-function formatVietnameseNumberInput(val: number): string {
-  if (val === undefined || val === null || isNaN(val)) return ''
-  const parts = val.toString().split('.')
-  const integerPart = Number(parts[0]).toLocaleString('en-US').replace(/,/g, ' ')
-  if (parts.length > 1) {
-    return `${integerPart}.${parts[1]}`
-  }
-  return integerPart
-}
+import { formatSubjectPriceInput, parseSubjectPriceInput } from '@/lib/subjectPriceInput'
+import { normalizeSubjectTeacherNote, SUBJECT_TEACHER_NOTE_MAX_LENGTH } from '@/lib/subjectTeacherNote'
 
 const schema = z.object({
   name: z.string().min(2, 'Tên tối thiểu 2 ký tự'),
   status: z.enum(['active', 'inactive']),
+  teacherNote: z.string().max(SUBJECT_TEACHER_NOTE_MAX_LENGTH, `Chú thích tối đa ${SUBJECT_TEACHER_NOTE_MAX_LENGTH} ký tự`),
 })
 type FormData = z.infer<typeof schema>
 
@@ -63,28 +35,34 @@ const CURRENCY_OPTIONS = ['VND', 'PHP', 'USD', 'JPY', 'KRW', 'GBP', 'CAD', 'AUD'
 function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => void }) {
   const isEdit = !!subject
   const initialRate = subject ? getCanonicalSubjectRate(subject) : { price: 2500, currency: 'VND' }
+  const initialPriceInput = formatSubjectPriceInput(initialRate.price)
   const [currency, setCurrency] = useState(initialRate.currency)
-  const [priceInput, setPriceInput] = useState(() => formatVietnameseNumberInput(initialRate.price))
+  const [priceInput, setPriceInput] = useState(initialPriceInput)
   const [isSyncingName, setIsSyncingName] = useState(false)
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: subject?.name || '',
       status: subject?.status || 'active',
+      teacherNote: normalizeSubjectTeacherNote(subject?.teacherNote),
     },
   })
+  const teacherNoteLength = (useWatch({ control, name: 'teacherNote' }) || '').length
 
   const onSubmit = async (data: FormData) => {
     let sourceWasUpdated = false
     try {
-      const pricePerMinute = parseCurrencyInput(priceInput, currency)
+      // Giá không bị sửa thì giữ nguyên giá trị đang lưu, kể cả dữ liệu cũ.
+      const priceUnchanged = isEdit && currency === initialRate.currency && priceInput.trim() === initialPriceInput
+      const pricePerMinute = priceUnchanged ? initialRate.price : parseSubjectPriceInput(priceInput, currency)
       if (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0) {
         toast.error(currency === 'VND'
-          ? 'VND chỉ nhận số nguyên; dùng khoảng trắng để tách hàng nghìn, ví dụ 2 500'
+          ? 'VND: nhập số nguyên hoặc tối đa 2 số lẻ sau dấu chấm, ví dụ 2 500 hoặc 833.33'
           : `${currency} dùng dấu chấm cho phần thập phân, ví dụ 5.15`)
         return
       }
+      const teacherNote = normalizeSubjectTeacherNote(data.teacherNote)
 
       if (isEdit && subject) {
         const normalizedName = data.name.trim()
@@ -94,6 +72,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
         const updatePayload = {
           ...data,
           name: normalizedName,
+          teacherNote: teacherNote || deleteField(),
           pricePerMinute,
           currency,
           // Khi Admin chủ động lưu môn học theo quy tắc mới, xóa cấu hình giá
@@ -144,7 +123,9 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
           : 'Đã cập nhật môn học; gói đã mua và lịch sử tài chính được giữ nguyên')
       } else {
         const addPayload = {
-          ...data,
+          name: data.name.trim(),
+          status: data.status,
+          ...(teacherNote ? { teacherNote } : {}),
           pricePerMinute,
           currency,
           createdAt: serverTimestamp()
@@ -241,7 +222,24 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
     >
       <form id="subject-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Input label="Tên môn học *" placeholder="Tiếng Anh" error={errors.name?.message} {...register('name')} />
-        
+
+        <div>
+          <label htmlFor="subject-teacher-note" className="mb-1.5 block text-sm font-medium text-slate-700">Chú thích môn học</label>
+          <textarea
+            id="subject-teacher-note"
+            rows={3}
+            maxLength={SUBJECT_TEACHER_NOTE_MAX_LENGTH}
+            placeholder="Ví dụ: Giáo trình Cambridge, trình độ A1, học viên cần luyện phát âm..."
+            className="w-full resize-y rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            {...register('teacherNote')}
+          />
+          <div className="mt-1 flex items-start justify-between gap-3 text-[11px] font-medium">
+            <span className="text-indigo-700">Gia sư sẽ thấy chú thích này ở lịch dạy, điểm danh, yêu cầu nhận lớp và Class Hunting.</span>
+            <span className="shrink-0 tabular-nums text-slate-400">{teacherNoteLength}/{SUBJECT_TEACHER_NOTE_MAX_LENGTH}</span>
+          </div>
+          {errors.teacherNote?.message && <p className="mt-1 text-xs text-rose-600">{errors.teacherNote.message}</p>}
+        </div>
+
         <div className="space-y-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">
           <div className="flex items-start gap-2">
             <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
@@ -278,7 +276,7 @@ function SubjectModal({ subject, onClose }: { subject?: Subject; onClose: () => 
               </div>
               <p className="mt-1.5 text-[11px] font-medium text-slate-500">
                 {currency === 'VND'
-                  ? 'VND: số nguyên, dùng khoảng trắng để tách hàng nghìn (2 500).'
+                  ? 'VND: dùng khoảng trắng để tách hàng nghìn (2 500); số lẻ tối đa 2 chữ số sau dấu chấm (833.33).'
                   : `${currency}: dùng khoảng trắng để tách hàng nghìn và dấu chấm cho phần thập phân (5.15).`}
               </p>
             </div>
@@ -531,7 +529,14 @@ export function SubjectsPage() {
             <tbody className="divide-y divide-slate-700/50">
               {filtered.map((subject) => (
                 <tr key={subject.id} className="hover:bg-slate-100/20 transition-colors">
-                  <td className="px-5 py-4 font-medium text-slate-700">{subject.name}</td>
+                  <td className="px-5 py-4">
+                    <p className="font-medium text-slate-700">{subject.name}</p>
+                    {normalizeSubjectTeacherNote(subject.teacherNote) && (
+                      <p className="mt-1 line-clamp-2 max-w-md whitespace-pre-line text-xs leading-5 text-indigo-700" title={normalizeSubjectTeacherNote(subject.teacherNote)}>
+                        {normalizeSubjectTeacherNote(subject.teacherNote)}
+                      </p>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">

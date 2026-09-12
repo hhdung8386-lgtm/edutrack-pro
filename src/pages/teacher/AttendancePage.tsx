@@ -28,6 +28,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { getVietnamDateISO, MINUTE_PRESETS } from '@/lib/constants'
 import { Search, X, Upload, AlertTriangle, CheckCircle, ExternalLink, CalendarX2 } from 'lucide-react'
+import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
+import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
 import { doc, getDoc } from 'firebase/firestore'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { calculateLessonPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
@@ -82,6 +84,7 @@ export function AttendancePage() {
   const [submitted, setSubmitted] = useState(false)
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'with_permission' | 'without_permission'>('present')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
+  const subjectNotes = useSubjectTeacherNotes([selectedSubjectId])
   const [report, setReport] = useState<LessonReportDraft>(emptyLessonReport())
   // Vắng KHÔNG PHÉP: bắt buộc dặn dò + bài tập + ảnh minh chứng mới gửi được
   const [absence, setAbsence] = useState<AbsenceReportDraft>(emptyAbsenceReport())
@@ -698,6 +701,7 @@ export function AttendancePage() {
                   <p className="text-sm font-semibold text-slate-700 mt-1">
                     Gói đang chọn: <span className="text-indigo-600">{selectedPkg?.subjectName || 'Chưa chọn'}</span>
                   </p>
+                  <SubjectTeacherNote note={subjectNotes[selectedPkg?.subjectId || '']} className="mt-2" />
                   {student.classroomURL && (
                     <div className="mt-3">
                       <a

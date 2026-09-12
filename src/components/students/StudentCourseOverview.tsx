@@ -22,6 +22,7 @@ import {
 import type { BookingRequest, Lesson, StudentSubject, TopUpBatch } from '@/types'
 import { getBookingPoints } from '@/lib/points'
 import { allocateApprovedLearningMinutes, courseLearnedDiamondPremium, courseRemainingMinutes } from '@/lib/courseProgress'
+import { courseDeletionBlock, courseDeletionBlockMessage, type CourseDeletionBlock } from '@/lib/courseDeletion'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -66,7 +67,8 @@ interface CourseRow {
   remainingDiamonds: number
   payments: CoursePaymentRow[]
   gifts: CoursePaymentRow[]
-  hasLessonHistory: boolean
+  /** Lý do chưa được xóa khóa học; null = được xóa. Buổi bị từ chối/huỷ không chặn. */
+  deleteBlock: CourseDeletionBlock | null
   completedAt: string
   isCompleted: boolean
 }
@@ -167,11 +169,14 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, o
   return (
     <Modal open onClose={onClose} size="xl" title="Chi tiết khóa học" footer={
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onEdit}><Pencil className="h-4 w-4" />Sửa khóa học</Button>
-          <Button variant="ghost" disabled={row.hasLessonHistory} title={row.hasLessonHistory ? 'Không thể xóa khóa học đã có lịch sử học' : 'Xóa khóa học'} onClick={onDelete}>
-            <Trash2 className="h-4 w-4 text-rose-500" />Xóa
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onEdit}><Pencil className="h-4 w-4" />Sửa khóa học</Button>
+            <Button variant="ghost" disabled={row.deleteBlock !== null} title={row.deleteBlock ? courseDeletionBlockMessage(row.deleteBlock) : 'Xóa khóa học'} onClick={onDelete}>
+              <Trash2 className="h-4 w-4 text-rose-500" />Xóa
+            </Button>
+          </div>
+          {row.deleteBlock && <p className="max-w-sm text-xs font-medium leading-5 text-slate-500">{courseDeletionBlockMessage(row.deleteBlock)}</p>}
         </div>
         <Button variant="outline" onClick={onClose}>Đóng</Button>
       </div>
@@ -372,7 +377,7 @@ export function StudentCourseOverview({
         remainingDiamonds,
         payments: payments.filter((payment) => payment.kind === 'payment'),
         gifts: payments.filter((payment) => payment.kind === 'gift'),
-        hasLessonHistory: lessons.some((lesson) => lesson.subjectId === subject.subjectId),
+        deleteBlock: courseDeletionBlock(subject.subjectId, lessons, subjectBookings),
         completedAt: subjectLessons[0]?.date || '—',
         isCompleted: Number(subject.remainingMinutes || 0) <= 0 && bookedDiamonds <= 0,
       }
@@ -522,7 +527,7 @@ export function StudentCourseOverview({
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-[11px] font-medium text-slate-500"><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-indigo-500" />Phút = thời lượng học thực tế</span><span className="inline-flex items-center gap-1.5"><DiamondPointsIcon className="h-3.5 w-3.5" />Kim cương = quỹ dùng để đặt và duyệt buổi</span></div>
 
-      {detailRow && <CourseDetailModal row={detailRow} onClose={() => setDetailSubjectId(null)} onEdit={() => { setDetailSubjectId(null); onEditSubject(detailRow.subject.subjectId) }} onEditEntry={(batchId) => { setDetailSubjectId(null); onEditEntry(detailRow.subject.subjectId, batchId) }} onDeleteEntry={(batchId) => { setDetailSubjectId(null); onDeleteEntry(detailRow.subject.subjectId, batchId) }} onDelete={async () => { await onDeleteSubject(detailRow.subject.subjectId) }} />}
+      {detailRow && <CourseDetailModal row={detailRow} onClose={() => setDetailSubjectId(null)} onEdit={() => { setDetailSubjectId(null); onEditSubject(detailRow.subject.subjectId) }} onEditEntry={(batchId) => { setDetailSubjectId(null); onEditEntry(detailRow.subject.subjectId, batchId) }} onDeleteEntry={(batchId) => { setDetailSubjectId(null); onDeleteEntry(detailRow.subject.subjectId, batchId) }} onDelete={async () => { setDetailSubjectId(null); await onDeleteSubject(detailRow.subject.subjectId) }} />}
     </section>
   )
 }
