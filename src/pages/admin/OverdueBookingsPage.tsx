@@ -19,6 +19,7 @@ import { getBookingPoints } from '@/lib/points'
 import { bookingHoldPoints } from '@/lib/lessonBooking'
 import { requiresIndividualSubjectReconciliation } from '@/lib/bookingLogic'
 import {
+  canManuallyReleaseDiagnosedOverdueBookingHold,
   canReleaseDiagnosedOverdueBookingHold,
   diagnoseOverdueBookings,
   type DiagnosedOverdueBooking,
@@ -340,7 +341,12 @@ export function OverdueBookingsPage() {
     const reconciliationBlocked = items.some((item) => (
       item.matchedLesson && requiresIndividualSubjectReconciliation(item.matchedLesson)
     ))
-    const safeItems = items.filter(canReleaseDiagnosedOverdueBookingHold)
+    // Bulk release stays fail-closed. The wider predicate is only valid for one
+    // row that a staff member has reviewed against the lessons shown on screen.
+    const safeItems = items.filter((item) => (
+      canReleaseDiagnosedOverdueBookingHold(item)
+      || (items.length === 1 && canManuallyReleaseDiagnosedOverdueBookingHold(item))
+    ))
     if (safeItems.length === 0) {
       toast.warning(reconciliationBlocked
         ? 'Buổi đối soát cần quản trị dữ liệu thủ công, chưa thay đổi gì.'
@@ -604,6 +610,11 @@ export function OverdueBookingsPage() {
   const selectedLinkable = selectedItems.filter((d) => (
     d.canLink && !requiresIndividualSubjectReconciliation(d.matchedLesson || {})
   ))
+  const isManualReviewRelease = Boolean(
+    confirmRelease?.length === 1
+    && !canReleaseDiagnosedOverdueBookingHold(confirmRelease[0])
+    && canManuallyReleaseDiagnosedOverdueBookingHold(confirmRelease[0]),
+  )
 
   return (
     <div className="space-y-5 pt-2 lg:pt-6">
@@ -875,14 +886,15 @@ export function OverdueBookingsPage() {
                               Buổi đối soát: xử lý thủ công
                             </span>
                           ) : null}
-                          {canReleaseDiagnosedOverdueBookingHold(d) && (
+                          {canManuallyReleaseDiagnosedOverdueBookingHold(d) && (
                             <button
                               type="button"
                               disabled={processing}
                               onClick={() => setConfirmRelease([d])}
                               className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
                             >
-                              <RotateCcw className="w-3 h-3" />Hoàn kim cương
+                              <RotateCcw className="w-3 h-3" />
+                              {canReleaseDiagnosedOverdueBookingHold(d) ? 'Hoàn kim cương' : 'Hủy ca đã đối chiếu'}
                             </button>
                           )}
                         </div>
@@ -909,14 +921,18 @@ export function OverdueBookingsPage() {
         open={!!confirmRelease}
         onClose={() => { if (!processing) setConfirmRelease(null) }}
         onConfirm={() => { if (confirmRelease) releaseHolds(confirmRelease) }}
-        title={`Hoàn kim cương giữ chỗ cho ${confirmRelease?.length ?? 0} ca học?`}
+        title={isManualReviewRelease
+          ? 'Hủy ca đã đối chiếu và nhả giữ chỗ?'
+          : `Hoàn kim cương giữ chỗ cho ${confirmRelease?.length ?? 0} ca học?`}
         description={
-          confirmRelease && confirmRelease.length === 1
+          isManualReviewRelease && confirmRelease
+            ? `Ca ngày ${confirmRelease[0].booking.requestedDate} của học viên ${confirmRelease[0].booking.studentName} có báo cáo cùng ngày nhưng không báo cáo nào còn chờ duyệt hoặc trỏ trực tiếp tới ca này. Chỉ xác nhận sau khi đã đối chiếu giờ học thực tế.`
+            : confirmRelease && confirmRelease.length === 1
             ? `Ca ngày ${confirmRelease[0].booking.requestedDate} của học viên ${confirmRelease[0].booking.studentName}. Chẩn đoán: ${DIAGNOSIS_META[confirmRelease[0].diagnosis].short}.`
             : `${confirmRelease?.length ?? 0} ca sẽ được huỷ giữ chỗ và hoàn ${(confirmRelease ?? []).reduce((s, d) => s + getBookingPoints(d.booking), 0).toLocaleString('vi-VN')} kim cương về quỹ khả dụng của các học viên tương ứng.`
         }
         consequence="Chỉ nhả phần giữ chỗ, không cộng khống buổi. Ca học sẽ được giải phóng khỏi lịch gia sư và ghi vào nhật ký admin."
-        confirmLabel="Xác nhận hoàn kim cương"
+        confirmLabel={isManualReviewRelease ? 'Xác nhận hủy ca' : 'Xác nhận hoàn kim cương'}
         confirmVariant="danger"
         loading={processing}
       />

@@ -69,6 +69,14 @@ test('manual release covers another tutor or a settled ambiguous same-tutor less
   assert.equal(ambiguousSettled.diagnosis, 'ambiguous_lesson')
   assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(ambiguousSettled), true)
 
+  const [ambiguousMixedSettled] = diagnoseOverdueBookings(
+    [booking()],
+    [lesson({ id: 'lesson-approved', minutes: 75 }), lesson({ id: 'lesson-rejected', status: 'rejected' })],
+    today,
+  )
+  assert.equal(ambiguousMixedSettled.diagnosis, 'ambiguous_lesson')
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(ambiguousMixedSettled), true)
+
   // A same-tutor lesson still waiting for approval may yet consume this booking.
   const [ambiguousPending] = diagnoseOverdueBookings([booking()], [lesson({ minutes: 50, status: 'pending' })], today)
   assert.equal(ambiguousPending.diagnosis, 'ambiguous_lesson')
@@ -178,6 +186,7 @@ test('never permits overdue-hold release from a reconciled attendance record', (
 
   assert.equal(result.diagnosis, 'rejected_lesson')
   assert.equal(canReleaseDiagnosedOverdueBookingHold(result), false)
+  assert.equal(canManuallyReleaseDiagnosedOverdueBookingHold(result), false)
 })
 
 test('fails closed when a same-teacher lesson has a different duration', () => {
