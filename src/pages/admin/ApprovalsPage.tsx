@@ -46,6 +46,7 @@ import {
   SubjectMismatchReconciliationPanel,
   type SubjectMismatchReconciliationState,
 } from '@/components/lessons/SubjectMismatchReconciliationPanel'
+import { HomeworkHtmlAttachmentButton } from '@/components/lessons/HomeworkHtmlAttachment'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -1045,6 +1046,13 @@ export function ApprovalsPage() {
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
                       <p className="break-words whitespace-pre-wrap text-sm text-slate-600 line-clamp-1">{lesson.homework}</p>
+                      {lesson.homeworkItems?.some((item) => item.htmlAttachment) && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {lesson.homeworkItems.map((item, index) => item.htmlAttachment && (
+                            <HomeworkHtmlAttachmentButton key={`${item.type}-${index}`} attachment={item.htmlAttachment} compact />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

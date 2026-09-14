@@ -51,6 +51,7 @@ import {
   getParentBookingState,
   parentBookingAccessErrorReason,
 } from '@/lib/parentBookingAccess'
+import { HomeworkHtmlAttachmentButton } from '@/components/lessons/HomeworkHtmlAttachment'
 
 const STORAGE_KEY = '123english_parent_session'
 
@@ -2859,6 +2860,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                           {(lang === 'vi' ? HOMEWORK_TYPE_LABELS_VI : HOMEWORK_TYPE_LABELS_EN)[item.type]}
                         </p>
                         <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">{cleanLessonText(item.content)}</p>
+                        {item.htmlAttachment && (
+                          <div className="mt-2">
+                            <HomeworkHtmlAttachmentButton attachment={item.htmlAttachment} />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

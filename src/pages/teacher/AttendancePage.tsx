@@ -39,6 +39,7 @@ import {
   classHuntCompensationFromBookings,
   classHuntCompensationLegacyFields,
 } from '@/lib/classHuntCompensation'
+import { homeworkHtmlErrorMessage, prepareHomeworkItemsForSubmission } from '@/lib/homeworkHtml'
 
 const schema = z.object({
   date: z.string().min(1),
@@ -400,6 +401,28 @@ export function AttendancePage() {
       const currentRemainingMinutes = selectedPkg.remainingMinutes
       const remainingSessions25 = Math.floor(currentRemainingMinutes / 25)
 
+      let submittedReport = report
+      let submittedAbsence = absence
+      try {
+        if (isPresent) {
+          submittedReport = {
+            ...report,
+            homeworkItems: await prepareHomeworkItemsForSubmission(teacherId, report.homeworkItems),
+          }
+          setReport(submittedReport)
+        } else if (isUnexcused) {
+          submittedAbsence = {
+            ...absence,
+            homeworkItems: await prepareHomeworkItemsForSubmission(teacherId, absence.homeworkItems),
+          }
+          setAbsence(submittedAbsence)
+        }
+      } catch (uploadError) {
+        console.error('[homework-html-upload]', uploadError)
+        toast.error(homeworkHtmlErrorMessage(uploadError, lang === 'vi' ? 'vi' : 'en'))
+        return
+      }
+
       const lessonPayload = {
         studentId: student.id,
         studentCode: student.code,
@@ -423,18 +446,18 @@ export function AttendancePage() {
         // Ghép báo cáo có cấu trúc thành `comment` để các màn hình cũ hiển thị được;
         // đồng thời lưu bản có cấu trúc (pages/report/rating) bên dưới.
         comment: isPresent
-          ? composeLessonComment(report)
-          : (isUnexcused ? composeAbsenceComment(absence) : ''),
+          ? composeLessonComment(submittedReport)
+          : (isUnexcused ? composeAbsenceComment(submittedAbsence) : ''),
         homework: isPresent
-          ? composeHomeworkText(report.homeworkItems)
-          : (isUnexcused ? composeAbsenceHomeworkText(absence) : ''),
+          ? composeHomeworkText(submittedReport.homeworkItems)
+          : (isUnexcused ? composeAbsenceHomeworkText(submittedAbsence) : ''),
         book: data.book || '',
         ...(isPresent
-          ? lessonReportFields(report)
+          ? lessonReportFields(submittedReport)
           : isUnexcused
             // Buổi vắng không phép: giữ pages/report/rating rỗng như trước,
             // chỉ bổ sung dặn dò + bài tập giao bù có cấu trúc.
-            ? { pages: '', report: null, rating: null, ...absenceReportFields(absence) }
+            ? { pages: '', report: null, rating: null, ...absenceReportFields(submittedAbsence) }
             : { pages: '', report: null, rating: null, homeworkItems: [] }),
         imageURLs: images.map((i) => i.storageURL).filter(Boolean),
         attendanceStatus,

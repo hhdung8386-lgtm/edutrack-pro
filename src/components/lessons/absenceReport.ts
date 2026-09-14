@@ -79,10 +79,18 @@ export function composeAbsenceHomeworkText(d: AbsenceReportDraft): string {
 
 /** Các field có cấu trúc để lưu kèm lesson (không chứa undefined — an toàn cho Firestore). */
 export function absenceReportFields(d: AbsenceReportDraft) {
+  const homeworkItems = normalizeHomeworkItems(d.homeworkItems)
+  if (homeworkItems.some((item) => item.pendingHtmlFile)) {
+    throw new Error('HOMEWORK_HTML_NOT_UPLOADED')
+  }
   return {
     absenceReport: {
       advice: d.advice.trim(),
     },
-    homeworkItems: normalizeHomeworkItems(d.homeworkItems),
+    homeworkItems: homeworkItems.map((item) => ({
+      type: item.type,
+      content: item.content,
+      ...(item.htmlAttachment ? { htmlAttachment: item.htmlAttachment } : {}),
+    })),
   }
 }

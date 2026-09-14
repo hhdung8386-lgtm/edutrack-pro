@@ -17,6 +17,7 @@ import { formatMoney, formatVND, formatVietnameseDate, getCurrentMonth } from '@
 import { normalizePayrollTaxPolicy, storedPayrollSettlementAmounts, summarizePayrollTaxCurrency, type PayrollTaxCurrencySummary } from '@/lib/payrollTax'
 import { ChevronLeft, ChevronRight, History, ChevronDown, X, Info, Trash2, Gift } from 'lucide-react'
 import { format, subMonths, addMonths } from 'date-fns'
+import { HomeworkHtmlAttachmentButton } from '@/components/lessons/HomeworkHtmlAttachment'
 
 function groupByDate(lessons: Lesson[]): [string, Lesson[]][] {
   const map = new Map<string, Lesson[]>()
@@ -520,6 +521,13 @@ export function LessonHistoryPage() {
                           <div>
                             <p className="text-xs text-slate-500 mb-0.5">{t('history.homework')}</p>
                             <p className="break-words whitespace-pre-wrap text-slate-600">{lesson.homework}</p>
+                            {lesson.homeworkItems?.some((item) => item.htmlAttachment) && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {lesson.homeworkItems.map((item, index) => item.htmlAttachment && (
+                                  <HomeworkHtmlAttachmentButton key={`${item.type}-${index}`} attachment={item.htmlAttachment} compact />
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         {lesson.imageURLs?.length > 0 && (

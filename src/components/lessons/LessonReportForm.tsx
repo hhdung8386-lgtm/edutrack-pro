@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { BookMarked, BookOpen, ChevronDown, ChevronUp, Headphones, NotebookPen, PenLine, Star, Video } from 'lucide-react'
+import { BookMarked, BookOpen, ChevronDown, ChevronUp, FileCode2, Headphones, NotebookPen, Paperclip, PenLine, Star, Trash2, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useLanguageStore } from '@/stores/languageStore'
 import {
   HOMEWORK_TYPES, HomeworkItem, HomeworkType, LessonReportDraft, MAX_HOMEWORK_CONTENT_CHARS,
   MAX_HOMEWORK_TYPES, lessonReportCharCount, MIN_LESSON_RATING, MIN_REPORT_CHARS,
 } from './lessonReport'
+import { homeworkHtmlErrorMessage, validateHomeworkHtmlFile } from '@/lib/homeworkHtmlValidation'
 
 /**
  * UI form báo cáo buổi học có cấu trúc (mẫu mới):
@@ -88,8 +89,9 @@ interface HomeworkPickerProps {
  * Dùng chung cho buổi có mặt (LessonReportForm) và buổi vắng không phép (AbsenceReportForm).
  */
 export function HomeworkPicker({ items, onChange, label, hint }: HomeworkPickerProps) {
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
   const [collapsed, setCollapsed] = useState<HomeworkType[]>([])
+  const [fileErrors, setFileErrors] = useState<Partial<Record<HomeworkType, string>>>({})
 
   const selectedCount = items.length
   const contentOf = (type: HomeworkType) => items.find((item) => item.type === type)?.content ?? ''
@@ -107,6 +109,26 @@ export function HomeworkPicker({ items, onChange, label, hint }: HomeworkPickerP
 
   const setContent = (type: HomeworkType, content: string) => {
     onChange(items.map((item) => (item.type === type ? { ...item, content } : item)))
+  }
+
+  const setHtmlFile = (type: HomeworkType, file: File) => {
+    try {
+      validateHomeworkHtmlFile(file)
+      setFileErrors((current) => ({ ...current, [type]: undefined }))
+      onChange(items.map((item) => item.type === type
+        ? { ...item, pendingHtmlFile: file, htmlAttachment: undefined }
+        : item))
+    } catch (error) {
+      setFileErrors((current) => ({ ...current, [type]: homeworkHtmlErrorMessage(error, lang) }))
+    }
+  }
+
+  const removeHtmlFile = (type: HomeworkType) => {
+    setFileErrors((current) => ({ ...current, [type]: undefined }))
+    onChange(items.map((item) => {
+      if (item.type !== type) return item
+      return { type: item.type, content: item.content }
+    }))
   }
 
   return (
@@ -180,6 +202,69 @@ export function HomeworkPicker({ items, onChange, label, hint }: HomeworkPickerP
                   <p className={`text-right text-[11px] font-semibold ${content.trim() ? 'text-slate-400' : 'text-amber-600'}`}>
                     {content.length}/{MAX_HOMEWORK_CONTENT_CHARS}
                   </p>
+
+                  <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+                    <div className="flex items-start gap-2">
+                      <FileCode2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-sky-900">
+                          {lang === 'vi' ? 'Bài tập HTML tương tác (không bắt buộc)' : 'Interactive HTML exercise (optional)'}
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-4 text-sky-700">
+                          {lang === 'vi'
+                            ? 'Chọn file .html hoặc .htm tự chứa, tối đa 1 MB. Học viên sẽ mở trực tiếp trên hệ thống.'
+                            : 'Choose a self-contained .html or .htm file up to 1 MB. Students open it directly in the app.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const item = items.find((candidate) => candidate.type === type)
+                      const fileName = item?.pendingHtmlFile?.name || item?.htmlAttachment?.fileName
+                      return fileName ? (
+                        <div className="mt-2 flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-2.5 py-2">
+                          <Paperclip className="h-4 w-4 flex-shrink-0 text-sky-600" />
+                          <p className="min-w-0 flex-1 truncate text-xs font-bold text-slate-700">{fileName}</p>
+                          <label
+                            htmlFor={`homework-html-${type}`}
+                            className="flex min-h-9 cursor-pointer items-center rounded-lg px-2 text-xs font-bold text-sky-700 transition hover:bg-sky-50 focus-within:ring-2 focus-within:ring-sky-300"
+                          >
+                            {lang === 'vi' ? 'Đổi file' : 'Replace'}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeHtmlFile(type)}
+                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-300"
+                            aria-label={lang === 'vi' ? 'Gỡ file HTML' : 'Remove HTML file'}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor={`homework-html-${type}`}
+                          className="mt-2 inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-sky-300 bg-white px-3 text-xs font-bold text-sky-700 transition hover:bg-sky-50 focus-within:ring-2 focus-within:ring-sky-300 active:scale-[0.98]"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                          {lang === 'vi' ? 'Chọn file HTML' : 'Choose HTML file'}
+                        </label>
+                      )
+                    })()}
+                    <input
+                      id={`homework-html-${type}`}
+                      type="file"
+                      accept=".html,.htm,text/html"
+                      className="sr-only"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0]
+                        if (file) setHtmlFile(type, file)
+                        event.currentTarget.value = ''
+                      }}
+                    />
+                    {fileErrors[type] && (
+                      <p role="alert" className="mt-2 text-[11px] font-bold text-rose-700">{fileErrors[type]}</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

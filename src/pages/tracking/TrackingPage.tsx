@@ -12,6 +12,7 @@ import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { getStudentSubjectMinuteFunds } from '@/lib/studentQuotaCore'
 import { getLessonPoints } from '@/lib/points'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
+import { HomeworkHtmlAttachmentButton } from '@/components/lessons/HomeworkHtmlAttachment'
 
 type TrackTab = 'student' | 'teacher'
 
@@ -356,6 +357,13 @@ function StudentResult({ student, lessons, teacherNicks = {}, onBack }: { studen
                   <div>
                     <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
                     <p className="text-sm text-slate-700">{lesson.homework}</p>
+                    {lesson.homeworkItems?.some((item) => item.htmlAttachment) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {lesson.homeworkItems.map((item, index) => item.htmlAttachment && (
+                          <HomeworkHtmlAttachmentButton key={`${item.type}-${index}`} attachment={item.htmlAttachment} compact />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 {lesson.imageURLs?.length > 0 && (

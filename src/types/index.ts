@@ -243,9 +243,20 @@ export interface LessonAbsenceReport {
 }
 
 /** Một loại bài tập về nhà đã giao (gia sư chọn tối đa 2 loại mỗi buổi). */
+export interface LessonHomeworkHtmlAttachment {
+  /** Tên file gốc để gia sư, học viên và giáo vụ nhận biết đúng bài. */
+  fileName: string
+  /** Firebase Storage download URL. File chỉ được chạy trong iframe sandbox của ứng dụng. */
+  fileURL: string
+  /** Kích thước file tại lúc tải lên, dùng để hiển thị và kiểm tra dữ liệu cũ. */
+  sizeBytes: number
+}
+
 export interface LessonHomeworkItem {
   type: 'video' | 'writing' | 'reading' | 'listening' | 'vocabulary'
   content: string
+  /** File bài tập HTML tự chứa. Buổi cũ không có field này. */
+  htmlAttachment?: LessonHomeworkHtmlAttachment
 }
 
 /**

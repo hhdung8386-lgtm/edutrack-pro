@@ -16,10 +16,20 @@ export type HomeworkType = (typeof HOMEWORK_TYPES)[number]
 export const MAX_HOMEWORK_TYPES = 2
 /** Độ dài tối đa cho nội dung giao của MỖI loại bài tập. */
 export const MAX_HOMEWORK_CONTENT_CHARS = 500
+/** File HTML được giữ nhỏ để tải nhanh trên điện thoại và tránh lạm dụng Storage. */
+export const MAX_HOMEWORK_HTML_BYTES = 1024 * 1024
+export interface HomeworkHtmlAttachment {
+  fileName: string
+  fileURL: string
+  sizeBytes: number
+}
 
 export interface HomeworkItem {
   type: HomeworkType
   content: string
+  htmlAttachment?: HomeworkHtmlAttachment
+  /** Chỉ tồn tại trong form trước khi gửi, tuyệt đối không ghi field này lên Firestore. */
+  pendingHtmlFile?: File
 }
 
 /**
@@ -117,7 +127,26 @@ export function normalizeHomeworkItems(items: HomeworkItem[] | undefined | null)
     const content = (item.content || '').trim()
     if (!content) continue
     seen.add(item.type)
-    result.push({ type: item.type, content })
+    const normalized: HomeworkItem = { type: item.type, content }
+    const attachment = item.htmlAttachment
+    if (
+      attachment
+      && typeof attachment.fileName === 'string'
+      && attachment.fileName.trim()
+      && typeof attachment.fileURL === 'string'
+      && /^https:\/\//i.test(attachment.fileURL.trim())
+      && Number.isFinite(attachment.sizeBytes)
+      && attachment.sizeBytes > 0
+      && attachment.sizeBytes <= MAX_HOMEWORK_HTML_BYTES
+    ) {
+      normalized.htmlAttachment = {
+        fileName: attachment.fileName.trim().slice(0, 160),
+        fileURL: attachment.fileURL.trim(),
+        sizeBytes: Math.floor(attachment.sizeBytes),
+      }
+    }
+    if (item.pendingHtmlFile) normalized.pendingHtmlFile = item.pendingHtmlFile
+    result.push(normalized)
   }
   return result
 }
@@ -148,6 +177,10 @@ export function composeLessonComment(d: LessonReportDraft): string {
 
 /** Các field có cấu trúc để lưu kèm lesson (không chứa undefined — an toàn cho Firestore). */
 export function lessonReportFields(d: LessonReportDraft) {
+  const homeworkItems = normalizeHomeworkItems(d.homeworkItems)
+  if (homeworkItems.some((item) => item.pendingHtmlFile)) {
+    throw new Error('HOMEWORK_HTML_NOT_UPLOADED')
+  }
   return {
     pages: d.pages.trim(),
     rating: d.rating,
@@ -161,7 +194,11 @@ export function lessonReportFields(d: LessonReportDraft) {
     },
     // Bản có cấu trúc của bài tập về nhà; chuỗi `homework` vẫn được ghi song song
     // để mọi màn hình/dữ liệu cũ không bị ảnh hưởng.
-    homeworkItems: normalizeHomeworkItems(d.homeworkItems),
+    homeworkItems: homeworkItems.map((item) => ({
+      type: item.type,
+      content: item.content,
+      ...(item.htmlAttachment ? { htmlAttachment: item.htmlAttachment } : {}),
+    })),
   }
 }
 
