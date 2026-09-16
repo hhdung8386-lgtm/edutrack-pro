@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { selectTeacherMobilePrimaryItems } from '@/components/layout/teacherNavigation'
 
 type TeacherNavItem = {
   to: string
@@ -76,7 +77,7 @@ export function TeacherLayout() {
       items: [
         { to: '/teacher/booking-requests', icon: CircleAlert, labelKey: 'nav.booking_requests', shortLabel: { vi: 'Nhận', en: 'Requests' }, badge: pendingBookingCount },
         { to: '/teacher/class-hunting', icon: Target, labelKey: 'nav.class_hunting', shortLabel: { vi: 'Săn', en: 'Hunt' } },
-        { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá thử', en: 'Trial reviews' } },
+        { to: '/teacher/evaluations', icon: ClipboardCheck, labelKey: 'nav.evaluations', shortLabel: { vi: 'Đánh giá', en: 'Review' } },
         { to: '/teacher/history', icon: History, labelKey: 'nav.history', shortLabel: { vi: 'Lịch sử buổi dạy', en: 'Lesson history' } },
       ],
     },
@@ -101,14 +102,7 @@ export function TeacherLayout() {
     },
   ]
   const navItems = navGroups.flatMap((group) => group.items)
-  const mobileNavItems = [
-    navItems.find((item) => item.to === '/teacher/ranking'),
-    navItems.find((item) => item.to === '/teacher/schedules'),
-    navItems.find((item) => item.to === '/teacher/booking-requests'),
-    navItems.find((item) => item.to === '/teacher/class-hunting'),
-    navItems.find((item) => item.to === '/teacher/attendance'),
-    navItems.find((item) => item.to === '/teacher/profile'),
-  ].filter((item): item is TeacherNavItem => Boolean(item))
+  const mobileNavItems = selectTeacherMobilePrimaryItems(navItems)
 
   const handleSignOut = async () => {
     if (teacherId) {
@@ -493,7 +487,7 @@ export function TeacherLayout() {
         </div>
       )}
 
-      {/* Mobile bottom nav — nhãn rút gọn 1 dòng, không để chữ dài xuống hàng làm lệch thanh */}
+      {/* Mobile bottom nav — 5 tác vụ chính + menu đầy đủ, giữ vùng chạm và nhãn dễ đọc. */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)]">
         <div className="grid grid-flow-col auto-cols-fr h-14">
           {mobileNavItems.map((item) => (
@@ -509,7 +503,7 @@ export function TeacherLayout() {
                 <>
                   <item.icon className={`w-5 h-5 ${isActive ? 'text-brand-600' : ''}`} />
                   {!!item.badge && <span className="absolute right-1 top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{item.badge}</span>}
-                  {/* 7 ô trên máy 360px: bỏ padding + chữ khít nhẹ để "Điểm danh" không bị cắt. */}
+                  {/* Nhãn một dòng để thanh điều hướng ổn định trên màn hình hẹp. */}
                   <span className="max-w-full truncate leading-none tracking-[-0.02em]">{item.shortLabel[lang === 'vi' ? 'vi' : 'en']}</span>
                   {isActive && (
                     <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-500 rounded-full" />
