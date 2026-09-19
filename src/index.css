@@ -2602,3 +2602,13 @@
   .national-map-outside { gap: 8px 12px; padding: 12px 14px; }
   .national-map-outside li { padding: 5px 11px; }
 }
+
+/* Mascot chuột 123English — nhún nhẹ (landing /hoc-thu-mien-phi) */
+@keyframes mascot-123-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.mascot-123-bob { animation: mascot-123-bob 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mascot-123-bob { animation: none; }
+}

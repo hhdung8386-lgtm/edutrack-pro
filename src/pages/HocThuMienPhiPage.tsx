@@ -557,7 +557,7 @@ export function HocThuMienPhiPage() {
           }`}
         >
           <div className="relative flex items-center gap-2 rounded-full bg-white p-1.5 pl-20 shadow-[0_10px_30px_-8px_rgba(16,33,58,0.45)] ring-1 ring-[#FFE27A]">
-            <Mascot123 pose="peek" className="absolute -top-9 left-1 h-20 w-20" />
+            <Mascot123 pose="peek" className="absolute -top-10 left-0 h-16 w-24" />
             <p className="flex-1 text-[13px] font-black leading-tight">
               Học thử miễn phí
               <span className="block text-[11px] font-bold text-slate-500">1 kèm 1 + kiểm tra trình độ</span>
