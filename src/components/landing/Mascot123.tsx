@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 type MascotPose = 'wave' | 'cheer' | 'peek'
 
 interface Mascot123Props {
@@ -7,114 +9,181 @@ interface Mascot123Props {
 }
 
 /**
- * Mascot chuột 123English (tai tròn lớn, lông cam, áo xanh in logo, quần cam).
- * Vẽ bằng SVG để nhẹ, sắc nét trên mọi màn hình và đổi dáng theo `pose`.
+ * Mascot chuột 123English: tai tròn lớn, lông cam, mắt to nâu đỏ, răng thỏ,
+ * áo xanh ngọc in logo. Vẽ bằng SVG (gradient tạo khối 3D) nên nhẹ và sắc nét.
  */
 export function Mascot123({ pose = 'wave', className, title = 'Mascot 123English' }: Mascot123Props) {
-  const fur = '#E3913A'
-  const furDark = '#C8741F'
-  const cream = '#FBE3B9'
-  const shirt = '#2E9BE6'
+  const uid = useId().replace(/:/g, '')
+  const id = (name: string) => `m123-${name}-${uid}`
+  const url = (name: string) => `url(#${id(name)})`
+
+  const furStroke = '#D9761C'
+  const arm = (d: string) => (
+    <>
+      <path d={d} stroke={furStroke} strokeWidth="21" strokeLinecap="round" fill="none" />
+      <path d={d} stroke={url('limb')} strokeWidth="17" strokeLinecap="round" fill="none" />
+    </>
+  )
+  const hand = (cx: number, cy: number) => (
+    <circle cx={cx} cy={cy} r="12" fill={url('hand')} stroke={furStroke} strokeWidth="2" />
+  )
 
   return (
     <svg viewBox="0 0 220 260" className={className} role="img" aria-label={title}>
+      <defs>
+        <radialGradient id={id('fur')} cx="42%" cy="30%" r="75%">
+          <stop offset="0%" stopColor="#FFC85C" />
+          <stop offset="55%" stopColor="#F9A93A" />
+          <stop offset="100%" stopColor="#E3801F" />
+        </radialGradient>
+        <radialGradient id={id('ear')} cx="45%" cy="40%" r="65%">
+          <stop offset="0%" stopColor="#FFE0C4" />
+          <stop offset="70%" stopColor="#FBC39E" />
+          <stop offset="100%" stopColor="#F2A77E" />
+        </radialGradient>
+        <radialGradient id={id('cream')} cx="50%" cy="25%" r="80%">
+          <stop offset="0%" stopColor="#FFF8E8" />
+          <stop offset="100%" stopColor="#F6D9A6" />
+        </radialGradient>
+        <radialGradient id={id('iris')} cx="50%" cy="60%" r="60%">
+          <stop offset="0%" stopColor="#E0463A" />
+          <stop offset="60%" stopColor="#A3201E" />
+          <stop offset="100%" stopColor="#5A0E0E" />
+        </radialGradient>
+        <radialGradient id={id('nose')} cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#FF7A66" />
+          <stop offset="100%" stopColor="#D8322A" />
+        </radialGradient>
+        <linearGradient id={id('shirt')} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#8FE0F2" />
+          <stop offset="100%" stopColor="#3FB3DC" />
+        </linearGradient>
+        <linearGradient id={id('limb')} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#FFC150" />
+          <stop offset="100%" stopColor="#EE9230" />
+        </linearGradient>
+        <radialGradient id={id('hand')} cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#FFF1D6" />
+          <stop offset="100%" stopColor="#F4C98C" />
+        </radialGradient>
+      </defs>
+
       <style>{`
-        .m123-wave { transform-origin: 170px 150px; animation: m123-wave 1.6s ease-in-out infinite; }
-        .m123-cheer-l { transform-origin: 58px 152px; animation: m123-cheer 1.2s ease-in-out infinite; }
-        .m123-cheer-r { transform-origin: 162px 152px; animation: m123-cheer 1.2s ease-in-out infinite reverse; }
+        .m123-wave { transform-origin: 160px 160px; animation: m123-wave 1.6s ease-in-out infinite; }
+        .m123-cheer-l { transform-origin: 60px 160px; animation: m123-cheer 1.2s ease-in-out infinite; }
+        .m123-cheer-r { transform-origin: 160px 160px; animation: m123-cheer 1.2s ease-in-out infinite reverse; }
         .m123-bob { animation: m123-bob 2.4s ease-in-out infinite; }
-        @keyframes m123-wave { 0%,100% { transform: rotate(0deg) } 50% { transform: rotate(-18deg) } }
+        .m123-blink { transform-box: fill-box; transform-origin: center; animation: m123-blink 4.5s infinite; }
+        @keyframes m123-wave { 0%,100% { transform: rotate(0deg) } 50% { transform: rotate(-16deg) } }
         @keyframes m123-cheer { 0%,100% { transform: rotate(0deg) } 50% { transform: rotate(10deg) } }
         @keyframes m123-bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
-        @media (prefers-reduced-motion: reduce) { .m123-wave, .m123-cheer-l, .m123-cheer-r, .m123-bob { animation: none } }
+        @keyframes m123-blink { 0%,94%,100% { transform: scaleY(1) } 97% { transform: scaleY(0.1) } }
+        @media (prefers-reduced-motion: reduce) { .m123-wave, .m123-cheer-l, .m123-cheer-r, .m123-bob, .m123-blink { animation: none } }
       `}</style>
 
       <g className="m123-bob">
         {pose !== 'peek' && (
           <>
             {/* Chân + giày */}
-            <rect x="78" y="222" width="22" height="24" rx="10" fill={fur} />
-            <rect x="120" y="222" width="22" height="24" rx="10" fill={fur} />
-            <ellipse cx="86" cy="248" rx="18" ry="8" fill="#7A4A1D" />
-            <ellipse cx="134" cy="248" rx="18" ry="8" fill="#7A4A1D" />
+            <rect x="80" y="224" width="20" height="22" rx="9" fill={url('limb')} stroke={furStroke} strokeWidth="2" />
+            <rect x="120" y="224" width="20" height="22" rx="9" fill={url('limb')} stroke={furStroke} strokeWidth="2" />
+            <ellipse cx="88" cy="249" rx="17" ry="7.5" fill="#8A5327" />
+            <ellipse cx="132" cy="249" rx="17" ry="7.5" fill="#8A5327" />
+            <ellipse cx="84" cy="246.5" rx="7" ry="2.5" fill="#B7794A" />
+            <ellipse cx="128" cy="246.5" rx="7" ry="2.5" fill="#B7794A" />
+
             {/* Quần */}
-            <path d="M62 204 h96 v14 a12 12 0 0 1 -12 12 h-72 a12 12 0 0 1 -12 -12z" fill={furDark} />
+            <path d="M64 206 h92 v12 a13 13 0 0 1 -13 13 h-66 a13 13 0 0 1 -13 -13z" fill={url('limb')} stroke={furStroke} strokeWidth="2" />
 
             {/* Tay trái */}
             {pose === 'cheer' ? (
               <g className="m123-cheer-l">
-                <path d="M62 158 C40 146 30 124 34 104" stroke={fur} strokeWidth="18" strokeLinecap="round" fill="none" />
-                <circle cx="34" cy="100" r="12" fill={fur} />
+                {arm('M64 166 C40 158 22 140 18 122')}
+                {hand(18, 116)}
               </g>
             ) : (
               <g>
-                <path d="M60 162 C44 176 42 194 50 206" stroke={fur} strokeWidth="18" strokeLinecap="round" fill="none" />
-                <circle cx="51" cy="208" r="11" fill={fur} />
+                {arm('M62 168 C46 180 42 196 48 208')}
+                {hand(49, 210)}
               </g>
             )}
 
-            {/* Thân áo */}
-            <path d="M58 152 Q110 138 162 152 L166 208 Q110 216 54 208z" fill={shirt} />
-            <path d="M86 150 Q110 166 134 150" stroke="#FFD02E" strokeWidth="5" fill="none" strokeLinecap="round" />
-            {/* Logo 123 English trên áo */}
-            <rect x="78" y="172" width="64" height="22" rx="11" fill="#FFD02E" />
-            <text x="87" y="188" fontSize="12" fontWeight="900" fill="#0F4C81" fontFamily="Quicksand, sans-serif">123</text>
-            <rect x="108" y="176" width="30" height="14" rx="7" fill="#FFFFFF" />
-            <text x="110.5" y="186.5" fontSize="7.5" fontWeight="900" fill={shirt} fontFamily="Quicksand, sans-serif">English</text>
+            {/* Áo */}
+            <path d="M60 158 Q110 146 160 158 L166 210 Q110 220 54 210z" fill={url('shirt')} stroke="#2A9CC8" strokeWidth="2" />
+            <path d="M88 156 Q110 170 132 156" stroke="#2A9CC8" strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M68 166 Q72 190 66 206" stroke="#FFFFFF" strokeOpacity="0.35" strokeWidth="5" fill="none" strokeLinecap="round" />
+            {/* Logo 123 English */}
+            <text x="72" y="199" fontSize="13" fontWeight="900" fill="#FFD23A" stroke="#1D6FA3" strokeWidth="0.8" fontFamily="Quicksand, sans-serif">123</text>
+            <rect x="100" y="187" width="42" height="15" rx="7.5" fill="#FFD23A" stroke="#E0A800" strokeWidth="1" />
+            <text x="105" y="198" fontSize="9" fontWeight="900" fill="#1D6FA3" fontFamily="Quicksand, sans-serif">English</text>
 
             {/* Tay phải */}
             {pose === 'wave' ? (
               <g className="m123-wave">
-                <path d="M158 160 C186 154 202 132 202 108" stroke={fur} strokeWidth="18" strokeLinecap="round" fill="none" />
-                <circle cx="202" cy="102" r="13" fill={fur} />
-                <path d="M195 93 v-8 M202 91 v-9 M209 93 v-8" stroke={fur} strokeWidth="6" strokeLinecap="round" />
+                {arm('M158 166 C186 158 200 136 200 112')}
+                {hand(200, 104)}
               </g>
             ) : (
               <g className="m123-cheer-r">
-                <path d="M158 158 C180 146 190 124 186 104" stroke={fur} strokeWidth="18" strokeLinecap="round" fill="none" />
-                <circle cx="186" cy="100" r="12" fill={fur} />
+                {arm('M156 166 C180 158 198 140 202 122')}
+                {hand(202, 116)}
               </g>
             )}
           </>
         )}
 
         {/* Tai */}
-        <circle cx="46" cy="52" r="40" fill={fur} />
-        <circle cx="174" cy="52" r="40" fill={fur} />
-        <circle cx="48" cy="54" r="27" fill={cream} />
-        <circle cx="172" cy="54" r="27" fill={cream} />
+        <circle cx="44" cy="58" r="44" fill={url('fur')} stroke={furStroke} strokeWidth="2.5" />
+        <circle cx="176" cy="58" r="44" fill={url('fur')} stroke={furStroke} strokeWidth="2.5" />
+        <circle cx="46" cy="60" r="31" fill={url('ear')} />
+        <circle cx="174" cy="60" r="31" fill={url('ear')} />
 
         {/* Đầu */}
-        <ellipse cx="110" cy="100" rx="70" ry="62" fill={fur} />
-        <path d="M60 104 C60 76 84 70 110 84 C136 70 160 76 160 104 C160 140 136 156 110 156 C84 156 60 140 60 104z" fill={cream} />
+        <ellipse cx="110" cy="110" rx="72" ry="64" fill={url('fur')} stroke={furStroke} strokeWidth="2.5" />
+        <ellipse cx="92" cy="70" rx="26" ry="12" fill="#FFFFFF" opacity="0.22" transform="rotate(-12 92 70)" />
+        {/* Mặt kem */}
+        <path
+          d="M52 124 C52 96 76 88 94 98 C102 102 118 102 126 98 C144 88 168 96 168 124 C168 156 142 172 110 172 C78 172 52 156 52 124z"
+          fill={url('cream')}
+        />
+
+        {/* Lông mày */}
+        <path d="M70 80 q12 -7 24 -1 M126 79 q12 -6 24 1" stroke="#B85F12" strokeWidth="3.5" strokeLinecap="round" fill="none" />
 
         {/* Mắt */}
-        <ellipse cx="88" cy="98" rx="15" ry="19" fill="#FFFFFF" />
-        <ellipse cx="132" cy="98" rx="15" ry="19" fill="#FFFFFF" />
-        <circle cx="90" cy="101" r="11" fill="#1F7FD1" />
-        <circle cx="130" cy="101" r="11" fill="#1F7FD1" />
-        <circle cx="90" cy="102" r="7" fill="#1B130D" />
-        <circle cx="130" cy="102" r="7" fill="#1B130D" />
-        <circle cx="93" cy="97" r="3.4" fill="#FFFFFF" />
-        <circle cx="133" cy="97" r="3.4" fill="#FFFFFF" />
-        <path d="M74 76 q12 -8 24 -2 M122 74 q12 -6 24 2" stroke={furDark} strokeWidth="4" strokeLinecap="round" fill="none" />
+        <g className="m123-blink">
+          <ellipse cx="84" cy="106" rx="18" ry="21" fill="#FFFFFF" stroke="#3A1B0C" strokeWidth="3" />
+          <ellipse cx="86" cy="110" rx="13" ry="15" fill={url('iris')} />
+          <ellipse cx="86" cy="112" rx="6.5" ry="7.5" fill="#1E0808" />
+          <ellipse cx="80" cy="102" rx="5.5" ry="6.5" fill="#FFFFFF" />
+          <circle cx="92" cy="117" r="2.4" fill="#FFFFFF" />
+        </g>
+        <g className="m123-blink">
+          <ellipse cx="136" cy="106" rx="18" ry="21" fill="#FFFFFF" stroke="#3A1B0C" strokeWidth="3" />
+          <ellipse cx="134" cy="110" rx="13" ry="15" fill={url('iris')} />
+          <ellipse cx="134" cy="112" rx="6.5" ry="7.5" fill="#1E0808" />
+          <ellipse cx="128" cy="102" rx="5.5" ry="6.5" fill="#FFFFFF" />
+          <circle cx="140" cy="117" r="2.4" fill="#FFFFFF" />
+        </g>
 
         {/* Má hồng */}
-        <ellipse cx="72" cy="124" rx="9" ry="6" fill="#F6A3A0" opacity="0.8" />
-        <ellipse cx="148" cy="124" rx="9" ry="6" fill="#F6A3A0" opacity="0.8" />
+        <ellipse cx="64" cy="134" rx="10" ry="6" fill="#FF9C8F" opacity="0.55" />
+        <ellipse cx="156" cy="134" rx="10" ry="6" fill="#FF9C8F" opacity="0.55" />
 
         {/* Mũi */}
-        <ellipse cx="110" cy="120" rx="9" ry="7" fill="#E53935" />
-        <ellipse cx="107" cy="117.5" rx="3" ry="2" fill="#FFFFFF" opacity="0.7" />
+        <ellipse cx="110" cy="132" rx="8" ry="6" fill={url('nose')} />
+        <ellipse cx="107.5" cy="130" rx="2.8" ry="1.8" fill="#FFFFFF" opacity="0.8" />
 
-        {/* Miệng cười */}
-        <path d="M94 130 Q110 152 126 130 Q110 136 94 130z" fill="#7A1F1F" />
-        <path d="M101 140 Q110 148 119 140 Q110 137 101 140z" fill="#F47A86" />
+        {/* Miệng mở + răng thỏ */}
+        <path d="M94 142 Q110 139 126 142 Q124 164 110 166 Q96 164 94 142z" fill="#8E1F2B" stroke="#5E1219" strokeWidth="1.5" />
+        <path d="M100 158 Q110 150 120 158 Q116 165 110 165.5 Q104 165 100 158z" fill="#FF7F86" />
+        <path d="M103.5 141.5 h13 v8 a2.5 2.5 0 0 1 -2.5 2.5 h-8 a2.5 2.5 0 0 1 -2.5 -2.5z" fill="#FFFFFF" stroke="#D7C6B8" strokeWidth="1" />
+        <path d="M110 141.5 v10.5" stroke="#D7C6B8" strokeWidth="1" />
 
         {pose === 'peek' && (
           <>
-            <circle cx="66" cy="160" r="13" fill={fur} />
-            <circle cx="154" cy="160" r="13" fill={fur} />
+            {hand(66, 168)}
+            {hand(154, 168)}
           </>
         )}
       </g>
