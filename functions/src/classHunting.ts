@@ -1108,6 +1108,28 @@ export function findClassHuntBookingConflicts(input: {
   return conflicts
 }
 
+/** Only these statuses can ever produce a conflict (see isActiveClassHuntBooking). */
+export const CLASS_HUNT_ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed'] as const
+
+/**
+ * The calendar window a tutor's timetable must be read over to check a claim.
+ * `findClassHuntBookingConflicts` can only match an active booking dated on a
+ * session date or the day either side of it (extended 24:xx slots and the
+ * fail-closed fallback), so a booking outside this inclusive range can never
+ * block the claim. Reading just this window keeps long-serving tutors, whose
+ * lifetime booking history is large, from tripping the scan safety bound.
+ */
+export function classHuntTeacherScheduleWindow(sessions: Array<Pick<ClassHuntSession, 'dateISO'>>): { fromDateISO: string; toDateISO: string } {
+  if (sessions.length === 0) {
+    throw new ClassHuntValidationError('CLASS_HUNT_SESSIONS_INVALID', 'Lớp săn không có buổi học hợp lệ.')
+  }
+  const times = sessions.map((session) => parseDateISO(session.dateISO, 'CLASS_HUNT_SESSION_DATE_INVALID').getTime())
+  return {
+    fromDateISO: formatDateISO(addCalendarDays(new Date(Math.min(...times)), -1)),
+    toDateISO: formatDateISO(addCalendarDays(new Date(Math.max(...times)), 1)),
+  }
+}
+
 type SubjectFundSource = {
   subjectId?: unknown
   subjectName?: unknown

@@ -44,6 +44,8 @@ import {
   normalizeClassHuntNote,
   classHuntArchiveDecision,
   classHuntSubjectRate,
+  classHuntTeacherScheduleWindow,
+  CLASS_HUNT_ACTIVE_BOOKING_STATUSES,
   type ClassHuntBookingLike,
   type ClassHuntCompensation,
   type ClassHuntConflict,
@@ -1667,8 +1669,15 @@ export const claimClassHunt = onCall({
     const contractsQuery = db.collection('contracts')
       .where('teacherId', '==', teacher.teacherId)
       .limit(CONTRACT_QUERY_LIMIT + 1)
+    // Only the tutor's active bookings in this class's date window can clash.
+    // Reading the whole lifetime history blocked busy tutors (1000+ bookings)
+    // from claiming at all. Served by the (status, teacherId, requestedDate) index.
+    const teacherScheduleWindow = classHuntTeacherScheduleWindow(hunt.sessions)
     const teacherBookingsQuery = db.collection('bookingRequests')
+      .where('status', 'in', [...CLASS_HUNT_ACTIVE_BOOKING_STATUSES])
       .where('teacherId', '==', teacher.teacherId)
+      .where('requestedDate', '>=', teacherScheduleWindow.fromDateISO)
+      .where('requestedDate', '<=', teacherScheduleWindow.toDateISO)
       .limit(CLASS_HUNT_BOOKING_READ_LIMIT + 1)
     const studentBookingsQuery = db.collection('bookingRequests')
       .where('studentId', '==', hunt.studentId)

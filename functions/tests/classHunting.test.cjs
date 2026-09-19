@@ -26,6 +26,8 @@ const {
   effectiveClassHuntStatus,
   effectiveClassHuntHeldPoints,
   findClassHuntBookingConflicts,
+  classHuntTeacherScheduleWindow,
+  CLASS_HUNT_ACTIVE_BOOKING_STATUSES,
   hasAcceptedClassHuntContract,
   hasCanonicalClassHuntTeacherLogin,
   hasSufficientClassHuntPointBalance,
@@ -855,4 +857,28 @@ test('CLASS HUNTING shows the package subject price without filtering by tutor s
     { subjectId: 'DUP', pricePerMinute: 1 },
     { subjectId: 'DUP', pricePerMinute: 2 },
   ] }, 'DUP'), null)
+})
+
+test('claim reads the tutor timetable only over the class date window (+/- 1 day)', () => {
+  assert.deepEqual(classHuntTeacherScheduleWindow([
+    { dateISO: '2026-10-05' },
+    { dateISO: '2026-09-30' },
+    { dateISO: '2026-12-31' },
+  ]), { fromDateISO: '2026-09-29', toDateISO: '2027-01-01' })
+  assert.deepEqual(classHuntTeacherScheduleWindow([{ dateISO: '2026-03-01' }]), { fromDateISO: '2026-02-28', toDateISO: '2026-03-02' })
+  assert.throws(() => classHuntTeacherScheduleWindow([]), ClassHuntValidationError)
+  assert.deepEqual([...CLASS_HUNT_ACTIVE_BOOKING_STATUSES], ['pending', 'confirmed'])
+})
+
+test('a booking outside the read window can never conflict with the claim', () => {
+  const sessions = [{ day: 'Mon', dateISO: '2026-10-05', requestedWeekStart: '2026-10-05', requestedStart: '23:30', requestedEnd: '23:55', requestedMinutes: 25 }]
+  const { fromDateISO, toDateISO } = classHuntTeacherScheduleWindow(sessions)
+  const booking = (requestedDate, requestedStart) => ({ id: requestedDate + requestedStart, status: 'confirmed', teacherId: 't1', studentId: 'other', requestedDate, requestedStart, requestedMinutes: 25 })
+  // Inside the window: same-day overlap is still caught.
+  assert.equal(findClassHuntBookingConflicts({ teacherId: 't1', studentId: 's1', sessions, bookings: [booking('2026-10-05', '23:40')] }).length, 1)
+  // Two days away (just outside the window) never overlaps.
+  for (const date of ['2026-10-03', '2026-10-07']) {
+    assert.ok(date < fromDateISO || date > toDateISO)
+    assert.equal(findClassHuntBookingConflicts({ teacherId: 't1', studentId: 's1', sessions, bookings: [booking(date, '23:40')] }).length, 0)
+  }
 })
