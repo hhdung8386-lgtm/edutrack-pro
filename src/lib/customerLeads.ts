@@ -33,7 +33,7 @@ export interface CustomerLead {
 /**
  * Lưu form khách vào Firestore để admin xem ở /admin/customer-leads.
  * Firebase được import động để trang landing không phải tải SDK trước khi khách bấm gửi.
- * Không bao giờ throw: form vẫn chuyển khách sang Zalo dù lưu thất bại.
+ * Không bao giờ throw: trả false để form báo khách gửi lại.
  */
 export async function submitCustomerLead(input: Omit<CustomerLeadInput, 'sourcePath' | 'pageUrl' | 'referrer'>) {
   const payload = buildCustomerLeadPayload({

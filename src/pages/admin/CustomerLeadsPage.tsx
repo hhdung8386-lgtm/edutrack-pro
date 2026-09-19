@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore'
-import { Download, ExternalLink, Inbox, MessageCircle, Phone, Search, Trash2 } from 'lucide-react'
+import { Download, ExternalLink, Inbox, Phone, Search, Trash2 } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import {
   CUSTOMER_LEADS_COLLECTION,
@@ -110,15 +110,6 @@ function LeadCard({ lead, onDelete }: { lead: CustomerLead; onDelete: (lead: Cus
             <a href={`tel:${lead.phone}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-bold text-white">
               <Phone className="h-4 w-4" />
               {lead.phone}
-            </a>
-            <a
-              href={`https://zalo.me/${lead.phone}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0068FF] px-3 py-1.5 text-sm font-bold text-white"
-            >
-              <MessageCircle className="h-4 w-4" />
-              Zalo
             </a>
           </div>
           <dl className="grid gap-1 text-sm text-slate-600">

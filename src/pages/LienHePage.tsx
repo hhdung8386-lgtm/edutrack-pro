@@ -27,6 +27,7 @@ export function LienHePage() {
   const [form, setForm] = useState({ name: '', phone: '', subject: '', message: '' })
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const { content: siteContent } = useSiteContent('contact')
   const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
   const extraBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
@@ -36,31 +37,27 @@ export function LienHePage() {
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
       setForm((current) => ({ ...current, [key]: event.target.value }))
 
-  const openZalo = (event: React.FormEvent) => {
+  const submitForm = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (submitting) return
     const phone = normalizeVietnamPhone(form.phone)
     if (!form.name.trim()) return setError('Vui lòng nhập họ và tên.')
     if (!phone) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
     setError('')
 
-    // Lưu vào admin "Form khách hàng"; Zalo mở ngay (Safari iOS chặn window.open sau await).
-    void submitCustomerLead({
+    // Thông tin về trang admin "Form khách đăng ký"; nhân viên tự liên hệ lại khách.
+    setSubmitting(true)
+    const saved = await submitCustomerLead({
       source: 'lien-he',
       name: form.name,
       phone,
       subject: form.subject,
       message: form.message,
     })
-    const message = [
-      'Xin chào 123English, tôi cần tư vấn.',
-      `- Họ tên: ${form.name.trim()}`,
-      `- SĐT: ${phone}`,
-      form.subject && `- Nội dung: ${form.subject}`,
-      form.message.trim() && `- Chia sẻ thêm: ${form.message.trim()}`,
-    ].filter(Boolean).join('\n')
-    navigator.clipboard?.writeText(message).catch(() => undefined)
-    window.open(ZALO_URL, '_blank', 'noopener,noreferrer')
+    setSubmitting(false)
+    if (!saved) return setError(`Chưa gửi được thông tin. Vui lòng thử lại hoặc gọi ${CONSULTING_PHONE.label}.`)
     setSent(true)
+    setForm({ name: '', phone: '', subject: '', message: '' })
   }
 
   return (
@@ -178,10 +175,10 @@ export function LienHePage() {
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#0D8FC7]">Yêu cầu tư vấn</span>
               <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] sm:text-3xl">Bạn đang hướng đến mục tiêu nào?</h2>
               <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
-                Điền thông tin cơ bản, sau đó hệ thống sẽ mở kênh Zalo chính thức để bạn trao đổi trực tiếp.
+                Điền thông tin cơ bản, tư vấn viên 123English sẽ liên hệ lại với bạn trong giờ làm việc.
               </p>
 
-              <form onSubmit={openZalo} className="mt-7 grid gap-4 sm:grid-cols-2">
+              <form onSubmit={submitForm} className="mt-7 grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 text-sm font-bold">
                   Họ và tên
                   <input
@@ -234,14 +231,15 @@ export function LienHePage() {
                 )}
                 {sent && !error && (
                   <p className="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 sm:col-span-2">
-                    Đã gửi thông tin cho 123English. Nội dung đã được sao chép — bạn có thể dán vào Zalo vừa mở để trao đổi nhanh hơn.
+                    Đã gửi thông tin cho 123English. Tư vấn viên sẽ liên hệ lại với bạn trong giờ làm việc.
                   </p>
                 )}
                 <button
                   type="submit"
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:bg-[#FFB300] sm:col-span-2 sm:w-fit"
+                  disabled={submitting}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:bg-[#FFB300] disabled:opacity-70 sm:col-span-2 sm:w-fit"
                 >
-                  Tiếp tục trao đổi qua Zalo
+                  {submitting ? 'Đang gửi...' : 'Gửi yêu cầu tư vấn'}
                   <ArrowUpRight className="h-4 w-4" />
                 </button>
               </form>

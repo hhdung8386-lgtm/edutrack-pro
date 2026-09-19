@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   Gift,
   Globe2,
-  MessageCircle,
   MonitorPlay,
   Phone,
   PlayCircle,
@@ -18,7 +17,6 @@ import {
 import { Mascot123 } from '@/components/landing/Mascot123'
 import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
 
-const ZALO_URL = 'https://zalo.me/0906966691'
 const HOTLINE = { label: '0933.964.683', href: 'tel:0933964683' }
 const IMG = '/hoc-thu'
 
@@ -65,7 +63,7 @@ const PROGRAMS = [
 ]
 
 const STEPS = [
-  { icon: CalendarCheck2, title: 'Đăng ký', text: 'Để lại số điện thoại, tư vấn viên liên hệ qua Zalo.' },
+  { icon: CalendarCheck2, title: 'Đăng ký', text: 'Để lại số điện thoại, tư vấn viên sẽ liên hệ lại.' },
   { icon: ClipboardCheck, title: 'Kiểm tra trình độ', text: 'Đánh giá theo khung CEFR, xác định điểm xuất phát.' },
   { icon: PlayCircle, title: 'Học thử 1 kèm 1', text: 'Trải nghiệm buổi học thật cùng gia sư và nhận lộ trình riêng.' },
 ]
@@ -130,22 +128,22 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
   const [agreed, setAgreed] = useState(true)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (submitting) return
     const phone = normalizeVietnamPhone(form.phone)
     if (!form.name.trim()) return setError('Vui lòng nhập họ tên phụ huynh / học viên.')
     if (!phone) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
     if (!agreed) return setError('Vui lòng đồng ý để 123English liên hệ tư vấn.')
     setError('')
 
-    // Lưu vào admin "Form khách hàng" song song; không chặn việc mở Zalo.
-    void submitCustomerLead({ source: 'hoc-thu-mien-phi', name: form.name, phone, ageGroup: form.age })
-
-    const message = `Xin chào 123English, tôi muốn đăng ký HỌC THỬ MIỄN PHÍ.\n- Họ tên: ${form.name.trim()}\n- SĐT: ${phone}\n- Đối tượng: ${form.age}`
-    // Không await: Safari iOS chặn window.open nếu mở sau một await.
-    navigator.clipboard?.writeText(message).catch(() => undefined)
-    window.open(ZALO_URL, '_blank', 'noopener,noreferrer')
+    // Thông tin về trang admin "Form khách đăng ký"; nhân viên tự liên hệ lại khách.
+    setSubmitting(true)
+    const saved = await submitCustomerLead({ source: 'hoc-thu-mien-phi', name: form.name, phone, ageGroup: form.age })
+    setSubmitting(false)
+    if (!saved) return setError(`Chưa gửi được thông tin. Vui lòng thử lại hoặc gọi ${HOTLINE.label}.`)
     setSent(true)
   }
 
@@ -155,24 +153,15 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
         <Mascot123 pose="cheer" className="mx-auto h-32 w-32" />
         <h3 className="mt-2 text-xl font-black text-[#10213A]">Đăng ký thành công!</h3>
         <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-          Thông tin đã được sao chép. Hãy <b>dán vào Zalo 123English</b> vừa mở để tư vấn viên xếp lịch học thử cho bạn ngay.
+          123English đã nhận thông tin của bạn. Tư vấn viên sẽ liên hệ số <b>{normalizeVietnamPhone(form.phone)}</b> để xếp lịch học thử trong giờ làm việc.
         </p>
         <div className="mt-5 grid gap-3">
-          <a
-            href={ZALO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#0068FF] text-base font-black text-white"
-          >
-            <MessageCircle className="h-5 w-5" aria-hidden />
-            Mở lại Zalo tư vấn
-          </a>
           <a
             href={HOTLINE.href}
             className="flex h-12 items-center justify-center gap-2 rounded-full border-2 border-[#10213A] text-base font-black text-[#10213A]"
           >
             <Phone className="h-5 w-5" aria-hidden />
-            Gọi {HOTLINE.label}
+            Cần gấp? Gọi {HOTLINE.label}
           </a>
         </div>
       </div>
@@ -251,12 +240,13 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
 
       <button
         type="submit"
-        className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF7A1A] to-[#E53935] text-lg font-black text-white shadow-[0_10px_24px_-10px_rgba(229,57,53,0.8)] active:scale-[0.98]"
+        disabled={submitting}
+        className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF7A1A] to-[#E53935] text-lg font-black text-white shadow-[0_10px_24px_-10px_rgba(229,57,53,0.8)] active:scale-[0.98] disabled:opacity-70"
       >
-        Đăng ký học thử ngay
+        {submitting ? 'Đang gửi...' : 'Đăng ký học thử ngay'}
       </button>
       <p className="mt-3 text-center text-xs font-semibold text-slate-500">
-        Tư vấn viên phản hồi qua Zalo trong giờ làm việc · Không spam
+        Tư vấn viên sẽ gọi lại trong giờ làm việc · Không spam
       </p>
     </form>
   )
