@@ -984,3 +984,40 @@ test('gia sư canonical chỉ tháo lessonId khi lesson liên kết đã hủy v
     requestedPoints: 0,
   }))
 })
+
+test('khách vãng lai gửi form customerLeads đúng shape; chỉ back-office đọc và xử lý', async () => {
+  const guestDb = testEnvironment.unauthenticatedContext().firestore()
+  const lead = {
+    source: 'hoc-thu-mien-phi',
+    sourceLabel: 'Học thử miễn phí',
+    sourcePath: '/hoc-thu-mien-phi',
+    name: 'Phụ huynh A',
+    phone: '0912345678',
+    ageGroup: 'Bé 6–9 tuổi',
+    status: 'new',
+    createdAt: serverTimestamp(),
+  }
+
+  await assertSucceeds(setDoc(doc(guestDb, 'customerLeads', 'lead-ok'), lead))
+  await assertFails(setDoc(doc(guestDb, 'customerLeads', 'lead-status'), { ...lead, status: 'converted' }))
+  await assertFails(setDoc(doc(guestDb, 'customerLeads', 'lead-phone'), { ...lead, phone: '12345' }))
+  await assertFails(setDoc(doc(guestDb, 'customerLeads', 'lead-extra'), { ...lead, note: 'tự ghi chú' }))
+  await assertFails(setDoc(doc(guestDb, 'customerLeads', 'lead-source'), { ...lead, source: 'fake' }))
+  await assertFails(getDoc(doc(guestDb, 'customerLeads', 'lead-ok')))
+  await assertFails(updateDoc(doc(guestDb, 'customerLeads', 'lead-ok'), { status: 'contacted' }))
+
+  const teacherDb = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+  await assertFails(getDoc(doc(teacherDb, 'customerLeads', 'lead-ok')))
+
+  const adminDb = testEnvironment.authenticatedContext(ADMIN_UID).firestore()
+  await assertSucceeds(getDoc(doc(adminDb, 'customerLeads', 'lead-ok')))
+  await assertSucceeds(updateDoc(doc(adminDb, 'customerLeads', 'lead-ok'), {
+    status: 'contacted', note: 'Đã gọi', updatedAt: serverTimestamp(), handledBy: ADMIN_UID, handledByName: 'Admin',
+  }))
+  await assertFails(updateDoc(doc(adminDb, 'customerLeads', 'lead-ok'), { phone: '0999999999' }))
+  await assertFails(updateDoc(doc(adminDb, 'customerLeads', 'lead-ok'), { status: 'whatever' }))
+
+  const studentManagerDb = testEnvironment.authenticatedContext(STUDENT_MANAGER_UID).firestore()
+  await assertSucceeds(getDoc(doc(studentManagerDb, 'customerLeads', 'lead-ok')))
+  await assertSucceeds(deleteDoc(doc(adminDb, 'customerLeads', 'lead-ok')))
+})

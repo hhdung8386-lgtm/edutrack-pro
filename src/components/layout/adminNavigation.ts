@@ -16,6 +16,7 @@ import {
   FileText,
   Gift,
   GraduationCap,
+  Inbox,
   LayoutTemplate,
   ListChecks,
   MapPin,
@@ -29,7 +30,7 @@ import {
   Wallet,
 } from 'lucide-react'
 
-export type AdminNavBadge = 'approvals' | 'bookings' | 'studentAlerts' | 'classCancellations'
+export type AdminNavBadge = 'approvals' | 'bookings' | 'studentAlerts' | 'classCancellations' | 'customerLeads'
 
 export interface AdminNavItem {
   to: string
@@ -108,6 +109,15 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     ],
   },
   {
+    id: 'customers',
+    label: 'Khách hàng',
+    icon: Inbox,
+    activePrefixes: ['/admin/customer-leads'],
+    items: [
+      { to: '/admin/customer-leads', icon: Inbox, label: 'Form khách đăng ký', badge: 'customerLeads' },
+    ],
+  },
+  {
     id: 'courses',
     label: 'Khóa học',
     icon: BookOpen,
@@ -168,6 +178,7 @@ export function canAccessAdminNavItem(
   }
   if (item.to === '/admin/notifications' && role !== 'admin') return false
   if (item.to === '/admin/online-classrooms' && role !== 'admin') return false
+  if (item.to === '/admin/customer-leads' && role === 'teacher_manager') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
   if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/offline-classes') || item.to.startsWith('/admin/student-alerts') || item.to === '/admin/class-hunting' || item.to === '/admin/booking-ledger-repair')) return false
   return true

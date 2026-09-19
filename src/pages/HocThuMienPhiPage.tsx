@@ -16,6 +16,7 @@ import {
   Trophy,
 } from 'lucide-react'
 import { Mascot123 } from '@/components/landing/Mascot123'
+import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
 
 const ZALO_URL = 'https://zalo.me/0906966691'
 const HOTLINE = { label: '0933.964.683', href: 'tel:0933964683' }
@@ -88,8 +89,6 @@ const FAQS = [
   },
 ]
 
-const PHONE_PATTERN = /^(?:0|\+?84)?([35789]\d{8})$/
-
 function usePageMeta() {
   useEffect(() => {
     const previousTitle = document.title
@@ -134,12 +133,14 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-    const phoneMatch = form.phone.replace(/[\s.()-]/g, '').match(PHONE_PATTERN)
+    const phone = normalizeVietnamPhone(form.phone)
     if (!form.name.trim()) return setError('Vui lòng nhập họ tên phụ huynh / học viên.')
-    if (!phoneMatch) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
-    const phone = `0${phoneMatch[1]}`
+    if (!phone) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
     if (!agreed) return setError('Vui lòng đồng ý để 123English liên hệ tư vấn.')
     setError('')
+
+    // Lưu vào admin "Form khách hàng" song song; không chặn việc mở Zalo.
+    void submitCustomerLead({ source: 'hoc-thu-mien-phi', name: form.name, phone, ageGroup: form.age })
 
     const message = `Xin chào 123English, tôi muốn đăng ký HỌC THỬ MIỄN PHÍ.\n- Họ tên: ${form.name.trim()}\n- SĐT: ${phone}\n- Đối tượng: ${form.age}`
     // Không await: Safari iOS chặn window.open nếu mở sau một await.

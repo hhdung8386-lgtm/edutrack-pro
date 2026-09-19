@@ -21,6 +21,7 @@ export function AdminSidebar({
   pendingCount = 0, 
   pendingBookingCount = 0,
   pendingClassCancellationCount = 0,
+  newCustomerLeadCount = 0,
   studentAlertCount = 0,
   isCollapsed,
   onToggleCollapse
@@ -28,6 +29,7 @@ export function AdminSidebar({
   pendingCount?: number; 
   pendingBookingCount?: number;
   pendingClassCancellationCount?: number;
+  newCustomerLeadCount?: number;
   studentAlertCount?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -55,6 +57,7 @@ export function AdminSidebar({
     if (badge === 'approvals') return pendingCount
     if (badge === 'bookings') return pendingBookingCount
     if (badge === 'classCancellations') return pendingClassCancellationCount
+    if (badge === 'customerLeads') return newCustomerLeadCount
     if (badge === 'studentAlerts') return studentAlertCount
     return 0
   }

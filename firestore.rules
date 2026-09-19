@@ -1033,6 +1033,46 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Form khách để lại trên trang public (/hoc-thu-mien-phi, /lien-he).
+    // Ai cũng tạo được một bản ghi đúng shape ở trạng thái 'new'; chỉ back-office đọc/xử lý.
+    match /customerLeads/{leadId} {
+      function isOptionalLeadString(data, key, max) {
+        return !data.keys().hasAny([key])
+          || (data[key] is string && data[key].size() <= max);
+      }
+
+      function hasValidPublicLeadShape() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['source', 'sourceLabel', 'sourcePath', 'name', 'phone', 'status', 'createdAt'])
+          && data.keys().hasOnly([
+            'source', 'sourceLabel', 'sourcePath', 'name', 'phone', 'ageGroup',
+            'subject', 'message', 'pageUrl', 'referrer', 'status', 'createdAt'
+          ])
+          && data.source in ['hoc-thu-mien-phi', 'lien-he']
+          && data.sourceLabel is string && data.sourceLabel.size() <= 80
+          && data.sourcePath is string && data.sourcePath.size() <= 200
+          && data.name is string && data.name.size() > 0 && data.name.size() <= 120
+          && data.phone is string && data.phone.matches('^0[35789][0-9]{8}$')
+          && isOptionalLeadString(data, 'ageGroup', 60)
+          && isOptionalLeadString(data, 'subject', 120)
+          && isOptionalLeadString(data, 'message', 2000)
+          && isOptionalLeadString(data, 'pageUrl', 500)
+          && isOptionalLeadString(data, 'referrer', 500)
+          && data.status == 'new'
+          && data.createdAt == request.time;
+      }
+
+      allow read: if isAdmin();
+      allow create: if hasValidPublicLeadShape();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'note', 'updatedAt', 'handledBy', 'handledByName'])
+        && request.resource.data.status in ['new', 'contacted', 'converted', 'spam']
+        && request.resource.data.get('note', '') is string
+        && request.resource.data.get('note', '').size() <= 2000;
+      allow delete: if isAdmin();
+    }
+
     // Catch-all deny
     match /{document=**} {
       allow read, write: if false;

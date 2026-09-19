@@ -8,6 +8,7 @@ import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
 import { usePendingClassCancellationCount } from '@/hooks/usePendingClassCancellationCount'
+import { useNewCustomerLeadCount } from '@/hooks/useNewCustomerLeadCount'
 
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
@@ -50,6 +51,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/quota-reconcile': 'Đối soát quỹ buổi',
   '/admin/booking-ledger-repair': 'Đồng bộ ca đã duyệt',
   '/admin/site-content': 'Nội dung trang web',
+  '/admin/customer-leads': 'Form khách đăng ký',
   '/admin/notifications': 'Gửi thông báo',
   '/admin/settings': 'Cài đặt',
 }
@@ -63,6 +65,7 @@ export function AdminLayout() {
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
   const pendingClassCancellationCount = usePendingClassCancellationCount()
+  const newCustomerLeadCount = useNewCustomerLeadCount()
   // Không quét toàn bộ lịch sử vắng học trên mọi trang admin chỉ để hiển thị badge.
   // Trang Cảnh báo học viên vẫn tự tải dữ liệu đầy đủ khi người dùng mở trực tiếp.
   const studentAlertCount = 0
@@ -89,6 +92,7 @@ export function AdminLayout() {
     if (badge === 'approvals') return pendingCount
     if (badge === 'bookings') return pendingBookingCount
     if (badge === 'classCancellations') return pendingClassCancellationCount
+    if (badge === 'customerLeads') return newCustomerLeadCount
     if (badge === 'studentAlerts') return studentAlertCount
     return 0
   }
@@ -112,6 +116,7 @@ export function AdminLayout() {
           pendingCount={pendingCount} 
           pendingBookingCount={pendingBookingCount} 
           pendingClassCancellationCount={pendingClassCancellationCount}
+          newCustomerLeadCount={newCustomerLeadCount}
           studentAlertCount={studentAlertCount}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}

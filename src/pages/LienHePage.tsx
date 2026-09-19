@@ -13,6 +13,7 @@ import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
+import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
 
 const ZALO_URL = 'https://zalo.me/0906966691'
 const CONSULTING_PHONE = { label: '0933.964.683', href: 'tel:0933964683' }
@@ -24,6 +25,8 @@ const OFFICES = [
 
 export function LienHePage() {
   const [form, setForm] = useState({ name: '', phone: '', subject: '', message: '' })
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState(false)
   const { content: siteContent } = useSiteContent('contact')
   const primaryHero = siteContent.blocks.find((block) => block.type === 'hero' && block.enabled)
   const extraBlocks = siteContent.blocks.filter((block) => block.id !== primaryHero?.id)
@@ -35,7 +38,29 @@ export function LienHePage() {
 
   const openZalo = (event: React.FormEvent) => {
     event.preventDefault()
+    const phone = normalizeVietnamPhone(form.phone)
+    if (!form.name.trim()) return setError('Vui lòng nhập họ và tên.')
+    if (!phone) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
+    setError('')
+
+    // Lưu vào admin "Form khách hàng"; Zalo mở ngay (Safari iOS chặn window.open sau await).
+    void submitCustomerLead({
+      source: 'lien-he',
+      name: form.name,
+      phone,
+      subject: form.subject,
+      message: form.message,
+    })
+    const message = [
+      'Xin chào 123English, tôi cần tư vấn.',
+      `- Họ tên: ${form.name.trim()}`,
+      `- SĐT: ${phone}`,
+      form.subject && `- Nội dung: ${form.subject}`,
+      form.message.trim() && `- Chia sẻ thêm: ${form.message.trim()}`,
+    ].filter(Boolean).join('\n')
+    navigator.clipboard?.writeText(message).catch(() => undefined)
     window.open(ZALO_URL, '_blank', 'noopener,noreferrer')
+    setSent(true)
   }
 
   return (
@@ -204,6 +229,14 @@ export function LienHePage() {
                     className="resize-none rounded-2xl border border-slate-200 px-4 py-3 font-semibold leading-6 outline-none transition placeholder:text-slate-300 focus:border-[#20B3E5] focus:ring-4 focus:ring-[#20B3E5]/10"
                   />
                 </label>
+                {error && (
+                  <p className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 sm:col-span-2">{error}</p>
+                )}
+                {sent && !error && (
+                  <p className="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700 sm:col-span-2">
+                    Đã gửi thông tin cho 123English. Nội dung đã được sao chép — bạn có thể dán vào Zalo vừa mở để trao đổi nhanh hơn.
+                  </p>
+                )}
                 <button
                   type="submit"
                   className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:bg-[#FFB300] sm:col-span-2 sm:w-fit"
