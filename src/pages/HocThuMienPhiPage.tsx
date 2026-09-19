@@ -327,7 +327,7 @@ export function HocThuMienPhiPage() {
             <span className="absolute -left-1 top-6 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#E53935] shadow">
               ❤ Very nice!
             </span>
-            <span className="absolute -right-1 top-16 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#1667B8] shadow">
+            <span className="absolute -top-3 right-4 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#1667B8] shadow">
               👍 Good job!
             </span>
             <span className="absolute bottom-4 left-3 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#B37400] shadow">
@@ -556,11 +556,11 @@ export function HocThuMienPhiPage() {
             formVisible ? 'pointer-events-none translate-y-[220%]' : 'translate-y-0'
           }`}
         >
-          <div className="relative flex items-center gap-2 rounded-full bg-white p-1.5 pl-20 shadow-[0_10px_30px_-8px_rgba(16,33,58,0.45)] ring-1 ring-[#FFE27A]">
-            <Mascot123 pose="peek" className="absolute -top-10 left-0 h-16 w-24" />
+          <div className="relative flex items-center gap-2 rounded-full bg-white p-1.5 pl-[86px] shadow-[0_10px_30px_-8px_rgba(16,33,58,0.45)] ring-1 ring-[#FFE27A]">
+            <Mascot123 pose="wave" className="absolute bottom-0.5 left-1 z-10 h-[96px] w-[82px] drop-shadow-md" />
             <p className="flex-1 text-[13px] font-black leading-tight">
               Học thử miễn phí
-              <span className="block text-[11px] font-bold text-slate-500">1 kèm 1 + kiểm tra trình độ</span>
+              <span className="block text-[11px] font-bold text-slate-500">Kèm kiểm tra trình độ</span>
             </p>
             <button
               type="button"
