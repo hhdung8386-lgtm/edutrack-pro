@@ -10,6 +10,7 @@ import { TeacherLayout } from '@/components/layout/TeacherLayout'
 import { TeacherAttendanceGate } from '@/components/teacher/TeacherAttendanceGate'
 
 // Lazy loaded Pages
+const HocThuMienPhiPage = lazy(() => import('@/pages/HocThuMienPhiPage').then(m => ({ default: m.HocThuMienPhiPage })))
 const LoginPage = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const BaiVietPage = lazy(() => import('@/pages/BaiVietPage').then(m => ({ default: m.BaiVietPage })))
 const BaiVietChiTietPage = lazy(() => import('@/pages/BaiVietPage').then(m => ({ default: m.BaiVietChiTietPage })))
@@ -122,6 +123,7 @@ function App() {
           <Route path="/chuong-trinh-hoc/:curriculumId/level/:level" element={<CurriculumLevelPage />} />
           <Route path="/chuong-trinh-ca-nhan-hoa" element={<ChuongTrinhCaNhanHoaPage />} />
           <Route path="/lien-he" element={<LienHePage />} />
+          <Route path="/hoc-thu-mien-phi" element={<HocThuMienPhiPage />} />
           <Route path="/bai-viet" element={<BaiVietPage />} />
           <Route path="/bai-viet/:slug" element={<BaiVietChiTietPage />} />
           <Route path="/giao-vien" element={<PublicTeachersPage />} />
