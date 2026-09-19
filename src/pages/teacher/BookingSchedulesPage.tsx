@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
-import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, ListChecks } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, ListChecks, CalendarX2, Undo2 } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -44,6 +44,15 @@ import {
 } from '@/components/lessons/absenceReport'
 import { ExcusedAbsenceNoteForm } from '@/components/lessons/ExcusedAbsenceNoteForm'
 import {
+  TEACHER_CANCELLATION_REASON_MAX,
+  TEACHER_CANCELLATION_REASON_MIN,
+  canRequestTeacherClassCancellation,
+  submitTeacherClassCancellation,
+  teacherCancellationErrorMessage,
+  teacherCancellationStatusOf,
+  withdrawTeacherClassCancellation,
+} from '@/lib/teacherClassCancellation'
+import {
   attendanceDeadlineMessage,
   canSubmitAttendance,
   getAttendanceDeadline,
@@ -78,6 +87,13 @@ const TIME_WINDOWS = [
 ] as const
 
 const EMPTY_DAY: DayAvailability = { available: false, timeRanges: [] }
+
+const CANCELLATION_REASON_PRESETS = [
+  { vi: 'Bận việc đột xuất', en: 'Unexpected commitment' },
+  { vi: 'Ốm / sức khoẻ không đảm bảo', en: 'Sick / health issue' },
+  { vi: 'Sự cố mạng / mất điện', en: 'Internet or power outage' },
+  { vi: 'Việc gia đình', en: 'Family matter' },
+] as const
 
 function emptySlots(): Record<DayOfWeek, DayAvailability> {
   return {
@@ -259,6 +275,12 @@ export function BookingSchedulesPage() {
   const attendanceSubmissionInFlightRef = useRef(false)
   const attendanceSubmissionAttemptRef = useRef(0)
   const [attendanceNow, setAttendanceNow] = useState(() => Date.now())
+
+  // Xin huỷ lớp (gia sư bận xin nghỉ) — giáo vụ duyệt ở trang admin
+  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [submittingCancelRequest, setSubmittingCancelRequest] = useState(false)
+  const [withdrawingCancelRequest, setWithdrawingCancelRequest] = useState(false)
 
   const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
   const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
@@ -508,6 +530,56 @@ export function BookingSchedulesPage() {
     }).catch((err) => {
       console.error('Error updating student on click:', err)
     })
+  }
+
+  // Bản mới nhất của ca đang mở (listener cập nhật trạng thái xin huỷ mà không phải đóng modal)
+  const liveSelectedBooking = useMemo(
+    () => (selectedBooking ? localBookings.find((item) => item.id === selectedBooking.id) || selectedBooking : null),
+    [localBookings, selectedBooking],
+  )
+
+  const openCancelRequestModal = () => {
+    setCancelReason('')
+    setShowCancelRequestModal(true)
+  }
+
+  const submitCancelRequest = async () => {
+    if (!liveSelectedBooking || submittingCancelRequest) return
+    const reason = cancelReason.trim()
+    if (reason.length < TEACHER_CANCELLATION_REASON_MIN) {
+      toast.warning(lang === 'vi'
+        ? `Vui lòng nhập lý do (ít nhất ${TEACHER_CANCELLATION_REASON_MIN} ký tự).`
+        : `Please enter a reason (at least ${TEACHER_CANCELLATION_REASON_MIN} characters).`)
+      return
+    }
+    setSubmittingCancelRequest(true)
+    try {
+      await submitTeacherClassCancellation(liveSelectedBooking.id, reason)
+      toast.success(lang === 'vi'
+        ? 'Đã gửi yêu cầu huỷ lớp. Giáo vụ sẽ duyệt và sắp xếp lại lịch.'
+        : 'Cancellation request sent. The academic team will review it.')
+      setShowCancelRequestModal(false)
+      setCancelReason('')
+    } catch (error) {
+      console.error('Teacher class cancellation request failed:', error)
+      toast.error(teacherCancellationErrorMessage(error, lang === 'vi' ? 'vi' : 'en'))
+    } finally {
+      setSubmittingCancelRequest(false)
+    }
+  }
+
+  const withdrawCancelRequest = async () => {
+    if (!liveSelectedBooking || withdrawingCancelRequest) return
+    setWithdrawingCancelRequest(true)
+    try {
+      await withdrawTeacherClassCancellation(liveSelectedBooking.id)
+      toast.success(lang === 'vi' ? 'Đã rút yêu cầu huỷ. Ca học vẫn giữ nguyên.' : 'Request withdrawn. The class stays scheduled.')
+    } catch (error) {
+      console.error('Teacher class cancellation withdraw failed:', error)
+      toast.error(teacherCancellationErrorMessage(error, lang === 'vi' ? 'vi' : 'en'))
+    } finally {
+      setWithdrawingCancelRequest(false)
+    }
   }
 
   const openBatchAttendancePicker = () => {
@@ -1159,8 +1231,13 @@ export function BookingSchedulesPage() {
                             className={`w-full py-1.5 px-0.5 rounded-xl text-center block transition shadow-sm ${
                               !isAwaitingAttendance(booking)
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
-                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/50'
+                                : teacherCancellationStatusOf(booking) === 'pending'
+                                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/50'
                             }`}
+                            title={teacherCancellationStatusOf(booking) === 'pending'
+                              ? (lang === 'vi' ? 'Đã xin huỷ — chờ giáo vụ duyệt' : 'Cancellation requested — awaiting review')
+                              : undefined}
                           >
                             <div className="font-extrabold text-[11px] truncate tracking-tight flex items-center justify-center gap-0.5">
                               {!isAwaitingAttendance(booking) && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
@@ -1171,6 +1248,12 @@ export function BookingSchedulesPage() {
                             }`} title={booking.studentName}>
                               {booking.studentName}
                             </div>
+                            {isAwaitingAttendance(booking) && teacherCancellationStatusOf(booking) === 'pending' && (
+                              <div className="mx-auto mt-1 inline-flex max-w-full items-center gap-0.5 rounded-full bg-rose-600 px-1.5 py-px text-[8px] font-black uppercase tracking-wide text-white">
+                                <CalendarX2 className="h-2.5 w-2.5 flex-shrink-0" />
+                                <span className="truncate">{lang === 'vi' ? 'Chờ huỷ' : 'Cancel req.'}</span>
+                              </div>
+                            )}
                           </button>
                         ) : open ? (
                           <span className="inline-flex py-1 px-2.5 rounded-lg bg-sky-50 text-sky-700 font-extrabold text-[10px] uppercase tracking-wider select-none border border-sky-100">
@@ -1476,6 +1559,179 @@ export function BookingSchedulesPage() {
                 )
               })()}
             </div>
+
+            {/* Xin huỷ lớp — gia sư bận xin nghỉ, giáo vụ duyệt */}
+            {liveSelectedBooking && isAwaitingAttendance(liveSelectedBooking) && (() => {
+              const cancellationStatus = teacherCancellationStatusOf(liveSelectedBooking)
+              const adminNote = liveSelectedBooking.teacherCancellationAdminNote?.trim()
+              if (cancellationStatus === 'pending') {
+                return (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white">
+                        <CalendarX2 className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-black text-rose-900">
+                          {lang === 'vi' ? 'Đã gửi yêu cầu huỷ lớp — chờ giáo vụ duyệt' : 'Cancellation requested — awaiting review'}
+                        </p>
+                        {liveSelectedBooking.teacherCancellationReason && (
+                          <p className="mt-1 break-words text-xs font-semibold text-rose-800">
+                            {lang === 'vi' ? 'Lý do: ' : 'Reason: '}{liveSelectedBooking.teacherCancellationReason}
+                          </p>
+                        )}
+                        <p className="mt-1.5 text-[11px] leading-5 text-rose-700">
+                          {lang === 'vi'
+                            ? 'Ca vẫn nằm trong lịch cho tới khi được duyệt. Nếu vẫn dạy được, hãy rút yêu cầu.'
+                            : 'The class stays on your schedule until approved. If you can still teach, withdraw the request.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={withdrawingCancelRequest}
+                        onClick={withdrawCancelRequest}
+                        className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Undo2 className={`h-4 w-4 ${withdrawingCancelRequest ? 'animate-spin' : ''}`} />
+                        {withdrawingCancelRequest
+                          ? (lang === 'vi' ? 'Đang rút...' : 'Withdrawing...')
+                          : (lang === 'vi' ? 'Rút yêu cầu huỷ' : 'Withdraw request')}
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+              const canRequest = canRequestTeacherClassCancellation(liveSelectedBooking, attendanceNow)
+              if (!canRequest && cancellationStatus !== 'rejected') return null
+              return (
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  {cancellationStatus === 'rejected' && (
+                    <div className={`${canRequest ? 'mb-3 ' : ''}rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900`}>
+                      <p className="font-bold">
+                        {lang === 'vi' ? 'Giáo vụ đã từ chối yêu cầu huỷ — ca vẫn diễn ra.' : 'Your cancellation request was declined — the class goes ahead.'}
+                      </p>
+                      {adminNote && <p className="mt-0.5 break-words font-semibold">{lang === 'vi' ? 'Ghi chú: ' : 'Note: '}{adminNote}</p>}
+                    </div>
+                  )}
+                  {canRequest && (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-800">
+                          {lang === 'vi' ? 'Bận, không dạy được ca này?' : 'Unable to teach this class?'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {lang === 'vi'
+                            ? 'Gửi yêu cầu huỷ để giáo vụ duyệt và sắp xếp lại cho học viên.'
+                            : 'Send a cancellation request so the academic team can rearrange the class.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openCancelRequestModal}
+                        className="inline-flex min-h-[44px] flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
+                      >
+                        <CalendarX2 className="h-4 w-4" />
+                        {lang === 'vi' ? 'Yêu cầu huỷ lớp' : 'Request cancellation'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        </Modal>
+      )}
+
+      {/* Xin huỷ lớp: nhập lý do */}
+      {showCancelRequestModal && liveSelectedBooking && (
+        <Modal
+          open
+          onClose={() => {
+            if (!submittingCancelRequest) setShowCancelRequestModal(false)
+          }}
+          title={lang === 'vi' ? 'Yêu cầu huỷ lớp' : 'Request class cancellation'}
+          footer={
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+              <Button
+                variant="ghost"
+                onClick={() => setShowCancelRequestModal(false)}
+                disabled={submittingCancelRequest}
+              >
+                {lang === 'vi' ? 'Quay lại' : 'Back'}
+              </Button>
+              <Button
+                variant="danger"
+                loading={submittingCancelRequest}
+                disabled={cancelReason.trim().length < TEACHER_CANCELLATION_REASON_MIN}
+                onClick={submitCancelRequest}
+              >
+                <CalendarX2 className="h-4 w-4" />
+                {lang === 'vi' ? 'Gửi yêu cầu huỷ' : 'Send request'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">{lang === 'vi' ? 'Ca xin huỷ' : 'Class'}</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">
+                {liveSelectedBooking.displayDate} · {liveSelectedBooking.displayStart} - {liveSelectedBooking.displayEnd}
+                <span className="ml-1 font-semibold text-slate-500">({liveSelectedBooking.requestedMinutes} {lang === 'vi' ? 'phút' : 'min'})</span>
+              </p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-600">
+                {liveSelectedBooking.studentName} · {liveSelectedBooking.studentCode}
+                {liveSelectedBooking.subjectName ? ` · ${liveSelectedBooking.subjectName}` : ''}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-bold text-slate-700">{lang === 'vi' ? 'Chọn nhanh lý do' : 'Quick reasons'}</p>
+              <div className="flex flex-wrap gap-2">
+                {CANCELLATION_REASON_PRESETS.map((preset) => {
+                  const label = lang === 'vi' ? preset.vi : preset.en
+                  const active = cancelReason.trim() === label
+                  return (
+                    <button
+                      key={preset.vi}
+                      type="button"
+                      onClick={() => setCancelReason(label)}
+                      className={`min-h-[36px] rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                        active
+                          ? 'border-rose-500 bg-rose-600 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-rose-300 hover:text-rose-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-700">
+                {lang === 'vi' ? 'Lý do xin huỷ' : 'Reason'} <span className="text-rose-600">*</span>
+              </span>
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value.slice(0, TEACHER_CANCELLATION_REASON_MAX))}
+                rows={3}
+                maxLength={TEACHER_CANCELLATION_REASON_MAX}
+                placeholder={lang === 'vi' ? 'Ví dụ: Hôm đó em bận việc gia đình, xin nghỉ ca này.' : 'e.g. I have a family matter that day and cannot teach.'}
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-rose-400 focus:ring-4 focus:ring-rose-100"
+              />
+              <span className="mt-1 block text-right text-[11px] font-semibold text-slate-400">
+                {cancelReason.length}/{TEACHER_CANCELLATION_REASON_MAX}
+              </span>
+            </label>
+
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600">
+              {lang === 'vi'
+                ? 'Yêu cầu được gửi tới giáo vụ. Ca vẫn nằm trong lịch và bạn vẫn phải dạy nếu yêu cầu chưa được duyệt.'
+                : 'The request goes to the academic team. The class stays on your schedule until it is approved.'}
+            </p>
           </div>
         </Modal>
       )}

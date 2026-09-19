@@ -11,6 +11,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  CalendarX2,
   ClipboardCheck,
   FileText,
   Gift,
@@ -28,7 +29,7 @@ import {
   Wallet,
 } from 'lucide-react'
 
-export type AdminNavBadge = 'approvals' | 'bookings' | 'studentAlerts'
+export type AdminNavBadge = 'approvals' | 'bookings' | 'studentAlerts' | 'classCancellations'
 
 export interface AdminNavItem {
   to: string
@@ -93,6 +94,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/class-hunting',
       '/admin/online-classrooms',
       '/admin/future-bookings',
+      '/admin/class-cancellations',
       '/admin/bookings',
     ],
     items: [
@@ -101,6 +103,7 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       { to: '/admin/class-hunting', icon: Target, label: 'CLASS HUNTING' },
       { to: '/admin/online-classrooms', icon: MonitorUp, label: 'Phòng học thử' },
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
+      { to: '/admin/class-cancellations', icon: CalendarX2, label: 'Yêu cầu huỷ lớp', badge: 'classCancellations' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
     ],
   },

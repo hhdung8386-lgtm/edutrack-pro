@@ -20,12 +20,14 @@ import {
 export function AdminSidebar({ 
   pendingCount = 0, 
   pendingBookingCount = 0,
+  pendingClassCancellationCount = 0,
   studentAlertCount = 0,
   isCollapsed,
   onToggleCollapse
 }: { 
   pendingCount?: number; 
   pendingBookingCount?: number;
+  pendingClassCancellationCount?: number;
   studentAlertCount?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -52,6 +54,7 @@ export function AdminSidebar({
   const badgeCount = (badge?: AdminNavBadge) => {
     if (badge === 'approvals') return pendingCount
     if (badge === 'bookings') return pendingBookingCount
+    if (badge === 'classCancellations') return pendingClassCancellationCount
     if (badge === 'studentAlerts') return studentAlertCount
     return 0
   }

@@ -8,6 +8,14 @@ import {
   teacherAttendanceAuditBookingResponse,
   teacherBookingResponseConflict,
 } from './teacherBookingSecurity'
+import {
+  TEACHER_CANCELLATION_BLOCKER_MESSAGES,
+  TeacherClassCancellationValidationError,
+  normalizeTeacherClassCancellationRequest,
+  teacherCancellationRequestBlocker,
+  teacherCancellationWithdrawBlocker,
+  type TeacherClassCancellationRequest,
+} from './teacherClassCancellation'
 
 const db = new Firestore()
 const READ_LIMIT = 1000
@@ -201,4 +209,71 @@ export const getTeacherAttendanceAuditData = onCall({
     )),
     sameDayByTeacher,
   }
+})
+
+/**
+ * Gia sư gửi / rút yêu cầu huỷ một ca đã xếp. Hàm này KHÔNG nhả ca và KHÔNG
+ * đụng kim cương: giáo vụ duyệt ở trang admin mới nhả hold trong một
+ * transaction riêng. Chỉ ghi các trường teacherCancellation* trên booking.
+ */
+export const requestTeacherClassCancellation = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+  maxInstances: 10,
+}, async (call) => {
+  const actor = await canonicalTeacher(call.auth?.uid)
+  let request: TeacherClassCancellationRequest
+  try {
+    request = normalizeTeacherClassCancellationRequest(call.data)
+  } catch (cause) {
+    if (cause instanceof TeacherClassCancellationValidationError) {
+      throw callableError('invalid-argument', cause.reason, cause.message)
+    }
+    throw cause
+  }
+  const bookingRef = db.collection('bookingRequests').doc(request.bookingId)
+
+  await db.runTransaction(async (transaction) => {
+    const bookingSnapshot = await transaction.get(bookingRef)
+    if (!bookingSnapshot.exists) throw callableError('not-found', 'BOOKING_NOT_FOUND', 'Không tìm thấy ca học.')
+    const booking = bookingSnapshot.data() as Record<string, unknown>
+
+    if (request.action === 'withdraw') {
+      const blocker = teacherCancellationWithdrawBlocker(booking, actor.teacherId)
+      if (blocker) {
+        throw callableError(
+          blocker === 'BOOKING_TEACHER_MISMATCH' ? 'permission-denied' : 'failed-precondition',
+          blocker,
+          TEACHER_CANCELLATION_BLOCKER_MESSAGES[blocker] || 'Không thể rút yêu cầu.',
+        )
+      }
+      transaction.update(bookingRef, {
+        teacherCancellationStatus: 'withdrawn',
+        teacherCancellationResolvedAt: FieldValue.serverTimestamp(),
+        teacherCancellationResolvedBy: `teacher:${actor.uid}`,
+      })
+      return
+    }
+
+    const blocker = teacherCancellationRequestBlocker(booking, actor.teacherId, Date.now())
+    if (blocker) {
+      throw callableError(
+        blocker === 'BOOKING_TEACHER_MISMATCH' ? 'permission-denied' : 'failed-precondition',
+        blocker,
+        TEACHER_CANCELLATION_BLOCKER_MESSAGES[blocker] || 'Không thể gửi yêu cầu huỷ.',
+      )
+    }
+    transaction.update(bookingRef, {
+      teacherCancellationStatus: 'pending',
+      teacherCancellationReason: request.reason,
+      teacherCancellationRequestedAt: FieldValue.serverTimestamp(),
+      teacherCancellationRequestedBy: actor.uid,
+      // Xoá kết quả của lần xin trước (nếu từng bị từ chối/rút) để admin không đọc nhầm.
+      teacherCancellationResolvedAt: FieldValue.delete(),
+      teacherCancellationResolvedBy: FieldValue.delete(),
+      teacherCancellationAdminNote: FieldValue.delete(),
+    })
+  })
+  return { bookingId: request.bookingId, action: request.action }
 })

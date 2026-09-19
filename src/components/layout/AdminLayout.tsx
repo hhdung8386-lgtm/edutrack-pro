@@ -7,6 +7,7 @@ import { signOut } from '@/lib/auth'
 import { toast } from '@/stores/toastStore'
 import { usePendingCount } from '@/hooks/usePendingCount'
 import { usePendingBookingCount } from '@/hooks/usePendingBookingCount'
+import { usePendingClassCancellationCount } from '@/hooks/usePendingClassCancellationCount'
 
 import { useAuthStore } from '@/stores/authStore'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
@@ -36,6 +37,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/class-hunting': 'CLASS HUNTING',
   '/admin/online-classrooms': 'Phòng học thử trực tuyến',
   '/admin/future-bookings': 'Lịch học đã đặt',
+  '/admin/class-cancellations': 'Yêu cầu huỷ lớp',
   '/admin/overdue-bookings': 'Ca học quá hạn',
   '/admin/bookings': 'Yêu cầu gia sư',
   '/admin/subjects': 'Môn học',
@@ -60,6 +62,7 @@ export function AdminLayout() {
   const navigate = useNavigate()
   const pendingCount = usePendingCount()
   const pendingBookingCount = usePendingBookingCount()
+  const pendingClassCancellationCount = usePendingClassCancellationCount()
   // Không quét toàn bộ lịch sử vắng học trên mọi trang admin chỉ để hiển thị badge.
   // Trang Cảnh báo học viên vẫn tự tải dữ liệu đầy đủ khi người dùng mở trực tiếp.
   const studentAlertCount = 0
@@ -85,6 +88,7 @@ export function AdminLayout() {
   const badgeCount = (badge?: AdminNavBadge) => {
     if (badge === 'approvals') return pendingCount
     if (badge === 'bookings') return pendingBookingCount
+    if (badge === 'classCancellations') return pendingClassCancellationCount
     if (badge === 'studentAlerts') return studentAlertCount
     return 0
   }
@@ -107,6 +111,7 @@ export function AdminLayout() {
         <AdminSidebar 
           pendingCount={pendingCount} 
           pendingBookingCount={pendingBookingCount} 
+          pendingClassCancellationCount={pendingClassCancellationCount}
           studentAlertCount={studentAlertCount}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}

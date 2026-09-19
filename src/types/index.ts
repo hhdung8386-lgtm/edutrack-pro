@@ -509,7 +509,18 @@ export interface BookingRequest {
   holdResolution?: 'overdue_released' | 'undated_released' | 'approved_lesson_settled' | 'pending_rebook_released'
   holdResolvedAt?: Timestamp
   holdResolvedBy?: string
+  /** Gia sư xin huỷ ca (xin nghỉ) → giáo vụ duyệt mới nhả ca và kim cương đang giữ. */
+  teacherCancellationStatus?: TeacherClassCancellationStatus
+  teacherCancellationReason?: string
+  teacherCancellationRequestedAt?: Timestamp
+  teacherCancellationRequestedBy?: string
+  teacherCancellationResolvedAt?: Timestamp
+  teacherCancellationResolvedBy?: string
+  /** Ghi chú của giáo vụ khi duyệt/từ chối, gia sư đọc được. */
+  teacherCancellationAdminNote?: string
 }
+
+export type TeacherClassCancellationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'closed'
 
 export interface AdminLog {
   id: string
