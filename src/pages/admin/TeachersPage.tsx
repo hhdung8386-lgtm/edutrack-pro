@@ -10,12 +10,13 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
-import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Plus, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Mail, Plus, Send, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getTeacherPointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance, missingTeacherFields } from '@/lib/teacherProfile'
 import { retireTeacherAccount } from '@/lib/teacherAccount'
+import { sendTeacherScheduleEmail, teacherScheduleEmailErrorMessage } from '@/lib/teacherScheduleEmail'
 import { useAuthStore } from '@/stores/authStore'
 import { normalizeTeacherCountryCode, teacherCountryLabel } from '@/lib/teacherCountries'
 
@@ -210,9 +211,37 @@ function CertificateComplianceCell({ teacher, onEdit, compact = false }: { teach
   )
 }
 
+function TeacherEmailCell({ teacher, onEdit }: { teacher: Teacher; onEdit: () => void }) {
+  const email = teacher.email?.trim()
+  if (email) {
+    return (
+      <a
+        href={`mailto:${email}`}
+        className="inline-flex max-w-[210px] items-center gap-1.5 truncate text-xs font-semibold text-sky-700 hover:underline"
+        title={email}
+      >
+        <Mail className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{email}</span>
+      </a>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      className="inline-flex min-h-8 items-center gap-1 rounded-lg px-1.5 text-[11px] font-bold text-slate-400 hover:bg-slate-50 hover:text-sky-700"
+    >
+      <Mail className="h-3.5 w-3.5" />
+      Thêm email
+    </button>
+  )
+}
+
 export function TeachersPage({ category = 'online' }: { category?: TeacherDirectoryView }) {
   const navigate = useNavigate()
   const { user } = useAuthStore()
+  const [emailTeacher, setEmailTeacher] = useState<Teacher | null>(null)
+  const [sendingEmail, setSendingEmail] = useState<'teacher' | 'test' | null>(null)
   const directory = DIRECTORY_CONFIG[category]
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
@@ -373,7 +402,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const filtered = directoryTeachers.filter((t) => {
     const matchSearch =
       t.name.toLowerCase().includes(search.toLowerCase()) ||
-      (t.code || t.releasedNickname || '').toLowerCase().includes(search.toLowerCase())
+      (t.code || t.releasedNickname || '').toLowerCase().includes(search.toLowerCase()) ||
+      (t.email || '').toLowerCase().includes(search.toLowerCase())
     const teacherCountry = t.country ? normalizeTeacherCountryCode(t.country) : 'missing'
     const matchCountry = countryFilter === 'all' || teacherCountry === countryFilter
     const matchStatus = category === 'resigned' || statusFilter === 'all' || t.status === statusFilter
@@ -440,6 +470,29 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       toast.success(next ? `Đã thêm ${teacher.name} vào nhóm Tester` : `Đã bỏ ${teacher.name} khỏi nhóm Tester`)
     } catch (err: any) {
       toast.error('Không thể chuyển đổi: ' + (err?.message || ''))
+    }
+  }
+
+  const handleSendScheduleEmail = async (mode: 'teacher' | 'test') => {
+    if (!emailTeacher || sendingEmail) return
+    const testRecipient = mode === 'test' ? user?.email || '' : undefined
+    if (mode === 'test' && !testRecipient) {
+      toast.error('Tài khoản của bạn chưa có email để nhận thử.')
+      return
+    }
+    setSendingEmail(mode)
+    try {
+      const result = await sendTeacherScheduleEmail(emailTeacher.id, testRecipient)
+      if (!result.sent) {
+        toast.error(`${emailTeacher.name} chưa có ca dạy nào trong 7 ngày tới nên chưa gửi email.`)
+        return
+      }
+      toast.success(`Đã gửi lịch dạy (${result.classCount} ca) tới ${result.recipient}`)
+      if (mode === 'teacher') setEmailTeacher(null)
+    } catch (error) {
+      toast.error(teacherScheduleEmailErrorMessage(error))
+    } finally {
+      setSendingEmail(null)
     }
   }
 
@@ -657,7 +710,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <Input
-          placeholder="Tìm theo tên hoặc mã gia sư..."
+          placeholder="Tìm theo tên, mã hoặc email gia sư..."
           leftIcon={<Search className="w-4 h-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -810,7 +863,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Email', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
@@ -883,6 +936,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                         <CertificateComplianceCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
                       </td>
+                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                        <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
+                      </td>
                       <td className="px-4 py-3">
                         <CountryCell country={teacher.country} />
                       </td>
@@ -904,6 +960,14 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                             <Eye className="w-4 h-4" />
                           </button>
                           <Button size="sm" variant="ghost" onClick={() => setEditTeacher(teacher)}>Sửa</Button>
+                          <button
+                            onClick={() => setEmailTeacher(teacher)}
+                            className="p-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-500/10 rounded-lg transition-colors"
+                            aria-label="Gửi lịch dạy qua email"
+                            title="Gửi lịch dạy qua email"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => toggleTester(teacher)}
                             className={`px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${teacher.isTester ? 'text-emerald-600 hover:bg-emerald-50' : 'text-violet-600 hover:bg-violet-50'}`}
@@ -951,6 +1015,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
                     <div className="mt-1"><CountryCell country={teacher.country} /></div>
+                    <div className="mt-1" onClick={(event) => event.stopPropagation()}>
+                      <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
+                    </div>
                     <div className="mt-2" onClick={(event) => event.stopPropagation()}>
                       <CertificateComplianceCell teacher={teacher} compact onEdit={() => setEditTeacher(teacher)} />
                     </div>
@@ -1006,6 +1073,34 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
 
       {showAdd && <TeacherFormModal defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setShowAdd(false)} />}
       {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setEditTeacher(null)} />}
+      <ConfirmDialog
+        open={!!emailTeacher}
+        onClose={() => !sendingEmail && setEmailTeacher(null)}
+        onConfirm={() => handleSendScheduleEmail('teacher')}
+        title="Gửi lịch dạy qua email"
+        description={emailTeacher?.email
+          ? `Gửi ngay lịch dạy 7 ngày tới của ${emailTeacher.name} tới ${emailTeacher.email}.`
+          : `${emailTeacher?.name || 'Gia sư'} chưa có email liên hệ. Bấm "Sửa" để thêm email trước khi gửi.`}
+        confirmLabel="Gửi cho gia sư"
+        confirmDisabled={!emailTeacher?.email || sendingEmail === 'test'}
+        loading={sendingEmail === 'teacher'}
+      >
+        <div className="space-y-2 rounded-lg border border-sky-100 bg-sky-50 p-3 text-sm text-slate-600">
+          <p>Hệ thống cũng tự động gửi: <strong>19:00 tối hôm trước</strong> (lịch ngày mai) và <strong>~60 phút trước giờ dạy</strong> cho gia sư có email.</p>
+          {user?.email && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => handleSendScheduleEmail('test')}
+              loading={sendingEmail === 'test'}
+              disabled={sendingEmail === 'teacher'}
+            >
+              Gửi thử tới {user.email}
+            </Button>
+          )}
+        </div>
+      </ConfirmDialog>
       <ConfirmDialog
         open={!!deleteTeacher}
         onClose={() => setDeleteTeacher(null)}

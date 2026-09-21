@@ -75,6 +75,8 @@ export {
 
 export { cleanupOnlineClassroomEphemeralData } from './onlineClassroomEphemeralCleanup'
 
+export { sendTeacherScheduleEmail, sendTeacherScheduleReminders } from './teacherScheduleReminderFunctions'
+
 export { onlineClassroomJaasSettingsProvisioning } from './onlineClassroomProvisioningFunctions'
 
 export {

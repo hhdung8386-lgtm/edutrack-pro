@@ -68,3 +68,9 @@ export function getTeacherCertificateCompliance(
     missingCertificateLabels,
   }
 }
+
+/** Email liên hệ hợp lệ; email đăng nhập nội bộ @edutrackpro.app không nhận thư được. */
+export function isValidTeacherContactEmail(value: string | undefined): boolean {
+  const email = value?.trim().toLowerCase() || ''
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !email.endsWith('@edutrackpro.app')
+}

@@ -149,6 +149,8 @@ export interface Teacher {
   // Interview fields
   yob?: number
   livingArea?: string
+  /** Email liên hệ của gia sư (khác email đăng nhập nội bộ), dùng để gửi nhắc lịch dạy. */
+  email?: string
   /** Đã hoàn thành Chương trình Đào tạo Gia sư tại 123English (60 giờ) — admin xác nhận */
   trainedAt123English?: boolean
   degreeType?: string

@@ -27,7 +27,7 @@ import {
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib/points'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
-import { getTeacherCertificateCompliance } from '@/lib/teacherProfile'
+import { getTeacherCertificateCompliance, isValidTeacherContactEmail } from '@/lib/teacherProfile'
 import { downloadImage } from '@/lib/downloadImage'
 import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
@@ -105,6 +105,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
   // Interview profile states
   const [yob, setYob] = useState<string>(teacher?.yob ? String(teacher.yob) : '')
   const [livingArea, setLivingArea] = useState(teacher?.livingArea || '')
+  const [contactEmail, setContactEmail] = useState(teacher?.email || '')
   const [degreeType, setDegreeType] = useState(teacher?.degreeType || 'Đại học')
   const [university, setUniversity] = useState(teacher?.university || '')
   const [major, setMajor] = useState(teacher?.major || '')
@@ -375,6 +376,14 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
     const timezoneOffset = getTeacherTimezoneOffset(data.country || 'VN')
     const normalizedStudentPoints = normalizePointsPer25Minutes(studentPointsPer25)
 
+    const normalizedContactEmail = contactEmail.trim().toLowerCase()
+    if (normalizedContactEmail && !isValidTeacherContactEmail(normalizedContactEmail)) {
+      setLocalErrors(prev => ({ ...prev, email: 'Email không hợp lệ' }))
+      document.getElementById('field-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      toast.error('Email gia sư không hợp lệ')
+      return
+    }
+
     try {
       const finalName = data.name?.trim() || ''
 
@@ -384,6 +393,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       const interviewData = {
         yob: yob ? Number(yob) : null,
         livingArea: livingArea || '',
+        email: normalizedContactEmail,
         trainedAt123English: !!trainedAt123English,
         degreeType: degreeType || '',
         university: university || '',
@@ -968,6 +978,21 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
               }
             }
           })()}
+        />
+
+        <Input
+          id="field-email"
+          label="Email liên hệ (nhận nhắc lịch dạy)"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          placeholder="giasu@gmail.com"
+          value={contactEmail}
+          error={localErrors.email}
+          onChange={(e) => {
+            setContactEmail(e.target.value)
+            if (localErrors.email) setLocalErrors(prev => ({ ...prev, email: '' }))
+          }}
         />
 
         <div>
