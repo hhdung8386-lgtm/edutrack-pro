@@ -19,6 +19,7 @@ test('online classes contain individual students and group classes, with offline
   assert.deepEqual(studentGroup?.items.map((item) => item.to), [
     '/admin/students/fixed',
     '/admin/students/flexible',
+    '/admin/students/trial',
     '/admin/students/group',
   ])
   assert.equal(offlineClasses?.label, 'Lớp offline')
@@ -30,6 +31,7 @@ test('online classes contain individual students and group classes, with offline
   assert.equal(groups.indexOf(offlineClasses!), groups.indexOf(studentGroup!) + 1)
   assert.ok(paths.includes('/admin/students/fixed'))
   assert.ok(paths.includes('/admin/students/flexible'))
+  assert.ok(paths.includes('/admin/students/trial'))
   assert.ok(paths.includes('/admin/students/group'))
   assert.ok(paths.includes('/admin/offline-classes'))
   assert.ok(paths.includes('/admin/offline-classes/groups'))
@@ -41,6 +43,7 @@ test('student manager can access all student class types', () => {
 
   assert.ok(paths.includes('/admin/students/fixed'))
   assert.ok(paths.includes('/admin/students/flexible'))
+  assert.ok(paths.includes('/admin/students/trial'))
   assert.ok(paths.includes('/admin/students/group'))
   assert.ok(paths.includes('/admin/offline-classes'))
   assert.ok(paths.includes('/admin/offline-classes/groups'))
@@ -64,6 +67,7 @@ test('online and offline class routes activate only their own top-level item', (
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/fixed'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/flexible'), true)
+  assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/trial'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/students/group'), true)
   assert.equal(isAdminNavGroupActive(studentGroup, '/admin/offline-classes'), false)
   assert.equal(isAdminNavGroupActive(offlineClasses, '/admin/offline-classes'), true)

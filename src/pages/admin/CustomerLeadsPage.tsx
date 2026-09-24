@@ -163,11 +163,12 @@ function LeadCard({ lead, onDelete }: { lead: CustomerLead; onDelete: (lead: Cus
   )
 }
 
-export function CustomerLeadsPage() {
+export function CustomerLeadsPage({ view = 'all' }: { view?: 'all' | 'trial' }) {
+  const trialOnly = view === 'trial'
   const [leads, setLeads] = useState<CustomerLead[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [source, setSource] = useState<CustomerLeadSource | 'all'>('all')
+  const [source, setSource] = useState<CustomerLeadSource | 'all'>(trialOnly ? 'hoc-thu-mien-phi' : 'all')
   const [status, setStatus] = useState<CustomerLeadStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [deleting, setDeleting] = useState<CustomerLead | null>(null)
@@ -196,11 +197,17 @@ export function CustomerLeadsPage() {
     return counts
   }, [leads])
 
+  const effectiveSource: CustomerLeadSource | 'all' = trialOnly ? 'hoc-thu-mien-phi' : source
+  const sourceLeads = useMemo(
+    () => effectiveSource === 'all' ? leads : leads.filter((lead) => lead.source === effectiveSource),
+    [effectiveSource, leads],
+  )
+
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase()
     const digits = term.replace(/\D/g, '')
     return leads.filter((lead) =>
-      (source === 'all' || lead.source === source)
+      (effectiveSource === 'all' || lead.source === effectiveSource)
       && (status === 'all' || lead.status === status)
       && (!term
         || lead.name.toLowerCase().includes(term)
@@ -208,9 +215,9 @@ export function CustomerLeadsPage() {
         || (lead.message ?? '').toLowerCase().includes(term)
         || (lead.note ?? '').toLowerCase().includes(term)),
     )
-  }, [leads, search, source, status])
+  }, [effectiveSource, leads, search, status])
 
-  const newCount = leads.filter((lead) => lead.status === 'new').length
+  const newCount = sourceLeads.filter((lead) => lead.status === 'new').length
 
   const confirmDelete = async () => {
     if (!deleting) return
@@ -236,10 +243,12 @@ export function CustomerLeadsPage() {
     <div className="space-y-6 pt-2 lg:pt-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-600">Khách hàng</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Form khách đăng ký</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-600">{trialOnly ? 'Lớp online' : 'Khách hàng'}</p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">{trialOnly ? 'Học viên học thử' : 'Form khách đăng ký'}</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Mọi form khách điền trên trang web (Học thử miễn phí, Liên hệ) đều về đây, kèm tên trang khách đã điền.
+            {trialOnly
+              ? 'Danh sách khách đã đăng ký học thử miễn phí, dùng chung trạng thái và ghi chú với khu vực Khách hàng.'
+              : 'Mọi form khách điền trên trang web (Học thử miễn phí, Liên hệ) đều về đây, kèm tên trang khách đã điền.'}
             {newCount > 0 && <b className="text-rose-600"> Có {newCount} form mới chưa xử lý.</b>}
           </p>
         </div>
@@ -264,16 +273,18 @@ export function CustomerLeadsPage() {
             className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
           />
         </label>
-        <div className="flex gap-2 overflow-x-auto">
-          <button type="button" onClick={() => setSource('all')} className={tabClass(source === 'all')}>
-            Tất cả trang <span className="ml-1 opacity-70">{leads.length}</span>
-          </button>
-          {SOURCE_KEYS.map((key) => (
-            <button key={key} type="button" onClick={() => setSource(key)} className={tabClass(source === key)}>
-              {CUSTOMER_LEAD_SOURCES[key].label} <span className="ml-1 opacity-70">{sourceCounts[key] ?? 0}</span>
+        {!trialOnly && (
+          <div className="flex gap-2 overflow-x-auto">
+            <button type="button" onClick={() => setSource('all')} className={tabClass(source === 'all')}>
+              Tất cả trang <span className="ml-1 opacity-70">{leads.length}</span>
             </button>
-          ))}
-        </div>
+            {SOURCE_KEYS.map((key) => (
+              <button key={key} type="button" onClick={() => setSource(key)} className={tabClass(source === key)}>
+                {CUSTOMER_LEAD_SOURCES[key].label} <span className="ml-1 opacity-70">{sourceCounts[key] ?? 0}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2 overflow-x-auto">
           {(['all', ...CUSTOMER_LEAD_STATUSES] as const).map((key) => (
             <button
@@ -297,8 +308,8 @@ export function CustomerLeadsPage() {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={<Inbox className="h-10 w-10" />}
-          title={leads.length === 0 ? 'Chưa có form nào' : 'Không có form khớp bộ lọc'}
-          description="Khi khách điền form trên trang web, thông tin sẽ hiện ở đây ngay lập tức."
+          title={sourceLeads.length === 0 ? (trialOnly ? 'Chưa có học viên đăng ký học thử' : 'Chưa có form nào') : 'Không có form khớp bộ lọc'}
+          description={trialOnly ? 'Khi khách đăng ký tại trang Học thử miễn phí, thông tin sẽ hiện ở đây ngay lập tức.' : 'Khi khách điền form trên trang web, thông tin sẽ hiện ở đây ngay lập tức.'}
         />
       ) : (
         <div className="space-y-3">

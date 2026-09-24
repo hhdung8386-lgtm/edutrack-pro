@@ -135,6 +135,19 @@ export function composeHomeworkText(items: HomeworkItem[] | undefined | null): s
     .join('\n')
 }
 
+/**
+ * Hiển thị tương thích hai thế hệ dữ liệu: ưu tiên chuỗi cũ khi có, nếu thiếu
+ * thì dựng lại từ `homeworkItems`. Không ghi dữ liệu và không làm thay đổi bản
+ * ghi gốc; dùng cho duyệt buổi, copy và các projection liên quan.
+ */
+export function lessonHomeworkText(value: {
+  homework?: string | null
+  homeworkItems?: HomeworkItem[] | null
+}): string {
+  const legacyText = typeof value.homework === 'string' ? value.homework.trim() : ''
+  return legacyText || composeHomeworkText(value.homeworkItems)
+}
+
 /** Ghép báo cáo thành chuỗi `comment` (tiếng Việt cho phụ huynh) — tương thích mọi màn hình cũ. */
 export function composeLessonComment(d: LessonReportDraft): string {
   const parts: string[] = []

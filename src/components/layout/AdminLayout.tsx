@@ -26,6 +26,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/offline-classes/groups': 'Lớp nhóm offline',
   '/admin/students/fixed': 'Học viên cố định',
   '/admin/students/flexible': 'Học viên linh hoạt',
+  '/admin/students/trial': 'Học viên học thử',
   '/admin/students': 'Học viên',
   '/admin/student-alerts': 'Cảnh báo học viên',
   '/admin/teachers/online': 'Gia sư online',

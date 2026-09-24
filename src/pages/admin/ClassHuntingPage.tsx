@@ -27,6 +27,8 @@ import { db } from '@/lib/firebase'
 import { isGroupClass } from '@/lib/groupClasses'
 import {
   CLASS_HUNT_NOTE_MAX_LENGTH,
+  CLASS_HUNT_STUDENT_AUDIENCES,
+  CLASS_HUNT_STUDENT_AUDIENCE_LABELS,
   archiveClassHunt,
   cancelClassHunt,
   updateClassHunt,
@@ -39,6 +41,7 @@ import {
   type ClassHuntDraftInput,
   type ClassHuntPreview,
   type ClassHuntStatus,
+  type ClassHuntStudentAudience,
 } from '@/lib/classHunting'
 import {
   CLASS_HUNT_DAY_LABELS,
@@ -150,6 +153,7 @@ export function ClassHuntingPage() {
   const [weeklySlots, setWeeklySlots] = useState<ClassHuntWeeklySlot[]>([])
   const [sessionMode, setSessionMode] = useState<SessionMode>('all_remaining')
   const [sessionCount, setSessionCount] = useState(1)
+  const [studentAudience, setStudentAudience] = useState<ClassHuntStudentAudience | ''>('')
   const [teacherTypes, setTeacherTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
   const [gender, setGender] = useState<ClassHuntTeacherGender>('any')
   const [note, setNote] = useState('')
@@ -269,6 +273,7 @@ export function ClassHuntingPage() {
     else if (lookupStudent && lookupStudent.eligibleForHunt === false) list.push('Học viên này không đủ điều kiện mở CLASS HUNTING (cần học viên 1 kèm 1 online đang học và còn gói).')
     if (selectedStudent && !lookingUp && lookupStudent && !selectedSubject) list.push('Chọn gói học cần xếp.')
     if (weeklySlots.length === 0) list.push('Chọn ít nhất một slot học trong bảng.')
+    if (!studentAudience) list.push('Chọn nhóm học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn.')
     if (!startDate || startDate < todayInVietnam()) list.push('Ngày bắt đầu phải từ hôm nay trở đi.')
     if (selectedSubject && affordableSessions !== null) {
       if (affordableSessions < 1) {
@@ -285,7 +290,7 @@ export function ClassHuntingPage() {
     if (teacherTypes.length === 0) list.push('Chọn ít nhất một loại giáo viên.')
     if (note.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH) list.push(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
     return list
-  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, teacherTypes.length, weeklySlots.length])
+  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, studentAudience, teacherTypes.length, weeklySlots.length])
 
   const selectStudent = async (student: Student | null, preferredSubjectId?: string) => {
     const requestId = lookupRequestRef.current + 1
@@ -332,7 +337,7 @@ export function ClassHuntingPage() {
   }
 
   const buildDraft = (): ClassHuntDraftInput | null => {
-    if (!selectedStudent || !lookupStudent?.id || !selectedSubject) return null
+    if (!selectedStudent || !lookupStudent?.id || !selectedSubject || !studentAudience) return null
     const trimmedNote = note.trim()
     return {
       ...(trimmedNote ? { note: trimmedNote } : {}),
@@ -343,6 +348,7 @@ export function ClassHuntingPage() {
       weeklySlots: sortedSlots,
       sessionCount: Math.max(1, requestedSessions),
       sessionSelectionMode: sessionMode,
+      studentAudience,
       teacherRequirements: {
         teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => teacherTypes.includes(type)),
         gender,
@@ -391,6 +397,7 @@ export function ClassHuntingPage() {
       setConfirm(null)
       setWeeklySlots([])
       setNote('')
+      setStudentAudience('')
       toast.success(`Đã đăng CLASS HUNTING. Toàn bộ ${confirm.preview.activeTeacherCount ?? ''} gia sư đang hoạt động đều thấy lớp.`)
       await Promise.all([loadHunts(), selectedStudent ? selectStudent(selectedStudent) : Promise.resolve()])
     } catch (error) {
@@ -492,6 +499,7 @@ export function ClassHuntingPage() {
     }
     setTeacherTypes(hunt.teacherRequirements?.teacherTypes?.length ? [...hunt.teacherRequirements.teacherTypes] : [...CLASS_HUNT_TEACHER_TYPES])
     setGender(hunt.teacherRequirements?.gender || 'any')
+    setStudentAudience(hunt.studentAudience || '')
     setNote(hunt.note || '')
     window.scrollTo({ top: 0, behavior: 'smooth' })
     await selectStudent(student, hunt.subject.id)
@@ -670,6 +678,26 @@ export function ClassHuntingPage() {
                   />
                 </span>
               </label>
+              <fieldset className="border-t border-slate-100 pt-4">
+                <legend className="mb-2 text-xs font-bold text-slate-700">Học viên</legend>
+                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                  {CLASS_HUNT_STUDENT_AUDIENCES.map((audience) => (
+                    <label
+                      key={audience}
+                      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${studentAudience === audience ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-700 hover:border-blue-200'}`}
+                    >
+                      <input
+                        type="radio"
+                        name="class-hunt-student-audience"
+                        checked={studentAudience === audience}
+                        onChange={() => setStudentAudience(audience)}
+                        className="h-4 w-4 accent-blue-700"
+                      />
+                      {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[audience]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </Card>
 
             <Card className="space-y-4">
@@ -733,6 +761,7 @@ export function ClassHuntingPage() {
             <dl className="divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm">
               {([
                 ['Học viên', selectedStudent ? selectedStudent.name : '—'],
+                ['Đối tượng', studentAudience ? CLASS_HUNT_STUDENT_AUDIENCE_LABELS[studentAudience] : '—'],
                 ['Gói', selectedSubject?.name || '—'],
                 ['Khả dụng', availablePoints !== undefined ? `${number(availablePoints)} kim cương` : '—'],
                 ['Dự kiến sử dụng', `${number(plannedDiamonds)} kim cương`],
@@ -860,6 +889,9 @@ export function ClassHuntingPage() {
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gói học</p>
                           <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.subject.name}</p>
+                          {hunt.studentAudience && (
+                            <p className="mt-1 text-xs font-semibold text-blue-700">Học viên: {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[hunt.studentAudience]}</p>
+                          )}
                         </div>
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gia sư</p>
@@ -946,6 +978,7 @@ export function ClassHuntingPage() {
             <p className="font-bold text-slate-900">
               {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} kim cương
             </p>
+            <p className="text-sm font-semibold text-blue-800">Học viên: {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[confirm.draft.studentAudience]}</p>
             {confirmSlots.length > 0 && (
               <p className="text-xs text-slate-500">Từ {formatDate(confirmSlots[0].date)} đến {formatDate(confirmSlots[confirmSlots.length - 1].date)}</p>
             )}

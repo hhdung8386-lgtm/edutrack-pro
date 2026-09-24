@@ -47,6 +47,7 @@ import {
   SubjectMismatchReconciliationPanel,
   type SubjectMismatchReconciliationState,
 } from '@/components/lessons/SubjectMismatchReconciliationPanel'
+import { lessonHomeworkText } from '@/components/lessons/lessonReport'
 
 const TABS = [
   { key: 'pending', label: 'Chờ duyệt', color: 'text-amber-400' },
@@ -655,8 +656,8 @@ export function ApprovalsPage() {
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: approvingLesson.comment || '',
-            homework: approvingLesson.homework || '',
-            homeworkItems: approvingLesson.homeworkItems || [],
+            homework: lessonHomeworkText(lessonNow),
+            homeworkItems: lessonNow.homeworkItems || [],
             book: approvingLesson.book || '',
             pages: approvingLesson.pages || '',
             report: approvingLesson.report || null,
@@ -908,6 +909,7 @@ export function ApprovalsPage() {
           {filteredLessons.map((lesson) => {
             const balance = studentBalances[lesson.studentId]
             const isOutOfMinutes = balance && balance.remaining <= 0
+            const homeworkText = lessonHomeworkText(lesson)
             const lessonRecording = [lesson.bookingRequestId, ...(lesson.bookingRequestIds || [])]
               .map((bookingId) => bookingId ? recordingsByBooking[bookingId] : undefined)
               .find((recording): recording is OnlineClassroomRecordingSummary => Boolean(recording))
@@ -999,10 +1001,10 @@ export function ApprovalsPage() {
                     </div>
                   )}
 
-                  {lesson.homework && (
+                  {homeworkText && (
                     <div>
                       <p className="text-xs text-slate-500 mb-0.5">Bài tập</p>
-                      <p className="break-words whitespace-pre-wrap text-sm text-slate-600 line-clamp-1">{lesson.homework}</p>
+                      <p className="break-words whitespace-pre-wrap text-sm text-slate-600 line-clamp-2">{homeworkText}</p>
                     </div>
                   )}
 
@@ -1120,6 +1122,12 @@ export function ApprovalsPage() {
               <span className="text-slate-500">Thời lượng buổi này</span>
               <span className="text-slate-700 font-medium">{approvingLesson.minutes} phút</span>
             </div>
+            {lessonHomeworkText(approvingLesson) && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+                <p className="text-xs font-bold text-sky-800">Bài tập về nhà</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{lessonHomeworkText(approvingLesson)}</p>
+              </div>
+            )}
             {approvalIsZeroMinuteExcusedAbsence && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                 <p className="font-bold">Học viên vắng có phép · 0 phút</p>

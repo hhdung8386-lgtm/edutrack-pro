@@ -27,6 +27,7 @@ export const CLASS_HUNT_MINUTES = [25, 50, 75, 100] as const
 /** Each weekly timetable slot picked by an operator is one 25-minute lesson. */
 export const CLASS_HUNT_SLOT_MINUTES = 25
 export const CLASS_HUNT_TEACHER_TYPES = ['vn', 'ph', 'native'] as const
+export const CLASS_HUNT_STUDENT_AUDIENCES = ['children', 'teens', 'adults'] as const
 /** Free-text operator note shown to every tutor before claiming (e.g. "Toán lớp 5, bé mất gốc"). */
 export const CLASS_HUNT_NOTE_MAX_LENGTH = 500
 export const CLASS_HUNT_COMPENSATION_VERSION = 1
@@ -46,6 +47,7 @@ export type ClassHuntDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
 export type ClassHuntTeacherType = typeof CLASS_HUNT_TEACHER_TYPES[number]
 export type ClassHuntTeacherGender = 'any' | 'female' | 'male'
+export type ClassHuntStudentAudience = typeof CLASS_HUNT_STUDENT_AUDIENCES[number]
 
 /**
  * Optional operator request shown to every tutor. It never hides an offer:
@@ -96,6 +98,8 @@ export interface ClassHuntDraft {
   /** Present for plans built from the weekly slot grid (25-minute lessons). */
   weeklySlots?: ClassHuntWeeklySlot[]
   teacherRequirements: ClassHuntTeacherRequirements
+  /** Optional only for compatibility with requests created before this field existed. */
+  studentAudience?: ClassHuntStudentAudience
   /** Present only when the operator wrote a note; older offers have none. */
   note?: string
   /**
@@ -526,6 +530,18 @@ export function normalizeClassHuntTeacherRequirements(value: unknown): ClassHunt
   return { teacherTypes, gender }
 }
 
+/** Missing is accepted for legacy clients/offers; any supplied value is strict. */
+export function normalizeClassHuntStudentAudience(value: unknown): ClassHuntStudentAudience | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (!CLASS_HUNT_STUDENT_AUDIENCES.includes(value as ClassHuntStudentAudience)) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_STUDENT_AUDIENCE_INVALID',
+      'Nhóm học viên phải là Trẻ em, Thanh thiếu niên hoặc Người lớn.',
+    )
+  }
+  return value as ClassHuntStudentAudience
+}
+
 export function sameClassHuntTeacherRequirements(left: ClassHuntTeacherRequirements, right: ClassHuntTeacherRequirements): boolean {
   return left.gender === right.gender
     && left.teacherTypes.length === right.teacherTypes.length
@@ -708,6 +724,7 @@ export function buildClassHuntDraft(input: {
   compensationRatePerMinute?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  studentAudience?: unknown
   note?: unknown
 }, nowMs: number): ClassHuntDraft {
   const studentId = requiredDocumentId(input.studentId, 'CLASS_HUNT_STUDENT_ID_INVALID')
@@ -726,6 +743,7 @@ export function buildClassHuntDraft(input: {
   const sessionSelectionMode = normalizeClassHuntSessionSelectionMode(input.sessionSelectionMode)
   const expiresInMinutes = normalizeClassHuntExpiryMinutes(input.expiresInMinutes)
   const teacherRequirements = normalizeClassHuntTeacherRequirements(input.teacherRequirements)
+  const studentAudience = normalizeClassHuntStudentAudience(input.studentAudience)
   const note = normalizeClassHuntNote(input.note)
   const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
   if (classHuntCompensation) {
@@ -752,6 +770,7 @@ export function buildClassHuntDraft(input: {
     sessions,
     ...(weeklySlots ? { weeklySlots } : {}),
     teacherRequirements,
+    ...(studentAudience ? { studentAudience } : {}),
     ...(note ? { note } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
@@ -771,6 +790,7 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     sessions: draft.sessions,
     weeklySlots: draft.weeklySlots || null,
     teacherRequirements: draft.teacherRequirements,
+    ...(draft.studentAudience ? { studentAudience: draft.studentAudience } : {}),
     classHuntCompensation: draft.classHuntCompensation || null,
     // Only present when written, so note-less fingerprints stay unchanged.
     ...(draft.note ? { note: draft.note } : {}),
@@ -797,6 +817,7 @@ export function classHuntPublishRetryMatches(input: {
   compensationRatePerMinute?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  studentAudience?: unknown
   note?: unknown
 }, stored: {
   studentId: string
@@ -813,6 +834,7 @@ export function classHuntPublishRetryMatches(input: {
   classHuntCompensation?: unknown
   weeklySlots?: unknown
   teacherRequirements?: unknown
+  studentAudience?: unknown
   note?: unknown
 }): boolean {
   try {
@@ -831,6 +853,12 @@ export function classHuntPublishRetryMatches(input: {
     return false
   }
   if (!requirementsMatch) return false
+  try {
+    if (normalizeClassHuntStudentAudience(input.studentAudience)
+      !== normalizeClassHuntStudentAudience(stored.studentAudience)) return false
+  } catch {
+    return false
+  }
 
   const inputUsesSlots = input.weeklySlots !== undefined && input.weeklySlots !== null
   const storedUsesSlots = stored.weeklySlots !== undefined && stored.weeklySlots !== null

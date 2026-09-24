@@ -1,4 +1,5 @@
 import type { Lesson } from '@/types'
+import { lessonHomeworkText } from '@/components/lessons/lessonReport'
 import { formatShortDate } from '@/lib/attendanceAudit'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 
@@ -38,10 +39,11 @@ export function buildLessonParentMessage(lesson: Lesson): string {
     lines.push(lesson.comment.trim())
   }
 
-  if (lesson.homework?.trim()) {
+  const homework = lessonHomeworkText(lesson)
+  if (homework) {
     lines.push('')
     lines.push('🏠 Bài tập về nhà:')
-    lines.push(lesson.homework.trim())
+    lines.push(homework)
   }
 
   return lines.join('\n')

@@ -55,11 +55,12 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     id: 'students',
     label: 'Lớp online',
     icon: Users,
-    activePrefixes: ['/admin/students/fixed', '/admin/students/flexible', '/admin/students/one-to-one', '/admin/students/group'],
+    activePrefixes: ['/admin/students/fixed', '/admin/students/flexible', '/admin/students/trial', '/admin/students/one-to-one', '/admin/students/group'],
     activePaths: ['/admin/students'],
     items: [
       { to: '/admin/students/fixed', icon: CalendarCheck2, label: 'Học viên cố định' },
       { to: '/admin/students/flexible', icon: CalendarRange, label: 'Học viên linh hoạt' },
+      { to: '/admin/students/trial', icon: TestTube2, label: 'Học viên học thử' },
       { to: '/admin/students/group', icon: UsersRound, label: 'Lớp nhóm' },
     ],
   },

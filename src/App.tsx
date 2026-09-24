@@ -159,6 +159,7 @@ function App() {
             <Route path="offline-classes/groups" element={<GroupClassesPage deliveryMode="offline" />} />
             <Route path="students/fixed" element={<StudentsPage key="fixed" learningScheduleType="fixed" />} />
             <Route path="students/flexible" element={<StudentsPage key="flexible" learningScheduleType="flexible" />} />
+            <Route path="students/trial" element={<CustomerLeadsPage view="trial" />} />
             <Route path="student-alerts" element={<StudentAlertsPage />} />
             <Route path="students/:id" element={<StudentDetailPage />} />
             <Route path="teachers" element={<Navigate to="online" replace />} />

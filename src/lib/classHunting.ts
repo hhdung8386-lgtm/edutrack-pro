@@ -18,6 +18,13 @@ import {
 export type ClassHuntStatus = 'open' | 'claimed' | 'cancelled' | 'expired'
 export type ClassHuntMinutes = 25 | 50 | 75 | 100
 export type ClassHuntSessionSelectionMode = 'all_remaining' | 'specific'
+export const CLASS_HUNT_STUDENT_AUDIENCES = ['children', 'teens', 'adults'] as const
+export type ClassHuntStudentAudience = (typeof CLASS_HUNT_STUDENT_AUDIENCES)[number]
+export const CLASS_HUNT_STUDENT_AUDIENCE_LABELS: Record<ClassHuntStudentAudience, string> = {
+  children: 'Trẻ em',
+  teens: 'Thanh thiếu niên',
+  adults: 'Người lớn',
+}
 
 /** Mirrors the backend: a hunt has no tutor yet, so it is sized at 25 kim cương / 25 phút. */
 export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
@@ -123,6 +130,8 @@ export interface ClassHunt {
   classHuntCompensation?: ClassHuntCompensation
   subjectRate?: ClassHuntSubjectRate
   teacherRequirements?: ClassHuntTeacherRequirements
+  /** Nhóm tuổi học viên do giáo vụ chọn khi đăng lớp; lớp cũ có thể chưa có. */
+  studentAudience?: ClassHuntStudentAudience
   weeklySlots?: ClassHuntWeeklySlot[]
   activeTeacherCount?: number
   /** Teacher feed only: false when this tutor does not meet the stated requirement. */
@@ -158,6 +167,7 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   sessionCount: number
   /** `all_remaining` is resolved by the server from the current package ledger. */
   sessionSelectionMode: ClassHuntSessionSelectionMode
+  studentAudience: ClassHuntStudentAudience
   teacherRequirements: ClassHuntTeacherRequirements
   /** Omit when empty so a note-less publish keeps its original retry identity. */
   note?: string
@@ -175,6 +185,7 @@ export interface ClassHuntPreview {
   matchingTeacherCount?: number
   activeTeacherCount?: number
   teacherRequirements?: ClassHuntTeacherRequirements
+  studentAudience?: ClassHuntStudentAudience
   note?: string
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
@@ -326,6 +337,12 @@ function sessionSelectionModeFrom(value: unknown): ClassHuntSessionSelectionMode
   return value === 'all_remaining' || value === 'specific' ? value : undefined
 }
 
+function studentAudienceFrom(value: unknown): ClassHuntStudentAudience | undefined {
+  return CLASS_HUNT_STUDENT_AUDIENCES.includes(value as ClassHuntStudentAudience)
+    ? value as ClassHuntStudentAudience
+    : undefined
+}
+
 function studentFrom(value: unknown): ClassHuntStudent | undefined {
   const data = asRecord(value)
   const code = text(data.code)
@@ -442,6 +459,7 @@ function previewFrom(value: unknown): ClassHuntPreview {
     ...(subjectRate ? { subjectRate } : {}),
     ...(typeof data.activeTeacherCount === 'number' ? { activeTeacherCount: data.activeTeacherCount } : {}),
     ...(data.teacherRequirements ? { teacherRequirements: teacherRequirementsFrom(data.teacherRequirements) } : {}),
+    ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
@@ -495,6 +513,7 @@ function huntFrom(value: unknown): ClassHunt {
     ...(Array.isArray(data.bookingIds) ? { bookingIds: data.bookingIds.filter((id): id is string => typeof id === 'string') } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
+    ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
     ...(weeklySlotsFrom(data.weeklySlots) ? { weeklySlots: weeklySlotsFrom(data.weeklySlots) } : {}),
     ...(numberValue(data.activeTeacherCount) !== undefined ? { activeTeacherCount: numberValue(data.activeTeacherCount) } : {}),
@@ -517,6 +536,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
     ...(!classHuntCompensation && subjectRateFrom(data.subjectRate) ? { subjectRate: subjectRateFrom(data.subjectRate) } : {}),
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
+    ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(typeof data.requirementMatch === 'boolean' ? { requirementMatch: data.requirementMatch } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
     ...(dateFrom(data.claimedAt ?? data.claimedAtMs) ? { claimedAt: dateFrom(data.claimedAt ?? data.claimedAtMs) } : {}),

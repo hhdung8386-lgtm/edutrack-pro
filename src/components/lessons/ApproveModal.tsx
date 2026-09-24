@@ -11,6 +11,7 @@ import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import { lessonHomeworkText } from './lessonReport'
 import {
   classHuntCompensationFromBookings,
   classHuntCompensationFromLesson,
@@ -29,6 +30,7 @@ interface ApproveModalProps {
 }
 
 export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
+  const homeworkText = lessonHomeworkText(lesson)
   const { user } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
@@ -409,8 +411,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
             comment: lesson.comment || '',
-            homework: lesson.homework || '',
-            homeworkItems: lesson.homeworkItems || [],
+            homework: lessonHomeworkText(lessonNow),
+            homeworkItems: lessonNow.homeworkItems || [],
             book: lesson.book || '',
             pages: lesson.pages || '',
             report: lesson.report || null,
@@ -557,6 +559,12 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           <div className="flex justify-between gap-4">
             <span className="text-slate-500 flex-shrink-0">Chấm điểm buổi học</span>
             <span className="text-amber-500 font-bold">{'★'.repeat(lesson.rating)}{'☆'.repeat(Math.max(0, 5 - lesson.rating))} ({lesson.rating}/5)</span>
+          </div>
+        )}
+        {homeworkText && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5">
+            <p className="text-xs font-bold text-sky-800">Bài tập về nhà</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{homeworkText}</p>
           </div>
         )}
 

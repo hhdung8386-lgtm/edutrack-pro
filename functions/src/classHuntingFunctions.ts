@@ -35,6 +35,7 @@ import {
   isSafeClassHuntClientRequestId,
   classHuntClaimConflictReason,
   normalizeClassHuntSessionSelectionMode,
+  normalizeClassHuntStudentAudience,
   normalizeClassHuntTeacherRequirements,
   normalizeClassHuntWeeklySlots,
   pointsPer25Minutes,
@@ -53,6 +54,7 @@ import {
   type ClassHuntSession,
   type ClassHuntSessionSelectionMode,
   type ClassHuntStatus,
+  type ClassHuntStudentAudience,
   type ClassHuntSubjectRate,
   type ClassHuntStudentLike,
   type ClassHuntTeacherLike,
@@ -143,6 +145,7 @@ type StoredClassHunt = {
   activeTeacherCount?: number
   weeklySlots?: ClassHuntWeeklySlot[]
   teacherRequirements: ClassHuntTeacherRequirements
+  studentAudience?: ClassHuntStudentAudience
   note?: string
   claimedByTeacherId?: string
   claimedByUid?: string
@@ -254,10 +257,12 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
     throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Lớp đã nhận có danh sách lịch không hợp lệ.')
   }
   let teacherRequirements: ClassHuntTeacherRequirements
+  let studentAudience: ClassHuntStudentAudience | undefined
   let weeklySlots: ClassHuntWeeklySlot[] | undefined
   try {
     // Offers published before requirements existed are open to every tutor.
     teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
+    studentAudience = normalizeClassHuntStudentAudience(data.studentAudience)
     weeklySlots = data.weeklySlots === undefined || data.weeklySlots === null
       ? undefined
       : normalizeClassHuntWeeklySlots(data.weeklySlots)
@@ -267,6 +272,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   const note = storedClassHuntNote(data.note)
   return {
     teacherRequirements,
+    ...(studentAudience ? { studentAudience } : {}),
     ...(note ? { note } : {}),
     ...(weeklySlots ? { weeklySlots } : {}),
     ...(Number.isSafeInteger(Number(data.activeTeacherCount)) && Number(data.activeTeacherCount) >= 0
@@ -772,6 +778,7 @@ function serializeAdminHunt(
       classHuntCompensation: { ...hunt.classHuntCompensation },
     } : {}),
     teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
     ...(hunt.weeklySlots ? { weeklySlots: hunt.weeklySlots } : {}),
     ...(hunt.activeTeacherCount !== undefined ? { activeTeacherCount: hunt.activeTeacherCount } : {}),
@@ -826,6 +833,7 @@ function serializeTeacherHunt(
       subjectRate: { ...subjectRate, teacherLevel },
     } : {}),
     teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
     ...(requirementMatch === undefined ? {} : { requirementMatch }),
   }
@@ -854,6 +862,7 @@ function serializeTeacherClaimedHunt(hunt: StoredClassHunt, viewerTeacherId: str
     sessionCount: sanitized.sessions.length,
     sessionSelectionMode: hunt.sessionSelectionMode,
     teacherRequirements: hunt.teacherRequirements,
+    ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
     ...(hunt.claimedAtMs ? { claimedAt: isoFromMillis(hunt.claimedAtMs) } : {}),
     ...(nickname ? { claimedTeacherCode: nickname } : {}),
@@ -869,6 +878,7 @@ function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
     && data.minutes === undefined
     && data.weeklySlots === undefined
     && data.teacherRequirements === undefined
+    && data.studentAudience === undefined
     && data.note === undefined
     && data.sessionCount === undefined
     && data.sessionSelectionMode === undefined
@@ -1050,6 +1060,7 @@ export const previewClassHunt = onCall({
     matchingTeacherCount,
     activeTeacherCount,
     teacherRequirements: context.draft.teacherRequirements,
+    ...(context.draft.studentAudience ? { studentAudience: context.draft.studentAudience } : {}),
     ...(context.draft.note ? { note: context.draft.note } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   }
@@ -1168,6 +1179,7 @@ export const publishClassHunt = onCall({
       sessions: draft.sessions,
       ...(draft.weeklySlots ? { weeklySlots: draft.weeklySlots } : {}),
       teacherRequirements: draft.teacherRequirements,
+      ...(draft.studentAudience ? { studentAudience: draft.studentAudience } : {}),
       ...(draft.note ? { note: draft.note } : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
@@ -1209,6 +1221,7 @@ export const publishClassHunt = onCall({
         expiresAtMs,
         eligibleTeacherCount: matchingTeacherCount,
         classHuntCompensation: draft.classHuntCompensation || null,
+        studentAudience: draft.studentAudience || null,
         note: draft.note || null,
       },
       createdAt: FieldValue.serverTimestamp(),

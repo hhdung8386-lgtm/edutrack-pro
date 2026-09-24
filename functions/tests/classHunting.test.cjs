@@ -40,6 +40,7 @@ const {
   isEligibleOnlineClassHuntTeacher,
   isSafeClassHuntClientRequestId,
   normalizeClassHuntSessionSelectionMode,
+  normalizeClassHuntStudentAudience,
   resolveClassHuntSubjectFund,
   sanitizeClassHuntForTeacher,
   studentClassHuntTotals,
@@ -110,6 +111,17 @@ test('CLASS HUNTING keeps its bounded atomic plan and validates selection modes'
       sessionCount: CLASS_HUNT_MAX_SESSIONS + 1, nowMs: NOW_MS,
     }),
     (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_SESSION_COUNT_INVALID',
+  )
+})
+
+test('CLASS HUNTING validates learner audiences while preserving legacy offers', () => {
+  assert.equal(normalizeClassHuntStudentAudience(undefined), undefined)
+  assert.equal(normalizeClassHuntStudentAudience('children'), 'children')
+  assert.equal(normalizeClassHuntStudentAudience('teens'), 'teens')
+  assert.equal(normalizeClassHuntStudentAudience('adults'), 'adults')
+  assert.throws(
+    () => normalizeClassHuntStudentAudience('all'),
+    (cause) => cause instanceof ClassHuntValidationError && cause.reason === 'CLASS_HUNT_STUDENT_AUDIENCE_INVALID',
   )
 })
 
@@ -781,12 +793,13 @@ test('publish idempotency is actor-scoped and canonical request content is stabl
     classHuntPublishRequestDocumentId('admin-b', requestId),
   )
   const first = buildClassHuntDraft({
-    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['thu', 'mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000,
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['thu', 'mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000, studentAudience: 'teens',
   }, NOW_MS)
   const same = buildClassHuntDraft({
-    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon', 'thu'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000,
+    studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon', 'thu'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 2, compensationRatePerMinute: 50_000, studentAudience: 'teens',
   }, NOW_MS)
   assert.equal(classHuntPublishFingerprint(first), classHuntPublishFingerprint(same))
+  assert.equal(first.studentAudience, 'teens')
   assert.equal(first.expiresInMinutes, CLASS_HUNT_DEFAULT_TTL_MINUTES)
   assert.deepEqual(first.classHuntCompensation, {
     version: 1,
@@ -797,6 +810,10 @@ test('publish idempotency is actor-scoped and canonical request content is stabl
   assert.notEqual(
     classHuntPublishFingerprint(first),
     classHuntPublishFingerprint({ ...first, classHuntCompensation: createClassHuntCompensation(50_001) }),
+  )
+  assert.notEqual(
+    classHuntPublishFingerprint(first),
+    classHuntPublishFingerprint({ ...first, studentAudience: 'adults' }),
   )
   assert.throws(() => buildClassHuntDraft({
     studentId: 'student-a', subjectId: 'VN-1S-L2', startDate: '2026-09-07', selectedDays: ['mon'], requestedStart: '19:00', requestedMinutes: 50, sessionCount: 1, compensationRatePerMinute: -1,
