@@ -16,6 +16,8 @@ export type LessonBookingReference = {
   bookingSubjectReconciliation?: LessonBookingSubjectReconciliation
   /** Only enabled for a zero-minute excused absence; never relax normal matching. */
   isZeroMinuteExcusedAbsence?: boolean
+  /** Fresh lesson flag: its booking hold was already consumed by an earlier approval. */
+  bookingHoldConsumed?: boolean
 }
 
 export type BookingSubjectReconciliationDraft = {
@@ -158,6 +160,23 @@ export function isActiveAttendanceBooking(
 ): boolean {
   return ACTIVE_BOOKING_STATUSES.has(booking.status)
     && !(booking.status === 'pending' && booking.teacherResponse === 'declined')
+}
+
+/**
+ * Duyệt lại buổi đã từng duyệt rồi bị "huỷ duyệt → Từ chối": luồng huỷ duyệt
+ * hoàn phút học nhưng để nguyên ca ở trạng thái completed + lessonId của chính
+ * buổi này, còn lesson vẫn ghi bookingHoldConsumed = true. Chỉ đúng bộ ca đó
+ * (toàn bộ, không trộn ca đang giữ) mới được chốt lại; không nhả thêm giữ chỗ
+ * và không ghi đè ca. Ca đã nhả, thuộc buổi khác hoặc buổi chưa từng tiêu giữ
+ * chỗ vẫn bị chặn.
+ */
+export function isReapprovalOfClosedBookings(
+  bookings: Pick<BookingRequest, 'status' | 'lessonId'>[],
+  lesson: { id: string, bookingHoldConsumed?: boolean },
+): boolean {
+  return lesson.bookingHoldConsumed === true
+    && bookings.length > 0
+    && bookings.every((booking) => booking.status === 'completed' && booking.lessonId === lesson.id)
 }
 
 function timeToMinutes(time: string) {

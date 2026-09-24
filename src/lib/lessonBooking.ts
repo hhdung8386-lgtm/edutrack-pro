@@ -10,6 +10,7 @@ import {
   type PrelinkedSubjectMismatchCandidate,
   getPrelinkedSubjectMismatchCandidate,
   isActiveAttendanceBooking,
+  isReapprovalOfClosedBookings,
   lessonReferencedBookingIds,
   recoverLegacySingleBookingReference,
   selectLegacyExcusedAbsenceBookingByScheduleCheck,
@@ -62,9 +63,20 @@ export function assertBookingTimeRangeIntegrity(bookings: BookingRequest[]): voi
  * rows must still be active and either unclaimed or claimed by this exact
  * lesson; otherwise a concurrent operation could charge funds without closing
  * the intended booking.
+ *
+ * Ngoại lệ duy nhất: duyệt lại buổi đã huỷ duyệt → Từ chối, khi TOÀN BỘ ca vẫn
+ * completed bởi chính buổi này và lesson (đọc trong transaction) đã tiêu giữ
+ * chỗ (`bookingHoldConsumed`). Khi đó chỉ trừ lại phút đã hoàn, không nhả giữ
+ * chỗ lần hai và không ghi đè ca.
  */
-export function assertBookingsAvailableForApproval(bookings: BookingRequest[], lessonId: string): void {
+export function assertBookingsAvailableForApproval(
+  bookings: BookingRequest[],
+  lessonId: string,
+  bookingHoldConsumed?: boolean,
+): void {
+  if (isReapprovalOfClosedBookings(bookings, { id: lessonId, bookingHoldConsumed })) return
   for (const booking of bookings) {
+    if (booking.status === 'released' || booking.status === 'rejected') throw new Error('BOOKING_RELEASED')
     if (
       !isActiveAttendanceBooking(booking)
       || (booking.lessonId && booking.lessonId !== lessonId)
@@ -83,7 +95,8 @@ export function assertBookingsMatchLessonForApproval(
   subjectMismatchReconciliation?: BookingSubjectReconciliationDraft | null,
 ): void {
   if (bookings.length === 0) return
-  if (!bookings.every(isActiveAttendanceBooking)) throw new Error('BOOKING_STATE_CHANGED')
+  const reapproval = !subjectMismatchReconciliation && isReapprovalOfClosedBookings(bookings, lesson)
+  if (!reapproval && !bookings.every(isActiveAttendanceBooking)) throw new Error('BOOKING_STATE_CHANGED')
 
   if (subjectMismatchReconciliation) {
     if (!validatePrelinkedSubjectMismatchForApproval(bookings, lesson, subjectMismatchReconciliation)) {

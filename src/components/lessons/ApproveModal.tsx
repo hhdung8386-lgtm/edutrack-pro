@@ -186,10 +186,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             .filter((snap) => snap.exists())
             .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
           if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
-          assertBookingsAvailableForApproval(bookingNows, lesson.id)
+          assertBookingsAvailableForApproval(bookingNows, lesson.id, lessonNow.bookingHoldConsumed === true)
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           assertBookingsMatchLessonForApproval(bookingNows, {
             id: lesson.id,
+            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true,
             bookingRequestId: lessonNow.bookingRequestId,
             bookingRequestIds: lessonNow.bookingRequestIds,
             scheduleCheck: lessonNow.scheduleCheck,
@@ -481,6 +482,8 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         toast.warning('Buổi dạy đã được xử lý trước đó')
       } else if (err?.message === 'BOOKING_TIME_RANGE_INVALID') {
         toast.error('Giờ bắt đầu/kết thúc của lịch không khớp số phút. Hãy sửa lịch trước khi duyệt.')
+      } else if (err?.message === 'BOOKING_RELEASED') {
+        toast.error('Ca đặt lịch của buổi này đã được nhả/huỷ (kim cương giữ chỗ đã hoàn cho học viên) nên không thể duyệt. Nếu học viên thực sự đã học, hãy xếp lại lịch cho đúng ca rồi mới duyệt.')
       } else if (err?.message === 'BOOKING_STATE_CHANGED') {
         toast.error('Lịch đã thay đổi hoặc đã được gắn với buổi khác. Hãy mở lại để đối chiếu.')
       } else if (err?.message === 'BOOKING_SUBJECT_MISMATCH') {

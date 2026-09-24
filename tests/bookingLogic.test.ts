@@ -11,6 +11,7 @@ import {
   isBookingFinancialHold,
   isBookingHoldingStudentFund,
   isBookingPendingRebookFundHold,
+  isReapprovalOfClosedBookings,
   matchesLessonBookingSubject,
   recoverLegacySingleBookingReference,
   requiresIndividualSubjectReconciliation,
@@ -424,4 +425,27 @@ test('a stored subject reconciliation is excluded from bulk and automatic rollba
   const automaticBulkTargets = [reconciledLesson, lesson(50, { id: 'ordinary-lesson' })]
     .filter((item) => !requiresIndividualSubjectReconciliation(item))
   assert.deepEqual(automaticBulkTargets.map((item) => item.id), ['ordinary-lesson'])
+})
+
+test('re-approves a lesson whose bookings it already closed before being rejected', () => {
+  const closed = [
+    booking('b1', '20:00', { status: 'completed', lessonId: 'lesson-1' }),
+    booking('b2', '20:30', { status: 'completed', lessonId: 'lesson-1' }),
+  ]
+  const rejectedAfterApproval = lesson(50, { bookingHoldConsumed: true })
+  assert.equal(isReapprovalOfClosedBookings(closed, rejectedAfterApproval), true)
+  // Identity, minutes and contiguity checks still apply to the closed set.
+  assert.equal(validateExplicitLessonBookings(closed, rejectedAfterApproval), true)
+})
+
+test('never re-approves bookings released, owned by another lesson, mixed, or without consumed hold', () => {
+  const closedBySelf = booking('b1', '20:00', { status: 'completed', lessonId: 'lesson-1' })
+  const hold = lesson(25, { bookingHoldConsumed: true })
+  assert.equal(isReapprovalOfClosedBookings([closedBySelf], lesson(25)), false)
+  assert.equal(isReapprovalOfClosedBookings([closedBySelf], lesson(25, { bookingHoldConsumed: false })), false)
+  assert.equal(isReapprovalOfClosedBookings([booking('b1', '20:00', { status: 'completed', lessonId: 'lesson-2' })], hold), false)
+  assert.equal(isReapprovalOfClosedBookings([booking('b1', '20:00', { status: 'completed' })], hold), false)
+  assert.equal(isReapprovalOfClosedBookings([booking('b1', '20:00', { status: 'released', lessonId: 'lesson-1' })], hold), false)
+  assert.equal(isReapprovalOfClosedBookings([closedBySelf, booking('b2', '20:30', { lessonId: 'lesson-1' })], hold), false)
+  assert.equal(isReapprovalOfClosedBookings([], hold), false)
 })
