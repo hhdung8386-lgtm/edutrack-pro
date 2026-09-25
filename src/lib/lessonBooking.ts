@@ -3,7 +3,9 @@ import { db } from '@/lib/firebase'
 import { BookingRequest, Teacher } from '@/types'
 import { checkBookingTimeRangeConsistency } from '@/lib/bookingTime'
 import { getBookingPoints } from '@/lib/points'
+import { selectLenientApprovalBookings, usableLessonApprovalBookings } from '@/lib/lenientLessonApproval'
 import {
+  RECONCILIATION_MANUAL_ROLLBACK_REQUIRED,
   assertAutomaticReconciliationRollbackAllowed,
   type BookingSubjectReconciliationDraft,
   type LessonBookingReference,
@@ -198,6 +200,64 @@ export async function resolveLessonBookings(
   if (anchoredExcusedAbsence.length > 0) return anchoredExcusedAbsence
 
   return selectLessonBookingMatches(matches, lesson)
+}
+
+/**
+ * Ca đặt để gắn khi duyệt buổi. Không bao giờ throw vì lịch: thử đối chiếu chặt
+ * trước, không ra kết quả dùng được thì chọn nới lỏng (xem lenientLessonApproval).
+ * Transaction duyệt vẫn lọc lại bằng usableLessonApprovalBookings trên dữ liệu tươi.
+ */
+export async function resolveLessonBookingsForApproval(lesson: LessonBookingReference): Promise<BookingRequest[]> {
+  try {
+    const strict = await resolveLessonBookings(lesson)
+    if (strict.length > 0 && usableLessonApprovalBookings(strict, lesson.id, lesson.studentId).length === strict.length) return strict
+  } catch (err) {
+    console.warn('[approve-lesson] strict booking match failed, using lenient match', err)
+  }
+  const [referenced, sameDay] = await Promise.all([
+    fetchExistingBookings(lessonReferencedBookingIds(lesson)),
+    fetchSameDayLessonBookingCandidates(lesson),
+  ])
+  return selectLenientApprovalBookings({
+    lessonId: lesson.id,
+    studentId: lesson.studentId,
+    lessonMinutes: Number(lesson.minutes) || 0,
+    referenced,
+    sameDay,
+  })
+}
+
+/**
+ * Ca cần mở lại khi huỷ duyệt. Buổi duyệt theo cách nới lỏng có thể không qua
+ * được đối chiếu chặt; khi đó lấy các ca đang được chính buổi này đóng.
+ * Buổi đối soát môn vẫn bị chặn như cũ.
+ */
+export async function resolveLessonBookingsForRollback(lesson: LessonBookingReference): Promise<BookingRequest[]> {
+  try {
+    return await resolveLessonBookings(lesson, { purpose: 'rollback' })
+  } catch (err) {
+    if (err instanceof Error && err.message === RECONCILIATION_MANUAL_ROLLBACK_REQUIRED) throw err
+    console.warn('[revert-lesson] strict booking match failed, using linked bookings', err)
+  }
+  const [referenced, linkedSnap] = await Promise.all([
+    fetchExistingBookings(lessonReferencedBookingIds(lesson)),
+    getDocs(query(collection(db, 'bookingRequests'), where('lessonId', '==', lesson.id))),
+  ])
+  const linked = linkedSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
+  const seen = new Set<string>()
+  return [...referenced, ...linked].filter((booking) => {
+    if (seen.has(booking.id)) return false
+    seen.add(booking.id)
+    return booking.status === 'completed' && booking.lessonId === lesson.id
+  })
+}
+
+async function fetchExistingBookings(bookingIds: string[]): Promise<BookingRequest[]> {
+  if (bookingIds.length === 0) return []
+  const snaps = await Promise.all(bookingIds.map((bookingId) => getDoc(doc(db, 'bookingRequests', bookingId))))
+  return snaps
+    .filter((snap) => snap.exists())
+    .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
 }
 
 async function fetchSameDayLessonBookingCandidates(lesson: LessonBookingReference): Promise<BookingRequest[]> {

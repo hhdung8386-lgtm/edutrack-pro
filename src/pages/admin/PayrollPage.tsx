@@ -21,7 +21,7 @@ import { toast } from '@/stores/toastStore'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/stores/authStore'
 import { setTeacherAttendanceAccess } from '@/hooks/useTeacherAttendanceFeature'
-import { resolveLessonBookings } from '@/lib/lessonBooking'
+import { resolveLessonBookingsForRollback } from '@/lib/lessonBooking'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import {
   assertAutomaticReconciliationRollbackAllowed,
@@ -417,7 +417,7 @@ export function PayrollPage() {
       const payrollSnap = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lessonId)))
       const activePayrollRefs = payrollSnap.docs.filter((item) => !item.data().voided).map((item) => item.ref)
       if (activePayrollRefs.length === 0) return false
-      const bookingsToReopen = await resolveLessonBookings({
+      const bookingsToReopen = await resolveLessonBookingsForRollback({
         id: lesson.id,
         bookingRequestId: lesson.bookingRequestId,
         bookingRequestIds: lesson.bookingRequestIds,
@@ -431,7 +431,7 @@ export function PayrollPage() {
         groupClassId: lesson.groupClassId,
         bookingSubjectReconciliation: lesson.bookingSubjectReconciliation,
         isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
-      }, { purpose: 'rollback' })
+      })
       const bookingRefsToReopen = bookingsToReopen.map((booking) => doc(db, 'bookingRequests', booking.id))
 
       await runTransaction(db, async (tx) => {

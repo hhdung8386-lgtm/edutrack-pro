@@ -22,7 +22,14 @@ import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { lessonRewardPoints } from '@/lib/rewards'
-import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
+import { bookingHoldMinutes, resolveLessonBookingsForApproval, resolveLessonBookingsForRollback } from '@/lib/lessonBooking'
+import {
+  defaultApprovalSubjectId,
+  lessonApprovalClassHuntCompensation,
+  lessonApprovalPoints,
+  pickApprovalSubjectPackageIndex,
+  usableLessonApprovalBookings,
+} from '@/lib/lenientLessonApproval'
 import {
   assertAutomaticReconciliationRollbackAllowed,
   requiresIndividualSubjectReconciliation,
@@ -36,7 +43,6 @@ import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { teacherSubjectLabels } from '@/lib/teacherSubjects'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import {
-  classHuntCompensationFromBookings,
   classHuntCompensationLegacyFields,
   classHuntCompensationSalary,
   classHuntPayrollCompensationFields,
@@ -556,7 +562,7 @@ export function TeacherDetailPage() {
       if (targetStatus === 'approved') {
         // Luồng Duyệt buổi học (pending/rejected -> approved)
         const zeroMinuteExcusedAbsence = isZeroMinuteExcusedAbsence(lesson)
-        const matchedBookings = await resolveLessonBookings({
+        const matchedBookings = await resolveLessonBookingsForApproval({
           id: lesson.id,
           bookingRequestId: lesson.bookingRequestId,
           bookingRequestIds: lesson.bookingRequestIds,
@@ -568,7 +574,6 @@ export function TeacherDetailPage() {
           subjectId: lesson.subjectId,
           isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
         })
-        if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
         await runTransaction(db, async (tx) => {
           const lessonRef = doc(db, 'lessons', lesson.id)
           const studentRef = doc(db, 'students', lesson.studentId)
@@ -591,9 +596,6 @@ export function TeacherDetailPage() {
             || lessonNow.subjectId !== lesson.subjectId
             || (lessonNow.groupClassId || '') !== (lesson.groupClassId || '')
           ) throw new Error('BOOKING_STATE_CHANGED')
-          if (options?.silent && lessonNow.bookingSubjectReconciliation) {
-            throw new Error('RECONCILIATION_REQUIRES_INDIVIDUAL_APPROVAL')
-          }
 
           const student = studentSnap.data() as Student
           const subjectId = lessonNow.subjectId || lesson.subjectId
@@ -611,40 +613,19 @@ export function TeacherDetailPage() {
           const teacherData = teacherSnap.data()
           const legacyTeacherLevel = (lesson.teacherLevel ?? teacherData?.level ?? 1) || 1
           const lessonMinutes = Number(lesson.minutes) || 0
-          const bookingNows = bookingSnaps
-            .filter((snap) => snap.exists())
-            .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-          if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
-          assertBookingsAvailableForApproval(bookingNows, lesson.id, lessonNow.bookingHoldConsumed === true)
+          // Không còn quy tắc lịch nào chặn duyệt: ca đã bị nhả/huỷ hoặc đã thuộc buổi
+          // khác lúc đọc lại thì chỉ bỏ qua (không gắn, không nhả giữ chỗ lần hai).
+          const bookingNows = usableLessonApprovalBookings(
+            bookingSnaps
+              .filter((snap) => snap.exists())
+              .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest)),
+            lesson.id,
+            lesson.studentId,
+          )
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
-          assertBookingsMatchLessonForApproval(bookingNows, {
-            id: lesson.id,
-            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true,
-            bookingRequestId: lessonNow.bookingRequestId,
-            bookingRequestIds: lessonNow.bookingRequestIds,
-            scheduleCheck: lessonNow.scheduleCheck,
-            studentId: lessonNow.studentId,
-            teacherId: lessonNow.teacherId,
-            date: lessonNow.date,
-            minutes: lessonNow.minutes,
-            subjectId: lessonNow.subjectId,
-            subjectName: lessonNow.subjectName,
-            groupClassId: lessonNow.groupClassId,
-            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
-          })
-          if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const classHuntCompensation = classHuntCompensationFromBookings(bookingNows)
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
-            || lessonNow.attendanceStatus === 'without_permission'
-            || zeroMinuteExcusedAbsenceNow
-          const lessonPoints = isAbsenceLesson
-            ? getLessonPoints(lessonNow, teacherData)
-            : bookingNows.length > 1
-              ? bookingNows.reduce((sum, booking) => sum + getBookingPoints(booking, teacherData), 0)
-              : bookingNow
-                ? getBookingPoints(bookingNow, teacherData)
-              : getLessonPoints(lessonNow, teacherData)
+          const classHuntCompensation = lessonApprovalClassHuntCompensation(bookingNows, lessonNow)
+          const lessonPoints = lessonApprovalPoints(lessonNow, bookingNows, teacherData, zeroMinuteExcusedAbsenceNow)
 
           const updatedSubjects: StudentSubject[] = student.subjects && student.subjects.length > 0
             ? student.subjects.map((item) => ({ ...item }))
@@ -663,7 +644,11 @@ export function TeacherDetailPage() {
                 }]
               : []
 
-          const subjectIndex = updatedSubjects.findIndex((item) => item.subjectId === subjectId)
+          // Gói của buổi dạy; học viên không có gói đó mà chỉ có đúng một gói thì trừ gói ấy.
+          const lessonSubjectIndex = pickApprovalSubjectPackageIndex(updatedSubjects, subjectId, lessonPoints)
+          const subjectIndex = lessonSubjectIndex >= 0
+            ? lessonSubjectIndex
+            : pickApprovalSubjectPackageIndex(updatedSubjects, defaultApprovalSubjectId(updatedSubjects, subjectId), lessonPoints)
           if (subjectIndex < 0) throw new Error('STUDENT_SUBJECT_PACKAGE_NOT_FOUND')
           const subjectPackage = updatedSubjects[subjectIndex]
           if (Number(subjectPackage.remainingMinutes || 0) < lessonPoints) {
@@ -721,7 +706,7 @@ export function TeacherDetailPage() {
             ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             points: lessonPoints,
             pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
-            subjectId,
+            subjectId: subjectPackage.subjectId,
             subjectName,
             sessionsBeforeApproval: subjectPackage.remainingSessions,
             sessionsAfterApproval: newSubjectRemainingSessions,
@@ -793,7 +778,7 @@ export function TeacherDetailPage() {
             teacherId: lesson.teacherId,
             teacherCode: lesson.teacherCode ?? '',
             teacherName: lesson.teacherName ?? '',
-            subjectId,
+            subjectId: subjectPackage.subjectId,
             subjectName,
             date: lesson.date,
             minutes: lessonMinutes,
@@ -845,6 +830,8 @@ export function TeacherDetailPage() {
               heldMinutesAfter: newHeldMinutes,
               heldMinutesReleased: heldMinutesToRelease,
               bookingRequestId: bookingNow?.id || null,
+              bookingIds: bookingNows.map((booking) => booking.id),
+              ...(subjectPackage.subjectId !== subjectId ? { reportedSubjectId: subjectId } : {}),
               zeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
             },
             createdAt: serverTimestamp(),
@@ -856,7 +843,7 @@ export function TeacherDetailPage() {
       } else if (currentStatus === 'approved') {
         // Luồng hoàn tác duyệt (approved -> pending hoặc approved -> rejected)
         const bookingsToReopen = targetStatus === 'pending'
-          ? await resolveLessonBookings({
+          ? await resolveLessonBookingsForRollback({
               id: lesson.id,
               bookingRequestId: lesson.bookingRequestId,
               bookingRequestIds: lesson.bookingRequestIds,
@@ -870,7 +857,7 @@ export function TeacherDetailPage() {
               groupClassId: lesson.groupClassId,
               bookingSubjectReconciliation: lesson.bookingSubjectReconciliation,
               isZeroMinuteExcusedAbsence: isZeroMinuteExcusedAbsence(lesson),
-            }, { purpose: 'rollback' })
+            })
           : []
         const payrollSnap = await getDocs(
           query(collection(db, 'payroll'), where('lessonId', '==', lesson.id))
@@ -1122,7 +1109,9 @@ export function TeacherDetailPage() {
       } else if (message === 'RESTORED_HOLD_EXCEEDS_REMAINING') {
         toast.error('Không thể mở lại lịch vì phần kim cương cần giữ vượt quỹ còn lại. Hãy đối soát quỹ học viên trước.')
       } else if (message === 'NOT_ENOUGH_POINTS') {
-        toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
+        toast.error('Gói môn đã hết buổi (không đủ phút) nên không thể duyệt buổi học này')
+      } else if (message === 'STUDENT_SUBJECT_PACKAGE_NOT_FOUND') {
+        toast.error('Học viên không có gói môn của buổi này. Hãy duyệt ở trang Duyệt buổi dạy để chọn gói cần trừ.')
       } else if (code === 'permission-denied') {
         toast.error('Bạn không có quyền cập nhật trạng thái buổi dạy này')
       } else {
@@ -1190,13 +1179,9 @@ export function TeacherDetailPage() {
   // Duyệt hàng loạt: chạy TUẦN TỰ qua đúng luồng duyệt an toàn (trừ phút học viên,
   // ghi bản ghi lương, cộng điểm thưởng…). Chỉ áp dụng buổi Chờ duyệt/Từ chối.
   const handleBulkApprove = async () => {
-    const selectedTargets = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected'))
-    const targets = selectedTargets.filter((lesson) => !requiresIndividualSubjectReconciliation(lesson))
-    const protectedCount = selectedTargets.length - targets.length
+    const targets = lessons.filter((l) => selectedLessonIds.has(l.id) && (l.status === 'pending' || l.status === 'rejected'))
     if (targets.length === 0) {
-      toast.warning(protectedCount > 0
-        ? 'Các buổi đã chọn có đối soát môn lịch cũ phải duyệt từng buổi để xác nhận lại.'
-        : 'Không có buổi "Chờ duyệt" nào trong số đã chọn')
+      toast.warning('Không có buổi "Chờ duyệt" nào trong số đã chọn')
       setShowBulkApprove(false)
       return
     }
@@ -1210,8 +1195,7 @@ export function TeacherDetailPage() {
         else failed++
       }
       if (failed === 0) toast.success(`Đã duyệt ${ok} buổi dạy`)
-      else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi lỗi (có thể lịch/số phút không khớp hoặc học viên hết buổi) — vui lòng kiểm tra lại`)
-      if (protectedCount > 0) toast.warning(`Đã bỏ qua ${protectedCount} buổi có đối soát; vui lòng duyệt từng buổi.`)
+      else toast.warning(`Đã duyệt ${ok} buổi; ${failed} buổi không duyệt được (thường do học viên đã hết buổi) — vui lòng kiểm tra lại`)
       setSelectedLessonIds(new Set())
     } finally {
       setBulkApproving(false)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { runTransaction, doc, collection, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Lesson, Student, StudentSubject, Subject } from '@/types'
@@ -6,23 +6,24 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { formatMoney, formatPricePerMinute } from '@/lib/constants'
 import { useAuthStore } from '@/stores/authStore'
-import { assertBookingsAvailableForApproval, assertBookingsMatchLessonForApproval, assertBookingTimeRangeIntegrity, bookingHoldMinutes, resolveLessonBookings } from '@/lib/lessonBooking'
-import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { bookingHoldMinutes, resolveLessonBookingsForApproval } from '@/lib/lessonBooking'
+import {
+  defaultApprovalSubjectId,
+  lessonApprovalClassHuntCompensation,
+  lessonApprovalPoints,
+  pickApprovalSubjectPackageIndex,
+  usableLessonApprovalBookings,
+} from '@/lib/lenientLessonApproval'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
 import { getCountryRate } from '@/lib/countryPricing'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { lessonHomeworkText } from './lessonReport'
 import {
-  classHuntCompensationFromBookings,
   classHuntCompensationFromLesson,
   classHuntCompensationLegacyFields,
   classHuntCompensationSalary,
   classHuntPayrollCompensationFields,
 } from '@/lib/classHuntCompensation'
-import {
-  SubjectMismatchReconciliationPanel,
-  type SubjectMismatchReconciliationState,
-} from '@/components/lessons/SubjectMismatchReconciliationPanel'
 
 interface ApproveModalProps {
   lesson: Lesson
@@ -36,16 +37,10 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
   const [approveStudentSubjects, setApproveStudentSubjects] = useState<StudentSubject[]>([])
   const [loadingStudent, setLoadingStudent] = useState(true)
-  const [reconciliation, setReconciliation] = useState<SubjectMismatchReconciliationState>({
-    candidateAvailable: false,
-    required: false,
-    draft: null,
-  })
-  const handleReconciliationStateChange = useCallback((next: SubjectMismatchReconciliationState) => {
-    setReconciliation(next)
-  }, [])
-  const lessonSubjectPackages = approveStudentSubjects.filter((subject) => subject.subjectId === lesson.subjectId)
-  const hasUniqueLessonSubjectPackage = lessonSubjectPackages.length === 1
+  // Quy tắc duy nhất khi duyệt: gói môn đã hết buổi thì không duyệt.
+  const approveSubjectOutOfSessions = Number(
+    approveStudentSubjects.find((subject) => subject.subjectId === approveSubjectId)?.remainingMinutes ?? 0,
+  ) <= 0 && !isZeroMinuteExcusedAbsence(lesson)
 
   useEffect(() => {
     const fetchStudentSubjects = async () => {
@@ -85,15 +80,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           }))
 
           setApproveStudentSubjects(resolvedSubjects)
-          
-          const matchingLessonPackages = resolvedSubjects.filter(sub => sub.subjectId === lesson.subjectId)
-          if (matchingLessonPackages.length === 1) {
-            setApproveSubjectId(lesson.subjectId)
-          } else {
-            // A different course may still have sessions, but it must never be
-            // selected automatically to pay for a historical mismatched booking.
-            setApproveSubjectId('')
-          }
+          setApproveSubjectId(defaultApprovalSubjectId(resolvedSubjects, lesson.subjectId))
         }
       } catch (err) {
         console.error('Error fetching student packages:', err)
@@ -113,22 +100,9 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         toast.error('Môn học được chọn không hợp lệ')
         return
       }
-      const reconciliationDraft = reconciliation.required ? reconciliation.draft : null
-      if (reconciliation.required && !reconciliationDraft) {
-        toast.error('Vui lòng hoàn tất lý do và xác nhận đối soát môn lịch cũ trước khi duyệt.')
-        return
-      }
-      if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
-        toast.error('Gói hạch toán vừa thay đổi. Vui lòng xác nhận lại phần đối soát.')
-        return
-      }
-      if (approveSubjectId !== lesson.subjectId) {
-        toast.error('Chỉ được hạch toán vào đúng gói môn của buổi điểm danh. Không thể chọn một gói khác.')
-        return
-      }
 
       const zeroMinuteExcusedAbsence = isZeroMinuteExcusedAbsence(lesson)
-      const matchedBookings = await resolveLessonBookings({
+      const matchedBookings = await resolveLessonBookingsForApproval({
         id: lesson.id,
         bookingRequestId: lesson.bookingRequestId,
         bookingRequestIds: lesson.bookingRequestIds,
@@ -141,8 +115,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
         subjectName: lesson.subjectName,
         groupClassId: lesson.groupClassId,
         isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsence,
-      }, { subjectMismatchReconciliation: reconciliationDraft })
-      if (!zeroMinuteExcusedAbsence) assertBookingTimeRangeIntegrity(matchedBookings)
+      })
 
       await runTransaction(
         db,
@@ -168,12 +141,6 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             || Number(lessonNow.minutes) !== Number(lesson.minutes)
             || (lessonNow.groupClassId || '') !== (lesson.groupClassId || '')
           ) throw new Error('BOOKING_STATE_CHANGED')
-          if (approveSubjectId !== lessonNow.subjectId) {
-            throw new Error('BOOKING_SUBJECT_MISMATCH')
-          }
-          if (reconciliationDraft && reconciliationDraft.settlementSubjectId !== approveSubjectId) {
-            throw new Error('BOOKING_RECONCILIATION_INVALID')
-          }
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
           const [teacherSnap, subjectCatalogSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
@@ -184,42 +151,21 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const subjectCatalogData = subjectCatalogSnap.exists()
             ? subjectCatalogSnap.data() as Subject
             : null
-          const bookingNows = bookingSnaps
-            .filter((snap) => snap.exists())
-            .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest))
-          if (bookingNows.length !== matchedBookings.length) throw new Error('BOOKING_STATE_CHANGED')
-          assertBookingsAvailableForApproval(bookingNows, lesson.id, lessonNow.bookingHoldConsumed === true)
+          // Không còn quy tắc lịch nào chặn duyệt: ca đã bị nhả/huỷ hoặc đã thuộc buổi
+          // khác lúc đọc lại thì chỉ bỏ qua (không gắn, không nhả giữ chỗ lần hai).
+          const bookingNows = usableLessonApprovalBookings(
+            bookingSnaps
+              .filter((snap) => snap.exists())
+              .map((snap) => ({ id: snap.id, ...snap.data() } as BookingRequest)),
+            lesson.id,
+            lesson.studentId,
+          )
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
-          assertBookingsMatchLessonForApproval(bookingNows, {
-            id: lesson.id,
-            bookingHoldConsumed: lessonNow.bookingHoldConsumed === true,
-            bookingRequestId: lessonNow.bookingRequestId,
-            bookingRequestIds: lessonNow.bookingRequestIds,
-            scheduleCheck: lessonNow.scheduleCheck,
-            studentId: lessonNow.studentId,
-            teacherId: lessonNow.teacherId,
-            date: lessonNow.date,
-            minutes: lessonNow.minutes,
-            subjectId: lessonNow.subjectId,
-            subjectName: lessonNow.subjectName,
-            groupClassId: lessonNow.groupClassId,
-            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
-          }, reconciliationDraft)
-          if (!zeroMinuteExcusedAbsenceNow) assertBookingTimeRangeIntegrity(bookingNows)
           const bookingNow = bookingNows[0] || null
-          const classHuntCompensation = classHuntCompensationFromBookings(bookingNows)
+          const classHuntCompensation = lessonApprovalClassHuntCompensation(bookingNows, lessonNow)
           const legacyTeacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
 
-          const isAbsenceLesson = lessonNow.attendanceStatus === 'with_permission'
-            || lessonNow.attendanceStatus === 'without_permission'
-            || zeroMinuteExcusedAbsenceNow
-          const lessonPoints = isAbsenceLesson
-            ? getLessonPoints(lessonNow, teacherData)
-            : bookingNows.length > 1
-              ? bookingNows.reduce((sum, booking) => sum + getBookingPoints(booking, teacherData), 0)
-              : bookingNow
-                ? getBookingPoints(bookingNow, teacherData)
-              : getLessonPoints(lessonNow, teacherData)
+          const lessonPoints = lessonApprovalPoints(lessonNow, bookingNows, teacherData, zeroMinuteExcusedAbsenceNow)
 
           // Initialize subjects array for backward compatibility if needed
           const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
@@ -245,11 +191,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               : []
 
           // Deduct from the selected subject package
-          const matchingSubjectIndexes = updatedSubjects.flatMap((sub, index) => (
-            sub.subjectId === approveSubjectId ? [index] : []
-          ))
-          if (matchingSubjectIndexes.length !== 1) throw new Error('BOOKING_SUBJECT_PACKAGE_AMBIGUOUS')
-          const sIdx = matchingSubjectIndexes[0] ?? -1
+          const sIdx = pickApprovalSubjectPackageIndex(updatedSubjects, approveSubjectId, lessonPoints)
           if (sIdx === -1) {
             throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
           }
@@ -335,19 +277,6 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               ...(bookingNows.length > 1 ? { bookingRequestIds: bookingNows.map((booking) => booking.id) } : {}),
             } : {}),
             bookingHoldConsumed: lessonNow.bookingHoldConsumed === true || heldPointsToRelease > 0,
-            ...(reconciliationDraft ? {
-              bookingSubjectReconciliation: {
-                kind: reconciliationDraft.kind,
-                bookingIds: bookingNows.map((booking) => booking.id),
-                bookingSubjectId: bookingNow?.subjectId || '',
-                bookingSubjectName: bookingNow?.subjectName || '',
-                reportedSubjectId: lessonNow.subjectId || '',
-                reportedSubjectName: lessonNow.subjectName || '',
-                settlementSubjectId: freshSubjectPkg.subjectId,
-                settlementSubjectName: freshSubjectPkg.subjectName,
-                reconciledAt: serverTimestamp(),
-              },
-            } : {}),
             updatedAt: serverTimestamp(),
           })
 
@@ -456,18 +385,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               heldPointsReleased: heldPointsToRelease,
               subjectId: freshSubjectPkg.subjectId,
               subjectName: freshSubjectPkg.subjectName,
-              ...(reconciliationDraft ? {
-                bookingSubjectReconciliation: {
-                  bookingIds: bookingNows.map((booking) => booking.id),
-                  bookingSubjectId: bookingNow?.subjectId || '',
-                  bookingSubjectName: bookingNow?.subjectName || '',
-                  reportedSubjectId: lessonNow.subjectId || '',
-                  reportedSubjectName: lessonNow.subjectName || '',
-                  settlementSubjectId: freshSubjectPkg.subjectId,
-                  settlementSubjectName: freshSubjectPkg.subjectName,
-                  reason: reconciliationDraft.reason,
-                },
+              ...(freshSubjectPkg.subjectId !== lessonNow.subjectId ? {
+                reportedSubjectId: lessonNow.subjectId || '',
+                reportedSubjectName: lessonNow.subjectName || '',
               } : {}),
+              bookingIds: bookingNows.map((booking) => booking.id),
             },
             createdAt: serverTimestamp(),
           })
@@ -499,7 +421,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       } else if (err?.message === 'BOOKING_MATCH_AMBIGUOUS' || err?.message === 'BOOKING_REFERENCE_INVALID') {
         toast.error('Lịch đặt không khớp rõ ràng với buổi điểm danh. Vui lòng kiểm tra ngày, gia sư và thời lượng trước khi duyệt.')
       } else if (err?.message === 'NOT_ENOUGH_POINTS') {
-        toast.error('Học viên không đủ kim cương khả dụng để duyệt buổi học này')
+        toast.error('Gói môn đã hết buổi (không đủ phút) nên không thể duyệt buổi học này')
       } else if (code === 'resource-exhausted' || code === 'unavailable') {
         toast.error('Hệ thống đang bận, vui lòng thử lại sau ít giây')
       } else {
@@ -518,7 +440,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
       title="Xác nhận duyệt buổi dạy"
       confirmLabel="Duyệt buổi dạy"
       loading={loading}
-      confirmDisabled={loadingStudent || !approveSubjectId || (reconciliation.required && !reconciliation.draft)}
+      confirmDisabled={loadingStudent || !approveSubjectId || approveSubjectOutOfSessions}
     >
       <div className="bg-white rounded-xl p-4 space-y-3 text-sm">
         <div className="flex justify-between">
@@ -576,40 +498,29 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             <select
               value={approveSubjectId}
               onChange={(e) => setApproveSubjectId(e.target.value)}
-              disabled={loadingStudent || !hasUniqueLessonSubjectPackage}
+              disabled={loadingStudent}
               className="w-full rounded-lg bg-white border border-slate-300 text-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">
-                {hasUniqueLessonSubjectPackage
-                  ? 'Chọn đúng gói môn của buổi điểm danh'
-                  : 'Không xác định duy nhất gói môn của buổi điểm danh'}
-              </option>
-              {lessonSubjectPackages.length === 1 && lessonSubjectPackages.map((sub) => {
-                const isOutOfSessions = sub.remainingMinutes <= 0 || sub.remainingSessions <= 0
-                return (
-                  <option key={sub.subjectId} value={sub.subjectId}>
-                    {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
-                  </option>
-                )
-              })}
+              <option value="">Chọn gói môn để trừ buổi</option>
+              {approveStudentSubjects
+                .filter((sub, index, all) => all.findIndex((item) => item.subjectId === sub.subjectId) === index)
+                .map((sub) => {
+                  const isOutOfSessions = sub.remainingMinutes <= 0
+                  return (
+                    <option key={sub.subjectId} value={sub.subjectId}>
+                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
+                    </option>
+                  )
+                })}
             </select>
           )}
         </div>
 
-        {!loadingStudent && !hasUniqueLessonSubjectPackage && (
+        {!loadingStudent && approveSubjectId && approveSubjectOutOfSessions && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-            <p className="font-bold">Không tự trừ vào gói còn buổi khác</p>
-            <p className="mt-0.5">Buổi điểm danh không có đúng một gói môn tương ứng. Cần đối soát hồ sơ hoặc lịch sử chuyển môn trước khi có thể duyệt an toàn.</p>
+            <p className="font-bold">Gói môn này đã hết buổi</p>
+            <p className="mt-0.5">Không thể duyệt khi học viên đã hết buổi. Hãy gia hạn/nạp thêm buổi cho học viên trước.</p>
           </div>
-        )}
-
-        {!loadingStudent && (
-          <SubjectMismatchReconciliationPanel
-            lesson={lesson}
-            selectedSubject={approveStudentSubjects.find((subject) => subject.subjectId === approveSubjectId) || null}
-            forceRequired={!hasUniqueLessonSubjectPackage}
-            onStateChange={handleReconciliationStateChange}
-          />
         )}
 
         {(() => {
