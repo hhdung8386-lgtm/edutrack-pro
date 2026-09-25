@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  AlarmClock,
   AlertCircle,
   AlertTriangle,
   BarChart2,
@@ -108,12 +109,14 @@ export const adminNavigationGroups: AdminNavGroup[] = [
     icon: ClipboardList,
     activePrefixes: [
       '/admin/future-bookings',
+      '/admin/teacher-checkins',
       '/admin/class-cancellations',
       '/admin/bookings',
       '/admin/approvals',
     ],
     items: [
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
+      { to: '/admin/teacher-checkins', icon: AlarmClock, label: 'Giờ vào lớp gia sư' },
       { to: '/admin/class-cancellations', icon: CalendarX2, label: 'Yêu cầu huỷ lớp', badge: 'classCancellations' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
       { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi học', badge: 'approvals' },

@@ -1266,6 +1266,7 @@ export { createParentProfileBooking } from './parentProfileBookingFunctions'
 export { cancelParentBooking, getParentBookingState } from './parentBookingAccessFunctions'
 export {
   getTeacherAttendanceAuditData,
+  recordTeacherClassroomEntry,
   requestTeacherClassCancellation,
   respondToBookingRequest,
 } from './teacherBookingSecurityFunctions'

@@ -528,6 +528,16 @@ export interface BookingRequest {
   teacherCancellationResolvedBy?: string
   /** Ghi chú của giáo vụ khi duyệt/từ chối, gia sư đọc được. */
   teacherCancellationAdminNote?: string
+  /**
+   * Chấm công giờ vào lớp: callable recordTeacherClassroomEntry ghi GIỜ MÁY CHỦ khi gia sư
+   * bấm "Vào lớp" trên Lịch dạy. FirstAt = lần bấm đầu trong khung (60' trước giờ học → hết ca).
+   */
+  teacherClassroomEntryFirstAt?: Timestamp
+  teacherClassroomEntryLastAt?: Timestamp
+  teacherClassroomEntryCount?: number
+  /** Phút trễ của lần bấm đầu so với giờ bắt đầu ca; âm = vào sớm. */
+  teacherClassroomEntryLateMinutes?: number
+  teacherClassroomEntryBy?: string
 }
 
 export type TeacherClassCancellationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'closed'

@@ -1,4 +1,4 @@
-import { FieldValue, Firestore, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
+import { FieldValue, Firestore, Timestamp, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import {
   TeacherBookingSecurityValidationError,
@@ -17,6 +17,11 @@ import {
   teacherCancellationWithdrawBlocker,
   type TeacherClassCancellationRequest,
 } from './teacherClassCancellation'
+import {
+  TeacherClassroomEntryValidationError,
+  decideTeacherClassroomEntry,
+  normalizeTeacherClassroomEntryRequest,
+} from './teacherClassroomEntry'
 
 const db = new Firestore()
 const READ_LIMIT = 1000
@@ -292,4 +297,78 @@ export const requestTeacherClassCancellation = onCall({
     })
   })
   return { bookingId: request.bookingId, action: request.action }
+})
+
+/**
+ * Chấm công giờ vào lớp: gia sư bấm "Vào lớp" trên Lịch dạy → ghi giờ máy chủ
+ * lên chính ca học (các trường teacherClassroomEntry*). Không đổi trạng thái ca,
+ * kim cương, buổi học hay lương. Bấm ngoài khung giờ của ca thì bỏ qua, không lỗi.
+ */
+export const recordTeacherClassroomEntry = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  maxInstances: 20,
+}, async (call) => {
+  const actor = await canonicalTeacher(call.auth?.uid)
+  let bookingId: string
+  try {
+    bookingId = normalizeTeacherClassroomEntryRequest(call.data).bookingId
+  } catch (cause) {
+    if (cause instanceof TeacherClassroomEntryValidationError) {
+      throw callableError('invalid-argument', cause.reason, cause.message)
+    }
+    throw cause
+  }
+  const bookingRef = db.collection('bookingRequests').doc(bookingId)
+
+  return db.runTransaction(async (transaction) => {
+    const bookingSnapshot = await transaction.get(bookingRef)
+    if (!bookingSnapshot.exists) throw callableError('not-found', 'BOOKING_NOT_FOUND', 'Không tìm thấy ca học.')
+    const nowMs = Date.now()
+    const decision = decideTeacherClassroomEntry(
+      bookingSnapshot.data() as Record<string, unknown>,
+      actor.teacherId,
+      nowMs,
+    )
+    if (decision.action === 'reject') {
+      throw callableError(
+        decision.reason === 'BOOKING_TEACHER_MISMATCH' ? 'permission-denied' : 'failed-precondition',
+        decision.reason,
+        decision.reason === 'BOOKING_TEACHER_MISMATCH'
+          ? 'Ca học không thuộc gia sư đang đăng nhập.'
+          : 'Ca học không còn hiệu lực để ghi giờ vào lớp.',
+      )
+    }
+    if (decision.action === 'skip') {
+      return {
+        bookingId,
+        recorded: false,
+        reason: decision.reason,
+        firstAtMs: decision.firstAtMs,
+        lateMinutes: decision.lateMinutes,
+        opensAtMs: decision.opensAtMs ?? null,
+      }
+    }
+    const now = Timestamp.fromMillis(nowMs)
+    transaction.update(bookingRef, decision.first
+      ? {
+          teacherClassroomEntryFirstAt: now,
+          teacherClassroomEntryLastAt: now,
+          teacherClassroomEntryCount: FieldValue.increment(1),
+          teacherClassroomEntryLateMinutes: decision.lateMinutes,
+          teacherClassroomEntryBy: actor.uid,
+        }
+      : {
+          teacherClassroomEntryLastAt: now,
+          teacherClassroomEntryCount: FieldValue.increment(1),
+        })
+    return {
+      bookingId,
+      recorded: true,
+      first: decision.first,
+      firstAtMs: decision.firstAtMs,
+      lateMinutes: decision.lateMinutes,
+    }
+  })
 })

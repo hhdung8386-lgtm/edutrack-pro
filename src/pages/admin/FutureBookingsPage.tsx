@@ -23,6 +23,15 @@ import { normalizeClassroomUrl, resolveAdminClassroomLink } from '@/lib/adminCla
 import { buildBookingReminderMessage } from '@/lib/bookingReminder'
 import { copyTextToClipboard } from '@/lib/lessonShare'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
+import { formatVietnamTime, getTeacherCheckin, teacherCheckinLabel, teacherCheckinTone } from '@/lib/teacherCheckin'
+
+const CHECKIN_TONE_TEXT = {
+  good: 'text-emerald-700',
+  warn: 'text-amber-700',
+  bad: 'text-rose-600',
+  info: 'text-slate-500',
+  muted: 'text-slate-400',
+} as const
 
 type BookingSortMode = 'student' | 'timeAsc' | 'timeDesc'
 
@@ -871,6 +880,22 @@ export function FutureBookingsPage() {
                           {liveStatus === 'live' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                           {liveTag.label}
                         </span>
+                        {(() => {
+                          // Giờ gia sư bấm "Vào lớp" (chi tiết ở trang Giờ vào lớp gia sư).
+                          const checkin = getTeacherCheckin(booking, nowMs)
+                          if (checkin.firstAtMs === null && checkin.status !== 'missing' && checkin.status !== 'missing_live') return null
+                          return (
+                            <Link
+                              to="/admin/teacher-checkins"
+                              className={`mt-1 block whitespace-nowrap text-[11px] font-semibold hover:underline ${CHECKIN_TONE_TEXT[teacherCheckinTone(checkin)]}`}
+                              title="Giờ gia sư bấm Vào lớp — xem chi tiết ở trang Giờ vào lớp gia sư"
+                            >
+                              {checkin.firstAtMs !== null
+                                ? `GV vào ${formatVietnamTime(checkin.firstAtMs, false)} · ${teacherCheckinLabel(checkin)}`
+                                : `GV ${teacherCheckinLabel(checkin).toLowerCase()}`}
+                            </Link>
+                          )
+                        })()}
                       </td>
                       <td className="p-3.5 text-slate-600">{booking.subjectName}</td>
                       <td className="p-3.5 font-medium">

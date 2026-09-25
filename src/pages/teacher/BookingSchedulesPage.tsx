@@ -58,6 +58,7 @@ import {
   canSubmitAttendance,
   getAttendanceDeadline,
 } from '@/lib/attendanceDeadline'
+import { recordTeacherClassroomEntry } from '@/lib/teacherClassroomEntry'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
@@ -236,6 +237,34 @@ function classroomWindowMessage(
       : `The 123English room opens at ${opensAt} in your device timezone (12 hours before class).`
   }
   return lang === 'vi' ? 'Cửa sổ vào phòng 123English đã đóng.' : 'The 123English room join window has closed.'
+}
+
+/** Dòng nhỏ dưới nút Vào lớp: cho gia sư biết giờ bấm đã được ghi để chấm công. */
+function ClassroomEntryNote({ booking, lang }: { booking: BookingRequest; lang: string }) {
+  const firstAtMs = booking.teacherClassroomEntryFirstAt?.toMillis?.()
+  if (firstAtMs) {
+    const time = new Date(firstAtMs).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+    const late = Number(booking.teacherClassroomEntryLateMinutes)
+    return (
+      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-semibold leading-5 text-emerald-800">
+        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          {lang === 'vi' ? `Đã ghi nhận vào lớp lúc ${time}` : `Join time recorded at ${time}`}
+          {Number.isFinite(late) && late >= 1 && (
+            <span className="text-amber-700">{lang === 'vi' ? ` · trễ ${late} phút` : ` · ${late} min late`}</span>
+          )}
+        </span>
+      </p>
+    )
+  }
+  return (
+    <p className="mt-2 flex items-start gap-1.5 text-[11px] font-medium leading-5 text-slate-500">
+      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      {lang === 'vi'
+        ? 'Bấm Vào lớp khi bắt đầu dạy — hệ thống ghi lại giờ bấm để chấm công đúng giờ.'
+        : 'Click Join when class starts — your join time is recorded for punctuality.'}
+    </p>
+  )
 }
 
 export function BookingSchedulesPage() {
@@ -539,6 +568,23 @@ export function BookingSchedulesPage() {
     [localBookings, selectedBooking],
   )
   const lateCancellationPenalty = lateTeacherCancellationPenaltyApplies(liveSelectedBooking, attendanceNow)
+
+  // Ghi giờ bấm "Vào lớp" (giờ máy chủ) để chấm công. Không chờ kết quả: phòng học
+  // vẫn mở ngay trong tab mới dù mạng chậm hay lỗi.
+  const handleJoinClassClick = useCallback((bookingId: string) => {
+    recordTeacherClassroomEntry(bookingId).then((result) => {
+      if (!result.recorded && result.reason === 'TOO_EARLY') {
+        toast.info(lang === 'vi'
+          ? 'Chưa tới giờ học nên chưa ghi giờ vào lớp (chỉ ghi từ 60 phút trước ca). Khi bắt đầu dạy, nhớ bấm Vào lớp lại.'
+          : 'Too early to record your join time (recording opens 60 minutes before class). Please click Join again when class starts.')
+      }
+    }).catch((error) => {
+      console.error('Record classroom entry failed:', error)
+      toast.warning(lang === 'vi'
+        ? 'Chưa ghi nhận được giờ vào lớp. Vui lòng bấm Vào lớp thêm lần nữa.'
+        : 'Your join time was not recorded. Please click Join once more.')
+    })
+  }, [lang])
 
   const openCancelRequestModal = () => {
     setCancelReason('')
@@ -1495,6 +1541,7 @@ export function BookingSchedulesPage() {
                           href={roomLink}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => handleJoinClassClick(selectedBooking.id)}
                           className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
                           {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
@@ -1502,6 +1549,7 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
+                    {roomLink && <ClassroomEntryNote booking={liveSelectedBooking || selectedBooking} lang={lang} />}
                     {pilotWindow && !pilotWindow.isOpen && (
                       <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
                         {classroomWindowMessage(pilotWindow, attendanceNow, lang)}
@@ -1884,6 +1932,7 @@ export function BookingSchedulesPage() {
                         href={roomLink}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => handleJoinClassClick(selectedBooking.id)}
                         className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
                         {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
@@ -1891,6 +1940,7 @@ export function BookingSchedulesPage() {
                       </a>
                     </div>
                   )}
+                  {roomLink && <ClassroomEntryNote booking={liveSelectedBooking || selectedBooking} lang={lang} />}
                   {pilotWindow && !pilotWindow.isOpen && (
                     <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
                       {classroomWindowMessage(pilotWindow, attendanceNow, lang)}

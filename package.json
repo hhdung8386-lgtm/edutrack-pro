@@ -22,6 +22,7 @@
     "test:lenient-lesson-approval": "node --experimental-strip-types --test tests/lenientLessonApproval.test.ts",
     "test:admin-classroom-link": "node --experimental-strip-types --test tests/adminClassroomLink.test.ts",
     "test:booking-reminder": "node --experimental-strip-types --test tests/bookingReminder.test.ts",
+    "test:teacher-checkin": "node --experimental-strip-types --test tests/teacherCheckin.test.ts",
     "test:student-list": "node --experimental-strip-types --test tests/studentList.test.ts",
     "test:online-classroom": "node --experimental-strip-types --test tests/classroomBoard.test.ts",
     "test:screen-share-annotation": "node --experimental-strip-types --test tests/screenShareAnnotationStage.test.ts",
