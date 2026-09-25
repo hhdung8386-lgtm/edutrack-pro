@@ -25,6 +25,12 @@ export const CLASS_HUNT_STUDENT_AUDIENCE_LABELS: Record<ClassHuntStudentAudience
   teens: 'Thanh thiếu niên',
   adults: 'Người lớn',
 }
+/** One colour per learner group so admins and tutors spot it at a glance. */
+export const CLASS_HUNT_STUDENT_AUDIENCE_TAG_CLASSES: Record<ClassHuntStudentAudience, string> = {
+  children: 'border-amber-200 bg-amber-50 text-amber-800',
+  teens: 'border-violet-200 bg-violet-50 text-violet-800',
+  adults: 'border-sky-200 bg-sky-50 text-sky-800',
+}
 
 /** Mirrors the backend: a hunt has no tutor yet, so it is sized at 25 kim cương / 25 phút. */
 export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
@@ -225,7 +231,12 @@ const publishCallable = httpsCallable<ClassHuntPublishInput, unknown>(functions,
 const listCallable = httpsCallable<{ scope: 'admin' | 'teacher'; status?: ClassHuntStatus }, unknown>(functions, 'listClassHunts')
 const cancelCallable = httpsCallable<{ huntId: string }, unknown>(functions, 'cancelClassHunt')
 const archiveCallable = httpsCallable<{ huntId: string }, unknown>(functions, 'archiveClassHunt')
-const updateCallable = httpsCallable<{ huntId: string; note: string; teacherRequirements: ClassHuntTeacherRequirements }, unknown>(functions, 'updateClassHunt')
+const updateCallable = httpsCallable<{
+  huntId: string
+  note: string
+  teacherRequirements: ClassHuntTeacherRequirements
+  studentAudience: ClassHuntStudentAudience
+}, unknown>(functions, 'updateClassHunt')
 const claimCallable = httpsCallable<{ huntId: string; clientRequestId: string }, unknown>(functions, 'claimClassHunt')
 const markTeacherNotificationsReadCallable = httpsCallable<{ notificationIds: string[] }, unknown>(
   functions,
@@ -589,12 +600,17 @@ export async function archiveClassHunt(huntId: string): Promise<ClassHunt> {
   return huntFrom(root.hunt ?? result.data)
 }
 
-/** Edit an open offer's note and teacher requirement; schedule and pay stay locked. */
+/** Edit an open offer's note, teacher requirement and learner group; schedule and pay stay locked. */
 export async function updateClassHunt(
   huntId: string,
-  changes: { note: string; teacherRequirements: ClassHuntTeacherRequirements },
+  changes: { note: string; teacherRequirements: ClassHuntTeacherRequirements; studentAudience: ClassHuntStudentAudience },
 ): Promise<ClassHunt> {
-  const result = await updateCallable({ huntId, note: changes.note, teacherRequirements: changes.teacherRequirements })
+  const result = await updateCallable({
+    huntId,
+    note: changes.note,
+    teacherRequirements: changes.teacherRequirements,
+    studentAudience: changes.studentAudience,
+  })
   const root = asRecord(result.data)
   return huntFrom(root.hunt ?? result.data)
 }

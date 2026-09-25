@@ -423,6 +423,14 @@ function draftFromRequest(
   let sessionSelectionMode: ClassHuntSessionSelectionMode
   try {
     sessionSelectionMode = normalizeClassHuntSessionSelectionMode(data.sessionSelectionMode)
+    // New offers must say who the learner is; tutors read it before claiming.
+    // Stored legacy offers without one stay readable (see requireStoredHunt).
+    if (!normalizeClassHuntStudentAudience(data.studentAudience)) {
+      throw new ClassHuntValidationError(
+        'CLASS_HUNT_STUDENT_AUDIENCE_REQUIRED',
+        'Chọn đối tượng học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn. Nếu chưa thấy mục này, hãy tải lại trang.',
+      )
+    }
   } catch (cause) {
     if (cause instanceof ClassHuntValidationError) {
       throw error('invalid-argument', cause.reason, cause.message)
@@ -445,6 +453,7 @@ function draftFromRequest(
         compensationRatePerMinute: data.compensationRatePerMinute,
         weeklySlots: data.weeklySlots,
         teacherRequirements: data.teacherRequirements,
+        studentAudience: data.studentAudience,
         note: data.note,
       }, nowMs)
     } catch (cause) {
@@ -1437,9 +1446,13 @@ export const updateClassHunt = onCall({
   const huntId = safeId(data.huntId, 'CLASS_HUNT_ID_INVALID', 'Mã lớp săn không hợp lệ.')
   let note: string
   let teacherRequirements: ClassHuntTeacherRequirements
+  // Optional so an older cached client (note + requirements only) keeps the
+  // stored audience untouched; a supplied value is strict.
+  let studentAudience: ClassHuntStudentAudience | undefined
   try {
     note = normalizeClassHuntNote(data.note)
     teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
+    studentAudience = normalizeClassHuntStudentAudience(data.studentAudience)
   } catch (cause) {
     if (cause instanceof ClassHuntValidationError) throw error('invalid-argument', cause.reason, cause.message)
     throw cause
@@ -1458,6 +1471,7 @@ export const updateClassHunt = onCall({
     transaction.update(huntRef, {
       note: note ? note : FieldValue.delete(),
       teacherRequirements,
+      ...(studentAudience ? { studentAudience } : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
       updatedAt: FieldValue.serverTimestamp(),
@@ -1470,8 +1484,16 @@ export const updateClassHunt = onCall({
       targetType: 'classHunt',
       targetId: current.id,
       changes: {
-        before: { note: current.note || null, teacherRequirements: current.teacherRequirements },
-        after: { note: note || null, teacherRequirements },
+        before: {
+          note: current.note || null,
+          teacherRequirements: current.teacherRequirements,
+          studentAudience: current.studentAudience || null,
+        },
+        after: {
+          note: note || null,
+          teacherRequirements,
+          studentAudience: studentAudience || current.studentAudience || null,
+        },
       },
       createdAt: FieldValue.serverTimestamp(),
     })
@@ -1481,6 +1503,7 @@ export const updateClassHunt = onCall({
       ...rest,
       ...(note ? { note } : {}),
       teacherRequirements,
+      ...(studentAudience ? { studentAudience } : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
     }

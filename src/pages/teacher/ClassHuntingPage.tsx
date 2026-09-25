@@ -29,12 +29,12 @@ import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
+import { StudentAudienceTag } from '@/components/shared/StudentAudienceTag'
 import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { calculateSalary, db } from '@/lib/firebase'
 import {
-  CLASS_HUNT_STUDENT_AUDIENCE_LABELS,
   claimClassHunt,
   classHuntErrorDetails,
   classHuntErrorReason,
@@ -562,13 +562,14 @@ export function TeacherClassHuntingPage() {
                               <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
                                 <Clock3 className="h-3.5 w-3.5" />{expiryLabel(hunt.expiresAt)}
                               </span>
+                              {hunt.studentAudience && <StudentAudienceTag audience={hunt.studentAudience} />}
                             </div>
                             <h3 className="mt-3 break-words text-xl font-black text-slate-950 sm:text-2xl">{hunt.subject.name}</h3>
                             <SubjectTeacherNote note={subjectNotes[hunt.subject.id]} className="mt-2" />
                             <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
                               <span className="inline-flex items-center gap-1.5"><Monitor className="h-4 w-4 text-slate-500" />Online</span>
                               <span className="text-slate-300" aria-hidden="true">•</span>
-                              <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-500" />{hunt.studentAudience ? `Học viên ${CLASS_HUNT_STUDENT_AUDIENCE_LABELS[hunt.studentAudience].toLowerCase()}` : '1 học viên'}</span>
+                              <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-500" />1 học viên</span>
                               <span className="text-slate-300" aria-hidden="true">•</span>
                               <span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-slate-500" />{hunt.minutes} phút/buổi</span>
                             </p>
@@ -653,15 +654,10 @@ export function TeacherClassHuntingPage() {
                           <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-500 ring-1 ring-inset ring-slate-200">
                             <Clock3 className="h-3.5 w-3.5" />{claimedAtLabel(hunt.claimedAt)}
                           </span>
+                          {hunt.studentAudience && <StudentAudienceTag audience={hunt.studentAudience} />}
                         </div>
                         <h3 className="mt-3 break-words text-lg font-black text-slate-700 sm:text-xl">{hunt.subject.name}</h3>
                         <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
-                          {hunt.studentAudience && (
-                            <>
-                              <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />Học viên {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[hunt.studentAudience].toLowerCase()}</span>
-                              <span className="text-slate-300" aria-hidden="true">•</span>
-                            </>
-                          )}
                           <span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4" />{hunt.minutes} phút/buổi</span>
                           <span className="text-slate-300" aria-hidden="true">•</span>
                           <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" />{hunt.sessionCount} buổi</span>
@@ -797,8 +793,8 @@ export function TeacherClassHuntingPage() {
               Bạn đang nhận lớp <strong className="text-slate-950">{confirmingHunt.subject.name}</strong> gồm {confirmingHunt.sessionCount} buổi, bắt đầu từ ngày {dayMonth(firstSlotDate(confirmingHunt))}.
             </p>
             {confirmingHunt.studentAudience && (
-              <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-sky-800">
-                <Users className="h-4 w-4" />Học viên: {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[confirmingHunt.studentAudience]}
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
+                Đối tượng học viên: <StudentAudienceTag audience={confirmingHunt.studentAudience} />
               </p>
             )}
             {confirmingPay && (

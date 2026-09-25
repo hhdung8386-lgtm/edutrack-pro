@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { StudentAudienceTag } from '@/components/shared/StudentAudienceTag'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { db } from '@/lib/firebase'
@@ -135,7 +136,50 @@ function StepTitle({ step, title, hint }: { step: number; title: string; hint?: 
   )
 }
 
-const FIELD = 'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+/** Required learner group; shown to tutors as a tag on the offer. */
+function StudentAudiencePicker({
+  name,
+  value,
+  onChange,
+  className = '',
+  gridClassName = '',
+}: {
+  name: string
+  value: ClassHuntStudentAudience | ''
+  onChange: (audience: ClassHuntStudentAudience) => void
+  className?: string
+  gridClassName?: string
+}) {
+  return (
+    <fieldset className={className} aria-required="true">
+      <legend className="mb-2 text-xs font-bold text-slate-700">
+        Đối tượng học viên <span className="text-rose-600" aria-hidden="true">*</span>
+      </legend>
+      <div className={`grid gap-2 ${gridClassName}`}>
+        {CLASS_HUNT_STUDENT_AUDIENCES.map((audience) => (
+          <label
+            key={audience}
+            className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${value === audience ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-700 hover:border-blue-200'}`}
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={value === audience}
+              onChange={() => onChange(audience)}
+              className="h-4 w-4 accent-blue-700"
+            />
+            {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[audience]}
+          </label>
+        ))}
+      </div>
+      {!value && (
+        <p className="mt-2 text-xs font-semibold text-rose-600">Bắt buộc chọn để gia sư biết học viên thuộc nhóm nào.</p>
+      )}
+    </fieldset>
+  )
+}
+
+const FIELD ='min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
 
 export function ClassHuntingPage() {
   const role = useAuthStore((state) => state.role)
@@ -175,6 +219,7 @@ export function ClassHuntingPage() {
   const [editNote, setEditNote] = useState('')
   const [editTypes, setEditTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
   const [editGender, setEditGender] = useState<ClassHuntTeacherGender>('any')
+  const [editAudience, setEditAudience] = useState<ClassHuntStudentAudience | ''>('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   const lookupRequestRef = useRef(0)
@@ -273,7 +318,7 @@ export function ClassHuntingPage() {
     else if (lookupStudent && lookupStudent.eligibleForHunt === false) list.push('Học viên này không đủ điều kiện mở CLASS HUNTING (cần học viên 1 kèm 1 online đang học và còn gói).')
     if (selectedStudent && !lookingUp && lookupStudent && !selectedSubject) list.push('Chọn gói học cần xếp.')
     if (weeklySlots.length === 0) list.push('Chọn ít nhất một slot học trong bảng.')
-    if (!studentAudience) list.push('Chọn nhóm học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn.')
+    if (!studentAudience) list.push('Chọn đối tượng học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn.')
     if (!startDate || startDate < todayInVietnam()) list.push('Ngày bắt đầu phải từ hôm nay trở đi.')
     if (selectedSubject && affordableSessions !== null) {
       if (affordableSessions < 1) {
@@ -430,10 +475,15 @@ export function ClassHuntingPage() {
     setEditNote(hunt.note || '')
     setEditTypes(hunt.teacherRequirements?.teacherTypes?.length ? [...hunt.teacherRequirements.teacherTypes] : [...CLASS_HUNT_TEACHER_TYPES])
     setEditGender(hunt.teacherRequirements?.gender || 'any')
+    setEditAudience(hunt.studentAudience || '')
   }
 
   const handleSaveEdit = async () => {
     if (!editTarget) return
+    if (!editAudience) {
+      toast.error('Chọn đối tượng học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn.')
+      return
+    }
     if (editTypes.length === 0) {
       toast.error('Chọn ít nhất một loại giáo viên.')
       return
@@ -450,8 +500,9 @@ export function ClassHuntingPage() {
           teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => editTypes.includes(type)),
           gender: editGender,
         },
+        studentAudience: editAudience,
       })
-      toast.success('Đã lưu ghi chú và yêu cầu giáo viên. Gia sư thấy nội dung mới khi danh sách làm mới.')
+      toast.success('Đã lưu đối tượng, ghi chú và yêu cầu giáo viên. Gia sư thấy nội dung mới khi danh sách làm mới.')
       setEditTarget(null)
       await loadHunts()
     } catch (error) {
@@ -678,26 +729,13 @@ export function ClassHuntingPage() {
                   />
                 </span>
               </label>
-              <fieldset className="border-t border-slate-100 pt-4">
-                <legend className="mb-2 text-xs font-bold text-slate-700">Học viên</legend>
-                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                  {CLASS_HUNT_STUDENT_AUDIENCES.map((audience) => (
-                    <label
-                      key={audience}
-                      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${studentAudience === audience ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-700 hover:border-blue-200'}`}
-                    >
-                      <input
-                        type="radio"
-                        name="class-hunt-student-audience"
-                        checked={studentAudience === audience}
-                        onChange={() => setStudentAudience(audience)}
-                        className="h-4 w-4 accent-blue-700"
-                      />
-                      {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[audience]}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              <StudentAudiencePicker
+                name="class-hunt-student-audience"
+                value={studentAudience}
+                onChange={setStudentAudience}
+                className="border-t border-slate-100 pt-4"
+                gridClassName="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3"
+              />
             </Card>
 
             <Card className="space-y-4">
@@ -879,6 +917,18 @@ export function ClassHuntingPage() {
                         {hunt.status === 'open' && hunt.activeTeacherCount !== undefined && (
                           <span className="text-xs text-slate-500">· Hiển thị cho {hunt.activeTeacherCount} gia sư</span>
                         )}
+                        {hunt.studentAudience ? (
+                          <StudentAudienceTag audience={hunt.studentAudience} />
+                        ) : hunt.status === 'open' && (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(hunt)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Chưa chọn đối tượng · bấm để chọn
+                          </button>
+                        )}
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <div>
@@ -889,9 +939,6 @@ export function ClassHuntingPage() {
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gói học</p>
                           <p className="mt-1 break-words text-sm font-extrabold text-slate-900">{hunt.subject.name}</p>
-                          {hunt.studentAudience && (
-                            <p className="mt-1 text-xs font-semibold text-blue-700">Học viên: {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[hunt.studentAudience]}</p>
-                          )}
                         </div>
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Gia sư</p>
@@ -978,7 +1025,7 @@ export function ClassHuntingPage() {
             <p className="font-bold text-slate-900">
               {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} kim cương
             </p>
-            <p className="text-sm font-semibold text-blue-800">Học viên: {CLASS_HUNT_STUDENT_AUDIENCE_LABELS[confirm.draft.studentAudience]}</p>
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">Đối tượng: <StudentAudienceTag audience={confirm.draft.studentAudience} /></p>
             {confirmSlots.length > 0 && (
               <p className="text-xs text-slate-500">Từ {formatDate(confirmSlots[0].date)} đến {formatDate(confirmSlots[confirmSlots.length - 1].date)}</p>
             )}
@@ -1039,8 +1086,14 @@ export function ClassHuntingPage() {
               <strong className="text-slate-950">{editTarget.student?.name || 'Học viên'}</strong> · {editTarget.subject.name} · {editTarget.sessionCount} buổi
             </p>
             <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-              Lớp đang mở chỉ sửa được ghi chú và yêu cầu giáo viên. Muốn đổi lịch học hoặc số buổi: bấm Hủy yêu cầu, sau đó bấm Đăng lại.
+              Lớp đang mở chỉ sửa được đối tượng học viên, ghi chú và yêu cầu giáo viên. Muốn đổi lịch học hoặc số buổi: bấm Hủy yêu cầu, sau đó bấm Đăng lại.
             </p>
+            <StudentAudiencePicker
+              name="class-hunt-edit-student-audience"
+              value={editAudience}
+              onChange={setEditAudience}
+              gridClassName="sm:grid-cols-3"
+            />
             <label className="block">
               <span className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
