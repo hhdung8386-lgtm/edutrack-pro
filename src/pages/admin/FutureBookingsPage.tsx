@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink, Copy, Check } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -20,6 +20,8 @@ import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
 import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
 import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
 import { resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
+import { buildBookingReminderMessage } from '@/lib/bookingReminder'
+import { copyTextToClipboard } from '@/lib/lessonShare'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
 
 type BookingSortMode = 'student' | 'timeAsc' | 'timeDesc'
@@ -40,6 +42,7 @@ export function FutureBookingsPage() {
   const [bookings, setBookings] = useState<BookingRequest[]>([])
   // Map teacherId -> nickname (mã đăng nhập kiểu "Mirabelle"); GVxxxx thì dùng tên thật
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
+  const [copiedReminderKey, setCopiedReminderKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
   const [cancelProgress, setCancelProgress] = useState<{ done: number; total: number } | null>(null)
@@ -420,6 +423,36 @@ export function FutureBookingsPage() {
     [futureBookings, selectedBookingIds],
   )
 
+  const reminderKeyOf = (booking: BookingRequest) => `${booking.studentId || booking.id}|${booking.requestedDate || ''}`
+
+  // Copy tin nhắc lịch theo mẫu trung tâm: gộp mọi ca chưa học của học viên trong CÙNG NGÀY
+  // thành một tin, không phụ thuộc bộ lọc đang chọn. Chỉ đọc dữ liệu, không ghi gì vào hệ thống.
+  const handleCopyReminder = async (booking: BookingRequest) => {
+    const sameDay = booking.studentId
+      ? bookings.filter((b) => (
+        b.studentId === booking.studentId
+        && b.requestedDate === booking.requestedDate
+        && !b.lessonId
+      ))
+      : [booking]
+    const student = studentById.get(booking.studentId)
+    const message = buildBookingReminderMessage({
+      studentName: booking.studentName || student?.name || '',
+      studentCode: booking.studentCode || student?.code,
+      date: booking.requestedDate || '',
+      sessions: sameDay.map((b) => ({ start: b.requestedStart, end: b.requestedEnd })),
+    })
+    const copied = await copyTextToClipboard(message)
+    if (!copied) {
+      toast.error('Trình duyệt không cho phép copy. Hãy thử lại hoặc dùng trình duyệt khác.')
+      return
+    }
+    const key = reminderKeyOf(booking)
+    setCopiedReminderKey(key)
+    window.setTimeout(() => setCopiedReminderKey((current) => (current === key ? '' : current)), 2500)
+    toast.success(`Đã copy tin nhắc lịch của ${booking.studentName || 'học viên'}${sameDay.length > 1 ? ` (gộp ${sameDay.length} ca trong ngày)` : ''}`)
+  }
+
   // Compute stats for current filtered list
   const totalMinutes = useMemo(() => {
     return futureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
@@ -687,6 +720,7 @@ export function FutureBookingsPage() {
                       {sortMode === 'student' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />}
                     </button>
                   </th>
+                  <th className="p-3.5 whitespace-nowrap">Nhắc lịch</th>
                   <th className="p-3.5 whitespace-nowrap">Lớp học</th>
                   <th className="p-3.5">
                     <button
@@ -749,6 +783,24 @@ export function FutureBookingsPage() {
                           <span>{booking.studentName}</span>
                           <span className="block text-xs font-mono text-slate-400 mt-0.5">{booking.studentCode}</span>
                         </div>
+                      </td>
+                      <td className="p-3.5">
+                        {copiedReminderKey === reminderKeyOf(booking) ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700" role="status">
+                            <Check className="w-3.5 h-3.5" />
+                            Đã copy
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { void handleCopyReminder(booking) }}
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                            title="Copy tin nhắc lịch học theo mẫu (gộp các ca cùng ngày của học viên)"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy nhắc
+                          </button>
+                        )}
                       </td>
                       <td className="p-3.5">
                         {classroomLink.kind === 'pilot' ? (
