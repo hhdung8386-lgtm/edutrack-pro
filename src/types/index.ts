@@ -421,6 +421,8 @@ export interface Payroll {
   /** 'adjustment' = khoản thưởng (amount > 0) hoặc khấu trừ (amount < 0) do admin thêm tay */
   type?: 'adjustment'
   adjustmentNote?: string
+  adjustmentSource?: 'late_teacher_cancellation'
+  sourceBookingId?: string
   createdBy?: string
   evaluationId?: string
   rewardKind?: 'evaluation_base' | 'student_registration'
@@ -516,6 +518,12 @@ export interface BookingRequest {
   teacherCancellationReason?: string
   teacherCancellationRequestedAt?: Timestamp
   teacherCancellationRequestedBy?: string
+  /** Snapshot mức phạt lúc server nhận yêu cầu; chỉ vào lương khi giáo vụ duyệt huỷ. */
+  teacherCancellationPenaltyAmount?: number
+  teacherCancellationPenaltyCurrency?: 'VND'
+  teacherCancellationNoticeMinutes?: number
+  teacherCancellationPenaltyAcceptedAt?: Timestamp
+  teacherCancellationPenaltyPayrollId?: string
   teacherCancellationResolvedAt?: Timestamp
   teacherCancellationResolvedBy?: string
   /** Ghi chú của giáo vụ khi duyệt/từ chối, gia sư đọc được. */

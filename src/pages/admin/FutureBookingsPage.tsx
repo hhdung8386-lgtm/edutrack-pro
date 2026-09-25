@@ -19,7 +19,7 @@ import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerP
 import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
 import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
 import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
-import { resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
+import { normalizeClassroomUrl, resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
 import { buildBookingReminderMessage } from '@/lib/bookingReminder'
 import { copyTextToClipboard } from '@/lib/lessonShare'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
@@ -436,11 +436,18 @@ export function FutureBookingsPage() {
       ))
       : [booking]
     const student = studentById.get(booking.studentId)
+    const classroomLink = normalizeClassroomUrl(student?.classroomURL)
+      || normalizeClassroomUrl(booking.classroomURL)
+    if (!classroomLink) {
+      toast.error('Học viên chưa có link vào lớp. Vui lòng cập nhật link lớp trước khi copy tin nhắc.')
+      return
+    }
     const message = buildBookingReminderMessage({
       studentName: booking.studentName || student?.name || '',
       studentCode: booking.studentCode || student?.code,
       date: booking.requestedDate || '',
       sessions: sameDay.map((b) => ({ start: b.requestedStart, end: b.requestedEnd })),
+      classroomLink,
     })
     const copied = await copyTextToClipboard(message)
     if (!copied) {

@@ -30,7 +30,6 @@ const ApprovalsPage = lazy(() => import('@/pages/admin/ApprovalsPage').then(m =>
 const BookingRequestsPage = lazy(() => import('@/pages/admin/BookingRequestsPage').then(m => ({ default: m.BookingRequestsPage })))
 const BookingSchedulesPage = lazy(() => import('@/pages/admin/BookingSchedulesPage').then(m => ({ default: m.BookingSchedulesPage })))
 const ClassHuntingPage = lazy(() => import('@/pages/admin/ClassHuntingPage').then(m => ({ default: m.ClassHuntingPage })))
-const OnlineClassroomOperationsPage = lazy(() => import('@/pages/admin/OnlineClassroomOperationsPage').then(m => ({ default: m.OnlineClassroomOperationsPage })))
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage').then(m => ({ default: m.ReportsPage })))
 const PayrollPage = lazy(() => import('@/pages/admin/PayrollPage').then(m => ({ default: m.PayrollPage })))
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage').then(m => ({ default: m.SettingsPage })))
@@ -171,7 +170,8 @@ function App() {
             <Route path="teacher-availability" element={<TeacherAvailabilityPage />} />
             <Route path="booking-schedules" element={<BookingSchedulesPage />} />
             <Route path="class-hunting" element={<ClassHuntingPage />} />
-            <Route path="online-classrooms" element={<OnlineClassroomOperationsPage />} />
+            {/* Công cụ pilot đã rút khỏi menu. Bookmark cũ quay về luồng giáo vụ an toàn. */}
+            <Route path="online-classrooms" element={<Navigate to="/admin/future-bookings" replace />} />
             <Route path="future-bookings" element={<FutureBookingsPage />} />
             <Route path="class-cancellations" element={<TeacherClassCancellationsPage />} />
             <Route path="overdue-bookings" element={<OverdueBookingsPage />} />

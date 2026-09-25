@@ -47,6 +47,7 @@ import {
   TEACHER_CANCELLATION_REASON_MAX,
   TEACHER_CANCELLATION_REASON_MIN,
   canRequestTeacherClassCancellation,
+  lateTeacherCancellationPenaltyApplies,
   submitTeacherClassCancellation,
   teacherCancellationErrorMessage,
   teacherCancellationStatusOf,
@@ -537,6 +538,7 @@ export function BookingSchedulesPage() {
     () => (selectedBooking ? localBookings.find((item) => item.id === selectedBooking.id) || selectedBooking : null),
     [localBookings, selectedBooking],
   )
+  const lateCancellationPenalty = lateTeacherCancellationPenaltyApplies(liveSelectedBooking, attendanceNow)
 
   const openCancelRequestModal = () => {
     setCancelReason('')
@@ -554,7 +556,11 @@ export function BookingSchedulesPage() {
     }
     setSubmittingCancelRequest(true)
     try {
-      await submitTeacherClassCancellation(liveSelectedBooking.id, reason)
+      await submitTeacherClassCancellation(
+        liveSelectedBooking.id,
+        reason,
+        lateTeacherCancellationPenaltyApplies(liveSelectedBooking, Date.now()),
+      )
       toast.success(lang === 'vi'
         ? 'Đã gửi yêu cầu huỷ lớp. Giáo vụ sẽ duyệt và sắp xếp lại lịch.'
         : 'Cancellation request sent. The academic team will review it.')
@@ -1668,7 +1674,9 @@ export function BookingSchedulesPage() {
                 onClick={submitCancelRequest}
               >
                 <CalendarX2 className="h-4 w-4" />
-                {lang === 'vi' ? 'Gửi yêu cầu huỷ' : 'Send request'}
+                {lateCancellationPenalty
+                  ? (lang === 'vi' ? 'Chấp nhận bị trừ 50k' : 'Accept 50,000 VND deduction')
+                  : (lang === 'vi' ? 'Gửi yêu cầu huỷ' : 'Send request')}
               </Button>
             </div>
           }
@@ -1732,6 +1740,16 @@ export function BookingSchedulesPage() {
                 ? 'Yêu cầu được gửi tới giáo vụ. Ca vẫn nằm trong lịch và bạn vẫn phải dạy nếu yêu cầu chưa được duyệt.'
                 : 'The request goes to the academic team. The class stays on your schedule until it is approved.'}
             </p>
+            {lateCancellationPenalty && (
+              <div role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-3 text-xs leading-5 text-rose-800">
+                <p className="font-black">{lang === 'vi' ? 'Huỷ muộn dưới 1 giờ: khấu trừ 50.000đ' : 'Late cancellation under one hour: 50,000 VND deduction'}</p>
+                <p className="mt-1 font-semibold">
+                  {lang === 'vi'
+                    ? 'Khoản này sẽ tự động vào bảng lương nếu Giáo vụ duyệt huỷ lớp. Không trừ nếu yêu cầu bị từ chối hoặc được rút.'
+                    : 'This is added to payroll only if the academic team approves the cancellation. Rejected or withdrawn requests are not deducted.'}
+                </p>
+              </div>
+            )}
           </div>
         </Modal>
       )}

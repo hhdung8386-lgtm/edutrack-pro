@@ -5,6 +5,7 @@ const {
   TeacherClassCancellationValidationError,
   bookingStartMs,
   normalizeTeacherClassCancellationRequest,
+  teacherCancellationPenaltySnapshot,
   teacherCancellationRequestBlocker,
   teacherCancellationWithdrawBlocker,
 } = require('../lib/teacherClassCancellation.js')
@@ -28,7 +29,7 @@ const START_MS = Date.UTC(2026, 8, 20, 12, 0)
 test('request input needs a safe booking id and a real reason', () => {
   assert.deepEqual(
     normalizeTeacherClassCancellationRequest({ bookingId: ' b-1 ', reason: '  Bận việc gia đình  ' }),
-    { bookingId: 'b-1', action: 'request', reason: 'Bận việc gia đình' },
+    { bookingId: 'b-1', action: 'request', reason: 'Bận việc gia đình', acceptLatePenalty: false },
   )
   assert.throws(
     () => normalizeTeacherClassCancellationRequest({ bookingId: 'b/1', reason: 'Bận việc gia đình' }),
@@ -48,7 +49,25 @@ test('request input needs a safe booking id and a real reason', () => {
   )
   assert.deepEqual(
     normalizeTeacherClassCancellationRequest({ bookingId: 'b-1', action: 'withdraw' }),
-    { bookingId: 'b-1', action: 'withdraw', reason: '' },
+    { bookingId: 'b-1', action: 'withdraw', reason: '', acceptLatePenalty: false },
+  )
+})
+
+test('late cancellation needs explicit consent and snapshots one 50k VND penalty', () => {
+  const exactlyOneHourBefore = START_MS - 60 * 60 * 1000
+  const fiftyNineMinutesBefore = START_MS - 59 * 60 * 1000
+  assert.deepEqual(
+    teacherCancellationPenaltySnapshot(booking(), exactlyOneHourBefore, false),
+    { amount: 0, currency: 'VND', noticeMinutes: 60 },
+  )
+  assert.throws(
+    () => teacherCancellationPenaltySnapshot(booking(), fiftyNineMinutesBefore, false),
+    (error) => error instanceof TeacherClassCancellationValidationError
+      && error.reason === 'LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED',
+  )
+  assert.deepEqual(
+    teacherCancellationPenaltySnapshot(booking(), fiftyNineMinutesBefore, true),
+    { amount: 50_000, currency: 'VND', noticeMinutes: 59 },
   )
 })
 

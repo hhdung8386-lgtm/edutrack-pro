@@ -13,6 +13,7 @@ import {
   CalendarRange,
   CalendarX2,
   ClipboardCheck,
+  ClipboardList,
   FileText,
   Gift,
   GraduationCap,
@@ -94,19 +95,28 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/teacher-availability',
       '/admin/booking-schedules',
       '/admin/class-hunting',
-      '/admin/online-classrooms',
-      '/admin/future-bookings',
-      '/admin/class-cancellations',
-      '/admin/bookings',
     ],
     items: [
       { to: '/admin/teacher-availability', icon: CalendarDays, label: 'Lịch gia sư' },
       { to: '/admin/booking-schedules', icon: CalendarClock, label: 'Lịch xếp lớp' },
       { to: '/admin/class-hunting', icon: Target, label: 'CLASS HUNTING' },
-      { to: '/admin/online-classrooms', icon: MonitorUp, label: 'Phòng học thử' },
+    ],
+  },
+  {
+    id: 'academic',
+    label: 'Giáo vụ',
+    icon: ClipboardList,
+    activePrefixes: [
+      '/admin/future-bookings',
+      '/admin/class-cancellations',
+      '/admin/bookings',
+      '/admin/approvals',
+    ],
+    items: [
       { to: '/admin/future-bookings', icon: CalendarDays, label: 'Lịch học đã đặt' },
       { to: '/admin/class-cancellations', icon: CalendarX2, label: 'Yêu cầu huỷ lớp', badge: 'classCancellations' },
       { to: '/admin/bookings', icon: CalendarClock, label: 'Yêu cầu gia sư', badge: 'bookings' },
+      { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi học', badge: 'approvals' },
     ],
   },
   {
@@ -141,14 +151,12 @@ export const adminNavigationGroups: AdminNavGroup[] = [
       '/admin/contracts',
       '/admin/overdue-bookings',
       '/admin/booking-ledger-repair',
-      '/admin/approvals',
     ],
     items: [
       { to: '/admin/evaluations', icon: ClipboardCheck, label: 'Đánh giá học viên' },
       { to: '/admin/student-alerts', icon: AlertTriangle, label: 'Cảnh báo học viên', badge: 'studentAlerts' },
       { to: '/admin/overdue-bookings', icon: AlertCircle, label: 'Ca học quá hạn' },
       { to: '/admin/booking-ledger-repair', icon: ListChecks, label: 'Đồng bộ ca đã duyệt' },
-      { to: '/admin/approvals', icon: ClipboardCheck, label: 'Duyệt buổi dạy', badge: 'approvals' },
       { to: '/admin/quota-reconcile', icon: Calculator, label: 'Đối soát quỹ buổi' },
       { to: '/admin/student-experience', icon: Gift, label: 'Quà & nạp tiền' },
       { to: '/admin/payroll', icon: Wallet, label: 'Lương gia sư' },
@@ -178,7 +186,6 @@ export function canAccessAdminNavItem(
       || (item.to === '/admin/class-hunting' && role !== 'teacher_manager')
   }
   if (item.to === '/admin/notifications' && role !== 'admin') return false
-  if (item.to === '/admin/online-classrooms' && role !== 'admin') return false
   if (item.to === '/admin/customer-leads' && role === 'teacher_manager') return false
   if (role === 'student_manager' && (item.to.startsWith('/admin/teachers') || item.to.startsWith('/admin/contracts'))) return false
   if (role === 'teacher_manager' && (item.to.startsWith('/admin/students') || item.to.startsWith('/admin/offline-classes') || item.to.startsWith('/admin/student-alerts') || item.to === '/admin/class-hunting' || item.to === '/admin/booking-ledger-repair')) return false

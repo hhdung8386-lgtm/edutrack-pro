@@ -1,5 +1,5 @@
 // Soạn tin NHẮC LỊCH HỌC để giáo vụ copy gửi học viên (Zalo, Messenger...).
-// Nội dung theo đúng mẫu trung tâm cung cấp; chỉ điền tên, mã học viên, ngày và giờ học.
+// Nội dung theo đúng mẫu trung tâm cung cấp; điền tên, mã học viên, ngày, giờ và link lớp.
 
 export interface ReminderSession {
   start: string
@@ -12,6 +12,7 @@ export interface ReminderInput {
   /** YYYY-MM-DD theo giờ Việt Nam. */
   date: string
   sessions: ReminderSession[]
+  classroomLink: string
 }
 
 const DAY_LABELS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
@@ -35,11 +36,15 @@ export function formatReminderTimes(sessions: ReminderSession[]): string {
 
 export function buildBookingReminderMessage(input: ReminderInput): string {
   const student = [input.studentName.trim(), (input.studentCode || '').trim()].filter(Boolean).join(' ')
+  const classroomLink = input.classroomLink.trim()
+  if (!classroomLink) throw new Error('REMINDER_CLASSROOM_LINK_REQUIRED')
   return [
     '[NHẮC LỊCH HỌC TỰ ĐỘNG]',
     '',
     `Kính gửi Quý học viên, ${student}`,
     `Lớp học tiếp theo sẽ diễn ra vào ${formatReminderDate(input.date)} lúc ${formatReminderTimes(input.sessions)}`,
+    '',
+    `Link vào lớp: ${classroomLink}`,
     '',
     'Quý học viên vui lòng xem trước bài và hoàn thành bài tập (nếu có).',
     '',

@@ -12,6 +12,7 @@ import {
   TEACHER_CANCELLATION_BLOCKER_MESSAGES,
   TeacherClassCancellationValidationError,
   normalizeTeacherClassCancellationRequest,
+  teacherCancellationPenaltySnapshot,
   teacherCancellationRequestBlocker,
   teacherCancellationWithdrawBlocker,
   type TeacherClassCancellationRequest,
@@ -264,11 +265,26 @@ export const requestTeacherClassCancellation = onCall({
         TEACHER_CANCELLATION_BLOCKER_MESSAGES[blocker] || 'Không thể gửi yêu cầu huỷ.',
       )
     }
+    let penalty: ReturnType<typeof teacherCancellationPenaltySnapshot>
+    try {
+      penalty = teacherCancellationPenaltySnapshot(booking, Date.now(), request.acceptLatePenalty)
+    } catch (cause) {
+      if (cause instanceof TeacherClassCancellationValidationError) {
+        throw callableError('failed-precondition', cause.reason, cause.message)
+      }
+      throw cause
+    }
     transaction.update(bookingRef, {
       teacherCancellationStatus: 'pending',
       teacherCancellationReason: request.reason,
       teacherCancellationRequestedAt: FieldValue.serverTimestamp(),
       teacherCancellationRequestedBy: actor.uid,
+      teacherCancellationPenaltyAmount: penalty.amount,
+      teacherCancellationPenaltyCurrency: penalty.currency,
+      teacherCancellationNoticeMinutes: penalty.noticeMinutes,
+      teacherCancellationPenaltyAcceptedAt: penalty.amount > 0
+        ? FieldValue.serverTimestamp()
+        : FieldValue.delete(),
       // Xoá kết quả của lần xin trước (nếu từng bị từ chối/rút) để admin không đọc nhầm.
       teacherCancellationResolvedAt: FieldValue.delete(),
       teacherCancellationResolvedBy: FieldValue.delete(),

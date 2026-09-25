@@ -10,6 +10,8 @@ const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 
 export const TEACHER_CANCELLATION_REASON_MAX = 500
 export const TEACHER_CANCELLATION_REASON_MIN = 5
+export const TEACHER_CANCELLATION_NOTICE_MS = 60 * 60 * 1000
+export const LATE_CANCELLATION_PENALTY_AMOUNT_VND = 50_000
 
 export type TeacherClassCancellationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'closed'
 
@@ -17,6 +19,7 @@ export type TeacherClassCancellationRequest = {
   bookingId: string
   action: 'request' | 'withdraw'
   reason: string
+  acceptLatePenalty: boolean
 }
 
 export class TeacherClassCancellationValidationError extends Error {
@@ -55,7 +58,12 @@ export function normalizeTeacherClassCancellationRequest(value: unknown): Teache
       throw new TeacherClassCancellationValidationError('CANCELLATION_REASON_TOO_LONG', 'Lý do quá dài.')
     }
   }
-  return { bookingId, action, reason: action === 'request' ? rawReason : '' }
+  return {
+    bookingId,
+    action,
+    reason: action === 'request' ? rawReason : '',
+    acceptLatePenalty: action === 'request' && data.acceptLatePenalty === true,
+  }
 }
 
 /** Mốc bắt đầu ca theo giờ Việt Nam (dữ liệu booking luôn lưu giờ VN). */
@@ -77,6 +85,32 @@ export function teacherCancellationStatusOf(booking: Record<string, unknown>): T
   return ['pending', 'approved', 'rejected', 'withdrawn', 'closed'].includes(status)
     ? status as TeacherClassCancellationStatus
     : ''
+}
+
+export function teacherCancellationPenaltySnapshot(
+  booking: Record<string, unknown>,
+  nowMs: number,
+  acceptLatePenalty: boolean,
+): { amount: number; currency: 'VND'; noticeMinutes: number } {
+  const startMs = bookingStartMs(booking)
+  if (startMs === null || startMs <= nowMs) {
+    throw new TeacherClassCancellationValidationError('BOOKING_TIME_INVALID', 'Ca học chưa có ngày giờ hợp lệ.')
+  }
+  const remainingMs = startMs - nowMs
+  const amount = remainingMs < TEACHER_CANCELLATION_NOTICE_MS
+    ? LATE_CANCELLATION_PENALTY_AMOUNT_VND
+    : 0
+  if (amount > 0 && !acceptLatePenalty) {
+    throw new TeacherClassCancellationValidationError(
+      'LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED',
+      'Huỷ lớp khi còn dưới 1 giờ sẽ bị khấu trừ 50.000đ. Vui lòng xác nhận lại.',
+    )
+  }
+  return {
+    amount,
+    currency: 'VND',
+    noticeMinutes: Math.max(0, Math.floor(remainingMs / 60_000)),
+  }
 }
 
 /**

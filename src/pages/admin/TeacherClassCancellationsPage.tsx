@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { getBookingPoints } from '@/lib/points'
 import { isBookingCancellable } from '@/lib/bookingLogic'
 import {
+  LATE_CANCELLATION_PENALTY_AMOUNT_VND,
   TEACHER_CANCELLATION_REASON_MAX,
   approveTeacherClassCancellation,
   bookingStartMs,
@@ -260,6 +261,8 @@ export function TeacherClassCancellationsPage() {
             const stillCancellable = isBookingCancellable(booking)
             const timing = timingChip(booking, nowMs)
             const points = getBookingPoints(booking)
+            const hasLatePenalty = booking.teacherCancellationPenaltyAmount === LATE_CANCELLATION_PENALTY_AMOUNT_VND
+              && booking.teacherCancellationPenaltyCurrency === 'VND'
             return (
               <article key={booking.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="grid gap-4 p-4 lg:grid-cols-[1fr_260px] lg:p-5">
@@ -274,6 +277,9 @@ export function TeacherClassCancellationsPage() {
                       )}
                       {booking.groupClassId && (
                         <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700 ring-1 ring-violet-200">Lớp nhóm</span>
+                      )}
+                      {hasLatePenalty && (
+                        <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700 ring-1 ring-rose-300">Phạt huỷ muộn 50.000đ</span>
                       )}
                       <span className="text-xs font-medium text-slate-400">
                         Gửi lúc {formatTimestamp(booking.teacherCancellationRequestedAt) || '—'}
@@ -383,7 +389,7 @@ export function TeacherClassCancellationsPage() {
           ? `${actionBooking.teacherName || actionBooking.teacherCode} · ${actionBooking.studentName} (${actionBooking.studentCode}) · ${formatDate(actionBooking.requestedDate)} ${actionBooking.requestedStart}-${actionBooking.requestedEnd}`
           : undefined}
         consequence={action?.type === 'approve'
-          ? `Ca sẽ bị nhả khỏi lịch gia sư và học viên; ${actionPoints} kim cương đang giữ được trả về khả dụng. Không tạo buổi học, không tính lương.`
+          ? `Ca sẽ bị nhả khỏi lịch gia sư và học viên; ${actionPoints} kim cương đang giữ được trả về khả dụng. Không tạo buổi học, không tính lương.${actionBooking?.teacherCancellationPenaltyAmount === LATE_CANCELLATION_PENALTY_AMOUNT_VND ? ' Hệ thống đồng thời khấu trừ 50.000đ vào bảng lương gia sư của tháng diễn ra ca học.' : ''}`
           : action?.type === 'reject'
             ? 'Ca học giữ nguyên, gia sư vẫn phải dạy. Gia sư sẽ thấy ghi chú của bạn trên Lịch dạy.'
             : 'Không thay đổi ca học và kim cương, chỉ đóng yêu cầu.'}

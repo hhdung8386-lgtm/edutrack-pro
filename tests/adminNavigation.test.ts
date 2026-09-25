@@ -75,7 +75,7 @@ test('online and offline class routes activate only their own top-level item', (
   assert.equal(isAdminNavGroupActive(offlineClasses, '/admin/students/group'), false)
 })
 
-test('evaluation and alert routes move from students to accounting exactly once', () => {
+test('evaluation and alert routes stay in accounting exactly once', () => {
   const groups = getVisibleAdminNavigation('admin')
   const studentGroup = groups.find((group) => group.id === 'students')
   const accountingGroup = groups.find((group) => group.id === 'accounting')
@@ -120,16 +120,43 @@ test('moving accounting items preserves existing role visibility', () => {
   assert.equal(bookingAssistantPaths.includes('/admin/student-alerts'), false)
 })
 
-test('classroom operations is visible only to system Admin', () => {
-  const adminGroups = getVisibleAdminNavigation('admin')
-  const trialRoomItem = adminGroups
-    .flatMap((group) => group.items)
-    .find((item) => item.to === '/admin/online-classrooms')
-  assert.equal(trialRoomItem?.label, 'Phòng học thử')
-  assert.ok(visiblePaths('admin').includes('/admin/online-classrooms'))
-  assert.equal(visiblePaths('student_manager').includes('/admin/online-classrooms'), false)
-  assert.equal(visiblePaths('teacher_manager').includes('/admin/online-classrooms'), false)
-  assert.equal(visiblePaths('student_manager', 'booking_only').includes('/admin/online-classrooms'), false)
+test('academic operations are grouped together and the classroom pilot is removed', () => {
+  const groups = getVisibleAdminNavigation('admin')
+  const schedules = groups.find((group) => group.id === 'schedules')
+  const academic = groups.find((group) => group.id === 'academic')
+  const accounting = groups.find((group) => group.id === 'accounting')
+  const paths = visiblePaths('admin')
+
+  assert.equal(academic?.label, 'Giáo vụ')
+  assert.deepEqual(schedules?.items.map((item) => item.to), [
+    '/admin/teacher-availability',
+    '/admin/booking-schedules',
+    '/admin/class-hunting',
+  ])
+  assert.deepEqual(academic?.items.map((item) => item.to), [
+    '/admin/future-bookings',
+    '/admin/class-cancellations',
+    '/admin/bookings',
+    '/admin/approvals',
+  ])
+  assert.equal(academic?.items.find((item) => item.to === '/admin/approvals')?.label, 'Duyệt buổi học')
+  assert.equal(accounting?.items.some((item) => item.to === '/admin/approvals'), false)
+  assert.equal(paths.includes('/admin/online-classrooms'), false)
+  assert.equal(paths.filter((path) => path === '/admin/approvals').length, 1)
+  assert.equal(isAdminNavGroupActive(academic!, '/admin/future-bookings'), true)
+  assert.equal(isAdminNavGroupActive(academic!, '/admin/class-cancellations'), true)
+  assert.equal(isAdminNavGroupActive(academic!, '/admin/bookings'), true)
+  assert.equal(isAdminNavGroupActive(academic!, '/admin/approvals'), true)
+})
+
+test('academic routes preserve staff access while booking-only accounts stay scoped', () => {
+  const academicPaths = ['/admin/future-bookings', '/admin/class-cancellations', '/admin/bookings', '/admin/approvals']
+  for (const role of ['admin', 'student_manager', 'teacher_manager']) {
+    const paths = visiblePaths(role)
+    for (const path of academicPaths) assert.ok(paths.includes(path), `${role} cannot access ${path}`)
+  }
+  const assistantPaths = visiblePaths('student_manager', 'booking_only')
+  for (const path of academicPaths) assert.equal(assistantPaths.includes(path), false)
 })
 
 test('CLASS HUNTING is in schedules, activates that group, and preserves scoped access', () => {

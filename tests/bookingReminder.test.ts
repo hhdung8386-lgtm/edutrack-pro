@@ -27,12 +27,15 @@ test('message follows the center template exactly', () => {
     studentCode: 'HS0K4ZR5',
     date: '2026-09-26',
     sessions: [{ start: '20:30', end: '20:55' }, { start: '20:00', end: '20:25' }],
+    classroomLink: 'https://meet.google.com/abc-defg-hij',
   })
   assert.equal(text, [
     '[NHẮC LỊCH HỌC TỰ ĐỘNG]',
     '',
     'Kính gửi Quý học viên, Ánh Như HS0K4ZR5',
     'Lớp học tiếp theo sẽ diễn ra vào Thứ 7, 26/09/2026 lúc 20:00 - 20:25 và 20:30 - 20:55',
+    '',
+    'Link vào lớp: https://meet.google.com/abc-defg-hij',
     '',
     'Quý học viên vui lòng xem trước bài và hoàn thành bài tập (nếu có).',
     '',
@@ -41,5 +44,14 @@ test('message follows the center template exactly', () => {
     '',
     'Chúc Quý học viên một ngày học tập hiệu quả!',
   ].join('\n'))
-  assert.doesNotMatch(text, /\[(Tên|Mã HV|Ngày|Giờ)\]|undefined/)
+  assert.doesNotMatch(text, /\[(Tên|Mã HV|Ngày|Giờ|Link)\]|undefined/)
+})
+
+test('message cannot be created without a classroom link', () => {
+  assert.throws(() => buildBookingReminderMessage({
+    studentName: 'Ánh Như',
+    date: '2026-09-26',
+    sessions: [{ start: '20:00', end: '20:25' }],
+    classroomLink: '   ',
+  }), /REMINDER_CLASSROOM_LINK_REQUIRED/)
 })

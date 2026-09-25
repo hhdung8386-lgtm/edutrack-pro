@@ -4,6 +4,19 @@ import app, { db } from '@/lib/firebase'
 import type { BookingRequest, Student, TeacherClassCancellationStatus } from '@/types'
 import { getBookingPoints } from '@/lib/points'
 import { isBookingCancellable } from '@/lib/bookingLogic'
+import {
+  LATE_CANCELLATION_PENALTY_AMOUNT_VND,
+  bookingStartMs,
+  lateCancellationPenaltyPayrollId,
+} from '@/lib/teacherClassCancellationPolicy'
+
+export {
+  LATE_CANCELLATION_PENALTY_AMOUNT_VND,
+  TEACHER_CANCELLATION_NOTICE_MS,
+  bookingStartMs,
+  lateCancellationPenaltyPayrollId,
+  lateTeacherCancellationPenaltyApplies,
+} from '@/lib/teacherClassCancellationPolicy'
 
 /**
  * Gia sư xin huỷ lớp (xin nghỉ) → giáo vụ duyệt.
@@ -18,16 +31,14 @@ import { isBookingCancellable } from '@/lib/bookingLogic'
 export const TEACHER_CANCELLATION_REASON_MIN = 5
 export const TEACHER_CANCELLATION_REASON_MAX = 500
 
-const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
-
 const functions = getFunctions(app, 'asia-southeast1')
 const cancellationCallable = httpsCallable<
-  { bookingId: string; action: 'request' | 'withdraw'; reason?: string },
+  { bookingId: string; action: 'request' | 'withdraw'; reason?: string; acceptLatePenalty?: boolean },
   unknown
 >(functions, 'requestTeacherClassCancellation')
 
-export async function submitTeacherClassCancellation(bookingId: string, reason: string) {
-  await cancellationCallable({ bookingId, action: 'request', reason: reason.trim() })
+export async function submitTeacherClassCancellation(bookingId: string, reason: string, acceptLatePenalty: boolean) {
+  await cancellationCallable({ bookingId, action: 'request', reason: reason.trim(), acceptLatePenalty })
 }
 
 export async function withdrawTeacherClassCancellation(bookingId: string) {
@@ -42,17 +53,6 @@ export function teacherCancellationStatusOf(
     || status === 'withdrawn' || status === 'closed'
     ? status
     : ''
-}
-
-/** Mốc bắt đầu ca theo giờ Việt Nam (dữ liệu booking luôn lưu giờ VN). */
-export function bookingStartMs(booking: Pick<BookingRequest, 'requestedDate' | 'requestedStart'>): number | null {
-  const date = booking.requestedDate || ''
-  const start = booking.requestedStart || ''
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(start)) return null
-  const [year, month, day] = date.split('-').map(Number)
-  const [hours, minutes] = start.split(':').map(Number)
-  if (hours > 23 || minutes > 59) return null
-  return Date.UTC(year, month - 1, day, hours, minutes) - VIETNAM_OFFSET_MS
 }
 
 /** Cùng điều kiện với callable: ca đã xếp, chưa điểm danh, chưa bắt đầu, chưa có yêu cầu chờ. */
@@ -80,6 +80,7 @@ export function teacherCancellationErrorMessage(error: unknown, lang: 'vi' | 'en
     CANCELLATION_REASON_REQUIRED: `Vui lòng nhập lý do (ít nhất ${TEACHER_CANCELLATION_REASON_MIN} ký tự).`,
     CANCELLATION_REASON_TOO_LONG: `Lý do tối đa ${TEACHER_CANCELLATION_REASON_MAX} ký tự.`,
     TEACHER_PROFILE_INACTIVE: 'Hồ sơ gia sư không còn hoạt động.',
+    LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED: 'Huỷ lớp khi còn dưới 1 giờ sẽ bị trừ 50.000đ. Vui lòng bấm “Chấp nhận bị trừ 50k” để xác nhận.',
   }
   const en: Record<string, string> = {
     BOOKING_NOT_FOUND: 'This class could not be found. Please reload the schedule.',
@@ -93,6 +94,7 @@ export function teacherCancellationErrorMessage(error: unknown, lang: 'vi' | 'en
     CANCELLATION_REASON_REQUIRED: `Please enter a reason (at least ${TEACHER_CANCELLATION_REASON_MIN} characters).`,
     CANCELLATION_REASON_TOO_LONG: `The reason can be at most ${TEACHER_CANCELLATION_REASON_MAX} characters.`,
     TEACHER_PROFILE_INACTIVE: 'This tutor profile is no longer active.',
+    LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED: 'Cancelling with less than one hour notice deducts 50,000 VND. Please confirm the deduction.',
   }
   const table = lang === 'vi' ? vi : en
   if (reason && table[reason]) return table[reason]
@@ -123,6 +125,17 @@ export async function approveTeacherClassCancellation(input: {
 
     const studentRef = doc(db, 'students', booking.studentId)
     const studentSnap = await tx.get(studentRef)
+    const penaltyAmount = booking.teacherCancellationPenaltyAmount === LATE_CANCELLATION_PENALTY_AMOUNT_VND
+      && booking.teacherCancellationPenaltyCurrency === 'VND'
+      ? LATE_CANCELLATION_PENALTY_AMOUNT_VND
+      : 0
+    const penaltyMonth = /^\d{4}-\d{2}-\d{2}$/.test(booking.requestedDate || '')
+      ? (booking.requestedDate || '').slice(0, 7)
+      : ''
+    const penaltyRef = penaltyAmount > 0 && penaltyMonth
+      ? doc(db, 'payroll', lateCancellationPenaltyPayrollId(booking.id))
+      : null
+    const penaltySnap = penaltyRef ? await tx.get(penaltyRef) : null
     const points = getBookingPoints(booking)
     let released = 0
     let nextHeld: number | null = null
@@ -144,7 +157,28 @@ export async function approveTeacherClassCancellation(input: {
       teacherCancellationResolvedAt: serverTimestamp(),
       teacherCancellationResolvedBy: input.actorUid,
       teacherCancellationAdminNote: note,
+      ...(penaltyRef ? { teacherCancellationPenaltyPayrollId: penaltyRef.id } : {}),
     })
+    if (penaltyRef && !penaltySnap?.exists()) {
+      tx.set(penaltyRef, {
+        teacherId: booking.teacherId,
+        teacherName: booking.teacherName || booking.teacherCode || '',
+        lessonId: '',
+        type: 'adjustment',
+        adjustmentSource: 'late_teacher_cancellation',
+        sourceBookingId: booking.id,
+        adjustmentNote: `Huỷ lớp dưới 1 giờ: ${booking.studentName || booking.studentCode || 'học viên'} · ${booking.requestedDate || ''} ${booking.requestedStart || ''}`.trim(),
+        amount: -LATE_CANCELLATION_PENALTY_AMOUNT_VND,
+        minutes: 0,
+        pricePerMinute: 0,
+        level: 0,
+        month: penaltyMonth,
+        currency: 'VND',
+        paid: false,
+        createdBy: input.actorUid,
+        createdAt: serverTimestamp(),
+      })
+    }
     tx.set(doc(collection(db, 'adminLogs')), {
       adminId: input.actorUid,
       action: 'TEACHER_CLASS_CANCELLATION_APPROVED',
@@ -161,6 +195,8 @@ export async function approveTeacherClassCancellation(input: {
         requestedReleasePoints: points,
         releasedPoints: released,
         adminNote: note,
+        lateCancellationPenaltyAmount: penaltyAmount,
+        lateCancellationPenaltyPayrollId: penaltyRef?.id || '',
       },
       createdAt: serverTimestamp(),
     })
