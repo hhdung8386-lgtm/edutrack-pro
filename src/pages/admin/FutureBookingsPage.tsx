@@ -12,12 +12,21 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
 import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
+import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
+
+type BookingSortMode = 'student' | 'timeAsc' | 'timeDesc'
+
+const LIVE_STATUS_TAG: Record<BookingLiveStatus, { label: string; className: string }> = {
+  upcoming: { label: 'Chưa học', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+  live: { label: 'Đang học', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  ended: { label: 'Đã qua giờ', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+}
 
 export function FutureBookingsPage() {
   const navigate = useNavigate()
@@ -39,6 +48,15 @@ export function FutureBookingsPage() {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [filterDate, setFilterDate] = useState<string>('')
   const [filterDayOfWeek, setFilterDayOfWeek] = useState<string>('all')
+  const [sortMode, setSortMode] = useState<BookingSortMode>('student')
+
+  // Đồng hồ giờ Việt Nam, cập nhật mỗi 30 giây để tag Chưa học / Đang học tự đổi.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const vnClock = useMemo(() => getVietnamClock(nowMs), [nowMs])
 
   // Load teachers -> build nickname map
   useEffect(() => {
@@ -90,10 +108,7 @@ export function FutureBookingsPage() {
   }, [])
 
   // Ngày hôm nay theo giờ Việt Nam (GMT+7)
-  const todayISO = useMemo(
-    () => new Date(new Date().getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0],
-    []
-  )
+  const todayISO = vnClock.date
 
   /**
    * Ca đã QUÁ HẠN: ngày học đã trôi qua mà gia sư không điểm danh (không có lessonId)
@@ -217,6 +232,9 @@ export function FutureBookingsPage() {
       return matchesStudent && matchesSearch && matchesDate && matchesDayOfWeek
     })
 
+    if (sortMode === 'timeAsc') return [...filtered].sort(compareBookingsByTime)
+    if (sortMode === 'timeDesc') return [...filtered].sort((a, b) => compareBookingsByTime(b, a))
+
     // Sort by Student Name A-Z (Vietnamese locale), then Student Code (so
     // different students sharing a name stay grouped), then Date, then Start Time
     return [...filtered].sort((a, b) => {
@@ -231,7 +249,12 @@ export function FutureBookingsPage() {
       if (dateA !== dateB) return dateA.localeCompare(dateB)
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
-  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks, todayISO])
+  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks, todayISO, sortMode])
+
+  const liveCount = useMemo(
+    () => futureBookings.filter((booking) => getBookingLiveStatus(booking, vnClock) === 'live').length,
+    [futureBookings, vnClock],
+  )
 
   // Handle student filter change
   const handleStudentChange = (studentId: string) => {
@@ -594,6 +617,9 @@ export function FutureBookingsPage() {
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <span className="font-bold text-slate-900 text-sm">
             Danh sách ca học ({futureBookings.length} ca khớp bộ lọc)
+            {liveCount > 0 && (
+              <span className="ml-2 text-xs font-bold text-emerald-700">· {liveCount} ca đang học</span>
+            )}
           </span>
           <div className="flex items-center gap-3">
             {cancelProgress && (
@@ -640,8 +666,31 @@ export function FutureBookingsPage() {
                       }}
                     />
                   </th>
-                  <th className="p-3.5">Học viên</th>
-                  <th className="p-3.5">Thời gian</th>
+                  <th className="p-3.5">
+                    <button
+                      type="button"
+                      onClick={() => setSortMode('student')}
+                      className={`inline-flex items-center gap-1 rounded-lg px-1.5 py-1 -mx-1.5 transition-colors hover:bg-slate-100 ${sortMode === 'student' ? 'text-indigo-700' : ''}`}
+                      title="Sắp xếp theo tên học viên (A-Z)"
+                    >
+                      Học viên
+                      {sortMode === 'student' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />}
+                    </button>
+                  </th>
+                  <th className="p-3.5">
+                    <button
+                      type="button"
+                      onClick={() => setSortMode((mode) => (mode === 'timeAsc' ? 'timeDesc' : 'timeAsc'))}
+                      className={`inline-flex items-center gap-1 rounded-lg px-1.5 py-1 -mx-1.5 transition-colors hover:bg-slate-100 ${sortMode !== 'student' ? 'text-indigo-700' : ''}`}
+                      title={sortMode === 'timeAsc' ? 'Đang xếp sớm nhất → trễ nhất. Bấm để đảo ngược' : 'Sắp xếp theo thời gian (sớm nhất → trễ nhất)'}
+                    >
+                      Thời gian
+                      {sortMode === 'timeAsc' ? <ArrowUp className="w-3.5 h-3.5" />
+                        : sortMode === 'timeDesc' ? <ArrowDown className="w-3.5 h-3.5" />
+                        : <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />}
+                    </button>
+                  </th>
+                  <th className="p-3.5">Trạng thái</th>
                   <th className="p-3.5">Môn học</th>
                   <th className="p-3.5">Gia sư</th>
                   <th className="p-3.5 text-center">Hành động</th>
@@ -654,6 +703,8 @@ export function FutureBookingsPage() {
                     mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật'
                   }
                   const dayStr = dayLabels[booking.requestedDay || ''] || ''
+                  const liveStatus = getBookingLiveStatus(booking, vnClock)
+                  const liveTag = LIVE_STATUS_TAG[liveStatus]
 
                   return (
                     <tr key={booking.id} className="border-b border-slate-100 hover:bg-slate-50/50 text-slate-700 transition-colors">
@@ -682,6 +733,12 @@ export function FutureBookingsPage() {
                         <span className="text-slate-400 mx-1.5">·</span>
                         <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg text-xs font-bold font-mono">
                           {booking.requestedStart} - {booking.requestedEnd}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold ${liveTag.className}`}>
+                          {liveStatus === 'live' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                          {liveTag.label}
                         </span>
                       </td>
                       <td className="p-3.5 text-slate-600">{booking.subjectName}</td>
