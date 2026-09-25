@@ -12,12 +12,14 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
 import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
+import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
+import { resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
 
 type BookingSortMode = 'student' | 'timeAsc' | 'timeDesc'
@@ -34,6 +36,7 @@ export function FutureBookingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [students, setStudents] = useState<Student[]>([])
+  const [studentsLoadState, setStudentsLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [bookings, setBookings] = useState<BookingRequest[]>([])
   // Map teacherId -> nickname (mã đăng nhập kiểu "Mirabelle"); GVxxxx thì dùng tên thật
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
@@ -82,9 +85,16 @@ export function FutureBookingsPage() {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Student))
       list.sort((a, b) => a.name.localeCompare(b.name))
       setStudents(list)
+      setStudentsLoadState('ready')
+    }).catch((error) => {
+      if (!active) return
+      // Không biết học viên dùng phòng nào thì không hiện nút Vào lớp (tránh vào nhầm phòng).
+      console.error('Load students failed:', error)
+      setStudentsLoadState('error')
     })
     return () => { active = false }
   }, [])
+  const studentById = useMemo(() => new Map(students.map((student) => [student.id, student])), [students])
 
   // Load every booking that is still holding the student's fund. Pending requests
   // reserve the fund immediately too, so excluding them would make this screen
@@ -677,6 +687,7 @@ export function FutureBookingsPage() {
                       {sortMode === 'student' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />}
                     </button>
                   </th>
+                  <th className="p-3.5 whitespace-nowrap">Lớp học</th>
                   <th className="p-3.5">
                     <button
                       type="button"
@@ -705,6 +716,17 @@ export function FutureBookingsPage() {
                   const dayStr = dayLabels[booking.requestedDay || ''] || ''
                   const liveStatus = getBookingLiveStatus(booking, vnClock)
                   const liveTag = LIVE_STATUS_TAG[liveStatus]
+                  const pilotWindow = onlineClassroomJoinWindow(booking, nowMs)
+                  const classroomLink = resolveAdminClassroomLink({
+                    booking,
+                    student: studentById.get(booking.studentId),
+                    studentsLoaded: studentsLoadState === 'ready',
+                    pilotWindowOpen: pilotWindow.isOpen,
+                    pilotRoute: classroomRoute(booking.id),
+                  })
+                  const joinClassName = `inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${liveStatus === 'live'
+                    ? 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700'
+                    : 'bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-50'}`
 
                   return (
                     <tr key={booking.id} className="border-b border-slate-100 hover:bg-slate-50/50 text-slate-700 transition-colors">
@@ -727,6 +749,56 @@ export function FutureBookingsPage() {
                           <span>{booking.studentName}</span>
                           <span className="block text-xs font-mono text-slate-400 mt-0.5">{booking.studentCode}</span>
                         </div>
+                      </td>
+                      <td className="p-3.5">
+                        {classroomLink.kind === 'pilot' ? (
+                          <a
+                            href={classroomLink.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={joinClassName}
+                            title="Mở phòng 123English ở tab mới (vào với vai trò Admin quan sát, không ảnh hưởng điểm danh)"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            Vào lớp
+                          </a>
+                        ) : classroomLink.kind === 'external' ? (
+                          <a
+                            href={classroomLink.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={joinClassName}
+                            title={`Mở link lớp học ở tab mới: ${classroomLink.href}`}
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            Vào lớp
+                            <ExternalLink className="w-3 h-3 opacity-70" />
+                          </a>
+                        ) : classroomLink.kind === 'pilot-closed' ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-400 cursor-not-allowed"
+                            title={pilotWindow.opensAt !== null && nowMs < pilotWindow.opensAt
+                              ? `Phòng 123English mở từ ${new Date(pilotWindow.opensAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} (trước giờ học 12 tiếng).`
+                              : 'Phòng 123English của ca này đã đóng.'}
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            {pilotWindow.opensAt !== null && nowMs < pilotWindow.opensAt ? 'Chưa mở phòng' : 'Đã đóng phòng'}
+                          </span>
+                        ) : classroomLink.kind === 'none' && !booking.studentId ? (
+                          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">Chưa có link lớp</span>
+                        ) : classroomLink.kind === 'none' ? (
+                          <Link
+                            to={`/admin/students/${booking.studentId}`}
+                            className="text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:underline whitespace-nowrap"
+                            title="Học viên chưa có link lớp học. Mở hồ sơ để thêm link."
+                          >
+                            Chưa có link lớp
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-400" title={studentsLoadState === 'error' ? 'Không tải được hồ sơ học viên, hãy tải lại trang.' : 'Đang tải hồ sơ học viên...'}>
+                            {studentsLoadState === 'error' ? '—' : '...'}
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5">
                         <span className="font-semibold text-slate-700">{dayStr} ({booking.requestedDate})</span>
