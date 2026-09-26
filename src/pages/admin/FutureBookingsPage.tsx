@@ -457,7 +457,6 @@ export function FutureBookingsPage() {
       sessions: sameDay.map((b) => ({ start: b.requestedStart, end: b.requestedEnd })),
       classroomLink: profileLink || bookingLink,
       linkSource: profileLink ? 'profile' : bookingLink ? 'booking' : 'none',
-      pilotClassroom: Boolean(student?.onlineClassroomPilotEnabled),
     })
   }
 

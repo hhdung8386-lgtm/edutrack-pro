@@ -22,7 +22,6 @@ export interface BookingReminderDraft {
   sessions: ReminderSession[]
   classroomLink: string
   linkSource: ReminderLinkSource
-  pilotClassroom: boolean
 }
 
 interface BookingReminderDialogProps {
@@ -209,11 +208,6 @@ function ReminderDialogBody({
                 {' '}để lần sau tự điền.
               </span>
             </div>
-          )}
-          {draft.pilotClassroom && (
-            <p className="mt-2 text-xs text-slate-500">
-              Học viên đang bật phòng 123English — kiểm tra lại link trước khi gửi.
-            </p>
           )}
         </div>
 

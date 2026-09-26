@@ -59,6 +59,7 @@ import {
   getAttendanceDeadline,
 } from '@/lib/attendanceDeadline'
 import { recordTeacherClassroomEntry } from '@/lib/teacherClassroomEntry'
+import { classroomPilotEnabledFor } from '@/lib/classroomPilotSwitch'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
@@ -193,7 +194,7 @@ type TeacherBookingView = BookingRequest & {
 function pilotClassroomConfigured(booking: BookingRequest, student: Student) {
   return Boolean(
     booking.status === 'confirmed'
-    && student.onlineClassroomPilotEnabled
+    && classroomPilotEnabledFor(student.onlineClassroomPilotEnabled)
     && !booking.lessonId
     && !booking.groupClassId,
   )

@@ -27,6 +27,7 @@ import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
+import { ONLINE_CLASSROOM_PILOT_ACTIVE } from '@/lib/classroomPilotSwitch'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 import {
   assertAutomaticReconciliationRollbackAllowed,
@@ -1493,7 +1494,7 @@ export function StudentDetailPage() {
         </div>
       </Card>
 
-      {!groupClass && (
+      {!groupClass && ONLINE_CLASSROOM_PILOT_ACTIVE && (
         <OnlineClassroomPilotCard
           key={student.id}
           targetId={student.id}

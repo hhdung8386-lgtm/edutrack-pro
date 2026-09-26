@@ -1,6 +1,9 @@
 // Chọn phòng học cho nút "Vào lớp" ở trang admin "Lịch học đã đặt".
 // Cùng quy tắc với trang Lịch dạy của gia sư: học viên bật phòng 123English (pilot)
 // thì vào /lop-hoc/<bookingId> trong khung giờ mở phòng, còn lại dùng link lớp riêng.
+// Pilot đã tắt (xem classroomPilotSwitch): hiện mọi ca đều dùng link lớp riêng.
+
+import { classroomPilotEnabledFor } from './classroomPilotSwitch.ts'
 
 export interface AdminClassroomBooking {
   id: string
@@ -48,7 +51,7 @@ export function isPilotClassroomBooking(
   student: AdminClassroomStudent | undefined,
 ): boolean {
   return Boolean(
-    student?.onlineClassroomPilotEnabled
+    classroomPilotEnabledFor(student?.onlineClassroomPilotEnabled)
     && booking.status === 'confirmed'
     && !booking.lessonId
     && !booking.groupClassId,

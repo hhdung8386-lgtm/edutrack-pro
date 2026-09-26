@@ -40,6 +40,7 @@ import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { cachedClassroomJoinLink } from '@/lib/onlineClassroom'
+import { classroomPilotEnabledFor } from '@/lib/classroomPilotSwitch'
 import {
   createParentProfileBooking,
   createParentProfileBookingClientRequestId,
@@ -2139,7 +2140,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
     && booking.status === 'confirmed'
     && !booking.lessonId
     && !booking.groupClassId
-    && student.onlineClassroomPilotEnabled,
+    && classroomPilotEnabledFor(student.onlineClassroomPilotEnabled),
   )
   const roomLinkOf = (booking: BookingRequest | null) => {
     if (!booking) return ''
@@ -2993,7 +2994,7 @@ function HomeTab({ student, usedPct, stats, insights, nextBooking, teacherMap, r
       )}
 
       {/* Classroom link */}
-      {student.classroomURL && !student.onlineClassroomPilotEnabled && (
+      {student.classroomURL && !classroomPilotEnabledFor(student.onlineClassroomPilotEnabled) && (
         <section className="animate-slide-up [animation-delay:90ms]">
           <div className="bg-sky-50 border border-sky-200/70 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm shadow-sky-100">
             <div className="space-y-1">

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { normalizeClassroomUrl, resolveAdminClassroomLink } from '../src/lib/adminClassroomLink.ts'
+import { ONLINE_CLASSROOM_PILOT_ACTIVE, classroomPilotEnabledFor } from '../src/lib/classroomPilotSwitch.ts'
 
 const booking = { id: 'b1', status: 'confirmed' }
 const base = { booking, studentsLoaded: true, pilotWindowOpen: true, pilotRoute: '/lop-hoc/b1' }
@@ -16,10 +17,13 @@ test('classroom urls are normalized to safe http(s) links', () => {
   assert.equal(normalizeClassroomUrl(undefined), '')
 })
 
-test('pilot students enter the 123English room only inside the join window', () => {
+test('pilot is switched off: pilot students use their own classroom link', () => {
+  assert.equal(ONLINE_CLASSROOM_PILOT_ACTIVE, false)
   const student = { onlineClassroomPilotEnabled: true, classroomURL: 'https://zoom.us/j/1' }
-  assert.deepEqual(resolveAdminClassroomLink({ ...base, student }), { kind: 'pilot', href: '/lop-hoc/b1' })
-  assert.deepEqual(resolveAdminClassroomLink({ ...base, student, pilotWindowOpen: false }), { kind: 'pilot-closed' })
+  assert.equal(classroomPilotEnabledFor(true), false)
+  assert.deepEqual(resolveAdminClassroomLink({ ...base, student }), { kind: 'external', href: 'https://zoom.us/j/1' })
+  assert.deepEqual(resolveAdminClassroomLink({ ...base, student, pilotWindowOpen: false }), { kind: 'external', href: 'https://zoom.us/j/1' })
+  assert.deepEqual(resolveAdminClassroomLink({ ...base, student: { onlineClassroomPilotEnabled: true } }), { kind: 'none' })
 })
 
 test('pending, group or attended bookings of pilot students use the legacy link', () => {
