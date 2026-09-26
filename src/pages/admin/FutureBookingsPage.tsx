@@ -20,8 +20,7 @@ import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
 import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
 import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
 import { normalizeClassroomUrl, resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
-import { buildBookingReminderMessage } from '@/lib/bookingReminder'
-import { copyTextToClipboard } from '@/lib/lessonShare'
+import { BookingReminderDialog, type BookingReminderDraft } from '@/components/admin/BookingReminderDialog'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
 import { formatVietnamTime, getTeacherCheckin, teacherCheckinLabel, teacherCheckinTone } from '@/lib/teacherCheckin'
 
@@ -52,6 +51,7 @@ export function FutureBookingsPage() {
   // Map teacherId -> nickname (mã đăng nhập kiểu "Mirabelle"); GVxxxx thì dùng tên thật
   const [teacherNicks, setTeacherNicks] = useState<Record<string, string>>({})
   const [copiedReminderKey, setCopiedReminderKey] = useState('')
+  const [reminderDraft, setReminderDraft] = useState<(BookingReminderDraft & { reminderKey: string }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
   const [cancelProgress, setCancelProgress] = useState<{ done: number; total: number } | null>(null)
@@ -434,9 +434,10 @@ export function FutureBookingsPage() {
 
   const reminderKeyOf = (booking: BookingRequest) => `${booking.studentId || booking.id}|${booking.requestedDate || ''}`
 
-  // Copy tin nhắc lịch theo mẫu trung tâm: gộp mọi ca chưa học của học viên trong CÙNG NGÀY
-  // thành một tin, không phụ thuộc bộ lọc đang chọn. Chỉ đọc dữ liệu, không ghi gì vào hệ thống.
-  const handleCopyReminder = async (booking: BookingRequest) => {
+  // Tin nhắc lịch theo mẫu trung tâm: gộp mọi ca chưa học của học viên trong CÙNG NGÀY
+  // thành một tin, không phụ thuộc bộ lọc đang chọn. Mở hộp thoại xem trước (sửa được link)
+  // rồi mới copy. Chỉ đọc dữ liệu, không ghi gì vào hệ thống.
+  const handleOpenReminder = (booking: BookingRequest) => {
     const sameDay = booking.studentId
       ? bookings.filter((b) => (
         b.studentId === booking.studentId
@@ -445,28 +446,28 @@ export function FutureBookingsPage() {
       ))
       : [booking]
     const student = studentById.get(booking.studentId)
-    const classroomLink = normalizeClassroomUrl(student?.classroomURL)
-      || normalizeClassroomUrl(booking.classroomURL)
-    if (!classroomLink) {
-      toast.error('Học viên chưa có link vào lớp. Vui lòng cập nhật link lớp trước khi copy tin nhắc.')
-      return
-    }
-    const message = buildBookingReminderMessage({
+    const profileLink = normalizeClassroomUrl(student?.classroomURL)
+    const bookingLink = normalizeClassroomUrl(booking.classroomURL)
+    setReminderDraft({
+      reminderKey: reminderKeyOf(booking),
+      studentId: booking.studentId || '',
       studentName: booking.studentName || student?.name || '',
       studentCode: booking.studentCode || student?.code,
       date: booking.requestedDate || '',
       sessions: sameDay.map((b) => ({ start: b.requestedStart, end: b.requestedEnd })),
-      classroomLink,
+      classroomLink: profileLink || bookingLink,
+      linkSource: profileLink ? 'profile' : bookingLink ? 'booking' : 'none',
+      pilotClassroom: Boolean(student?.onlineClassroomPilotEnabled),
     })
-    const copied = await copyTextToClipboard(message)
-    if (!copied) {
-      toast.error('Trình duyệt không cho phép copy. Hãy thử lại hoặc dùng trình duyệt khác.')
-      return
-    }
-    const key = reminderKeyOf(booking)
+  }
+
+  const handleReminderCopied = (draft: BookingReminderDraft & { reminderKey: string }) => {
+    const key = draft.reminderKey
+    setReminderDraft(null)
     setCopiedReminderKey(key)
     window.setTimeout(() => setCopiedReminderKey((current) => (current === key ? '' : current)), 2500)
-    toast.success(`Đã copy tin nhắc lịch của ${booking.studentName || 'học viên'}${sameDay.length > 1 ? ` (gộp ${sameDay.length} ca trong ngày)` : ''}`)
+    const sessionCount = new Set(draft.sessions.map((s) => `${s.start}-${s.end}`)).size
+    toast.success(`Đã copy tin nhắc lịch của ${draft.studentName || 'học viên'}${sessionCount > 1 ? ` (gộp ${sessionCount} ca trong ngày)` : ''}`)
   }
 
   // Compute stats for current filtered list
@@ -809,9 +810,9 @@ export function FutureBookingsPage() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => { void handleCopyReminder(booking) }}
+                            onClick={() => handleOpenReminder(booking)}
                             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
-                            title="Copy tin nhắc lịch học theo mẫu (gộp các ca cùng ngày của học viên)"
+                            title="Xem trước và copy tin nhắc lịch học theo mẫu (gộp các ca cùng ngày, có link vào lớp)"
                           >
                             <Copy className="w-3.5 h-3.5" />
                             Copy nhắc
@@ -945,6 +946,13 @@ export function FutureBookingsPage() {
         confirmLabel="Hủy ca học"
         confirmVariant="danger"
         loading={cancelling}
+      />
+
+      <BookingReminderDialog
+        draft={reminderDraft}
+        onClose={() => setReminderDraft(null)}
+        onCopied={() => { if (reminderDraft) handleReminderCopied(reminderDraft) }}
+        onCopyFailed={() => toast.error('Trình duyệt không cho phép copy. Hãy thử lại hoặc dùng trình duyệt khác.')}
       />
     </div>
   )
