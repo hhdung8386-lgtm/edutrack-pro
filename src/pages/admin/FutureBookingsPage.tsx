@@ -1000,7 +1000,7 @@ export function FutureBookingsPage() {
                         <div className="flex flex-wrap items-center justify-center gap-1.5 min-w-[220px]">
                           <button
                             type="button"
-                            disabled={cancelling || booking.status !== 'confirmed' || liveStatus === 'upcoming' || Boolean(booking.groupClassId) || Boolean(booking.groupClassMemberIds?.length && booking.groupClassMemberIds.length > 1)}
+                            disabled={cancelling || booking.status !== 'confirmed' || Boolean(booking.groupClassId) || Boolean(booking.groupClassMemberIds?.length && booking.groupClassMemberIds.length > 1)}
                             onClick={() => { setAbsenceTarget(booking); setAbsenceType('with_permission'); setAbsenceNote('') }}
                             className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-amber-200 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
                             title="Ghi nhận học viên vắng và đưa buổi sang chờ duyệt"

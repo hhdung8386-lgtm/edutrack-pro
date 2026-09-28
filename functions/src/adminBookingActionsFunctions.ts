@@ -44,12 +44,13 @@ export const adminMarkStudentAbsent = onCall({ region: 'asia-southeast1' }, asyn
     }
     const date = String(booking.requestedDate || '')
     const start = String(booking.requestedStart || '')
+    // Giáo vụ được báo vắng trước giờ học (phụ huynh xin nghỉ sớm), nên chỉ
+    // kiểm tra ngày/giờ của ca hợp lệ, không bắt chờ đến giờ bắt đầu.
     const startsAt = /^\d{4}-\d{2}-\d{2}$/.test(date) && /^([01]\d|2[0-3]):[0-5]\d$/.test(start)
       ? Date.parse(`${date}T${start}:00+07:00`) : NaN
     if (!Number.isFinite(startsAt)
-      || new Date(startsAt + 7 * 60 * 60_000).toISOString().slice(0, 10) !== date
-      || Date.now() < startsAt) {
-      fail('BOOKING_NOT_STARTED', 'Chỉ đánh dấu vắng khi ca đã bắt đầu.')
+      || new Date(startsAt + 7 * 60 * 60_000).toISOString().slice(0, 10) !== date) {
+      fail('BOOKING_INCOMPLETE', 'Ca thiếu ngày hoặc giờ học hợp lệ. Vui lòng kiểm tra lịch.')
     }
     const studentId = String(booking.studentId || '')
     const teacherId = String(booking.teacherId || '')
