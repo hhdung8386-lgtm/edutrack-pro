@@ -9,7 +9,7 @@ import type { BookingRequest, Student } from '@/types'
 import { isBookingFinancialHold, settleApprovedLessonBookings } from '@/lib/bookingLogic'
 import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { getBookingFinancialHoldPoints } from '@/lib/studentMinutes'
-import { editCourseEntry, getCourseEntry, getStudentSubjects } from '@/lib/studentCourseLedger'
+import { editCourseEntry, getCourseEntry, getRemainingAfterFundChange, getStudentSubjects } from '@/lib/studentCourseLedger'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
@@ -78,7 +78,7 @@ export function EditCourseEntryModal({ student, subjectId, batchId, onClose }: E
   const nextLearningMinutes = Math.max(0, Number(useWatch({ control, name: 'learningMinutes' }) || 0))
   const nextDiamonds = Math.max(0, Number(useWatch({ control, name: 'diamonds' }) || 0))
   const diamondsDelta = nextDiamonds - Number(entry?.diamonds || 0)
-  const nextRemaining = Math.max(0, Number(entry?.subject.remainingMinutes || 0) + diamondsDelta)
+  const nextRemaining = entry ? Math.max(0, getRemainingAfterFundChange(entry.subject, diamondsDelta)) : 0
 
   if (!entry) {
     return (

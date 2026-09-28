@@ -6,6 +6,7 @@ import {
   deleteCourseEntry,
   editCourseEntry,
   getCourseEntry,
+  getRemainingAfterFundChange,
   getStatusAfterCourseRightsAdded,
 } from '../src/lib/studentCourseLedger.ts'
 
@@ -142,6 +143,109 @@ test('editing cannot reduce quota below diamonds already used', () => {
     totalHeldPoints: 0,
     linkedTopUpTransaction: false,
   }), /đã sử dụng/)
+})
+
+function overdrawnStudent(): Student {
+  // Đã học 3.010 KC nhưng tổng chỉ 2.900 KC; đồng bộ lưu còn lại = 0.
+  const student = studentFixture()
+  student.totalMinutes = 2900
+  student.usedMinutes = 3010
+  student.remainingMinutes = 0
+  student.subjects = [{
+    ...student.subjects![0],
+    totalMinutes: 2900,
+    usedMinutes: 3010,
+    remainingMinutes: 0,
+    remainingSessions: 0,
+    batches: [
+      { id: 'batch-1', createdAt: '24/07/2026', totalSessions: 50, kind: 'payment', learningMinutes: 1250, diamonds: 1250, content: 'Thanh toán đợt 1' },
+      { id: 'batch-2', createdAt: '24/07/2026', totalSessions: 10, kind: 'payment', learningMinutes: 250, diamonds: 250, content: 'Thanh toán đợt 2' },
+      { id: 'batch-3', createdAt: '25/07/2026', totalSessions: 56, kind: 'payment', learningMinutes: 1400, diamonds: 1400, content: 'Thanh toán đợt 3' },
+    ],
+  }]
+  return student
+}
+
+test('overdrawn course can raise an under-entered installment and repays the overdraft first', () => {
+  const result = editCourseEntry({
+    student: overdrawnStudent(),
+    subjectId: 'english',
+    batchId: 'batch-1',
+    fallbackDate: '24/07/2026',
+    input: { ...editInput, learningMinutes: 1250, diamonds: 1750, content: 'Thanh toán đợt 1', paymentDate: '24/07/2026' },
+    heldPointsForSubject: 105,
+    totalHeldPoints: 105,
+    linkedTopUpTransaction: false,
+  })
+
+  assert.equal(result.subjects[0].totalMinutes, 3400)
+  assert.equal(result.subjects[0].usedMinutes, 3010)
+  assert.equal(result.subjects[0].remainingMinutes, 390)
+  assert.equal(result.totals.remainingMinutes, 390)
+  assert.equal(result.updatedBatch.diamonds, 1750)
+  assert.equal(result.status, 'active')
+})
+
+test('overdrawn course accepts a raise that still leaves it overdrawn and metadata-only edits', () => {
+  const partial = editCourseEntry({
+    student: overdrawnStudent(),
+    subjectId: 'english',
+    batchId: 'batch-1',
+    fallbackDate: '24/07/2026',
+    input: { ...editInput, learningMinutes: 1250, diamonds: 1300 },
+    heldPointsForSubject: 105,
+    totalHeldPoints: 105,
+    linkedTopUpTransaction: false,
+  })
+  assert.equal(partial.subjects[0].totalMinutes, 2950)
+  assert.equal(partial.subjects[0].remainingMinutes, 0)
+
+  const metadata = editCourseEntry({
+    student: overdrawnStudent(),
+    subjectId: 'english',
+    batchId: 'batch-2',
+    fallbackDate: '24/07/2026',
+    input: { ...editInput, content: 'Đã đối soát' },
+    heldPointsForSubject: 105,
+    totalHeldPoints: 105,
+    linkedTopUpTransaction: false,
+  })
+  assert.equal(metadata.subjects[0].remainingMinutes, 0)
+  assert.equal(metadata.updatedBatch.content, 'Đã đối soát')
+})
+
+test('overdrawn course still rejects reducing an installment', () => {
+  assert.throws(() => editCourseEntry({
+    student: overdrawnStudent(),
+    subjectId: 'english',
+    batchId: 'batch-1',
+    fallbackDate: '24/07/2026',
+    input: { ...editInput, learningMinutes: 1250, diamonds: 1200 },
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  }), /đã sử dụng/)
+})
+
+test('a genuinely inconsistent ledger is still rejected', () => {
+  const student = studentFixture()
+  student.subjects = [{ ...student.subjects![0], remainingMinutes: 999 }]
+  assert.throws(() => editCourseEntry({
+    student,
+    subjectId: 'english',
+    batchId: 'batch-1',
+    fallbackDate: '01/08/2026',
+    input: { ...editInput, diamonds: 600 },
+    heldPointsForSubject: 0,
+    totalHeldPoints: 0,
+    linkedTopUpTransaction: false,
+  }), /đang lệch/)
+})
+
+test('remaining after a top-up repays an overdraft but is unchanged for healthy courses', () => {
+  assert.equal(getRemainingAfterFundChange(overdrawnStudent().subjects![0], 500), 390)
+  assert.equal(getRemainingAfterFundChange(overdrawnStudent().subjects![0], 50), 0)
+  assert.equal(getRemainingAfterFundChange(studentFixture().subjects![0], 250), 800)
 })
 
 test('editing cannot reduce remaining quota below an active booking hold', () => {

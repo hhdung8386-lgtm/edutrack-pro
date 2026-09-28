@@ -88,6 +88,23 @@ export function getStudentSubjects(student: Student): StudentSubject[] {
   }]
 }
 
+/**
+ * Học viên học vượt quỹ (đã dùng > tổng) được đồng bộ về "còn lại = 0". Đây là
+ * trạng thái hợp lệ, không phải sổ lệch: phần nạp/sửa thêm phải bù phần vượt trước.
+ */
+export function isCourseOverdrawn(subject: StudentSubject) {
+  const expectedRemaining = Number(subject.totalMinutes || 0) - Number(subject.usedMinutes || 0)
+  return expectedRemaining < 0 && Math.abs(Number(subject.remainingMinutes || 0)) <= 0.01
+}
+
+/** Quỹ còn lại sau khi tổng kim cương của khóa thay đổi `diamondsDelta`. */
+export function getRemainingAfterFundChange(subject: StudentSubject, diamondsDelta: number) {
+  if (isCourseOverdrawn(subject)) {
+    return Math.max(0, Number(subject.totalMinutes || 0) + diamondsDelta - Number(subject.usedMinutes || 0))
+  }
+  return Number(subject.remainingMinutes || 0) + diamondsDelta
+}
+
 export function getBatchDiamonds(batch: TopUpBatch, subject: StudentSubject) {
   if (Number.isFinite(Number(batch.diamonds))) return Math.max(0, Number(batch.diamonds))
   return Math.max(0, Number(batch.totalSessions || 0) * Number(subject.minutesPerSession || 25))
@@ -173,20 +190,24 @@ export function editCourseEntry({
   }
 
   const expectedRemaining = Number(previousSubject.totalMinutes || 0) - Number(previousSubject.usedMinutes || 0)
-  if (Math.abs(expectedRemaining - Number(previousSubject.remainingMinutes || 0)) > 0.01) {
+  if (!isCourseOverdrawn(previousSubject) && Math.abs(expectedRemaining - Number(previousSubject.remainingMinutes || 0)) > 0.01) {
     throw new Error('Quỹ khóa học đang lệch giữa tổng, đã dùng và còn lại. Hãy đối soát dữ liệu trước khi sửa đợt.')
   }
 
   const diamondsDelta = input.diamonds - previousDiamonds
   const nextTotalMinutes = Number(previousSubject.totalMinutes || 0) + diamondsDelta
-  const nextRemainingMinutes = Number(previousSubject.remainingMinutes || 0) + diamondsDelta
+  const nextRemainingMinutes = getRemainingAfterFundChange(previousSubject, diamondsDelta)
   const usedMinutes = Number(previousSubject.usedMinutes || 0)
 
-  if (nextTotalMinutes < usedMinutes || nextRemainingMinutes < 0) {
-    throw new Error(`Không thể giảm dưới ${usedMinutes.toLocaleString('vi-VN')} kim cương đã sử dụng.`)
-  }
-  if (nextRemainingMinutes < heldPointsForSubject) {
-    throw new Error(`Khóa học đang giữ ${heldPointsForSubject.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể giảm xuống thấp hơn mức này.`)
+  // Tăng kim cương (sửa đợt nhập thiếu) luôn được phép, kể cả khi học viên đang
+  // học vượt quỹ; chỉ chặn khi đợt bị giảm.
+  if (diamondsDelta < 0) {
+    if (nextTotalMinutes < usedMinutes || nextRemainingMinutes < 0) {
+      throw new Error(`Không thể giảm dưới ${usedMinutes.toLocaleString('vi-VN')} kim cương đã sử dụng.`)
+    }
+    if (nextRemainingMinutes < heldPointsForSubject) {
+      throw new Error(`Khóa học đang giữ ${heldPointsForSubject.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể giảm xuống thấp hơn mức này.`)
+    }
   }
 
   const minutesPerSession = Number(previousSubject.minutesPerSession || 25)
@@ -216,7 +237,7 @@ export function editCourseEntry({
 
   const totals = totalCourseLedger(subjects)
 
-  if (totals.remainingMinutes < totalHeldPoints) {
+  if (diamondsDelta < 0 && totals.remainingMinutes < totalHeldPoints) {
     throw new Error(`Học viên đang giữ tổng cộng ${totalHeldPoints.toLocaleString('vi-VN')} kim cương cho lịch đặt; không thể giảm quỹ xuống thấp hơn mức này.`)
   }
 

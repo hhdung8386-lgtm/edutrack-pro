@@ -12,7 +12,7 @@ import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
-import { appendCourseBatch, getStatusAfterCourseRightsAdded } from '@/lib/studentCourseLedger'
+import { appendCourseBatch, getRemainingAfterFundChange, getStatusAfterCourseRightsAdded, isCourseOverdrawn } from '@/lib/studentCourseLedger'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -84,7 +84,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
   const selectedPkg = studentSubjects.find((subject) => subject.subjectId === selectedSubjectId)
   const minutesToAdd = Math.max(0, Number(useWatch({ control, name: 'minutes' }) || 0))
   const diamondsToAdd = Math.max(0, Number(useWatch({ control, name: 'diamonds' }) || 0))
-  const currentRemainingDiamonds = Math.max(0, Number(selectedPkg?.remainingMinutes || 0))
+  const nextRemainingDiamonds = selectedPkg ? Math.max(0, getRemainingAfterFundChange(selectedPkg, diamondsToAdd)) : diamondsToAdd
 
   const onSubmit = async (data: FormData) => {
     try {
@@ -121,12 +121,19 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
           note: data.note?.trim() || '',
         }
 
+        // Học viên học vượt quỹ: phần nạp mới bù phần đã học vượt trước, để
+        // còn lại luôn bằng tổng − đã dùng như trang học viên đang hiển thị.
+        const nextRemainingMinutes = getRemainingAfterFundChange(previous, data.diamonds)
+        const nextRemainingSessions = isCourseOverdrawn(previous)
+          ? Math.round((nextRemainingMinutes / minutesPerSession) * 100) / 100
+          : Number(previous.remainingSessions || 0) + addedSessions
+
         updatedSubjects[subjectIndex] = {
           ...previous,
           totalSessions: Number(previous.totalSessions || 0) + addedSessions,
-          remainingSessions: Number(previous.remainingSessions || 0) + addedSessions,
+          remainingSessions: nextRemainingSessions,
           totalMinutes: Number(previous.totalMinutes || 0) + data.diamonds,
-          remainingMinutes: Number(previous.remainingMinutes || 0) + data.diamonds,
+          remainingMinutes: nextRemainingMinutes,
           pricePerMinute: Number(previous.pricePerMinute || globalSubjectSnap.data().pricePerMinute || 0),
           batches: appendCourseBatch(previous.batches, batch),
         }
@@ -166,7 +173,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
             totalDiamondsBefore: previous.totalMinutes,
             totalDiamondsAfter: Number(previous.totalMinutes || 0) + data.diamonds,
             remainingDiamondsBefore: previous.remainingMinutes,
-            remainingDiamondsAfter: Number(previous.remainingMinutes || 0) + data.diamonds,
+            remainingDiamondsAfter: nextRemainingMinutes,
           },
           createdAt: serverTimestamp(),
         })
@@ -261,7 +268,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
           <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
             <div><p className="text-xs text-slate-500">Khóa học</p><p className="mt-1 font-bold text-slate-800">{selectedPkg?.subjectName || '—'}</p></div>
             <div><p className="text-xs text-slate-500">Cộng thêm</p><p className="mt-1 font-bold tabular-nums text-indigo-700">+{minutesToAdd.toLocaleString('vi-VN')} phút</p></div>
-            <div><p className="text-xs text-slate-500">Quỹ khả dụng mới</p><p className="mt-1 inline-flex items-center gap-1 font-bold tabular-nums text-sky-700"><DiamondPointsIcon className="h-3.5 w-3.5" />{(currentRemainingDiamonds + diamondsToAdd).toLocaleString('vi-VN')}</p></div>
+            <div><p className="text-xs text-slate-500">Quỹ khả dụng mới</p><p className="mt-1 inline-flex items-center gap-1 font-bold tabular-nums text-sky-700"><DiamondPointsIcon className="h-3.5 w-3.5" />{nextRemainingDiamonds.toLocaleString('vi-VN')}</p></div>
           </div>
         </div>
       </form>
