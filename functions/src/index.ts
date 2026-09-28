@@ -1263,6 +1263,7 @@ export {
 } from './classHuntingFunctions'
 
 export { createParentProfileBooking } from './parentProfileBookingFunctions'
+export { adminMarkStudentAbsent } from './adminBookingActionsFunctions'
 export { cancelParentBooking, getParentBookingState } from './parentBookingAccessFunctions'
 export {
   getTeacherAttendanceAuditData,

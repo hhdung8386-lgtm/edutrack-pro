@@ -12,7 +12,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink, Copy, Check } from 'lucide-react'
+import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink, Copy, Check, UserX, CircleDollarSign } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -21,6 +21,8 @@ import { useLessonSettlementFacts } from '@/lib/linkedLessonSettlement'
 import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
 import { normalizeClassroomUrl, resolveAdminClassroomLink } from '@/lib/adminClassroomLink'
 import { BookingReminderDialog, type BookingReminderDraft } from '@/components/admin/BookingReminderDialog'
+import { Modal } from '@/components/ui/Modal'
+import { canDeductTeacherLate, deductTeacherLate, markStudentAbsent, type AdminAbsenceType } from '@/lib/adminBookingActions'
 import { compareBookingsByTime, getBookingLiveStatus, getVietnamClock, type BookingLiveStatus } from '@/lib/bookingLiveStatus'
 import { formatVietnamTime, getTeacherCheckin, teacherCheckinLabel, teacherCheckinTone } from '@/lib/teacherCheckin'
 
@@ -57,12 +59,22 @@ export function FutureBookingsPage() {
   const [cancelProgress, setCancelProgress] = useState<{ done: number; total: number } | null>(null)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
   const [confirmTargets, setConfirmTargets] = useState<BookingRequest[] | null>(null)
+  const [absenceTarget, setAbsenceTarget] = useState<BookingRequest | null>(null)
+  const [absenceType, setAbsenceType] = useState<AdminAbsenceType>('with_permission')
+  const [absenceNote, setAbsenceNote] = useState('')
+  const [savingAbsence, setSavingAbsence] = useState(false)
+  const [lateTarget, setLateTarget] = useState<BookingRequest | null>(null)
+  const [lateAmount, setLateAmount] = useState('')
+  const [lateCurrency, setLateCurrency] = useState<'VND' | 'PHP' | 'USD'>('VND')
+  const [lateNote, setLateNote] = useState('')
+  const [savingLatePenalty, setSavingLatePenalty] = useState(false)
 
   // Search & Filter state
   const selectedStudentId = searchParams.get('studentId') || 'all'
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [filterDate, setFilterDate] = useState<string>('')
   const [filterDayOfWeek, setFilterDayOfWeek] = useState<string>('all')
+  const [filterLiveStatus, setFilterLiveStatus] = useState<BookingLiveStatus | 'all'>('all')
   const [sortMode, setSortMode] = useState<BookingSortMode>('student')
 
   // Đồng hồ giờ Việt Nam, cập nhật mỗi 30 giây để tag Chưa học / Đang học tự đổi.
@@ -251,7 +263,10 @@ export function FutureBookingsPage() {
       // 5. Day of week filter
       const matchesDayOfWeek = filterDayOfWeek === 'all' || b.requestedDay === filterDayOfWeek
 
-      return matchesStudent && matchesSearch && matchesDate && matchesDayOfWeek
+      // Dùng cùng hàm với nhãn trạng thái của từng ca, tự cập nhật mỗi 30 giây.
+      const matchesLiveStatus = filterLiveStatus === 'all' || getBookingLiveStatus(b, vnClock) === filterLiveStatus
+
+      return matchesStudent && matchesSearch && matchesDate && matchesDayOfWeek && matchesLiveStatus
     })
 
     if (sortMode === 'timeAsc') return [...filtered].sort(compareBookingsByTime)
@@ -271,7 +286,7 @@ export function FutureBookingsPage() {
       if (dateA !== dateB) return dateA.localeCompare(dateB)
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
-  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, teacherNicks, todayISO, sortMode])
+  }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, filterLiveStatus, teacherNicks, todayISO, sortMode, vnClock])
 
   const liveCount = useMemo(
     () => futureBookings.filter((booking) => getBookingLiveStatus(booking, vnClock) === 'live').length,
@@ -469,6 +484,68 @@ export function FutureBookingsPage() {
     toast.success(`Đã copy tin nhắc lịch của ${draft.studentName || 'học viên'}${sessionCount > 1 ? ` (gộp ${sessionCount} ca trong ngày)` : ''}`)
   }
 
+  const handleMarkAbsent = async () => {
+    if (!absenceTarget || savingAbsence) return
+    const note = absenceNote.trim()
+    if (note.length < 5 || note.length > 500) {
+      toast.warning('Vui lòng ghi lý do vắng từ 5 đến 500 ký tự.')
+      return
+    }
+    setSavingAbsence(true)
+    try {
+      const result = await markStudentAbsent(absenceTarget.id, absenceType, note)
+      toast.success(`Đã ghi nhận ${result.lessonCount} ca vắng cùng ngày. Các buổi đang chờ duyệt; quỹ và lương chưa thay đổi.`)
+      setAbsenceTarget(null)
+      setAbsenceNote('')
+    } catch (error) {
+      console.error('Admin mark absence failed:', error)
+      toast.error(error instanceof Error ? error.message : 'Chưa ghi nhận được buổi vắng. Vui lòng thử lại.')
+    } finally {
+      setSavingAbsence(false)
+    }
+  }
+
+  const handleDeductLate = async () => {
+    if (!lateTarget || savingLatePenalty) return
+    const amount = Number(lateAmount.replace(/[\s,.]/g, ''))
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100_000_000) {
+      toast.warning('Vui lòng nhập số tiền trừ hợp lệ.')
+      return
+    }
+    if (lateNote.trim().length < 5 || lateNote.trim().length > 500) {
+      toast.warning('Vui lòng ghi lý do trừ lương từ 5 đến 500 ký tự.')
+      return
+    }
+    if (!user?.uid) {
+      toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+      return
+    }
+    setSavingLatePenalty(true)
+    try {
+      const result = await deductTeacherLate({
+        bookingId: lateTarget.id,
+        actorUid: user.uid,
+        amount,
+        currency: lateCurrency,
+        note: lateNote,
+      })
+      toast.success(result === 'already' ? 'Ca này đã có khoản trừ lương.' : 'Đã thêm khoản trừ vào bảng lương giáo viên.')
+      setLateTarget(null)
+      setLateAmount('')
+      setLateNote('')
+    } catch (error) {
+      console.error('Teacher late deduction failed:', error)
+      const reason = error instanceof Error ? error.message : ''
+      toast.error(reason === 'TEACHER_NOT_VERIFIED_LATE'
+        ? 'Giờ vào lớp đã thay đổi hoặc chưa đủ căn cứ trễ. Vui lòng tải lại trang.'
+        : reason === 'PENALTY_ALREADY_EXISTS'
+          ? 'Ca này đã có khoản trừ lương. Vui lòng tải lại trang.'
+          : 'Chưa lưu được khoản trừ lương. Vui lòng kiểm tra quyền và thử lại.')
+    } finally {
+      setSavingLatePenalty(false)
+    }
+  }
+
   // Compute stats for current filtered list
   const totalMinutes = useMemo(() => {
     return futureBookings.reduce((sum, b) => sum + (b.requestedMinutes || 0), 0)
@@ -617,6 +694,14 @@ export function FutureBookingsPage() {
                       Tất cả các ngày
                     </button>
                   )}
+                  <button
+                    type="button"
+                    aria-pressed={filterLiveStatus === 'live'}
+                    onClick={() => { setFilterLiveStatus((current) => current === 'live' ? 'all' : 'live'); setSelectedBookingIds([]) }}
+                    className={`h-10 px-3.5 rounded-xl border text-xs font-bold transition-all shadow-sm ${filterLiveStatus === 'live' ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white hover:bg-emerald-50 border-emerald-200 text-emerald-700'}`}
+                  >
+                    Đang học
+                  </button>
                 </div>
               </div>
             </div>
@@ -911,16 +996,41 @@ export function FutureBookingsPage() {
                           <span className="text-slate-600">{(booking.teacherId && teacherNicks[booking.teacherId]) || booking.teacherName || 'Chưa phân công'}</span>
                         )}
                       </td>
-                      <td className="p-3.5 text-center">
-                        <button
-                          type="button"
-                          disabled={cancelling}
-                          onClick={() => setConfirmTargets([booking])}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
-                          title="Hủy ca này"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <td className="p-3.5">
+                        <div className="flex flex-wrap items-center justify-center gap-1.5 min-w-[220px]">
+                          <button
+                            type="button"
+                            disabled={cancelling || booking.status !== 'confirmed' || liveStatus === 'upcoming' || Boolean(booking.groupClassId) || Boolean(booking.groupClassMemberIds?.length && booking.groupClassMemberIds.length > 1)}
+                            onClick={() => { setAbsenceTarget(booking); setAbsenceType('with_permission'); setAbsenceNote('') }}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-amber-200 px-2 text-[11px] font-bold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Ghi nhận học viên vắng và đưa buổi sang chờ duyệt"
+                          >
+                            <UserX className="h-3.5 w-3.5" /> Vắng
+                          </button>
+                          {booking.teacherLatePenaltyPayrollId ? (
+                            <span className="text-[11px] font-semibold text-slate-500">Đã trừ trễ</span>
+                          ) : canDeductTeacherLate(booking, nowMs) ? (
+                            <button
+                              type="button"
+                              disabled={cancelling}
+                              onClick={() => { setLateTarget(booking); setLateAmount(''); setLateCurrency('VND'); setLateNote('Giáo viên vào lớp trễ') }}
+                              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-rose-200 px-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                              title="Thêm khoản trừ lương cho ca vào lớp trễ"
+                            >
+                              <CircleDollarSign className="h-3.5 w-3.5" /> Trừ trễ
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={cancelling}
+                            onClick={() => setConfirmTargets([booking])}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                            title="Hủy ca này"
+                            aria-label={`Hủy ca của ${booking.studentName || booking.studentCode || 'học viên'}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -946,6 +1056,61 @@ export function FutureBookingsPage() {
         confirmVariant="danger"
         loading={cancelling}
       />
+
+      <Modal
+        open={Boolean(absenceTarget)}
+        onClose={() => { if (!savingAbsence) setAbsenceTarget(null) }}
+        title="Giáo vụ đánh dấu học viên vắng"
+        footer={<div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => setAbsenceTarget(null)} disabled={savingAbsence}>Đóng</Button>
+          <Button onClick={handleMarkAbsent} loading={savingAbsence}>Ghi nhận vắng</Button>
+        </div>}
+      >
+        {absenceTarget && <div className="space-y-4 text-sm">
+          <p className="text-slate-700"><strong>{absenceTarget.studentName}</strong> · {absenceTarget.requestedDate} {absenceTarget.requestedStart}–{absenceTarget.requestedEnd} · {absenceTarget.teacherName}</p>
+          <label className="block font-semibold text-slate-700">Loại vắng
+            <select value={absenceType} onChange={(event) => setAbsenceType(event.target.value as AdminAbsenceType)} className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3">
+              <option value="with_permission">Vắng có phép — 0 phút, không tính lương</option>
+              <option value="without_permission">Vắng không phép — tính 25 phút khi duyệt</option>
+            </select>
+          </label>
+          <label className="block font-semibold text-slate-700">Lý do / ghi chú đối chiếu
+            <textarea value={absenceNote} onChange={(event) => setAbsenceNote(event.target.value)} maxLength={500} rows={3} className="mt-1 block w-full rounded-xl border border-slate-300 p-3 font-normal" placeholder="Ghi lý do vắng và thông tin đã xác nhận..." />
+          </label>
+          <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">Các ca còn lại cùng ngày, cùng học viên, giáo viên và môn cũng được ghi vắng. Vắng không phép chỉ tính 25 phút cho ca đầu. Kim cương và lương chỉ thay đổi sau khi duyệt ở màn Duyệt buổi học.</p>
+        </div>}
+      </Modal>
+
+      <Modal
+        open={Boolean(lateTarget)}
+        onClose={() => { if (!savingLatePenalty) setLateTarget(null) }}
+        title="Trừ lương giáo viên vào trễ"
+        footer={<div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => setLateTarget(null)} disabled={savingLatePenalty}>Đóng</Button>
+          <Button variant="danger" onClick={handleDeductLate} loading={savingLatePenalty}>Xác nhận trừ lương</Button>
+        </div>}
+      >
+        {lateTarget && <div className="space-y-4 text-sm">
+          <p className="text-slate-700"><strong>{lateTarget.teacherName}</strong> · ca {lateTarget.requestedDate} {lateTarget.requestedStart} · học viên {lateTarget.studentName}</p>
+          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-700">{getTeacherCheckin(lateTarget, nowMs).firstAtMs === null
+            ? 'Giáo viên chưa bấm Vào lớp. Hãy đối chiếu thực tế trước khi trừ lương; giờ bấm có thể khác giờ vào phòng ngoài hệ thống.'
+            : `Hệ thống ghi nhận bấm Vào lớp trễ ${getTeacherCheckin(lateTarget, nowMs).lateMinutes || 0} phút.`}</p>
+          <div className="grid grid-cols-[1fr_110px] gap-2">
+            <label className="block font-semibold text-slate-700">Số tiền trừ
+              <input type="text" inputMode="numeric" value={lateAmount} onChange={(event) => setLateAmount(event.target.value)} className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 font-normal" placeholder="Ví dụ: 50000" />
+            </label>
+            <label className="block font-semibold text-slate-700">Đơn vị
+              <select value={lateCurrency} onChange={(event) => setLateCurrency(event.target.value as 'VND' | 'PHP' | 'USD')} className="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-2 font-normal">
+                <option value="VND">VND</option><option value="PHP">PHP</option><option value="USD">USD</option>
+              </select>
+            </label>
+          </div>
+          <label className="block font-semibold text-slate-700">Lý do
+            <textarea value={lateNote} onChange={(event) => setLateNote(event.target.value)} maxLength={500} rows={2} className="mt-1 block w-full rounded-xl border border-slate-300 p-3 font-normal" />
+          </label>
+          <p className="rounded-xl bg-rose-50 p-3 text-xs leading-5 text-rose-800">Khoản trừ sẽ được thêm vào bảng lương tháng của ca này. Mỗi ca chỉ có thể tạo một khoản trừ vì vào trễ.</p>
+        </div>}
+      </Modal>
 
       <BookingReminderDialog
         draft={reminderDraft}
