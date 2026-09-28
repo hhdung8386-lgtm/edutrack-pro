@@ -421,7 +421,7 @@ export interface Payroll {
   /** 'adjustment' = khoản thưởng (amount > 0) hoặc khấu trừ (amount < 0) do admin thêm tay */
   type?: 'adjustment'
   adjustmentNote?: string
-  adjustmentSource?: 'late_teacher_cancellation'
+  adjustmentSource?: 'late_teacher_cancellation' | 'teacher_late_arrival'
   sourceBookingId?: string
   createdBy?: string
   evaluationId?: string
@@ -537,6 +537,10 @@ export interface BookingRequest {
   teacherClassroomEntryCount?: number
   /** Phút trễ của lần bấm đầu so với giờ bắt đầu ca; âm = vào sớm. */
   teacherClassroomEntryLateMinutes?: number
+  /** Khoản khấu trừ lương do giáo vụ xác nhận vào trễ cho ca này. */
+  teacherLatePenaltyPayrollId?: string
+  teacherLatePenaltyAt?: Timestamp
+  teacherLatePenaltyBy?: string
   teacherClassroomEntryBy?: string
 }
 
