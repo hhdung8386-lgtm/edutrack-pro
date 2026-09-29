@@ -2197,7 +2197,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={onBack}
-                className="rounded-xl p-2 text-amber-900/70 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97] shrink-0"
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-amber-900/70 transition-colors hover:bg-white/40 hover:text-amber-950 active:scale-[0.97] shrink-0"
                 aria-label={lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
               >
                 <LogOut className="h-4 w-4" />
@@ -2215,11 +2215,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
             {/* Right side items */}
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {/* Star balance */}
-              <div className="flex h-8 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
+              <div className="flex h-9 items-center overflow-hidden rounded-full bg-white text-amber-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
                 <button
                   type="button"
                   onClick={openRewards}
-                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-amber-50"
+                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-amber-50 active:bg-amber-100"
                   aria-label={lang === 'vi' ? 'Xem số Sao' : 'View stars'}
                 >
                   <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />
@@ -2228,7 +2228,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                 <button
                   type="button"
                   onClick={openRewards}
-                  className="grid h-8 w-6 place-items-center border-l border-amber-100 font-bold text-amber-600 transition hover:bg-amber-50"
+                  className="grid h-9 w-7 place-items-center border-l border-amber-100 font-bold text-amber-600 transition hover:bg-amber-50 active:bg-amber-100"
                   aria-label={lang === 'vi' ? 'Đi đến trang đổi quà' : 'Open rewards'}
                 >
                   +
@@ -2236,11 +2236,11 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
               </div>
 
               {/* Diamond balance */}
-              <div className="flex h-8 items-center overflow-hidden rounded-full bg-white text-sky-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
+              <div className="flex h-9 items-center overflow-hidden rounded-full bg-white text-sky-950 shadow-sm ring-1 ring-amber-900/10 text-[11px] sm:text-xs">
                 <button
                   type="button"
                   onClick={() => setTab('topup')}
-                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-sky-50"
+                  className="flex h-full items-center gap-1 px-2 font-black tabular-nums transition hover:bg-sky-50 active:bg-sky-100"
                   aria-label={lang === 'vi' ? 'Xem số dư kim cương' : 'View diamond balance'}
                 >
                   <DiamondPointsIcon className="h-3.5 w-3.5" />
@@ -2249,7 +2249,7 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                 <button
                   type="button"
                   onClick={() => setTab('topup')}
-                  className="grid h-8 w-6 place-items-center border-l border-sky-100 font-bold text-sky-600 transition hover:bg-sky-50"
+                  className="grid h-9 w-7 place-items-center border-l border-sky-100 font-bold text-sky-600 transition hover:bg-sky-50 active:bg-sky-100"
                   aria-label={lang === 'vi' ? 'Nạp thêm kim cương' : 'Top up diamonds'}
                 >
                   +

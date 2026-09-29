@@ -350,9 +350,11 @@ export function TeacherLayout() {
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40">
         <div className="flex h-14 items-center gap-2 bg-gradient-to-b from-brand-300 via-brand-400 to-brand-500 px-4 shadow-[0_6px_18px_-12px_rgba(180,120,0,0.55)]">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Logo className="h-8 w-auto max-w-[120px]" />
-          <span className="text-[10px] font-mono font-bold text-brand-900/80 bg-white/60 px-1.5 py-0.5 rounded border border-white/70 truncate">
-            {formatTime()}
+          <Logo className="h-8 w-auto max-w-[104px] min-[400px]:max-w-[120px]" />
+          {/* Điện thoại: chỉ hiện giờ (HH:mm:ss) cho đủ chỗ; màn rộng hơn hiện đầy đủ ngày + múi giờ. */}
+          <span className="hidden min-[340px]:inline-block text-[10px] font-mono font-bold text-brand-900/80 bg-white/60 px-1.5 py-0.5 rounded border border-white/70 truncate" title={formatTime()}>
+            <span className="sm:hidden">{formatTime().slice(11, 19)}</span>
+            <span className="hidden sm:inline">{formatTime()}</span>
           </span>
         </div>
         {/* Notifications bell drawer */}
@@ -360,7 +362,8 @@ export function TeacherLayout() {
 
         <button
           onClick={toggleLang}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] font-black rounded-md bg-white/70 hover:bg-white text-brand-800 transition-all shrink-0"
+          className="flex h-9 items-center gap-1 px-2.5 text-[11px] font-black rounded-lg bg-white/70 hover:bg-white active:bg-white text-brand-800 transition-all shrink-0"
+          aria-label={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
         >
           <Globe className="w-3 h-3" />
           {lang === 'vi' ? 'EN' : 'VI'}
@@ -369,7 +372,7 @@ export function TeacherLayout() {
         {/* Nút đăng xuất trên mobile — trước đây chỉ desktop mới có */}
         <button
           onClick={handleSignOut}
-          className="p-2 text-brand-900/70 hover:text-rose-600 active:text-rose-700 transition-colors shrink-0"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-brand-900/70 hover:text-rose-600 active:text-rose-700 active:bg-white/40 transition-colors shrink-0"
           title={t('nav.signout')}
           aria-label={t('nav.signout')}
         >
@@ -667,7 +670,7 @@ function ZaloUrgentNotice({ lang }: { lang: string }) {
               href={`https://zalo.me/${ZALO_PHONE_RAW}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0068FF] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-blue-200 transition-all hover:bg-[#0055d4] hover:-translate-y-0.5 active:scale-95"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[#0068FF] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-blue-200 transition-all hover:bg-[#0055d4] hover:-translate-y-0.5 active:scale-95"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               {vi ? 'Kết bạn Zalo ngay' : 'Add on Zalo now'}
@@ -675,7 +678,7 @@ function ZaloUrgentNotice({ lang }: { lang: string }) {
             <button
               type="button"
               onClick={dismiss}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95"
             >
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
               {vi ? 'Tôi đã kết bạn / Đã hiểu' : 'Done / Got it'}
@@ -686,7 +689,7 @@ function ZaloUrgentNotice({ lang }: { lang: string }) {
         <button
           type="button"
           onClick={dismiss}
-          className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/70 hover:text-slate-700"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/70 hover:text-slate-700"
           title={vi ? 'Đóng thông báo' : 'Dismiss'}
           aria-label={vi ? 'Đóng thông báo' : 'Dismiss notice'}
         >

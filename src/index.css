@@ -1472,17 +1472,34 @@
     }
   }
 
+  /* Cảm giác chạm chuẩn mobile: bỏ ô xám khi chạm, bỏ độ trễ/đúp-chạm-phóng-to trên nút và liên kết. */
+  button,
+  a,
+  summary,
+  label,
+  select,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Tailwind v4 để con trỏ mặc định trên nút; trả lại bàn tay cho nút bấm được. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
   /* Scrollbar Styling */
   ::-webkit-scrollbar {
     @apply w-2 h-2;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-white;
+    @apply bg-transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600 rounded hover:bg-slate-500;
+    @apply bg-slate-300 rounded-full hover:bg-slate-400;
   }
 
   /* Input autofill background */
@@ -1567,7 +1584,7 @@
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-slate-100 text-slate-900 hover:bg-slate-600 active:bg-white;
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed bg-slate-100 text-slate-900 hover:bg-slate-200 active:bg-slate-300;
   }
 
   .btn-danger {

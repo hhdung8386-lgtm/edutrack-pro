@@ -180,7 +180,7 @@ export function Modal({
           </div>
         )}
         {/* Drag handle for mobile */}
-        <div className="sm:hidden absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1 bg-slate-600 rounded-full" />
+        <div className="sm:hidden absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 bg-slate-300 rounded-full pointer-events-none" aria-hidden="true" />
 
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
 

@@ -227,7 +227,7 @@ export function TopUpTab({
       {/* Lịch sử nạp & sử dụng (preview) */}
       <div className="flex items-center justify-between px-1 pt-1">
         <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Lịch sử nạp & sử dụng' : 'Top-up & usage history'}</h2>
-        <button type="button" onClick={() => setShowHistory(true)} className="inline-flex items-center gap-0.5 text-xs font-extrabold text-sky-700 transition hover:text-sky-800">{lang === 'vi' ? 'Xem tất cả' : 'View all'}<ChevronRight className="h-3.5 w-3.5" /></button>
+        <button type="button" onClick={() => setShowHistory(true)} className="inline-flex min-h-9 items-center gap-0.5 text-xs font-extrabold text-sky-700 transition hover:text-sky-800">{lang === 'vi' ? 'Xem tất cả' : 'View all'}<ChevronRight className="h-3.5 w-3.5" /></button>
       </div>
       <div className="space-y-2.5">
         {requests.length === 0 ? (
