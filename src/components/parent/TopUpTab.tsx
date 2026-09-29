@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
-import { Check, ChevronRight, Clock3, Copy, CreditCard, Headphones, History, ImageOff, QrCode, WalletCards, X } from 'lucide-react'
+import { Check, ChevronRight, Clock3, Copy, CreditCard, Crown, Headphones, History, ImageOff, QrCode, Sparkles, Star, WalletCards, X } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { PaymentSettings, Student, TopUpPackage, TopUpRequest } from '@/types'
 import { formatMoney } from '@/lib/constants'
@@ -47,7 +47,7 @@ export function TopUpTab({
     const next = snap.docs
       .map((d) => ({ id: d.id, ...d.data() } as TopUpPackage))
       .filter((item) => item.status === 'active')
-      .sort((a, b) => Number(b.featured) - Number(a.featured) || a.price - b.price)
+      .sort((a, b) => a.price - b.price)
     setPackages(next)
     setSelectedId((current) => next.some(item => item.id === current) ? current : next[0]?.id || '')
     setPackagesLoading(false)
@@ -174,43 +174,64 @@ export function TopUpTab({
       </div>
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng nạp tiền đang chờ Admin hoàn tất quyền dữ liệu.' : 'Top-up is waiting for Admin to finish data permissions.'}</div>}
       {packagesLoading ? <PackageSkeleton /> : packages.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-12 text-center"><CreditCard className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">{lang === 'vi' ? 'Admin chưa mở gói nạp tiền' : 'No top-up packages available'}</p></div> : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {packages.map((pkg, idx) => {
-            const tone = PACKAGE_TONES[idx % PACKAGE_TONES.length]
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-3">
+          {packages.map((pkg, rank) => {
+            const tierIndex = tierIndexFor(rank, packages.length)
+            const tier = PACKAGE_TIERS[tierIndex]
+            const stars = Math.ceil((tierIndex + 1) / 2)
+            const isTop = packages.length >= 3 && rank === packages.length - 1
             const highlights = (pkg.description || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 4)
             const discount = (pkg.originalPrice || 0) > pkg.price ? (pkg.originalPrice || 0) - pkg.price : 0
             return (
-              <article key={pkg.id} className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200`}>
-                <div className={`flex-1 bg-gradient-to-br px-4 pb-3 pt-4 ${tone.bg}`}>
-                  {pkg.category?.trim() && <span className={`inline-block rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.tag}`}>{pkg.category.trim()}</span>}
-                  <h3 className="mt-2 text-lg font-black uppercase leading-tight tracking-tight text-slate-900">{pkg.name}</h3>
+              <article key={pkg.id} className={`@container relative flex flex-col overflow-hidden rounded-[26px] bg-white ${isTop ? 'shadow-[0_18px_40px_-16px_rgba(245,158,11,0.65)] ring-2 ring-amber-400' : `shadow-[0_12px_28px_-20px_rgba(15,23,42,0.45)] ring-1 ${tier.ring}`}`}>
+                <div className={`relative h-[124px] overflow-hidden bg-gradient-to-br ${tier.band}`}>
+                  <span aria-hidden className="absolute -left-8 -top-10 h-28 w-28 rounded-full bg-white/45" />
+                  <span aria-hidden className="absolute -bottom-10 right-16 h-24 w-24 rounded-full bg-white/35" />
+                  <Sparkles aria-hidden className={`absolute left-[46%] top-3 h-4 w-4 ${tier.star} opacity-70`} />
+                  <Sparkles aria-hidden className={`absolute bottom-4 left-[38%] h-3 w-3 ${tier.star} opacity-50`} />
+                  <div className="relative z-10 flex h-full flex-col items-start justify-between p-3.5 pr-[104px] @[290px]:pr-[136px]">
+                    {pkg.category?.trim() ? <span className={`max-w-full truncate rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide shadow-sm ${tier.tag}`}>{pkg.category.trim()}</span> : <span />}
+                    <span className="flex items-center gap-0.5" role="img" aria-label={`${stars}/3`}>
+                      {[0, 1, 2].map((n) => <Star key={n} className={`h-4 w-4 fill-current ${n < stars ? tier.star : 'text-white/80'}`} />)}
+                    </span>
+                  </div>
+                  <img src={tier.mascot} alt="" width={360} height={360} loading="lazy" decoding="async" className="pointer-events-none absolute -bottom-2 right-1 h-[104px] w-[104px] object-contain mix-blend-multiply @[290px]:h-[132px] @[290px]:w-[132px]" />
+                  {(pkg.featured || isTop) && (
+                    <span className={`absolute right-2.5 top-2.5 z-20 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black shadow-md ${pkg.featured ? 'bg-rose-500 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white'}`}>
+                      {!pkg.featured && <Crown className="h-3 w-3" />}
+                      {pkg.featured ? (lang === 'vi' ? 'Phổ biến' : 'Popular') : 'VIP'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-1 flex-col px-3.5 pb-4 pt-3">
+                  <h3 className="text-base font-black uppercase leading-tight tracking-tight text-slate-900 @[290px]:text-lg">{pkg.name}</h3>
                   {highlights.length > 0 && (
-                    <ul className="mt-2 space-y-1">
+                    <ul className="mt-2 space-y-1.5">
                       {highlights.map((line) => (
-                        <li key={line} className="flex items-start gap-1.5 text-xs font-semibold leading-5 text-slate-700">
-                          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3.5} /></span>
+                        <li key={line} className="flex items-start gap-1.5 text-[11.5px] font-semibold leading-[1.15rem] text-slate-700 @[290px]:text-xs">
+                          <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white ${tier.check}`}><Check className="h-3 w-3" strokeWidth={3.5} /></span>
                           <span className="min-w-0">{line}</span>
                         </li>
                       ))}
                     </ul>
                   )}
-                </div>
-                <div className="space-y-2.5 px-4 pb-4 pt-3">
-                  <p className={`rounded-xl py-1.5 text-center text-sm font-bold text-slate-800 ${tone.pill}`}>{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'} × {pkg.minutesPerSession} {lang === 'vi' ? 'phút' : 'min'}</p>
-                  {discount > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-400 line-through tabular-nums">{formatVnd(pkg.originalPrice || 0, pkg.currency)}</span>
-                      <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-black text-rose-600">{lang === 'vi' ? 'Giảm' : 'Save'} {formatVnd(discount, pkg.currency)}</span>
+                  <div className="mt-auto space-y-2.5 pt-3">
+                    <p className={`rounded-xl py-1.5 text-center text-[13px] font-extrabold ${tier.pill}`}>{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'} × {pkg.minutesPerSession} {lang === 'vi' ? 'phút' : 'min'}</p>
+                    <div className="min-h-[1.5rem]">
+                      {discount > 0 && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-xs font-bold text-slate-400 line-through tabular-nums">{formatVnd(pkg.originalPrice || 0, pkg.currency)}</span>
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-black text-rose-600 ring-1 ring-rose-100">{lang === 'vi' ? 'Giảm' : 'Save'} {formatVnd(discount, pkg.currency)}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong className="text-2xl font-black tabular-nums tracking-tight text-rose-600">{formatVnd(pkg.price, pkg.currency)}</strong>
+                    <strong className="block whitespace-nowrap text-[27px] font-black leading-none tracking-tight tabular-nums text-rose-600 @[290px]:text-4xl">{formatVnd(pkg.price, pkg.currency)}</strong>
                     <button
                       type="button"
                       onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }}
-                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-gradient-to-b from-brand-400 to-brand-500 px-5 text-sm font-black uppercase text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
+                      className="inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-brand-300 to-brand-500 px-5 text-sm font-black uppercase tracking-wide text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
                     >
-                      {lang === 'vi' ? 'Chọn gói' : 'Select'}
+                      {lang === 'vi' ? 'Chọn gói' : 'Select'}<ChevronRight className="h-4 w-4" strokeWidth={3} />
                     </button>
                   </div>
                 </div>
@@ -332,14 +353,21 @@ export function TopUpTab({
   )
 }
 
-const PACKAGE_TONES = [
-  { bg: 'from-emerald-50 to-white', tag: 'bg-emerald-100 text-emerald-700', pill: 'bg-sky-50' },
-  { bg: 'from-sky-50 to-white', tag: 'bg-sky-100 text-sky-700', pill: 'bg-sky-50' },
-  { bg: 'from-rose-50 to-white', tag: 'bg-rose-100 text-rose-600', pill: 'bg-rose-50' },
-  { bg: 'from-amber-50 to-white', tag: 'bg-amber-100 text-amber-700', pill: 'bg-sky-50' },
-  { bg: 'from-violet-50 to-white', tag: 'bg-violet-100 text-violet-700', pill: 'bg-violet-50' },
-  { bg: 'from-pink-50 to-white', tag: 'bg-pink-100 text-pink-600', pill: 'bg-rose-50' },
+// 6 bậc màu tăng dần: xanh bạc hà (dễ gần) → vàng VIP. Linh vật thương hiệu nằm trong /public/package-mascots.
+const PACKAGE_TIERS = [
+  { band: 'from-emerald-200 via-emerald-100 to-teal-50', ring: 'ring-emerald-200', tag: 'bg-white/85 text-emerald-700', star: 'text-emerald-500', pill: 'bg-emerald-50 text-emerald-800', check: 'bg-emerald-500', mascot: '/package-mascots/lion.jpg' },
+  { band: 'from-sky-200 via-sky-100 to-cyan-50', ring: 'ring-sky-200', tag: 'bg-white/85 text-sky-700', star: 'text-sky-500', pill: 'bg-sky-50 text-sky-800', check: 'bg-sky-500', mascot: '/package-mascots/elephant.jpg' },
+  { band: 'from-violet-200 via-violet-100 to-fuchsia-50', ring: 'ring-violet-200', tag: 'bg-white/85 text-violet-700', star: 'text-violet-500', pill: 'bg-violet-50 text-violet-800', check: 'bg-violet-500', mascot: '/package-mascots/giraffe.jpg' },
+  { band: 'from-pink-200 via-rose-100 to-orange-50', ring: 'ring-pink-200', tag: 'bg-white/85 text-pink-700', star: 'text-pink-500', pill: 'bg-pink-50 text-pink-800', check: 'bg-pink-500', mascot: '/package-mascots/lion.jpg' },
+  { band: 'from-orange-200 via-amber-100 to-yellow-50', ring: 'ring-orange-200', tag: 'bg-white/85 text-orange-700', star: 'text-orange-500', pill: 'bg-orange-50 text-orange-800', check: 'bg-orange-500', mascot: '/package-mascots/elephant.jpg' },
+  { band: 'from-amber-300 via-yellow-200 to-amber-50', ring: 'ring-amber-300', tag: 'bg-white/90 text-amber-800', star: 'text-amber-500', pill: 'bg-amber-50 text-amber-900', check: 'bg-amber-500', mascot: '/package-mascots/giraffe.jpg' },
 ]
+
+// Gói rẻ nhất luôn là bậc đầu, gói đắt nhất luôn là bậc VIP, các gói giữa dàn đều.
+function tierIndexFor(rank: number, total: number) {
+  if (total <= 1) return 0
+  return Math.round((rank * (PACKAGE_TIERS.length - 1)) / (total - 1))
+}
 
 function formatVnd(amount: number, currency?: string) {
   if (!currency || currency.toUpperCase() === 'VND') return `${Math.round(amount).toLocaleString('vi-VN')}đ`
