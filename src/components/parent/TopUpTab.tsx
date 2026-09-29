@@ -62,6 +62,7 @@ export function TopUpTab({
 
   const selected = useMemo(() => packages.find((item) => item.id === selectedId) || null, [packages, selectedId])
   const transferContent = `${settings?.transferPrefix?.trim() || 'NAP'} ${student.code}`.toUpperCase()
+  const hasFiftyMinutePackage = packages.some((item) => item.minutesPerSession === 50)
   const pending = requests.some((item) => item.status === 'pending')
   const minuteSummary = getStudentPackageMinuteSummary(student)
   const totalMinutes = minuteSummary.totalMinutes
@@ -146,39 +147,9 @@ export function TopUpTab({
     } finally { setSubmitting(false) }
   }
 
-  const sessions25 = (totalMin: number) => Math.round(totalMin / 25)
 
   return (
     <div className="space-y-5 pb-4">
-      {/* Hero: kim cương khả dụng + nút Nạp kim cương */}
-      <section className="relative overflow-hidden rounded-[26px] border border-sky-100 bg-gradient-to-br from-[#f4faff] via-white to-[#eaf6ff] p-5 shadow-[0_20px_45px_-34px_rgba(2,132,199,0.65)]">
-        <div className="relative z-10 max-w-[62%]">
-          <p className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
-            {lang === 'vi' ? 'Kim cương khả dụng' : 'Available diamonds'}
-          </p>
-          <div className="mt-1 flex items-end gap-2">
-            <strong className="text-5xl font-black leading-none tracking-[-0.05em] tabular-nums text-sky-600">{availableMinutes.toLocaleString('vi-VN')}</strong>
-            <DiamondPointsIcon className="mb-1 h-6 w-6" />
-          </div>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{lang === 'vi' ? 'Kim cương' : 'Diamonds'}</p>
-          <button
-            type="button"
-            onClick={() => setShowPayment(true)}
-            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-gradient-to-b from-brand-400 to-brand-500 px-5 text-sm font-black text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
-          >
-            + {lang === 'vi' ? 'Nạp kim cương' : 'Top up diamonds'}
-          </button>
-        </div>
-        {/* Trang trí cụm kim cương xanh (thay ảnh mascot) */}
-        <div className="pointer-events-none absolute -right-4 -top-2 z-0 opacity-90">
-          <DiamondPointsIcon className="absolute right-16 top-6 h-8 w-8 rotate-6" />
-          <DiamondPointsIcon className="absolute right-4 top-2 h-16 w-16 -rotate-6" />
-          <DiamondPointsIcon className="absolute right-24 top-16 h-6 w-6" />
-          <DiamondPointsIcon className="absolute right-8 top-24 h-11 w-11 rotate-12" />
-          <DiamondPointsIcon className="absolute right-28 top-28 h-7 w-7 -rotate-12" />
-        </div>
-      </section>
-
       {/* Đã đặt / Đã học */}
       <div className="grid grid-cols-2 gap-3">
         <button type="button" onClick={() => setShowHistory(true)} className="flex items-center gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-slate-200 transition hover:ring-brand-300 active:scale-[0.99]">
@@ -197,31 +168,62 @@ export function TopUpTab({
         </button>
       </div>
 
-      {/* Nạp kim cương — chọn gói */}
+      {/* Chọn gói học */}
       <div className="flex items-center justify-between px-1">
-        <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Nạp kim cương' : 'Top up diamonds'}</h2>
+        <h2 className="text-lg font-black tracking-tight text-slate-950">{lang === 'vi' ? 'Chọn gói học' : 'Choose a package'}</h2>
       </div>
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng nạp tiền đang chờ Admin hoàn tất quyền dữ liệu.' : 'Top-up is waiting for Admin to finish data permissions.'}</div>}
       {packagesLoading ? <PackageSkeleton /> : packages.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-12 text-center"><CreditCard className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">{lang === 'vi' ? 'Admin chưa mở gói nạp tiền' : 'No top-up packages available'}</p></div> : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {packages.map((pkg, idx) => {
-            const active = selectedId === pkg.id
+            const tone = PACKAGE_TONES[idx % PACKAGE_TONES.length]
+            const highlights = (pkg.description || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 4)
+            const discount = (pkg.originalPrice || 0) > pkg.price ? (pkg.originalPrice || 0) - pkg.price : 0
             return (
-              <button key={pkg.id} onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }} className={`relative flex flex-col items-center rounded-2xl bg-white p-4 pt-5 text-center transition ${active ? 'ring-2 ring-sky-600 shadow-[0_12px_35px_-22px_rgba(2,132,199,.72)]' : 'ring-1 ring-slate-200 hover:ring-brand-300'}`}>
-                {pkg.featured && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-black text-amber-900 shadow-sm">{lang === 'vi' ? 'Phổ biến' : 'Popular'}</span>}
-                {!pkg.featured && idx === packages.length - 1 && packages.length > 1 && <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-rose-400 px-2.5 py-0.5 text-[10px] font-black text-white shadow-sm">{lang === 'vi' ? 'Tiết kiệm nhất' : 'Best value'}</span>}
-                <DiamondPointsIcon className="h-9 w-9" />
-                <span className="mt-2 flex items-center gap-1 text-2xl font-black tabular-nums text-slate-900">{pkg.totalMinutes.toLocaleString('vi-VN')}<DiamondPointsIcon className="h-5 w-5" /></span>
-                <span className="mt-1 text-sm font-black text-sky-700 tabular-nums">{formatMoney(pkg.price, pkg.currency)}</span>
-                <span className="mt-2 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">≈ {sessions25(pkg.totalMinutes)} {lang === 'vi' ? 'buổi học' : 'sessions'}</span>
-              </button>
+              <article key={pkg.id} className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-200`}>
+                <div className={`flex-1 bg-gradient-to-br px-4 pb-3 pt-4 ${tone.bg}`}>
+                  {pkg.category?.trim() && <span className={`inline-block rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.tag}`}>{pkg.category.trim()}</span>}
+                  <h3 className="mt-2 text-lg font-black uppercase leading-tight tracking-tight text-slate-900">{pkg.name}</h3>
+                  {highlights.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {highlights.map((line) => (
+                        <li key={line} className="flex items-start gap-1.5 text-xs font-semibold leading-5 text-slate-700">
+                          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-3 w-3" strokeWidth={3.5} /></span>
+                          <span className="min-w-0">{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="space-y-2.5 px-4 pb-4 pt-3">
+                  <p className={`rounded-xl py-1.5 text-center text-sm font-bold text-slate-800 ${tone.pill}`}>{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'} × {pkg.minutesPerSession} {lang === 'vi' ? 'phút' : 'min'}</p>
+                  {discount > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-400 line-through tabular-nums">{formatVnd(pkg.originalPrice || 0, pkg.currency)}</span>
+                      <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-black text-rose-600">{lang === 'vi' ? 'Giảm' : 'Save'} {formatVnd(discount, pkg.currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong className="text-2xl font-black tabular-nums tracking-tight text-rose-600">{formatVnd(pkg.price, pkg.currency)}</strong>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }}
+                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-gradient-to-b from-brand-400 to-brand-500 px-5 text-sm font-black uppercase text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
+                    >
+                      {lang === 'vi' ? 'Chọn gói' : 'Select'}
+                    </button>
+                  </div>
+                </div>
+              </article>
             )
           })}
         </div>
       )}
-      <p className="flex items-start gap-1.5 px-1 text-[11px] font-semibold leading-5 text-slate-500">
+      <p className="flex items-start gap-1.5 rounded-2xl bg-sky-50 px-3 py-2.5 text-[11px] font-semibold leading-5 text-slate-600 ring-1 ring-sky-100">
         <span className="mt-0.5">ⓘ</span>
-        {lang === 'vi' ? 'Ghi chú: 25 kim cương ≈ 1 buổi học 25 phút với gia sư Việt Nam/Philippines.' : 'Note: 25 diamonds ≈ one 25-minute lesson with a Vietnam/Philippines teacher.'}
+        {hasFiftyMinutePackage
+          ? (lang === 'vi' ? '30 buổi × 50 phút tương đương 60 buổi × 25 phút. Học viên có thể linh hoạt lựa chọn thời lượng khi đặt lịch.' : '30 sessions × 50 min equals 60 sessions × 25 min. Students can flexibly choose the lesson length when booking.')
+          : (lang === 'vi' ? 'Mỗi buổi học 25 phút. Học viên có thể linh hoạt lựa chọn thời lượng khi đặt lịch.' : 'Each lesson is 25 minutes. Students can flexibly choose the lesson length when booking.')}
       </p>
 
       {/* Lịch sử nạp & sử dụng (preview) */}
@@ -328,6 +330,20 @@ export function TopUpTab({
       )}
     </div>
   )
+}
+
+const PACKAGE_TONES = [
+  { bg: 'from-emerald-50 to-white', tag: 'bg-emerald-100 text-emerald-700', pill: 'bg-sky-50' },
+  { bg: 'from-sky-50 to-white', tag: 'bg-sky-100 text-sky-700', pill: 'bg-sky-50' },
+  { bg: 'from-rose-50 to-white', tag: 'bg-rose-100 text-rose-600', pill: 'bg-rose-50' },
+  { bg: 'from-amber-50 to-white', tag: 'bg-amber-100 text-amber-700', pill: 'bg-sky-50' },
+  { bg: 'from-violet-50 to-white', tag: 'bg-violet-100 text-violet-700', pill: 'bg-violet-50' },
+  { bg: 'from-pink-50 to-white', tag: 'bg-pink-100 text-pink-600', pill: 'bg-rose-50' },
+]
+
+function formatVnd(amount: number, currency?: string) {
+  if (!currency || currency.toUpperCase() === 'VND') return `${Math.round(amount).toLocaleString('vi-VN')}đ`
+  return formatMoney(amount, currency)
 }
 
 function WalletMetric({ value, label, color, lang }: { value: number; label: string; color: string; lang: string }) {

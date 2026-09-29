@@ -694,7 +694,12 @@ export interface TopUpPackage {
   subjectId: string
   subjectName: string
   validityDays?: number
+  /** Mỗi dòng là một ý gạch đầu dòng trên thẻ gói của học viên. */
   description?: string
+  /** Nhãn nhóm hiển thị trên thẻ (vd: Giao tiếp, Luyện thi). */
+  category?: string
+  /** Giá niêm yết gốc; lớn hơn price thì thẻ hiện giá gạch + mức giảm. 0/trống = không giảm. */
+  originalPrice?: number
   createdAt?: Timestamp
   updatedAt?: Timestamp
 }

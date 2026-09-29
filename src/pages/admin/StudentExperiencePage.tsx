@@ -38,7 +38,7 @@ const emptyGift: GiftForm = {
 const emptyPackage: PackageForm = {
   name: '', subjectId: '', totalMinutes: 500, sessions: 10,
   minutesPerSession: 50, price: 0, currency: 'VND', validityDays: 60,
-  description: '', status: 'active' as const, featured: false,
+  description: '', category: '', originalPrice: 0, status: 'active' as const, featured: false,
 }
 
 export function StudentExperiencePage() {
@@ -124,7 +124,8 @@ export function StudentExperiencePage() {
       name: item.name, subjectId: item.subjectId, totalMinutes: item.totalMinutes,
       sessions: item.sessions, minutesPerSession: item.minutesPerSession,
       price: item.price, currency: item.currency || 'VND', validityDays: item.validityDays || 60,
-      description: item.description || '', status: item.status, featured: !!item.featured,
+      description: item.description || '', category: item.category || '', originalPrice: item.originalPrice || 0,
+      status: item.status, featured: !!item.featured,
     } : emptyPackage)
     setPackageErrors({})
     setPackageModal(true)
@@ -357,7 +358,11 @@ export function StudentExperiencePage() {
             <Input label="Tiền tệ" value={packageForm.currency} onChange={e => setPackageForm({ ...packageForm, currency: e.target.value.toUpperCase() })} />
           </div>
           <Input label="Hiệu lực (ngày)" error={packageErrors.validityDays} type="number" min={1} value={packageForm.validityDays} onChange={e => { setPackageForm({ ...packageForm, validityDays: Number(e.target.value) }); setPackageErrors(current => ({ ...current, validityDays: undefined })) }} />
-          <Textarea label="Mô tả" rows={3} value={packageForm.description} onChange={e => setPackageForm({ ...packageForm, description: e.target.value })} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Nhóm hiển thị (tuỳ chọn)" placeholder="Giao tiếp, Luyện thi..." value={packageForm.category || ''} onChange={e => setPackageForm({ ...packageForm, category: e.target.value })} />
+            <Input label="Giá gốc (tuỳ chọn)" type="number" min={0} value={packageForm.originalPrice || 0} onChange={e => setPackageForm({ ...packageForm, originalPrice: Math.max(0, Number(e.target.value) || 0) })} />
+          </div>
+          <Textarea label="Mô tả (mỗi dòng 1 ý hiển thị trên thẻ gói)" rows={3} value={packageForm.description} onChange={e => setPackageForm({ ...packageForm, description: e.target.value })} />
           <div className="grid grid-cols-2 gap-3">
             <Select label="Trạng thái" value={packageForm.status} onChange={value => setPackageForm({ ...packageForm, status: value as 'active' | 'inactive' })} options={[{ value: 'active', label: 'Đang mở' }, { value: 'inactive', label: 'Ẩn' }]} />
             <label className="mt-7 flex items-center gap-2 text-sm font-semibold text-slate-600"><input type="checkbox" checked={packageForm.featured} onChange={e => setPackageForm({ ...packageForm, featured: e.target.checked })} />Gói nổi bật</label>
