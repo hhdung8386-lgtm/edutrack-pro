@@ -664,6 +664,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
         })}
       </div>
 
+      {category !== 'online' && (
       <section className="rounded-2xl border border-brand-200 bg-white p-4 shadow-sm" aria-labelledby="certificate-audit-title">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -706,6 +707,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
           })}
         </div>
       </section>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">

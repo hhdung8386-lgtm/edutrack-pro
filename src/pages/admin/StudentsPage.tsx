@@ -487,7 +487,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
             {filtered.length !== groupBreakdown.total && <> / {groupBreakdown.total}</>} học viên
             {limitVal > 0 && <span className="text-amber-600"> · chỉ hiển thị {limitVal} hồ sơ mới nhất</span>}
           </p>
-          {!loading && groupBreakdown.total > 0 && (
+          {learningScheduleType !== 'fixed' && !loading && groupBreakdown.total > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
               <span>Tổng hồ sơ: <span className="font-semibold text-slate-700">{groupBreakdown.total}</span></span>
               <span className="text-emerald-600">Đang học: {groupBreakdown.active}</span>
