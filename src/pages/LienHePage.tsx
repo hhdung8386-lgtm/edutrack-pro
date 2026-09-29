@@ -106,7 +106,7 @@ export function LienHePage() {
               <img
                 src={primaryHero?.image || '/lienhe.png'}
                 alt="Đội ngũ tư vấn 123English"
-                className="relative aspect-[16/10] w-full rounded-[2.25rem] object-cover shadow-[0_32px_80px_-42px_rgba(16,33,58,0.5)]"
+                className="relative aspect-[16/10] w-full rounded-[2.25rem] object-cover object-[center_15%] shadow-[0_32px_80px_-42px_rgba(16,33,58,0.5)]"
               />
             </div>
           </div>

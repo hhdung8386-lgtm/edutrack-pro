@@ -11,6 +11,14 @@ import { PublicFooter } from '@/components/layout/PublicFooter'
 import type { SitePost } from '@/lib/siteContent'
 import { ArrowLeft, ArrowRight, CalendarDays, Newspaper, Sparkles } from 'lucide-react'
 
+// Ảnh bìa bị cắt theo khung ngang nên căn theo vị trí khuôn mặt: mặc định lệch lên phần trên
+// (đầu người thường nằm ở 1/3 trên), riêng vài ảnh có vị trí cụ thể.
+const COVER_POSITIONS: Record<string, string> = {
+  '/home-quality-review-2026.png': 'center 37%',
+  '/home-international-team-2026.png': '75% center',
+}
+const coverObjectPosition = (src?: string) => (src && COVER_POSITIONS[src]) || 'center 30%'
+
 const timestamp = (date: string) => ({ toMillis: () => new Date(`${date}T08:00:00+07:00`).getTime() })
 
 const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
@@ -235,7 +243,7 @@ export function BaiVietPage() {
                       src={featured.coverImage}
                       alt={featured.title}
                       loading="lazy"
-                      style={{ aspectRatio: '4 / 3' }}
+                      style={{ aspectRatio: '4 / 3', objectPosition: coverObjectPosition(featured.coverImage) }}
                       className="w-full rounded-[1.75rem] object-cover"
                     />
                   )}
@@ -258,7 +266,7 @@ export function BaiVietPage() {
                           src={post.coverImage}
                           alt={post.title}
                           loading="lazy"
-                          style={{ aspectRatio: '16 / 10' }}
+                          style={{ aspectRatio: '16 / 10', objectPosition: coverObjectPosition(post.coverImage) }}
                           className="w-full object-cover"
                         />
                       ) : (
@@ -351,7 +359,7 @@ export function BaiVietChiTietPage() {
                 <img
                   src={post.coverImage}
                   alt={post.title}
-                  style={{ aspectRatio: '16 / 9' }}
+                  style={{ aspectRatio: '16 / 9', objectPosition: coverObjectPosition(post.coverImage) }}
                   className="mt-7 w-full rounded-[1.75rem] object-cover"
                 />
               )}

@@ -122,6 +122,17 @@ function SectionHeading({
   )
 }
 
+// Ảnh nhóm 4 người được cắt thành 4 thẻ chân dung. Mỗi thẻ có một "cửa sổ cắt" (x, y, w, h
+// tính bằng pixel của ảnh gốc) chỉ chứa đúng một người — không lòi người bên cạnh, không cắt
+// ngang đầu/tay. Tỉ lệ thẻ = w/h nên khung cắt đúng ở mọi kích thước màn hình.
+const TEAM_PHOTO = { src: '/teacher-system-hero-2026.webp', width: 1911, height: 823 }
+const TEAM_PORTRAITS = [
+  { x: 78, y: 0, w: 408, h: 658, offset: false },
+  { x: 502, y: 113, w: 400, h: 540, offset: true },
+  { x: 909, y: 95, w: 400, h: 540, offset: true },
+  { x: 1310, y: 0, w: 410, h: 661, offset: false },
+]
+
 export function PublicTeachersPage() {
   useEffect(() => {
     document.title = 'Hệ thống gia sư chất lượng 1-1 | 123English'
@@ -150,19 +161,27 @@ export function PublicTeachersPage() {
             </p>
 
             <div className="mx-auto mt-10 grid max-w-5xl grid-cols-2 items-end gap-3 sm:grid-cols-4 sm:gap-5">
-              {[
-                { position: '8% center', height: 'sm:h-[22rem]' },
-                { position: '36% center', height: 'sm:h-[19rem]' },
-                { position: '63% center', height: 'sm:h-[19rem]' },
-                { position: '91% center', height: 'sm:h-[22rem]' },
-              ].map((portrait, index) => (
-                <div key={portrait.position} className={`relative h-56 overflow-hidden rounded-[3.75rem] bg-[#edf7ff] shadow-[0_22px_55px_-32px_rgba(15,23,42,0.4)] ${portrait.height} ${index === 1 || index === 2 ? 'sm:translate-y-5' : ''}`}>
+              {TEAM_PORTRAITS.map((portrait, index) => (
+                <div
+                  key={portrait.x}
+                  className={`relative overflow-hidden rounded-[3.75rem] bg-[#edf7ff] shadow-[0_22px_55px_-32px_rgba(15,23,42,0.4)] ${portrait.offset ? 'sm:translate-y-5' : ''}`}
+                  style={{ aspectRatio: `${portrait.w} / ${portrait.h}` }}
+                >
                   <img
-                    src="/teacher-system-hero-2026.webp"
+                    src={TEAM_PHOTO.src}
+                    width={TEAM_PHOTO.width}
+                    height={TEAM_PHOTO.height}
                     alt={index === 0 ? 'Đội ngũ gia sư chuyên nghiệp của hệ thống 123English' : ''}
                     aria-hidden={index !== 0}
-                    className="h-full w-full scale-[1.42] object-cover"
-                    style={{ objectPosition: portrait.position }}
+                    draggable={false}
+                    decoding="async"
+                    className="absolute max-w-none select-none"
+                    style={{
+                      width: `${(TEAM_PHOTO.width / portrait.w) * 100}%`,
+                      height: 'auto',
+                      left: `${(-portrait.x / portrait.w) * 100}%`,
+                      top: `${(-portrait.y / portrait.h) * 100}%`,
+                    }}
                   />
                 </div>
               ))}

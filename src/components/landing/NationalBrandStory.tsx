@@ -134,16 +134,21 @@ const OTHER_DESTINATIONS = DESTINATIONS.filter(
 const AWARDS = [
   {
     image: '/brand-national-award-2026.jpg',
+    // Điểm nhấn (3 người cầm bằng) nằm ~56% chiều ngang: giữ trong khung khi thẻ hẹp.
+    position: '61% center',
     title: 'Dấu ấn thương hiệu giáo dục',
     copy: '123English tại chương trình vinh danh Thương hiệu mạnh quốc gia 2026.',
   },
   {
     image: '/brand-award-recipient-2026.jpg',
+    // Nhân vật đứng ở ~54% chiều ngang.
+    position: '55% center',
     title: 'Ghi nhận cho hành trình bền bỉ',
     copy: 'Những cột mốc được xây dựng từ chất lượng lớp học và niềm tin của gia đình.',
   },
   {
     image: '/brand-award-stage-2026.jpg',
+    position: '50% 55%',
     title: 'Kết nối trong cộng đồng doanh nghiệp',
     copy: 'Mở rộng hợp tác để đưa trải nghiệm học tập Việt Nam đến gần hơn với thế giới.',
   },
@@ -607,7 +612,7 @@ export function NationalBrandStory() {
           <div className="national-award-gallery">
             {AWARDS.map((award, index) => (
               <article key={award.title} className={index === 0 ? 'is-featured' : ''}>
-                <img src={award.image} alt={award.title} loading="lazy" />
+                <img src={award.image} alt={award.title} loading="lazy" style={{ objectPosition: award.position }} />
                 <div>
                   <h3>{award.title}</h3>
                   <p>{award.copy}</p>

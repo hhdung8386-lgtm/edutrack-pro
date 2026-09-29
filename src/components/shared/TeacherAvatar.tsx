@@ -86,7 +86,7 @@ export function TeacherAvatar({ name, photoURL, country, size = 48, className = 
         <img
           src={photoURL}
           alt={name}
-          className="w-full h-full rounded-full object-cover ring-2 ring-white shadow-sm"
+          className="w-full h-full rounded-full object-cover object-[center_22%] ring-2 ring-white shadow-sm"
         />
       ) : (
         <div

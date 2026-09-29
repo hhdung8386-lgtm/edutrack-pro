@@ -324,10 +324,10 @@ export function HocThuMienPhiPage() {
             <span className="absolute bottom-4 left-3 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-[#B37400] shadow">
               ⭐ Excellent
             </span>
-            <Mascot123 pose="wave" className="absolute -bottom-8 -right-3 h-32 w-28 drop-shadow-lg" />
+            <Mascot123 pose="wave" className="absolute -bottom-12 -right-2 z-10 h-28 w-24 drop-shadow-lg" />
           </div>
 
-          <div className="relative mt-8 grid grid-cols-3 gap-2 text-center">
+          <div className="relative mt-12 grid grid-cols-3 gap-2 text-center">
             {[
               ['1.000+', 'học viên tin chọn'],
               ['10+', 'quốc gia kết nối'],
@@ -395,7 +395,7 @@ export function HocThuMienPhiPage() {
                   src={image}
                   alt={alt}
                   loading="lazy"
-                  className={`aspect-[16/9] w-full object-cover ${index === 2 ? 'object-[center_35%]' : ''}`}
+                  className={`aspect-[16/9] w-full object-cover ${index === 1 ? 'object-[center_10%]' : index === 2 ? 'object-[center_35%]' : ''}`}
                 />
                 <div className="flex gap-3 p-4">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#FFD02E] text-[#10213A]">
@@ -409,11 +409,12 @@ export function HocThuMienPhiPage() {
               </article>
             ))}
           </div>
-          <div className="mt-6 flex items-center gap-3 rounded-[22px] bg-white/10 p-4 text-white ring-1 ring-white/20">
+          <div className="relative mt-14 flex items-center gap-3 rounded-[22px] bg-white/10 p-4 pr-24 text-white ring-1 ring-white/20">
             <Globe2 className="h-8 w-8 shrink-0 text-[#FFE27A]" aria-hidden />
             <p className="text-sm font-bold leading-6">
               Cộng đồng học viên được kết nối với gia sư và cơ hội học tập tại <b className="text-[#FFE27A]">hơn 10 quốc gia</b>.
             </p>
+            <Mascot123 pose="cheer" className="absolute -top-12 right-2 z-10 h-[5.5rem] w-20 drop-shadow-lg" />
           </div>
         </section>
 
@@ -423,7 +424,7 @@ export function HocThuMienPhiPage() {
           <div className="mt-6 grid grid-cols-2 gap-3">
             {PROGRAMS.map((program) => (
               <article key={program.title} className="overflow-hidden rounded-[22px] border border-slate-100 bg-white shadow-sm">
-                <img src={program.image} alt={program.title} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                <img src={program.image} alt={program.title} loading="lazy" className="aspect-[16/10] w-full object-cover" />
                 <div className="p-3">
                   <span className="rounded-full bg-[#FFF4C7] px-2 py-0.5 text-[10px] font-black text-[#B37400]">{program.tag}</span>
                   <h3 className="mt-1.5 text-sm font-black leading-snug">{program.title}</h3>
@@ -463,9 +464,9 @@ export function HocThuMienPhiPage() {
                 className="aspect-[4/3] w-full rounded-[16px] object-cover"
               />
             </div>
-            <Mascot123 pose="cheer" className="absolute -bottom-10 -right-3 h-28 w-28 drop-shadow-lg" />
+            <Mascot123 pose="cheer" className="absolute -bottom-14 -right-1 z-10 h-24 w-24 drop-shadow-lg" />
           </div>
-          <div className="mt-8 flex items-center justify-center gap-1 text-[#E53935]" aria-label="Đánh giá 5 sao">
+          <div className="mt-10 flex items-center justify-center gap-1 text-[#E53935]" aria-label="Đánh giá 5 sao">
             {Array.from({ length: 5 }).map((_, index) => (
               <Star key={index} className="h-5 w-5 fill-current" aria-hidden />
             ))}
@@ -518,8 +519,8 @@ export function HocThuMienPhiPage() {
         </section>
 
         {/* Final CTA */}
-        <section className="mx-4 overflow-hidden rounded-[30px] bg-gradient-to-br from-[#1E8BE0] to-[#1463B4] p-6 text-center text-white">
-          <Mascot123 pose="wave" className="mx-auto h-32 w-32" />
+        <section className="relative mx-4 mt-14 rounded-[30px] bg-gradient-to-br from-[#1E8BE0] to-[#1463B4] px-6 pb-6 pt-0 text-center text-white">
+          <Mascot123 pose="wave" className="relative z-10 mx-auto -mt-16 h-32 w-32 drop-shadow-lg" />
           <h2 className="mt-1 text-2xl font-black leading-tight">Sẵn sàng cho buổi học đầu tiên?</h2>
           <p className="mt-2 text-sm font-semibold text-white/85">Đăng ký hôm nay để giữ suất học thử miễn phí.</p>
           <button

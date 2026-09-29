@@ -401,7 +401,7 @@ export function ChuongTrinhCaNhanHoaPage() {
                   width={1536}
                   height={1152}
                   loading="lazy"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover object-[62%_center]"
                 />
               </div>
             </div>
@@ -599,7 +599,7 @@ export function ChuongTrinhCaNhanHoaPage() {
                   width={1588}
                   height={988}
                   loading="lazy"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover object-[22%_center]"
                 />
               </div>
             </div>
