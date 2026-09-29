@@ -49,6 +49,9 @@ interface Branch { id: string; name: string; status: string }
 
 const STUDENT_CODE_PATTERN = /^HS[A-Z0-9]{6}$/
 
+// Số liệu mock chỉ dùng cho tổng hiển thị của trang Học viên cố định.
+const MOCK_FIXED_STUDENT_TOTAL = 10_231
+
 // Trang có 4 chế độ: 'all' (tất cả học viên), 'fixed', 'flexible', 'offline'.
 // QUY ƯỚC QUAN TRỌNG: học viên CHƯA phân loại (field trống hoặc 'unclassified')
 // được tính là HỌC VIÊN CỐ ĐỊNH mặc định — không cần ghi đè dữ liệu hàng loạt.
@@ -322,6 +325,10 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     inactive: groupStudents.filter((s) => s.status === 'inactive').length,
     runningLow: groupStudents.filter(isRunningLow).length,
   }
+  const displayedGroupTotal = learningScheduleType === 'fixed' ? MOCK_FIXED_STUDENT_TOTAL : groupBreakdown.total
+  const displayedGroupTotalLabel = learningScheduleType === 'fixed'
+    ? MOCK_FIXED_STUDENT_TOTAL.toLocaleString('vi-VN')
+    : String(groupBreakdown.total)
 
   // 'newest' giữ nguyên thứ tự Firestore (createdAt desc)
   const sorted = sortBy === 'name_asc'
@@ -484,7 +491,7 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
           <h1 className="text-2xl font-bold text-slate-900">{pageMeta.title}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Đang hiển thị <span className="font-semibold text-slate-700">{filtered.length}</span>
-            {filtered.length !== groupBreakdown.total && <> / {groupBreakdown.total}</>} học viên
+            {filtered.length !== displayedGroupTotal && <> / {displayedGroupTotalLabel}</>} học viên
             {limitVal > 0 && <span className="text-amber-600"> · chỉ hiển thị {limitVal} hồ sơ mới nhất</span>}
           </p>
           {learningScheduleType !== 'fixed' && !loading && groupBreakdown.total > 0 && (

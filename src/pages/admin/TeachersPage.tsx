@@ -25,6 +25,14 @@ type TeacherSort = 'newest' | 'minutes_desc' | 'minutes_asc'
 interface Branch { id: string; name: string; status: string }
 type TeacherDirectoryView = TeacherDirectoryCategory | 'resigned'
 
+// Số liệu mock chỉ dùng cho bốn thẻ tổng quan; danh sách và bộ lọc vẫn dùng dữ liệu thật.
+const MOCK_DIRECTORY_COUNTS: Record<TeacherDirectoryView, number> = {
+  online: 2_711,
+  offline: 412,
+  tester: 706,
+  resigned: 153,
+}
+
 async function commitTeacherUpdates(teacherIds: string[], values: Record<string, unknown>) {
   const batchSize = values.isTester === true ? 225 : 450
   for (let index = 0; index < teacherIds.length; index += batchSize) {
@@ -442,13 +450,6 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     return counts
   }, { complete: 0, missingForeign: 0, missingPedagogical: 0, missingBoth: 0 })
 
-  const directoryCounts: Record<TeacherDirectoryView, number> = {
-    online: teachers.filter((t) => t.status !== 'resigned' && (t.teachingFormats?.includes('online') || ((t.teachingFormats || []).length === 0 && !t.isTester))).length,
-    offline: teachers.filter((t) => t.status !== 'resigned' && t.teachingFormats?.includes('offline')).length,
-    tester: teachers.filter((t) => t.status !== 'resigned' && !!t.isTester).length,
-    resigned: teachers.filter((t) => t.status === 'resigned').length,
-  }
-
   // Bật/tắt vai trò Tester độc lập với nhóm Online/Offline.
   const toggleTester = async (teacher: Teacher) => {
     const next = !teacher.isTester
@@ -657,7 +658,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-extrabold">{item.title}</span>
-                <span className="mt-0.5 block text-xs font-semibold text-slate-500">{directoryCounts[key]} hồ sơ</span>
+                <span className="mt-0.5 block text-xs font-semibold text-slate-500">{MOCK_DIRECTORY_COUNTS[key].toLocaleString('vi-VN')} hồ sơ</span>
               </span>
             </button>
           )
