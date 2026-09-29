@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
 import { Check, ChevronRight, Clock3, Copy, CreditCard, Crown, Headphones, History, ImageOff, QrCode, Sparkles, Star, WalletCards, X } from 'lucide-react'
 import { db } from '@/lib/firebase'
@@ -174,68 +174,93 @@ export function TopUpTab({
       </div>
       {loadError && <div className="rounded-2xl bg-amber-50 p-4 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">{lang === 'vi' ? 'Tính năng nạp tiền đang chờ Admin hoàn tất quyền dữ liệu.' : 'Top-up is waiting for Admin to finish data permissions.'}</div>}
       {packagesLoading ? <PackageSkeleton /> : packages.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-12 text-center"><CreditCard className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-500">{lang === 'vi' ? 'Admin chưa mở gói nạp tiền' : 'No top-up packages available'}</p></div> : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-3.5">
           {packages.map((pkg, rank) => {
             const tierIndex = tierIndexFor(rank, packages.length)
             const tier = PACKAGE_TIERS[tierIndex]
             const stars = Math.ceil((tierIndex + 1) / 2)
-            const isTop = packages.length >= 3 && rank === packages.length - 1
-            const highlights = (pkg.description || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 4)
+            const isTop = tierIndex === PACKAGE_TIERS.length - 1 && packages.length > 1
+            const written = (pkg.description || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 4)
+            const highlights = written.length > 0 || !pkg.validityDays ? written : [lang === 'vi' ? `Hiệu lực ${pkg.validityDays} ngày` : `Valid for ${pkg.validityDays} days`]
             const discount = (pkg.originalPrice || 0) > pkg.price ? (pkg.originalPrice || 0) - pkg.price : 0
+            // Quy đổi về buổi 25 phút để học viên so sánh được giữa các gói (chị Trang: "note thêm chữ 25 phút").
+            const sessions25 = pkg.totalMinutes / 25
+            const showEquivalent = pkg.minutesPerSession !== 25 && Number.isInteger(sessions25) && sessions25 > 0
+            const perSession25 = pkg.totalMinutes > 0 ? Math.round(pkg.price / sessions25) : 0
             return (
-              <article key={pkg.id} className={`@container relative flex flex-col overflow-hidden rounded-[26px] bg-white ${isTop ? 'shadow-[0_18px_40px_-16px_rgba(245,158,11,0.65)] ring-2 ring-amber-400' : `shadow-[0_12px_28px_-20px_rgba(15,23,42,0.45)] ring-1 ${tier.ring}`}`}>
-                <div className={`relative h-[124px] overflow-hidden bg-gradient-to-br ${tier.band}`}>
-                  <span aria-hidden className="absolute -left-8 -top-10 h-28 w-28 rounded-full bg-white/45" />
-                  <span aria-hidden className="absolute -bottom-10 right-16 h-24 w-24 rounded-full bg-white/35" />
-                  <Sparkles aria-hidden className={`absolute left-[46%] top-3 h-4 w-4 ${tier.star} opacity-70`} />
-                  <Sparkles aria-hidden className={`absolute bottom-4 left-[38%] h-3 w-3 ${tier.star} opacity-50`} />
-                  <div className="relative z-10 flex h-full flex-col items-start justify-between p-3.5 pr-[104px] @[290px]:pr-[136px]">
-                    {pkg.category?.trim() ? <span className={`max-w-full truncate rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide shadow-sm ${tier.tag}`}>{pkg.category.trim()}</span> : <span />}
-                    <span className="flex items-center gap-0.5" role="img" aria-label={`${stars}/3`}>
-                      {[0, 1, 2].map((n) => <Star key={n} className={`h-4 w-4 fill-current ${n < stars ? tier.star : 'text-white/80'}`} />)}
-                    </span>
+              <div key={pkg.id} className={`pkg-frame ${tier.frame} ${tierIndex >= 4 ? 'pkg-frame--spin' : ''} motion-safe:transition-transform motion-safe:duration-300 hover:-translate-y-0.5`}>
+                {tierIndex >= 2 && (['tl', 'tr', 'bl', 'br'] as const).map((pos) => (
+                  <i key={pos} aria-hidden className={`pkg-gem pkg-gem--${pos}`} style={{ '--gem-a': tier.gem[0], '--gem-b': tier.gem[1] } as CSSProperties} />
+                ))}
+                <article className={`@container pkg-card flex flex-col overflow-hidden bg-gradient-to-b from-white via-white ${tier.body} ${tierIndex === 5 ? 'pkg-shine' : tierIndex === 4 ? 'pkg-shine pkg-shine--soft' : ''}`}>
+                  <div className={`relative h-[92px] overflow-hidden bg-gradient-to-br @[290px]:h-[108px] ${tier.band}`}>
+                    {tierIndex >= 3 && <span aria-hidden className="pkg-rays" />}
+                    <span aria-hidden className="absolute -left-8 -top-10 h-28 w-28 rounded-full bg-white/40" />
+                    <span aria-hidden className="absolute -bottom-12 -right-6 h-24 w-24 rounded-full bg-white/30" />
+                    {tierIndex >= 2 && <Sparkles aria-hidden className={`pkg-twinkle absolute left-[20%] top-[46%] h-3.5 w-3.5 ${tier.star}`} />}
+                    {tierIndex >= 3 && <Sparkles aria-hidden className={`pkg-twinkle pkg-twinkle--late absolute right-[22%] top-[52%] h-4 w-4 ${tier.star}`} />}
+                    {pkg.category?.trim() && <span className={`absolute left-6 top-3 z-10 max-w-[46%] truncate rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide shadow-sm ${tier.tag}`}>{pkg.category.trim()}</span>}
+                    {(pkg.featured || isTop) && (
+                      <span className={`absolute right-6 top-3 z-10 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black text-white shadow-md ${pkg.featured ? 'bg-rose-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}>
+                        {!pkg.featured && <Crown className="h-3 w-3" />}
+                        {pkg.featured ? (lang === 'vi' ? 'Phổ biến' : 'Popular') : 'VIP'}
+                      </span>
+                    )}
+                    {tierIndex >= 4 && <img src="/hoc-thu/mascot.webp" alt="" width={44} height={51} loading="lazy" decoding="async" draggable={false} className="pkg-float pointer-events-none absolute bottom-0 right-2 z-[5] h-[46px] w-auto @[290px]:right-4 @[290px]:h-[56px]" />}
                   </div>
-                  <img src={tier.mascot} alt="" width={360} height={360} loading="lazy" decoding="async" className="pointer-events-none absolute -bottom-2 right-1 h-[104px] w-[104px] object-contain mix-blend-multiply @[290px]:h-[132px] @[290px]:w-[132px]" />
-                  {(pkg.featured || isTop) && (
-                    <span className={`absolute right-2.5 top-2.5 z-20 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black shadow-md ${pkg.featured ? 'bg-rose-500 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white'}`}>
-                      {!pkg.featured && <Crown className="h-3 w-3" />}
-                      {pkg.featured ? (lang === 'vi' ? 'Phổ biến' : 'Popular') : 'VIP'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-1 flex-col px-3.5 pb-4 pt-3">
-                  <h3 className="text-base font-black uppercase leading-tight tracking-tight text-slate-900 @[290px]:text-lg">{pkg.name}</h3>
-                  {highlights.length > 0 && (
-                    <ul className="mt-2 space-y-1.5">
-                      {highlights.map((line) => (
-                        <li key={line} className="flex items-start gap-1.5 text-[11.5px] font-semibold leading-[1.15rem] text-slate-700 @[290px]:text-xs">
-                          <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white ${tier.check}`}><Check className="h-3 w-3" strokeWidth={3.5} /></span>
-                          <span className="min-w-0">{line}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="mt-auto space-y-2.5 pt-3">
-                    <p className={`rounded-xl py-1.5 text-center text-[13px] font-extrabold ${tier.pill}`}>{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'} × {pkg.minutesPerSession} {lang === 'vi' ? 'phút' : 'min'}</p>
-                    <div className="min-h-[1.5rem]">
-                      {discount > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="text-xs font-bold text-slate-400 line-through tabular-nums">{formatVnd(pkg.originalPrice || 0, pkg.currency)}</span>
-                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-black text-rose-600 ring-1 ring-rose-100">{lang === 'vi' ? 'Giảm' : 'Save'} {formatVnd(discount, pkg.currency)}</span>
-                        </div>
-                      )}
+                  <div className="relative z-10 -mt-[44px] flex justify-center @[290px]:-mt-[52px]">
+                    <div className="relative">
+                      {tierIndex >= 4 && <Crown aria-hidden className={`pkg-float absolute -top-[19px] left-1/2 z-10 h-7 w-7 -translate-x-1/2 drop-shadow ${tierIndex === 5 ? 'fill-yellow-300 text-yellow-500' : 'fill-orange-300 text-orange-500'}`} />}
+                      <span className={`block rounded-full bg-gradient-to-br shadow-lg ${tierIndex >= 3 ? 'p-1' : 'p-[3px]'} ${tier.ring}`}>
+                        <img src={tier.avatar} alt="" width={220} height={220} loading="lazy" decoding="async" draggable={false} className="h-[84px] w-[84px] rounded-full bg-white object-cover ring-2 ring-white @[290px]:h-[100px] @[290px]:w-[100px]" />
+                      </span>
                     </div>
-                    <strong className="block whitespace-nowrap text-[27px] font-black leading-none tracking-tight tabular-nums text-rose-600 @[290px]:text-4xl">{formatVnd(pkg.price, pkg.currency)}</strong>
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }}
-                      className="inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-brand-300 to-brand-500 px-5 text-sm font-black uppercase tracking-wide text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98]"
-                    >
-                      {lang === 'vi' ? 'Chọn gói' : 'Select'}<ChevronRight className="h-4 w-4" strokeWidth={3} />
-                    </button>
                   </div>
-                </div>
-              </article>
+                  <div className="flex flex-1 flex-col px-3.5 pb-4 pt-2 text-center">
+                    <span className="mx-auto flex items-center gap-0.5" role="img" aria-label={`${stars}/3`}>
+                      {[0, 1, 2].map((n) => <Star key={n} className={`h-4 w-4 fill-current ${n < stars ? tier.star : 'text-slate-200'}`} />)}
+                    </span>
+                    <h3 className="mt-1.5 text-[15px] font-black uppercase leading-tight tracking-tight text-slate-900 @[290px]:text-lg">{pkg.name}</h3>
+                    {highlights.length > 0 && (
+                      <ul className="mt-2.5 space-y-1.5 text-left">
+                        {highlights.map((line) => (
+                          <li key={line} className="flex items-start gap-1.5 text-[11.5px] font-semibold leading-[1.15rem] text-slate-700 @[290px]:text-xs">
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white ${tier.check}`}><Check className="h-3 w-3" strokeWidth={3.5} /></span>
+                            <span className="min-w-0">{line}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="mt-auto space-y-2 pt-3">
+                      <div className={`rounded-xl px-2 py-1.5 ${tier.pill}`}>
+                        <p className="text-[13px] font-extrabold">{pkg.sessions} {lang === 'vi' ? 'buổi' : 'sessions'} × {pkg.minutesPerSession} {lang === 'vi' ? 'phút' : 'min'}</p>
+                        {showEquivalent && <p className="text-[10.5px] font-bold opacity-75">= {sessions25} {lang === 'vi' ? 'buổi' : 'sessions'} × 25 {lang === 'vi' ? 'phút' : 'min'}</p>}
+                      </div>
+                      <div className="flex min-h-[1.5rem] flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                        {discount > 0 && (
+                          <>
+                            <span className="text-xs font-bold text-slate-400 line-through tabular-nums">{formatVnd(pkg.originalPrice || 0, pkg.currency)}</span>
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-black text-rose-600 ring-1 ring-rose-100">{lang === 'vi' ? 'Giảm' : 'Save'} {formatVnd(discount, pkg.currency)}</span>
+                          </>
+                        )}
+                      </div>
+                      <div>
+                        <strong className={`block whitespace-nowrap text-[27px] font-black leading-none tracking-tight tabular-nums @[290px]:text-4xl ${isTop ? 'bg-gradient-to-r from-rose-600 via-red-500 to-orange-500 bg-clip-text text-transparent' : 'text-rose-600'}`}>{formatVnd(pkg.price, pkg.currency)}</strong>
+                        {perSession25 > 0 && (!pkg.currency || pkg.currency.toUpperCase() === 'VND') && (
+                          <p className="mt-1 text-[10.5px] font-bold text-slate-500">≈ {formatVnd(perSession25, pkg.currency)} / {lang === 'vi' ? 'buổi 25 phút' : '25-min session'}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedId(pkg.id); setShowPayment(true) }}
+                        className={`inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-brand-300 to-brand-500 px-5 text-sm font-black uppercase tracking-wide text-brand-900 shadow-md shadow-brand-200 transition hover:brightness-105 active:scale-[0.98] ${tierIndex >= 4 ? 'pkg-shine' : ''}`}
+                      >
+                        {lang === 'vi' ? 'Chọn gói' : 'Select'}<ChevronRight className="h-4 w-4" strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
             )
           })}
         </div>
@@ -353,14 +378,16 @@ export function TopUpTab({
   )
 }
 
-// 6 bậc màu tăng dần: xanh bạc hà (dễ gần) → vàng VIP. Linh vật thương hiệu nằm trong /public/package-mascots.
+// 6 bậc, khung + màu đẹp dần: bạc hà (dễ gần) → xanh → tím → hồng → cam lửa → vàng VIP.
+// Nhân vật là học sinh (avatar 3D có sẵn); chuột mascot chỉ xuất hiện ở 2 bậc cao nhất.
+// Phần khung (viền, đá quý, hiệu ứng) nằm ở .pkg-frame--tN trong src/index.css.
 const PACKAGE_TIERS = [
-  { band: 'from-emerald-200 via-emerald-100 to-teal-50', ring: 'ring-emerald-200', tag: 'bg-white/85 text-emerald-700', star: 'text-emerald-500', pill: 'bg-emerald-50 text-emerald-800', check: 'bg-emerald-500', mascot: '/package-mascots/lion.jpg' },
-  { band: 'from-sky-200 via-sky-100 to-cyan-50', ring: 'ring-sky-200', tag: 'bg-white/85 text-sky-700', star: 'text-sky-500', pill: 'bg-sky-50 text-sky-800', check: 'bg-sky-500', mascot: '/package-mascots/elephant.jpg' },
-  { band: 'from-violet-200 via-violet-100 to-fuchsia-50', ring: 'ring-violet-200', tag: 'bg-white/85 text-violet-700', star: 'text-violet-500', pill: 'bg-violet-50 text-violet-800', check: 'bg-violet-500', mascot: '/package-mascots/giraffe.jpg' },
-  { band: 'from-pink-200 via-rose-100 to-orange-50', ring: 'ring-pink-200', tag: 'bg-white/85 text-pink-700', star: 'text-pink-500', pill: 'bg-pink-50 text-pink-800', check: 'bg-pink-500', mascot: '/package-mascots/lion.jpg' },
-  { band: 'from-orange-200 via-amber-100 to-yellow-50', ring: 'ring-orange-200', tag: 'bg-white/85 text-orange-700', star: 'text-orange-500', pill: 'bg-orange-50 text-orange-800', check: 'bg-orange-500', mascot: '/package-mascots/elephant.jpg' },
-  { band: 'from-amber-300 via-yellow-200 to-amber-50', ring: 'ring-amber-300', tag: 'bg-white/90 text-amber-800', star: 'text-amber-500', pill: 'bg-amber-50 text-amber-900', check: 'bg-amber-500', mascot: '/package-mascots/giraffe.jpg' },
+  { frame: 'pkg-frame--t0', band: 'from-emerald-200 via-teal-100 to-emerald-50', body: 'to-emerald-50', ring: 'from-emerald-300 to-teal-400 shadow-emerald-300/60', star: 'text-emerald-500', tag: 'bg-white/90 text-emerald-700', pill: 'bg-emerald-50 text-emerald-800', check: 'bg-emerald-500', avatar: '/package-avatars/4.jpg', gem: ['#6ee7b7', '#059669'] },
+  { frame: 'pkg-frame--t1', band: 'from-sky-200 via-cyan-100 to-sky-50', body: 'to-sky-50', ring: 'from-sky-300 to-blue-500 shadow-sky-300/60', star: 'text-sky-500', tag: 'bg-white/90 text-sky-700', pill: 'bg-sky-50 text-sky-800', check: 'bg-sky-500', avatar: '/package-avatars/1.jpg', gem: ['#7dd3fc', '#0284c7'] },
+  { frame: 'pkg-frame--t2', band: 'from-violet-300 via-fuchsia-200 to-violet-50', body: 'to-violet-50', ring: 'from-violet-400 to-fuchsia-500 shadow-violet-400/60', star: 'text-violet-500', tag: 'bg-white/90 text-violet-700', pill: 'bg-violet-50 text-violet-800', check: 'bg-violet-500', avatar: '/package-avatars/3.jpg', gem: ['#ddd6fe', '#7c3aed'] },
+  { frame: 'pkg-frame--t3', band: 'from-pink-300 via-rose-200 to-orange-100', body: 'to-rose-50', ring: 'from-pink-400 to-orange-400 shadow-pink-400/60', star: 'text-pink-500', tag: 'bg-white/90 text-pink-700', pill: 'bg-pink-50 text-pink-800', check: 'bg-pink-500', avatar: '/package-avatars/2.jpg', gem: ['#fbcfe8', '#db2777'] },
+  { frame: 'pkg-frame--t4', band: 'from-orange-300 via-amber-200 to-yellow-100', body: 'to-orange-50', ring: 'from-orange-400 via-red-500 to-orange-500 shadow-orange-400/70', star: 'text-orange-500', tag: 'bg-white/90 text-orange-700', pill: 'bg-orange-50 text-orange-800', check: 'bg-orange-500', avatar: '/package-avatars/1.jpg', gem: ['#fed7aa', '#ea580c'] },
+  { frame: 'pkg-frame--t5', band: 'from-amber-400 via-yellow-300 to-amber-100', body: 'to-amber-50', ring: 'from-yellow-200 via-amber-500 to-yellow-600 shadow-amber-400/80', star: 'text-amber-500', tag: 'bg-white/95 text-amber-800', pill: 'bg-amber-50 text-amber-900', check: 'bg-amber-500', avatar: '/package-avatars/3.jpg', gem: ['#fef08a', '#ca8a04'] },
 ]
 
 // Gói rẻ nhất luôn là bậc đầu, gói đắt nhất luôn là bậc VIP, các gói giữa dàn đều.

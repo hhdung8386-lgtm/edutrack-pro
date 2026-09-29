@@ -2612,3 +2612,109 @@
 @media (prefers-reduced-motion: reduce) {
   .mascot-123-bob { animation: none; }
 }
+
+/* ============================================================
+   Thẻ gói học (tab Ví học): khung kiểu game — càng lên bậc càng lộng lẫy.
+   t0 mộc mạc → t1 viền màu → t2 viền gradient + đá quý → t3 phát sáng
+   → t4 viền xoay + lấp lánh → t5 vàng VIP (xoay + quét sáng + quầng sáng).
+   ============================================================ */
+.pkg-frame {
+  --pkg-w: 2px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 28px;
+  padding: var(--pkg-w);
+}
+.pkg-frame > .pkg-card {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  border-radius: calc(28px - var(--pkg-w));
+}
+.pkg-frame--t0 { --pkg-w: 2px; background: linear-gradient(160deg, #a7f3d0, #d1fae5 60%, #99f6e4); box-shadow: 0 10px 22px -16px rgba(16, 185, 129, 0.55); }
+.pkg-frame--t1 { --pkg-w: 3px; background: linear-gradient(160deg, #bae6fd, #38bdf8 50%, #a5f3fc); box-shadow: 0 12px 26px -14px rgba(14, 165, 233, 0.6); }
+.pkg-frame--t2 { --pkg-w: 3px; background: linear-gradient(150deg, #ddd6fe, #8b5cf6 48%, #f0abfc); box-shadow: 0 14px 30px -14px rgba(139, 92, 246, 0.65); }
+.pkg-frame--t3 { --pkg-w: 4px; background: linear-gradient(150deg, #fbcfe8, #ec4899 42%, #fdba74 78%, #fde68a); box-shadow: 0 16px 34px -14px rgba(236, 72, 153, 0.7), 0 0 0 1px rgba(244, 114, 182, 0.25); }
+.pkg-frame--t4 { --pkg-w: 4px; background: #f97316; box-shadow: 0 18px 38px -14px rgba(249, 115, 22, 0.75), 0 0 22px -6px rgba(251, 146, 60, 0.7); }
+.pkg-frame--t5 { --pkg-w: 5px; background: #f59e0b; box-shadow: 0 20px 44px -14px rgba(245, 158, 11, 0.85), 0 0 30px -4px rgba(250, 204, 21, 0.8); animation: pkg-glow 2.6s ease-in-out infinite; }
+
+/* Viền xoay (t4, t5): ô vuông cực lớn để luôn phủ kín khung dù thẻ cao thấp khác nhau */
+.pkg-frame--spin::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  top: 50%;
+  width: 1400px;
+  height: 1400px;
+  margin: -700px 0 0 -700px;
+  animation: pkg-spin 5.5s linear infinite;
+}
+.pkg-frame--t4::before { background: conic-gradient(from 0deg, #fde047, #fb923c, #ef4444, #fb923c, #fde047, #f97316, #fde047); }
+.pkg-frame--t5::before { background: conic-gradient(from 0deg, #fff7ad, #f59e0b, #b45309, #fde047, #fffbeb, #f59e0b, #92400e, #fde047, #fff7ad); animation-duration: 4s; }
+
+/* Đá quý ở 4 góc khung (t2 trở lên) */
+.pkg-gem {
+  position: absolute;
+  z-index: 4;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  border: 1.5px solid #fff;
+  background: linear-gradient(135deg, var(--gem-a, #c4b5fd), var(--gem-b, #7c3aed));
+  box-shadow: 0 0 6px var(--gem-b, #7c3aed);
+  pointer-events: none;
+}
+.pkg-gem--tl { top: 9px; left: 9px; }
+.pkg-gem--tr { top: 9px; right: 9px; }
+.pkg-gem--bl { bottom: 9px; left: 9px; }
+.pkg-gem--br { bottom: 9px; right: 9px; }
+
+/* Tia sáng sau nhân vật (t3 trở lên) */
+.pkg-rays {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(from 0deg at 50% 100%, rgba(255, 255, 255, 0.5) 0deg 7deg, rgba(255, 255, 255, 0) 7deg 18deg);
+  opacity: 0.7;
+  animation: pkg-breathe 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Quét sáng ngang qua thẻ / nút (t4, t5) */
+.pkg-shine { position: relative; overflow: hidden; }
+.pkg-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.7) 50%, transparent 62%);
+  transform: translateX(-130%);
+  animation: pkg-shine 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+.pkg-shine--soft::after { animation-duration: 5.2s; opacity: 0.6; }
+
+.pkg-twinkle { animation: pkg-twinkle 2.2s ease-in-out infinite; }
+.pkg-twinkle--late { animation-delay: 1.1s; }
+.pkg-float { animation: pkg-float 3s ease-in-out infinite; }
+
+@keyframes pkg-spin { to { transform: rotate(360deg); } }
+@keyframes pkg-shine { 0%, 55% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+@keyframes pkg-twinkle { 0%, 100% { opacity: 0.35; transform: scale(0.8) rotate(0deg); } 50% { opacity: 1; transform: scale(1.15) rotate(18deg); } }
+@keyframes pkg-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes pkg-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.85; } }
+@keyframes pkg-glow {
+  0%, 100% { box-shadow: 0 20px 44px -14px rgba(245, 158, 11, 0.8), 0 0 22px -4px rgba(250, 204, 21, 0.65); }
+  50% { box-shadow: 0 20px 44px -14px rgba(245, 158, 11, 0.95), 0 0 38px -2px rgba(250, 204, 21, 0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pkg-frame--spin::before,
+  .pkg-frame--t5,
+  .pkg-rays,
+  .pkg-shine::after,
+  .pkg-twinkle,
+  .pkg-float { animation: none; }
+  .pkg-shine::after { display: none; }
+}
