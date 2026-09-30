@@ -5,11 +5,9 @@ import {
   BookOpenCheck,
   BriefcaseBusiness,
   Cpu,
-  Globe2,
   GraduationCap,
   Network,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react'
 
 const ECOSYSTEM_ITEMS = [
@@ -374,14 +372,6 @@ function VietnamGlobalMap() {
               <text x={textX} y={textY} textAnchor={destination.anchor as 'start' | 'end'}>
                 {destination.name}
               </text>
-              <text
-                className="national-map-city"
-                x={textX}
-                y={textY + 17 * MAP_SCALE}
-                textAnchor={destination.anchor as 'start' | 'end'}
-              >
-                {destination.city}
-              </text>
             </g>
           )
         })}
@@ -410,7 +400,6 @@ function VietnamGlobalMap() {
               <span className="national-map-outside-dot" aria-hidden="true" />
               <span>
                 <strong>{destination.name}</strong>
-                <em>{destination.city}</em>
               </span>
             </li>
           ))}
@@ -419,7 +408,6 @@ function VietnamGlobalMap() {
               <span className="national-map-outside-dot" aria-hidden="true" />
               <span>
                 <strong>{destination.name}</strong>
-                <em>{destination.city}</em>
               </span>
             </li>
           ))}
@@ -441,13 +429,9 @@ export function NationalBrandStory() {
           <div className="national-ecosystem-grid">
             <div className="national-ecosystem-main">
               <div className="national-heading">
-                <span className="national-kicker">
-                  <Sparkles className="h-4 w-4" />
-                  123ENGLISH · GIA SƯ 1 KÈM 1
-                </span>
                 <h2>Dịch vụ gia sư 1 kèm 1 tại 123English</h2>
                 <p>
-                  Một hành trình học được theo sát từ đầu đến cuối. 123English cung cấp dịch vụ gia sư tiếng Anh trực tuyến 1 kèm 1, kết hợp lộ trình học, tài liệu hỗ trợ, công cụ theo dõi tiến độ và phản hồi sau từng buổi học.
+                  123English cung cấp dịch vụ dạy thêm tiếng Anh trực tuyến theo hình thức gia sư 1 kèm 1. Học viên được bố trí gia sư và lựa chọn nội dung học thêm phù hợp với kiến thức cần củng cố, khả năng tiếp thu và nhu cầu thực tế. Mỗi buổi học được thực hiện trực tuyến với 01 gia sư – 01 học viên.
                 </p>
               </div>
 
@@ -487,7 +471,6 @@ export function NationalBrandStory() {
       <section className="national-section national-section-trust">
         <div className="national-container">
           <div className="national-trust-heading">
-            <span>123 ENGLISH STORY</span>
             <h2>Về 123English</h2>
             <p>
               123English là thương hiệu cung cấp <strong>dịch vụ gia sư tiếng Anh trực tuyến 1 kèm 1</strong>, hoạt động dưới hình thức <strong>hộ kinh doanh</strong>.
@@ -545,13 +528,9 @@ export function NationalBrandStory() {
       <section className="national-section national-section-map">
         <div className="national-container">
           <div className="national-heading national-heading-centered">
-            <span className="national-kicker">
-              <Globe2 className="h-4 w-4" />
-              Kết nối từ Việt Nam
-            </span>
-            <h2>Cộng đồng học viên tại 10+ quốc gia</h2>
+            <h2>Cộng đồng học viên đa quốc gia</h2>
             <p>
-              Lan tỏa giá trị giáo dục Việt đến cộng đồng học viên trên khắp thế giới.
+              Dịch vụ gia sư tiếng Anh trực tuyến được học viên tại Việt Nam và nhiều quốc gia sử dụng.
             </p>
           </div>
           <VietnamGlobalMap />

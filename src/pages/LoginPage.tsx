@@ -134,7 +134,7 @@ export function LoginPage() {
       title: 'Giới thiệu chung',
       content: (
         <div className="space-y-4 text-slate-600 leading-relaxed">
-          <p><strong className="text-slate-900">123English</strong> là một nền tảng giáo dục trực tuyến chuyên về đào tạo tiếng Anh tại Việt Nam. Đơn vị này đã khẳng định được uy tín khi được vinh danh là <strong className="text-slate-900">"Thương hiệu giáo dục trực tuyến Việt Nam ưu tiên tin dùng"</strong>.</p>
+          <p><strong className="text-slate-900">123English</strong> cung cấp dịch vụ dạy thêm tiếng Anh trực tuyến theo hình thức gia sư 1 kèm 1, hoạt động dưới hình thức hộ kinh doanh. Gia sư lựa chọn nội dung phù hợp với kiến thức cần củng cố và nhu cầu học thêm của từng học viên.</p>
           <p>Hình ảnh từ tư liệu cho thấy thương hiệu này từng xuất hiện trên các kênh truyền hình lớn như HTV9 để khẳng định chất lượng và sự tin cậy đối với người học.</p>
         </div>
       )
@@ -164,7 +164,7 @@ export function LoginPage() {
                 <BookOpen className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Nội dung</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">Bao gồm các khóa học từ cơ bản đến nâng cao, tiếng Anh giao tiếp và bổ trợ kiến thức.</p>
+              <p className="text-slate-600 text-xs leading-relaxed">Nội dung học thêm gồm củng cố kiến thức tiếng Anh, luyện giao tiếp và thực hành theo nhu cầu của từng học viên.</p>
             </div>
           </div>
         </div>
@@ -219,7 +219,7 @@ export function LoginPage() {
             </a>
           </div>
           <p className="text-xs text-slate-400 mt-4">
-            Thông tin này được tổng hợp trực tiếp từ các nguồn tin công khai liên quan. Nếu bạn cần đi sâu vào một khóa học cụ thể, bạn nên nhắn tin trực tiếp cho fanpage để được hỗ trợ tốt nhất.
+            Để trao đổi về nhu cầu học thêm và lựa chọn gia sư phù hợp, bạn có thể liên hệ trực tiếp với 123English qua fanpage.
           </p>
         </div>
       )

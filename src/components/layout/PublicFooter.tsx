@@ -85,7 +85,7 @@ export function PublicFooter() {
             <a href={COMPANY_INFO.consultingPhone.href} className="flex items-center gap-3 font-black hover:text-[#0D8FC7]">
               <Phone className="h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <span>
-                Tư vấn khóa học: {COMPANY_INFO.consultingPhone.label}
+                Tư vấn học thêm: {COMPANY_INFO.consultingPhone.label}
               </span>
             </a>
           </div>

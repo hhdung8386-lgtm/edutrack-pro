@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react'
 import {
   ArrowDown,
-  ArrowRight,
   BookOpenCheck,
   GraduationCap,
   Headphones,
@@ -156,7 +155,7 @@ function DesktopMatrix() {
       {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng C1..C9 */}
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
         <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
-          Lộ trình 9 cuốn
+          Các cuốn tài liệu tham khảo
         </div>
         <div className="grid grid-cols-9 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
@@ -174,7 +173,7 @@ function DesktopMatrix() {
       </div>
 
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-300 bg-[#FFC107] text-[#10213A]">
-        <div className="flex items-center px-6 py-4 text-sm font-extrabold">Danh mục giáo trình</div>
+        <div className="flex items-center px-6 py-4 text-sm font-extrabold">Danh mục tài liệu</div>
         <div className="grid grid-cols-9">
           {Array.from({ length: 9 }, (_, index) => (
             <div
@@ -234,7 +233,7 @@ function MobileMatrix() {
       {/* Ba chặng năng lực — bản rút gọn cho điện thoại */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <p className="bg-[#FFC107] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#10213A]">
-          Lộ trình 9 cuốn
+          Các cuốn tài liệu tham khảo
         </p>
         <div className="grid grid-cols-3 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
@@ -301,9 +300,15 @@ export function ChuongTrinhHocPage() {
         <section id="ban-do-giao-trinh" className="program-scroll-reveal scroll-mt-20 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Bản đồ giáo trình theo 9 cuốn</h2>
+              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">TÀI LIỆU HỖ TRỢ DẠY THÊM</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
-                Mỗi thanh màu thể hiện phạm vi cuốn của một giáo trình. Chọn giáo trình để xem đầy đủ nội dung bên dưới.
+                123English chuẩn bị nhiều bộ tài liệu để gia sư tham khảo và lựa chọn trong quá trình dạy thêm 1 kèm 1.
+              </p>
+              <p className="mt-3 text-base font-medium leading-7 text-slate-600">
+                Mỗi bộ tài liệu được chia thành nhiều cuốn. Học viên không bắt buộc phải học lần lượt hoặc hoàn thành toàn bộ các cuốn.
+              </p>
+              <p className="mt-3 text-base font-medium leading-7 text-slate-600">
+                Gia sư lựa chọn cuốn và nội dung phù hợp dựa trên kiến thức hiện tại, độ tuổi và nhu cầu học thêm của từng học viên.
               </p>
             </div>
 
@@ -317,7 +322,7 @@ export function ChuongTrinhHocPage() {
         <section className="program-scroll-reveal bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng giáo trình</h2>
+              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng bộ tài liệu</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
                 Nội dung giúp gia sư, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.
               </p>

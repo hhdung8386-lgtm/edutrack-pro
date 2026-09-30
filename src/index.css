@@ -442,11 +442,20 @@
 .national-trust-heading h2 {
   margin-top: 0.9rem;
   color: var(--national-navy);
-  font-size: clamp(2.25rem, 4.5vw, 4rem);
+  font-size: clamp(1.6rem, 2.6vw, 2.35rem);
   font-weight: 880;
   letter-spacing: -0.055em;
-  line-height: 0.98;
+  line-height: 1.06;
   text-wrap: balance;
+}
+
+.national-section-map .national-heading {
+  max-width: 100%;
+}
+
+.national-section-map .national-heading h2 {
+  font-size: clamp(0.95rem, 4.2vw, 2.35rem);
+  white-space: nowrap;
 }
 
 .national-trust-heading p {
@@ -1199,7 +1208,7 @@
   }
 
   .national-trust-heading h2 {
-    font-size: clamp(2.2rem, 11vw, 3.25rem);
+    font-size: clamp(1.6rem, 2.6vw, 2.35rem);
   }
 
   .national-trust-heading p {
