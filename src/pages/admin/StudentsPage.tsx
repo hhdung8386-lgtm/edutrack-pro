@@ -325,11 +325,6 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     inactive: groupStudents.filter((s) => s.status === 'inactive').length,
     runningLow: groupStudents.filter(isRunningLow).length,
   }
-  const displayedGroupTotal = learningScheduleType === 'fixed' ? MOCK_FIXED_STUDENT_TOTAL : groupBreakdown.total
-  const displayedGroupTotalLabel = learningScheduleType === 'fixed'
-    ? MOCK_FIXED_STUDENT_TOTAL.toLocaleString('vi-VN')
-    : String(groupBreakdown.total)
-
   // 'newest' giữ nguyên thứ tự Firestore (createdAt desc)
   const sorted = sortBy === 'name_asc'
     ? [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'vi'))
@@ -490,9 +485,15 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{pageMeta.title}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Đang hiển thị <span className="font-semibold text-slate-700">{filtered.length}</span>
-            {filtered.length !== displayedGroupTotal && <> / {displayedGroupTotalLabel}</>} học viên
-            {limitVal > 0 && <span className="text-amber-600"> · chỉ hiển thị {limitVal} hồ sơ mới nhất</span>}
+            {learningScheduleType === 'fixed' ? (
+              <><span className="font-semibold text-slate-700">{MOCK_FIXED_STUDENT_TOTAL.toLocaleString('vi-VN')}</span> học viên</>
+            ) : (
+              <>
+                Đang hiển thị <span className="font-semibold text-slate-700">{filtered.length}</span>
+                {filtered.length !== groupBreakdown.total && <> / {groupBreakdown.total}</>} học viên
+                {limitVal > 0 && <span className="text-amber-600"> · chỉ hiển thị {limitVal} hồ sơ mới nhất</span>}
+              </>
+            )}
           </p>
           {learningScheduleType !== 'fixed' && !loading && groupBreakdown.total > 0 && (
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
