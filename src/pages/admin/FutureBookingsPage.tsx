@@ -14,6 +14,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { ArrowLeft, Trash2, Calendar, Search, Filter, AlertCircle, ShieldCheck, ArrowUp, ArrowDown, ArrowUpDown, Video, ExternalLink, Copy, Check, UserX, CircleDollarSign } from 'lucide-react'
 import { getBookingPoints } from '@/lib/points'
+import { bookingPage } from '@/lib/bookingPagination'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
 import { isBookingSettledByApprovedLesson } from '@/lib/bookingLogic'
@@ -55,6 +56,9 @@ export function FutureBookingsPage() {
   const [copiedReminderKey, setCopiedReminderKey] = useState('')
   const [reminderDraft, setReminderDraft] = useState<(BookingReminderDraft & { reminderKey: string }) | null>(null)
   const [loading, setLoading] = useState(true)
+  const [bookingsError, setBookingsError] = useState('')
+  const [reloadToken, setReloadToken] = useState(0)
+  const [pagination, setPagination] = useState({ key: '', page: 1 })
   const [cancelling, setCancelling] = useState(false)
   const [cancelProgress, setCancelProgress] = useState<{ done: number; total: number } | null>(null)
   const [selectedBookingIds, setSelectedBookingIds] = useState<string[]>([])
@@ -97,6 +101,8 @@ export function FutureBookingsPage() {
         map[d.id] = code && !/^GV[A-Z0-9]{4,}$/i.test(code) ? code : t.name
       })
       setTeacherNicks(map)
+    }).catch((error) => {
+      if (active) console.error('Load teacher nicknames failed:', error)
     })
     return () => { active = false }
   }, [])
@@ -107,7 +113,7 @@ export function FutureBookingsPage() {
     getDocs(collection(db, 'students')).then((snap) => {
       if (!active) return
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Student))
-      list.sort((a, b) => a.name.localeCompare(b.name))
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setStudents(list)
       setStudentsLoadState('ready')
     }).catch((error) => {
@@ -124,22 +130,32 @@ export function FutureBookingsPage() {
   // reserve the fund immediately too, so excluding them would make this screen
   // disagree with the student detail balance.
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setBookingsError('Tải lịch học mất quá lâu. Vui lòng kiểm tra kết nối và thử lại.')
+      setLoading(false)
+    }, 30_000)
     const q = query(
       collection(db, 'bookingRequests'),
       where('status', 'in', ['confirmed', 'pending'])
     )
     const unsub = onSnapshot(q, (snap) => {
+      window.clearTimeout(timeout)
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookingRequest))
       setBookings(list)
+      setBookingsError('')
       setLoading(false)
     }, (error) => {
       // Không để trang quay vòng mãi: báo lỗi rõ để giáo vụ tải lại.
       console.error('Load held bookings failed:', error)
+      window.clearTimeout(timeout)
       setLoading(false)
-      toast.error('Không tải được danh sách ca đang giữ chỗ. Vui lòng tải lại trang.')
+      setBookingsError('Không tải được danh sách ca đang giữ chỗ. Vui lòng thử lại; nếu vẫn lỗi, kiểm tra quyền truy cập.')
     })
-    return unsub
-  }, [])
+    return () => {
+      window.clearTimeout(timeout)
+      unsub()
+    }
+  }, [reloadToken])
 
   // Ngày hôm nay theo giờ Việt Nam (GMT+7)
   const todayISO = vnClock.date
@@ -287,6 +303,13 @@ export function FutureBookingsPage() {
       return (a.requestedStart || '').localeCompare(b.requestedStart || '')
     })
   }, [bookings, selectedStudentId, searchQuery, filterDate, filterDayOfWeek, filterLiveStatus, teacherNicks, todayISO, sortMode, vnClock])
+
+  // Reset immediately on filter/sort changes; clamp after realtime deletions.
+  const paginationKey = JSON.stringify([selectedStudentId, searchQuery, filterDate, filterDayOfWeek, filterLiveStatus, sortMode, todayISO])
+  if (pagination.key !== paginationKey) setPagination({ key: paginationKey, page: 1 })
+  const currentPage = bookingPage(futureBookings, pagination.key === paginationKey ? pagination.page : 1)
+  const changePage = (page: number) => setPagination({ key: paginationKey, page })
+  const selectedBookingIdSet = useMemo(() => new Set(selectedBookingIds), [selectedBookingIds])
 
   const liveCount = useMemo(
     () => futureBookings.filter((booking) => getBookingLiveStatus(booking, vnClock) === 'live').length,
@@ -443,8 +466,8 @@ export function FutureBookingsPage() {
   // Lựa chọn cũ có thể chứa ca vừa bị lọc ẩn hoặc vừa được xử lý ở màn hình khác.
   // Chỉ thao tác trên ca đang hiển thị để nút hủy không bấm mà "không có gì xảy ra".
   const visibleSelectedBookings = useMemo(
-    () => futureBookings.filter((booking) => selectedBookingIds.includes(booking.id)),
-    [futureBookings, selectedBookingIds],
+    () => futureBookings.filter((booking) => selectedBookingIdSet.has(booking.id)),
+    [futureBookings, selectedBookingIdSet],
   )
 
   const reminderKeyOf = (booking: BookingRequest) => `${booking.studentId || booking.id}|${booking.requestedDate || ''}`
@@ -552,6 +575,32 @@ export function FutureBookingsPage() {
   }, [futureBookings])
 
   if (loading) return <LoadingSpinner />
+
+  if (bookingsError) return (
+    <Card className="mt-4">
+      <div role="alert" className="space-y-3">
+        <h1 className="font-bold text-slate-900">Lịch học đã đặt (Tương lai)</h1>
+        <p className="text-sm text-rose-700">{bookingsError}</p>
+        <Button onClick={() => {
+          setLoading(true)
+          setBookingsError('')
+          setReloadToken((value) => value + 1)
+        }}>Thử lại</Button>
+      </div>
+    </Card>
+  )
+
+  const pageControls = (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+      <p className="text-xs text-slate-600" role="status">
+        Hiển thị {currentPage.start}–{currentPage.end} / {futureBookings.length} ca · Trang {currentPage.page}/{currentPage.pageCount}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" disabled={currentPage.page === 1} onClick={() => changePage(currentPage.page - 1)}>Trang trước</Button>
+        <Button variant="outline" disabled={currentPage.page === currentPage.pageCount} onClick={() => changePage(currentPage.page + 1)}>Trang sau</Button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-6 pt-2 lg:pt-6 max-w-none">
@@ -730,7 +779,7 @@ export function FutureBookingsPage() {
           </div>
 
           {/* Stats Bar */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-slate-100">
             <div className="text-xs font-medium text-slate-500">
               {!scopeStudentIds ? (
                 <>Bộ lọc: {futureBookings.length} ca học phù hợp</>
@@ -758,7 +807,7 @@ export function FutureBookingsPage() {
 
       {/* Main Table */}
       <Card padding="none" className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap gap-3 items-center justify-between">
           <span className="font-bold text-slate-900 text-sm">
             Danh sách ca học ({futureBookings.length} ca khớp bộ lọc)
             {liveCount > 0 && (
@@ -786,6 +835,7 @@ export function FutureBookingsPage() {
           </div>
         </div>
 
+        {futureBookings.length > 0 && pageControls}
         {futureBookings.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-sm flex flex-col items-center justify-center gap-2">
             <AlertCircle className="w-6 h-6 text-slate-300" />
@@ -799,6 +849,7 @@ export function FutureBookingsPage() {
                   <th className="p-3.5 w-12 text-center">
                     <input
                       type="checkbox"
+                      aria-label="Chọn tất cả ca khớp bộ lọc trên mọi trang"
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
                       checked={futureBookings.length > 0 && visibleSelectedBookings.length === futureBookings.length}
                       onChange={(e) => {
@@ -843,8 +894,8 @@ export function FutureBookingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {futureBookings.map((booking) => {
-                  const isChecked = selectedBookingIds.includes(booking.id)
+                {currentPage.items.map((booking) => {
+                  const isChecked = selectedBookingIdSet.has(booking.id)
                   const dayLabels: Record<string, string> = {
                     mon: 'Thứ 2', tue: 'Thứ 3', wed: 'Thứ 4', thu: 'Thứ 5', fri: 'Thứ 6', sat: 'Thứ 7', sun: 'Chủ nhật'
                   }
@@ -1039,6 +1090,7 @@ export function FutureBookingsPage() {
             </table>
           </div>
         )}
+        {futureBookings.length > 0 && pageControls}
       </Card>
 
       <ConfirmDialog
