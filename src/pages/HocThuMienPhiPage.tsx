@@ -15,6 +15,7 @@ import {
   Trophy,
 } from 'lucide-react'
 import { Mascot123 } from '@/components/landing/Mascot123'
+import { COMPANY_INFO } from '@/components/layout/PublicFooter'
 import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
 
 const HOTLINE = { label: '0933.964.683', href: 'tel:0933964683' }
@@ -34,10 +35,10 @@ const LEVELS = [
 const FEATURES = [
   {
     icon: MonitorPlay,
-    title: 'Lớp học tương tác 1 kèm 1',
+    title: 'Buổi học tương tác 1 kèm 1',
     text: 'Bài giảng sinh động với trò chơi, hình ảnh, phát âm — con được nói tiếng Anh gần như suốt buổi học.',
     image: `${IMG}/online-class.webp`,
-    alt: 'Lớp học trực tuyến tương tác của 123English',
+    alt: 'Buổi học trực tuyến 1 kèm 1 của 123English',
   },
   {
     icon: ClipboardCheck,
@@ -48,7 +49,7 @@ const FEATURES = [
   },
   {
     icon: BadgeCheck,
-    title: 'Gia sư tinh tuyển, trình độ B2+',
+    title: 'Gia sư được tuyển chọn, trình độ B2+',
     text: 'Mỗi gia sư trải qua hơn 60 giờ đào tạo nội bộ và được theo dõi chất lượng sau từng buổi dạy.',
     image: `${IMG}/tutor.webp`,
     alt: 'Gia sư 123English chuẩn bị bài giảng',
@@ -75,7 +76,7 @@ const FAQS = [
   },
   {
     q: 'Con học online trên thiết bị nào?',
-    a: 'Máy tính, laptop hoặc máy tính bảng có camera và micro. Lớp học mở trực tiếp trên trình duyệt, không cần cài phần mềm.',
+    a: 'Máy tính, laptop hoặc máy tính bảng có camera và micro. Buổi học mở trực tiếp trên trình duyệt, không cần cài phần mềm.',
   },
   {
     q: 'Sau buổi học thử có bắt buộc đăng ký khoá học?',
@@ -534,10 +535,16 @@ export function HocThuMienPhiPage() {
         {/* Footer */}
         <footer className="mt-10 bg-[#10213A] px-4 py-8 text-sm font-semibold text-white/75">
           <img src="/brand-logo.png" alt="123English" className="h-8 w-auto rounded bg-white px-2 py-1" />
-          <p className="mt-4">Nền tảng giáo dục trực tuyến 123English</p>
+          <p className="mt-4 font-black text-white">{COMPANY_INFO.brandLine}</p>
+          <p className="mt-2">Đơn vị chủ quản: <span className="font-black text-white">{COMPANY_INFO.owner}</span></p>
+          <p className="mt-1">Mã số hộ kinh doanh: <span className="font-black text-white">{COMPANY_INFO.businessCode}</span></p>
           <p className="mt-2">Hotline: <a href={HOTLINE.href} className="font-black text-[#FFD02E]">{HOTLINE.label}</a></p>
-          <p className="mt-2">Văn phòng Bình Tân: 104A đường 32B, P. Bình Trị Đông B, Q. Bình Tân</p>
-          <p className="mt-1">Văn phòng Quận 2: 12 đường số 5, KĐT Sala, P. An Khánh, TP.HCM</p>
+          <p className="mt-4 font-black text-white">Trụ sở đăng ký</p>
+          <p className="mt-1">{COMPANY_INFO.registeredOffice}</p>
+          <p className="mt-4 font-black text-white">Văn phòng đại diện</p>
+          {COMPANY_INFO.offices.map((office) => (
+            <p key={office.name} className="mt-2"><span className="font-black text-white">{office.name}:</span> {office.address}</p>
+          ))}
           <p className="mt-5 text-xs text-white/50">© {new Date().getFullYear()} 123English. All rights reserved.</p>
         </footer>
 

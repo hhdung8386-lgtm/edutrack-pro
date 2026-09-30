@@ -262,7 +262,7 @@ export function ChuongTrinhCaNhanHoaPage() {
     const previousDescription = existingDescription?.content
     const description = existingDescription ?? document.createElement('meta')
 
-    document.title = 'Chương Trình Cá Nhân Hoá bằng AI | 123English'
+    document.title = 'Lộ trình cá nhân | 123English'
     description.name = 'description'
     description.content = 'AI Personal Learning xây dựng lộ trình tiếng Anh riêng theo trình độ, mục tiêu và nhu cầu thực tế của từng học viên.'
     if (!existingDescription) document.head.appendChild(description)
@@ -289,7 +289,7 @@ export function ChuongTrinhCaNhanHoaPage() {
             <div className="relative z-10 max-w-2xl">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#946400]">AI PERSONAL LEARNING</p>
               <h1 className="mt-4 text-[clamp(2.65rem,5.4vw,4.9rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
-                Chương trình tiếng Anh được thiết kế riêng cho bạn bằng AI
+                Lộ trình học tiếng Anh được xây dựng theo nhu cầu của từng học viên
               </h1>
               <p className="mt-6 max-w-xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
                 Mỗi học viên sở hữu một lộ trình riêng, dựa trên trình độ, mục tiêu và nhu cầu sử dụng tiếng Anh thực tế.

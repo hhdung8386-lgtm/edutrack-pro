@@ -124,7 +124,7 @@ function SectionHeading({
 
 export function PublicTeachersPage() {
   useEffect(() => {
-    document.title = 'Hệ thống gia sư chất lượng 1-1 | 123English'
+    document.title = 'Mạng lưới gia sư 1 kèm 1 | 123English'
   }, [])
 
   return (
@@ -140,13 +140,13 @@ export function PublicTeachersPage() {
           <div className="relative mx-auto max-w-7xl text-center">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[#0b79b6]">The 123English tutor system</p>
             <h1 className="mx-auto mt-5 max-w-5xl text-balance text-4xl font-black tracking-[-0.055em] text-[#111827] sm:text-5xl lg:text-[4.25rem] lg:leading-[1.02]">
-              Hệ thống gia sư được xây dựng cho chất lượng 1-1
+              Mạng lưới gia sư được tuyển chọn cho các buổi học 1 kèm 1
             </h1>
             <p className="mx-auto mt-6 max-w-3xl text-pretty text-base font-semibold leading-8 text-slate-600 sm:text-lg">
               Tại 123English, một gia sư giỏi chỉ là điểm bắt đầu.
             </p>
             <p className="mx-auto mt-2 max-w-3xl text-pretty text-sm font-medium leading-7 text-slate-500 sm:text-base">
-              Mỗi gia sư hoạt động trong một hệ thống giảng dạy đồng bộ — từ tiêu chuẩn tuyển chọn, đào tạo nội bộ, phương pháp lên lớp đến theo dõi dữ liệu và cá nhân hóa bằng AI.
+              Mỗi gia sư được hỗ trợ bởi một quy trình thống nhất — từ tuyển chọn, đào tạo và hướng dẫn nghiệp vụ, phương pháp thực hiện buổi học đến theo dõi tiến độ và cá nhân hóa lộ trình học.
             </p>
 
             <div className="mx-auto mt-10 grid max-w-5xl grid-cols-2 items-end gap-3 sm:grid-cols-4 sm:gap-5">
@@ -159,7 +159,7 @@ export function PublicTeachersPage() {
                 <div key={portrait.position} className={`relative h-56 overflow-hidden rounded-[3.75rem] bg-[#edf7ff] shadow-[0_22px_55px_-32px_rgba(15,23,42,0.4)] ${portrait.height} ${index === 1 || index === 2 ? 'sm:translate-y-5' : ''}`}>
                   <img
                     src="/teacher-system-hero-2026.webp"
-                    alt={index === 0 ? 'Đội ngũ gia sư chuyên nghiệp của hệ thống 123English' : ''}
+                    alt={index === 0 ? 'Mạng lưới gia sư 123English' : ''}
                     aria-hidden={index !== 0}
                     className="h-full w-full scale-[1.42] object-cover"
                     style={{ objectPosition: portrait.position }}
@@ -170,7 +170,7 @@ export function PublicTeachersPage() {
           </div>
         </section>
 
-        <nav aria-label="Các tiêu chuẩn của hệ thống gia sư" className="sticky top-0 z-40 border-y border-slate-200 bg-white/95 px-4 py-3 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.45)] backdrop-blur sm:px-8">
+        <nav aria-label="Các tiêu chí tuyển chọn gia sư" className="sticky top-0 z-40 border-y border-slate-200 bg-white/95 px-4 py-3 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.45)] backdrop-blur sm:px-8">
           <div className="mx-auto flex max-w-7xl snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {QUALITY_TABS.map((tab, index) => (
               <a
@@ -219,15 +219,15 @@ export function PublicTeachersPage() {
                 <img src="/teacher-academy-2026.webp" alt="Gia sư 123English tham gia chương trình đào tạo nội bộ" className="relative aspect-[4/3] w-full rounded-[1.75rem] object-cover shadow-[0_24px_55px_-30px_rgba(15,23,42,0.5)]" loading="lazy" />
               </div>
               <div className="order-1 lg:order-2">
-                <SectionHeading number="02" eyebrow="60H Teacher Academy" title="60 giờ đào tạo trước khi đứng lớp" description="Mỗi gia sư được đào tạo theo tiêu chuẩn giảng dạy của 123English trước khi nhận học viên." light />
+                <SectionHeading number="02" eyebrow="60H Teacher Academy" title="60 giờ đào tạo, hướng dẫn nghiệp vụ trước khi nhận học viên trên hệ thống" description="Mỗi gia sư được hướng dẫn theo quy trình và hướng dẫn chuyên môn của 123English trước khi nhận học viên." light />
                 <div className="mt-8 inline-grid grid-cols-[auto_1fr] items-center gap-4 border-y border-[#111827]/20 py-5">
                   <strong className="font-mono text-5xl font-black tracking-[-0.08em] text-[#0868eb] sm:text-6xl">60</strong>
                   <span className="text-sm font-black uppercase leading-5 tracking-[0.16em] text-[#111827]">Hours<br />Internal Training Program</span>
                 </div>
                 <p className="mt-7 max-w-2xl text-sm font-semibold leading-7 text-[#2b3443] sm:text-base">
-                  Phương pháp giảng dạy 1-1 · Quản lý lớp học · Sửa lỗi phát âm & ngữ pháp · Kỹ thuật đặt câu hỏi · Tương tác với trẻ em & người lớn · Đánh giá năng lực · Sử dụng hệ thống học tập 123English
+                  Phương pháp giảng dạy 1-1 · Quản lý buổi học · Sửa lỗi phát âm & ngữ pháp · Kỹ thuật đặt câu hỏi · Tương tác với trẻ em & người lớn · Đánh giá năng lực · Sử dụng hệ thống học tập 123English
                 </p>
-                <p className="mt-7 text-lg font-black leading-8 text-[#111827]">Gia sư không hoạt động độc lập.<br />Họ giảng dạy trong một tiêu chuẩn chung của toàn hệ thống.</p>
+                <p className="mt-7 text-lg font-black leading-8 text-[#111827]">Gia sư luôn được hỗ trợ.<br />Mỗi buổi học 1 kèm 1 đều theo một quy trình hỗ trợ thống nhất.</p>
               </div>
             </div>
           </div>
@@ -236,7 +236,7 @@ export function PublicTeachersPage() {
         <section id="quality-03" className="scroll-mt-24 px-5 py-20 sm:px-8 lg:px-12 lg:py-28">
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto max-w-4xl text-center">
-              <SectionHeading number="03" eyebrow="The 1–2–3 Method™" title="Mỗi buổi học đều có mục tiêu rõ ràng" description="123English chuẩn hóa cấu trúc lớp học để mỗi phút học đều tạo ra giá trị." />
+              <SectionHeading number="03" eyebrow="The 1–2–3 Method™" title="Mỗi buổi học đều có mục tiêu rõ ràng" description="123English xây dựng cấu trúc buổi học để mỗi phút học đều tạo ra giá trị." />
             </div>
 
             <div className="relative mt-14 grid gap-10 md:grid-cols-3 md:gap-0">
@@ -263,8 +263,8 @@ export function PublicTeachersPage() {
         <section id="quality-04" className="scroll-mt-24 bg-[#edf8ff] px-5 py-20 sm:px-8 lg:px-12 lg:py-28">
           <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
             <div>
-              <SectionHeading number="04" eyebrow="After-Class Intelligence" title="Buổi học kết thúc. Hệ thống vẫn tiếp tục theo sát." description="Sau mỗi lớp, gia sư cập nhật trực tiếp trên ứng dụng." />
-              <p className="mt-8 max-w-xl text-base font-semibold leading-8 text-[#111827]">Mỗi buổi học trở thành một phần dữ liệu trong hành trình học tập, thay vì những lớp học rời rạc.</p>
+              <SectionHeading number="04" eyebrow="After-Class Intelligence" title="Buổi học kết thúc. Việc theo dõi tiến độ vẫn tiếp tục." description="Sau mỗi buổi học, gia sư cập nhật trực tiếp trên ứng dụng." />
+              <p className="mt-8 max-w-xl text-base font-semibold leading-8 text-[#111827]">Mỗi buổi học trở thành một phần dữ liệu trong hành trình học tập, thay vì những buổi học rời rạc.</p>
             </div>
             <div className="grid gap-px overflow-hidden rounded-[1.75rem] bg-[#a8dff4] sm:grid-cols-2">
               {AFTER_CLASS_ITEMS.map(({ icon: Icon, title, description }) => (
@@ -298,7 +298,7 @@ export function PublicTeachersPage() {
               </div>
             </div>
             <div className="mx-auto mt-16 max-w-4xl text-center">
-              <p className="text-sm font-medium leading-7 text-slate-600">Từ đó, hệ thống hỗ trợ đề xuất nội dung và lộ trình phù hợp hơn cho từng học viên.</p>
+              <p className="text-sm font-medium leading-7 text-slate-600">Từ đó, 123English đề xuất nội dung và lộ trình phù hợp hơn cho từng học viên.</p>
               <p className="mt-4 text-2xl font-black tracking-[-0.035em]">Không phải học viên thích nghi với giáo trình.<br /><span className="text-[#0868eb]">Giáo trình thích nghi với học viên.</span></p>
             </div>
           </div>
@@ -324,7 +324,7 @@ export function PublicTeachersPage() {
               <article className="flex min-h-44 flex-col justify-between rounded-[1.35rem] bg-[#17213a] p-5 text-white sm:col-span-2 lg:col-span-2">
                 <AppWindow className="h-7 w-7 text-[#ffe534]" strokeWidth={1.8} />
                 <div>
-                  <p className="text-xl font-black tracking-[-0.03em]">Một hệ thống. Một hành trình liền mạch.</p>
+                  <p className="text-xl font-black tracking-[-0.03em]">Một dịch vụ. Một hành trình liền mạch.</p>
                   <Link to="/lien-he" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#ffe534] px-5 text-sm font-black text-[#111827] transition hover:bg-[#ffdc18] focus:outline-none focus:ring-2 focus:ring-white active:scale-[0.98]">
                     Nhận tư vấn
                     <ArrowRight className="h-4 w-4" />
@@ -339,7 +339,7 @@ export function PublicTeachersPage() {
           <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-7 sm:flex-row sm:items-center">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ffe534]">123English quality system</p>
-              <h2 className="mt-3 max-w-3xl text-balance text-2xl font-black tracking-[-0.04em] sm:text-3xl">Chất lượng 1-1 không đến từ một cá nhân. Nó đến từ cả một hệ thống.</h2>
+              <h2 className="mt-3 max-w-3xl text-balance text-2xl font-black tracking-[-0.04em] sm:text-3xl">Chất lượng buổi học 1 kèm 1 không chỉ đến từ một cá nhân, mà còn từ quy trình hỗ trợ thống nhất.</h2>
             </div>
             <Link to="/chuong-trinh-hoc" className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-white px-6 text-sm font-black text-[#111827] transition hover:-translate-y-0.5 hover:bg-[#fffbed] focus:outline-none focus:ring-2 focus:ring-[#ffe534] focus:ring-offset-2 focus:ring-offset-[#0868eb] active:translate-y-0">
               Xem chương trình

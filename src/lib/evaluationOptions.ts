@@ -93,7 +93,7 @@ export const COURSE_OPTIONS: Record<Exclude<EvaluationFormType, 'tutor'>, readon
     {
       label: '123English Official Curriculum (Level 4–7)',
       levelOptions: numericLevels(4, 7),
-      description: 'Chương trình độc quyền của 123English, kết hợp giao tiếp, từ vựng, ngữ pháp và phản xạ tiếng Anh, giúp học viên sử dụng tiếng Anh tự tin trong học tập và cuộc sống.',
+      description: 'Bộ tài liệu và lộ trình học do 123English xây dựng, kết hợp giao tiếp, từ vựng, ngữ pháp và phản xạ tiếng Anh, giúp học viên sử dụng tiếng Anh tự tin trong học tập và cuộc sống.',
     },
     {
       label: 'Time to Talk (Level 3–5)',

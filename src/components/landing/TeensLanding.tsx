@@ -520,13 +520,13 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
               <h3 className="font-quicksand font-black text-lg text-[#D97706] uppercase tracking-wider mb-6 pb-3 border-b border-amber-200/50">
                 ƯU ĐÃI DÀNH CHO HỌC VIÊN MỚI
               </h3>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-6">Những quà tặng và hỗ trợ độc quyền từ trung tâm</p>
+              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-6">Những quà tặng và hỗ trợ từ 123English</p>
               
               <div className="space-y-4 font-jakarta">
                 {[
                   { title: 'Voucher học phí', desc: 'đến 30-50%', icon: Gift, color: 'text-rose-500 bg-rose-50 border-rose-100' },
                   { title: 'Tặng buổi học thử', desc: '1 kèm 1 cùng gia sư', icon: Calendar, color: 'text-amber-500 bg-amber-50 border-amber-100' },
-                  { title: 'Quà tặng độc quyền', desc: 'từ 123English', icon: Award, color: 'text-blue-500 bg-blue-50 border-blue-100' }
+                  { title: 'Quà tặng đặc biệt', desc: 'từ 123English', icon: Award, color: 'text-blue-500 bg-blue-50 border-blue-100' }
                 ].map((reward, rIdx) => (
                   <div key={rIdx} className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-amber-100/45 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${reward.color}`}>
@@ -622,7 +622,7 @@ export function TeensLanding({ onSignupSuccess, onOpenSearchModal }: TeensLandin
               { q: 'Tôi bị mất gốc hoàn toàn, học khóa học này có theo kịp không?', a: 'Hoàn toàn được. Lộ trình học 1 kèm 1 được thiết kế riêng bắt đầu từ những kiến thức căn bản nhất, gia sư sẽ đi theo tốc độ tiếp thu của bạn, giúp bạn xây lại nền tảng vững chắc.', idx: 0 },
               { q: 'Lịch học có linh hoạt không? Tôi đi học/đi làm bận rộn có tự sắp xếp được không?', a: 'Lịch học cực kỳ linh hoạt từ 8:00 đến 23:00 hàng ngày. Bạn có thể tự chọn khung giờ rảnh và đăng ký trước với gia sư qua ứng dụng học tập.', idx: 1 },
               { q: 'Phương pháp 25 phút mỗi ngày có thực sự hiệu quả so với học trực tiếp 1-2 tiếng?', a: 'Nghiên cứu chỉ ra rằng 25 phút tập trung tương tác 1 kèm 1 trực tiếp có hiệu quả hơn nhiều so với 90 phút học nhóm thụ động. Việc luyện phản xạ đều đặn mỗi ngày giúp não bộ ghi nhớ tốt hơn.', idx: 2 },
-              { q: 'Trung tâm có cam kết đầu ra bằng văn bản không?', a: 'Có. 123English cam kết đầu ra bằng văn bản rõ ràng. Nếu học viên đi học đầy đủ và làm bài tập theo lộ trình mà không tiến bộ, trung tâm cam kết hoàn học phí hoặc hỗ trợ học lại miễn phí.', idx: 3 },
+              { q: '123English có cam kết đầu ra bằng văn bản không?', a: 'Có. 123English cam kết đầu ra bằng văn bản rõ ràng. Nếu học viên đi học đầy đủ và làm bài tập theo lộ trình mà không tiến bộ, 123English cam kết hoàn học phí hoặc hỗ trợ học lại miễn phí.', idx: 3 },
               { q: 'Tôi có thể đổi gia sư nếu cảm thấy không hợp phương pháp không?', a: 'Được. Bạn có thể yêu cầu đổi gia sư bất kỳ lúc nào nếu cảm thấy không hài lòng hoặc không phù hợp với phong cách giảng dạy, bộ phận học vụ sẽ hỗ trợ ngay lập tức.', idx: 4 }
             ].map((faq) => (
               <div key={faq.idx} className="bg-white border border-slate-100 rounded-2xl overflow-hidden transition-all duration-200 shadow-sm">

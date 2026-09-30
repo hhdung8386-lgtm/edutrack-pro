@@ -18,7 +18,7 @@ export type SitePageId = 'home' | 'curriculum' | 'contact'
 
 export const SITE_PAGES: { id: SitePageId; label: string; path: string; description: string }[] = [
   { id: 'home', label: 'Trang chủ', path: '/login', description: 'Trang khách nhìn thấy đầu tiên' },
-  { id: 'curriculum', label: 'Chương Trình Tiêu Chuẩn', path: '/chuong-trinh-hoc', description: 'Giới thiệu lộ trình và giáo trình' },
+  { id: 'curriculum', label: 'Lộ trình tiêu chuẩn', path: '/chuong-trinh-hoc', description: 'Giới thiệu lộ trình và giáo trình' },
   { id: 'contact', label: 'Liên hệ', path: '/lien-he', description: 'Thông tin liên hệ và tư vấn' },
 ]
 
@@ -145,7 +145,7 @@ export const DEFAULT_CONTENT: Record<SitePageId, SitePageContent> = {
         image: '/home-quality-review-2026.png',
         imagePosition: 'right',
         items: [
-          { id: 'gr-1', title: 'Dự giờ & kiểm định lớp học', description: 'Đội ngũ chuyên môn kiểm tra ngẫu nhiên các lớp học trực tuyến để đảm bảo chất lượng giảng dạy của gia sư.' },
+          { id: 'gr-1', title: 'Dự giờ & kiểm định buổi học', description: 'Đội ngũ chuyên môn kiểm tra ngẫu nhiên các buổi học trực tuyến 1 kèm 1 để đảm bảo chất lượng giảng dạy của gia sư.' },
           { id: 'gr-2', title: 'Phản hồi từ học viên và phụ huynh', description: 'Sau mỗi buổi học, chúng tôi đều thu thập ý kiến từ học viên và phụ huynh để theo dõi và nâng cao chất lượng giảng dạy.' },
           { id: 'gr-3', title: 'Nâng cao chuyên môn', description: 'Gia sư tham gia các khoá đào tạo hằng tháng để cập nhật phương pháp mới và hoàn thiện kỹ năng giảng dạy.' },
         ],
@@ -180,7 +180,7 @@ export const DEFAULT_CONTENT: Record<SitePageId, SitePageContent> = {
         id: 'cur-hero',
         type: 'hero',
         enabled: true,
-        eyebrow: 'Chương Trình Tiêu Chuẩn 123English',
+        eyebrow: 'Lộ trình tiêu chuẩn 123English',
         title: 'Chọn đúng giáo trình cho từng chặng tiến bộ.',
         subtitle: '9 cấp độ rõ ràng, 16 giáo trình và lộ trình phù hợp cho từng độ tuổi.',
         ctaLabel: 'Xem bản đồ giáo trình',

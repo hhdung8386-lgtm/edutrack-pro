@@ -31,7 +31,7 @@ const FALLBACK_NEWS: NewsItem[] = [
   {
     id: 'expansion-2025',
     slug: '2025-mo-rong-he-thong',
-    title: '2025 | Mở rộng hệ thống',
+    title: '2025 | Mở rộng dịch vụ',
     createdAt: new Date('2025-08-18T08:00:00+07:00').getTime(),
   },
   {

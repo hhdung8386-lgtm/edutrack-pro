@@ -19,6 +19,7 @@ const ZALO_URL = 'https://zalo.me/0906966691'
 const CONSULTING_PHONE = { label: '0933.964.683', href: 'tel:0933964683' }
 const ACADEMIC_PHONE = { label: '039.399.8733', href: 'tel:0393998733' }
 const OFFICES = [
+  'Trụ sở đăng ký: 78/20 Hoàng Văn Hợp, phường An Lạc A, quận Bình Tân, TP.HCM',
   'Văn phòng Bình Tân: 104A đường 32B, phường Bình Trị Đông B, quận Bình Tân',
   'Văn phòng Quận 2: 12 đường số 5, KĐT Sala, phường An Khánh, TP.HCM',
 ]
@@ -144,7 +145,7 @@ export function LienHePage() {
                     <MapPin className="h-5 w-5" />
                   </span>
                   <div>
-                    <p className="text-sm font-black">Địa chỉ trung tâm</p>
+                    <p className="text-sm font-black">Địa chỉ văn phòng</p>
                     <div className="mt-2 space-y-2">
                       {OFFICES.map((office) => <p key={office} className="text-sm font-semibold leading-6 text-slate-300">{office}</p>)}
                     </div>
@@ -213,7 +214,7 @@ export function LienHePage() {
                     <option>Chương trình dành cho trẻ em</option>
                     <option>IELTS và chứng chỉ quốc tế</option>
                     <option>Đào tạo cho doanh nghiệp</option>
-                    <option>Hỗ trợ tài khoản và lớp học</option>
+                    <option>Hỗ trợ tài khoản và buổi học</option>
                   </select>
                 </label>
                 <label className="grid gap-2 text-sm font-bold sm:col-span-2">

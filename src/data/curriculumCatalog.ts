@@ -30,7 +30,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'giai-dieu-tuoi-tho',
         name: 'Giáo trình Giai Điệu Tuổi Thơ',
         audienceLabel: 'Mầm non',
-        rangeLabel: 'Level 1-3',
+        rangeLabel: 'Cuốn 1-3',
         startLevel: 1,
         endLevel: 3,
         description:
@@ -40,7 +40,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'ngu-am-dieu-ky',
         name: 'Giáo trình Ngữ Âm Diệu Kỳ',
         audienceLabel: 'Mầm non',
-        rangeLabel: 'Level 1-6',
+        rangeLabel: 'Cuốn 1-6',
         startLevel: 1,
         endLevel: 6,
         description:
@@ -50,17 +50,17 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'be-lam-chu-tieng-anh',
         name: 'Giáo trình Bé Làm Chủ Tiếng Anh',
         audienceLabel: 'Mầm non - Thiếu nhi',
-        rangeLabel: 'Starter - Level 9',
+        rangeLabel: 'Starter - Cuốn 9',
         startLevel: 1,
         endLevel: 9,
         description:
-          'Lộ trình toàn diện từ Starter đến Level 9, phát triển từ vựng, mẫu câu và phản xạ nghe nói theo chủ đề. Học viên từng bước mở rộng sang đọc hiểu và viết để sử dụng tiếng Anh chủ động.',
+          'Lộ trình toàn diện từ Starter đến Cuốn 9, phát triển từ vựng, mẫu câu và phản xạ nghe nói theo chủ đề. Học viên từng bước mở rộng sang đọc hiểu và viết để sử dụng tiếng Anh chủ động.',
       },
       {
         id: 'buoc-cung-anh-sao',
         name: 'Giáo trình Bước Cùng Ánh Sao',
         audienceLabel: 'Mầm non - Thiếu nhi',
-        rangeLabel: 'Starter - Level 5',
+        rangeLabel: 'Starter - Cuốn 5',
         startLevel: 1,
         endLevel: 5,
         description:
@@ -70,7 +70,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'cau-chuyen-tieng-anh',
         name: 'Giáo trình Câu Chuyện Tiếng Anh',
         audienceLabel: 'Thiếu nhi',
-        rangeLabel: 'Level 1-9',
+        rangeLabel: 'Cuốn 1-9',
         startLevel: 1,
         endLevel: 9,
         description:
@@ -87,7 +87,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'tieng-anh-nen-tang-thieu-nien',
         name: 'Giáo trình Tiếng Anh Nền tảng',
         audienceLabel: 'Thiếu niên',
-        rangeLabel: 'Level 1-5',
+        rangeLabel: 'Cuốn 1-5',
         startLevel: 1,
         endLevel: 5,
         description:
@@ -95,19 +95,19 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
       },
       {
         id: 'doc-quyen-123english',
-        name: 'Giáo trình Tiếng Anh Độc quyền 123English',
+        name: 'Giáo trình Tiếng Anh 123English',
         audienceLabel: 'Thiếu niên',
-        rangeLabel: 'Level 4-7',
+        rangeLabel: 'Cuốn 4-7',
         startLevel: 4,
         endLevel: 7,
         description:
-          'Chương trình độc quyền của 123English, kết hợp giao tiếp, từ vựng, ngữ pháp và phản xạ tiếng Anh, giúp học viên sử dụng tiếng Anh tự tin trong học tập và cuộc sống.',
+          'Bộ tài liệu và lộ trình học do 123English xây dựng, kết hợp giao tiếp, từ vựng, ngữ pháp và phản xạ tiếng Anh, giúp học viên sử dụng tiếng Anh tự tin trong học tập và cuộc sống.',
       },
       {
         id: 'giao-tiep-thao-luan',
         name: 'Giáo trình Giao tiếp và Thảo luận',
         audienceLabel: 'Thiếu niên',
-        rangeLabel: 'Level 3-5',
+        rangeLabel: 'Cuốn 3-5',
         startLevel: 3,
         endLevel: 5,
         description:
@@ -117,7 +117,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'ky-nang-viet',
         name: 'Giáo trình Kỹ năng Viết',
         audienceLabel: 'Thiếu niên',
-        rangeLabel: 'Level 2-4',
+        rangeLabel: 'Cuốn 2-4',
         startLevel: 2,
         endLevel: 4,
         description:
@@ -127,7 +127,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'ky-nang-doc-hieu',
         name: 'Giáo trình Kỹ năng Đọc hiểu',
         audienceLabel: 'Thiếu niên',
-        rangeLabel: 'Level 3-4',
+        rangeLabel: 'Cuốn 3-4',
         startLevel: 3,
         endLevel: 4,
         description:
@@ -144,7 +144,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'tieng-anh-nen-tang-nguoi-lon',
         name: 'Giáo trình Tiếng Anh Nền tảng',
         audienceLabel: 'Người lớn',
-        rangeLabel: 'Level 1-5',
+        rangeLabel: 'Cuốn 1-5',
         startLevel: 1,
         endLevel: 5,
         description:
@@ -156,7 +156,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'tieng-anh-hang-ngay',
         name: 'Giáo trình Tiếng Anh Hằng ngày',
         audienceLabel: 'Người lớn',
-        rangeLabel: 'Level 3-5',
+        rangeLabel: 'Cuốn 3-5',
         startLevel: 3,
         endLevel: 5,
         description:
@@ -166,7 +166,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'hoi-thoai-theo-chu-de',
         name: 'Giáo trình Hội thoại theo Chủ đề',
         audienceLabel: 'Người lớn',
-        rangeLabel: 'Level 2-6',
+        rangeLabel: 'Cuốn 2-6',
         startLevel: 2,
         endLevel: 6,
         description:
@@ -176,7 +176,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'tieng-anh-cong-viec',
         name: 'Giáo trình Tiếng Anh Công việc',
         audienceLabel: 'Người lớn',
-        rangeLabel: 'Level 4-6',
+        rangeLabel: 'Cuốn 4-6',
         startLevel: 4,
         endLevel: 6,
         description:
@@ -196,7 +196,7 @@ export const CURRICULUM_GROUPS: CurriculumGroup[] = [
         id: 'phat-am-chuan',
         name: 'Giáo trình Phát âm Chuẩn',
         audienceLabel: 'Người lớn',
-        rangeLabel: 'Level 1-3',
+        rangeLabel: 'Cuốn 1-3',
         startLevel: 1,
         endLevel: 3,
         description:

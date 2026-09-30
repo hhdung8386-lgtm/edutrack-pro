@@ -35,7 +35,7 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
     excerpt:
       '123English bước vào giai đoạn phát triển mới, kết nối người học với gia sư, kiến thức và cơ hội.',
     body:
-      '123English bắt đầu bước vào một giai đoạn phát triển mới.\n\nKhông chỉ xây dựng hệ thống dành cho người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.\n\nKết nối người học với gia sư.\nKết nối kiến thức với cơ hội.\nKết nối những con người khác nhau bằng một ngôn ngữ chung.\n\nHành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Hành trình ấy thực sự bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
+      '123English bắt đầu bước vào một giai đoạn phát triển mới.\n\nKhông chỉ phục vụ người học trong nước, 123English hướng tới việc kết nối với thị trường quốc tế.\n\nKết nối người học với gia sư.\nKết nối kiến thức với cơ hội.\nKết nối những con người khác nhau bằng một ngôn ngữ chung.\n\nHành trình học tiếng Anh không kết thúc khi người học hoàn thành một khóa học. Hành trình ấy thực sự bắt đầu khi người học có thể sử dụng tiếng Anh để đi xa hơn.',
     coverImage: '/brand-award-recipient-2026.jpg',
     category: 'Hành trình phát triển',
     author: '123English',
@@ -45,11 +45,11 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
   {
     id: 'expansion-2025',
     slug: '2025-mo-rong-he-thong',
-    title: '2025 | Mở rộng hệ thống',
+    title: '2025 | Mở rộng dịch vụ',
     excerpt:
-      'Chương trình, công nghệ, đội ngũ và quy trình vận hành được đầu tư để tạo ra trải nghiệm học tập nhất quán.',
+      'Lộ trình học, công cụ hỗ trợ, đội ngũ gia sư và quy trình vận hành được đầu tư để tạo ra trải nghiệm học tập nhất quán.',
     body:
-      '123English tiếp tục mở rộng quy mô hoạt động và hoàn thiện hệ thống đào tạo.\n\nCác chương trình học được phát triển theo nhiều nhu cầu, từ xây dựng nền tảng đến giao tiếp thực tế và phát triển năng lực tiếng Anh chuyên sâu.\n\nCùng với đó, công nghệ, đội ngũ và quy trình vận hành tiếp tục được đầu tư để tạo ra một trải nghiệm học tập nhất quán và có khả năng mở rộng.\n\nBuild better.\nLearn further.\nGrow together.',
+      '123English tiếp tục mở rộng quy mô hoạt động và hoàn thiện dịch vụ gia sư 1 kèm 1.\n\nCác lộ trình học được phát triển theo nhiều nhu cầu, từ xây dựng nền tảng đến giao tiếp thực tế và phát triển năng lực tiếng Anh chuyên sâu.\n\nCùng với đó, công cụ hỗ trợ, đội ngũ gia sư và quy trình vận hành tiếp tục được đầu tư để tạo ra một trải nghiệm học tập nhất quán.\n\nBuild better.\nLearn further.\nGrow together.',
     coverImage: '/home-quality-review-2026.png',
     category: 'Hành trình phát triển',
     author: '123English',
@@ -73,11 +73,11 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
   {
     id: 'ecosystem-2023',
     slug: '2023-kien-tao-he-sinh-thai',
-    title: '2023 | Kiến tạo hệ sinh thái',
+    title: '2023 | Xây dựng quy trình hỗ trợ',
     excerpt:
-      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện.',
+      'Từ một phương pháp giảng dạy, 123English bắt đầu hoàn thiện dịch vụ gia sư 1 kèm 1 với quy trình hỗ trợ thống nhất.',
     body:
-      'Từ một phương pháp giảng dạy, 123English bắt đầu phát triển thành một hệ thống giáo dục toàn diện hơn.\n\nChương trình học, đội ngũ gia sư, quy trình đào tạo và công nghệ được từng bước kết nối để tạo nên một hệ sinh thái học tập thống nhất.\n\nĐây là giai đoạn 123English chuyển mình: từ một chương trình học trở thành một hệ thống giáo dục.',
+      'Từ một phương pháp giảng dạy, 123English bắt đầu hoàn thiện dịch vụ gia sư 1 kèm 1 với quy trình hỗ trợ thống nhất hơn.\n\nLộ trình học, đội ngũ gia sư, quy trình hướng dẫn và công cụ theo dõi được từng bước kết nối để hỗ trợ học viên xuyên suốt quá trình học.\n\nĐây là giai đoạn 123English chuyển mình: từ một phương pháp học trở thành một dịch vụ gia sư có quy trình rõ ràng.',
     coverImage: '/home-international-team-2026.png',
     category: 'Hành trình phát triển',
     author: '123English',
@@ -103,9 +103,9 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
     slug: '2021-khoi-nguon',
     title: '2021 | Khởi nguồn',
     excerpt:
-      'Một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm bắt đầu được hình thành.',
+      'Một dịch vụ gia sư tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trọng tâm bắt đầu được hình thành.',
     body:
-      '123English chính thức được hình thành với một định hướng rõ ràng:\n\nXây dựng một hệ thống giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.\n\nTừ những bước đầu tiên, 123English bắt đầu đặt nền móng cho một hành trình dài hơn, nơi tiếng Anh không chỉ được học trong sách vở mà được sử dụng như một công cụ để kết nối với thế giới.',
+      '123English chính thức được hình thành với một định hướng rõ ràng:\n\nXây dựng một dịch vụ gia sư tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trọng tâm.\n\nTừ những bước đầu tiên, 123English bắt đầu đặt nền móng cho một hành trình dài hơn, nơi tiếng Anh không chỉ được học trong sách vở mà được sử dụng như một công cụ để kết nối với thế giới.',
     coverImage: '/brand-online-class-2026.jpg',
     category: 'Khởi nguồn',
     author: '123English',

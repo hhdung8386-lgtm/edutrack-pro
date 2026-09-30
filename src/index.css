@@ -274,7 +274,7 @@
 .national-ecosystem-feature::after {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 63%, rgb(6 22 44 / 0.7) 100%);
+  background: linear-gradient(180deg, transparent 22%, rgb(6 22 44 / 0.78) 58%, rgb(6 22 44 / 0.96) 100%);
   content: "";
 }
 
@@ -310,14 +310,15 @@
 .national-ecosystem-feature h3 {
   max-width: 32rem;
   font-size: clamp(1.35rem, 1.8vw, 1.8rem);
+  text-shadow: 0 2px 14px rgb(6 22 44 / 0.55);
 }
 
 .national-ecosystem-feature p {
   max-width: 37rem;
   margin-top: 0.75rem;
-  color: #dbe7f5;
-  font-size: 0.9rem;
-  font-weight: 550;
+  color: #fff;
+  font-size: 1.02rem;
+  font-weight: 600;
   line-height: 1.65;
 }
 
@@ -449,13 +450,22 @@
 }
 
 .national-trust-heading p {
-  max-width: 42rem;
+  max-width: 46rem;
   margin: 1rem auto 0;
   color: #665f43;
-  font-size: clamp(0.94rem, 1.6vw, 1.05rem);
+  font-size: clamp(1rem, 1.7vw, 1.15rem);
   font-weight: 600;
-  line-height: 1.7;
+  line-height: 1.75;
   text-wrap: pretty;
+}
+
+.national-trust-heading p + p {
+  margin-top: 0.7rem;
+}
+
+.national-trust-heading .national-trust-lead {
+  color: #4a4327;
+  font-weight: 800;
 }
 
 .national-trust-signals {

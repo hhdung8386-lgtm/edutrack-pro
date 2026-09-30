@@ -9,6 +9,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { TutoringInfoSection } from '@/components/landing/TutoringInfoSection'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { SiteBlocks } from '@/components/site/SiteBlocks'
@@ -58,7 +59,7 @@ const GROUP_STYLES: Record<
 
 /**
  * Ba chặng năng lực hiển thị thành một hàng ngay phía trên bảng giáo trình.
- * Tỷ lệ cột bám đúng phạm vi cấp độ 1 / 4 / 4 để thẳng hàng với L1..L9.
+ * Tỷ lệ cột bám đúng phạm vi cuốn 1 / 4 / 4 để thẳng hàng với C1..C9.
  */
 const LEVEL_STAGES = [
   {
@@ -86,13 +87,6 @@ const LEVEL_STAGES = [
     text: 'text-[#08795A]',
   },
 ]
-
-const BASIC_ENGLISH_ENTRY_POINTS = [
-  { level: 1, lessons: 50, focus: 'Xây nền tảng giao tiếp' },
-  { level: 2, lessons: 30, focus: 'Mở rộng mẫu câu thực tế' },
-  { level: 3, lessons: 30, focus: 'Tăng phản xạ hội thoại' },
-  { level: 4, lessons: 40, focus: 'Ứng dụng trong công việc' },
-] as const
 
 function scrollToCurriculum(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -126,7 +120,7 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
 
   return (
     <div>
-      <div className="grid grid-cols-9 gap-1.5" aria-label={`Chọn level của ${item.name}`}>
+      <div className="grid grid-cols-9 gap-1.5" aria-label={`Chọn cuốn của ${item.name}`}>
         {Array.from({ length: 9 }, (_, index) => {
           const level = index + 1
           const active = level >= item.startLevel && level <= item.endLevel
@@ -140,7 +134,7 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
               key={level}
               to={`/chuong-trinh-hoc/${item.id}/level/${level}`}
               className={className}
-              aria-label={`Xem lộ trình ${item.name}, Level ${level}`}
+              aria-label={`Xem lộ trình ${item.name}, Cuốn ${level}`}
             >
               {level}
             </Link>
@@ -150,7 +144,7 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
         })}
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">
-        Chọn Level 1–{item.studyPlanEndLevel} để xem đầy đủ nội dung từng buổi học.
+        Chọn Cuốn 1–{item.studyPlanEndLevel} để xem đầy đủ nội dung từng buổi học.
       </p>
     </div>
   )
@@ -159,10 +153,10 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
 function DesktopMatrix() {
   return (
     <div className="hidden overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_22px_64px_rgba(35,55,80,0.08)] md:block">
-      {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng L1..L9 */}
+      {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng C1..C9 */}
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
         <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
-          Lộ trình 9 cấp độ
+          Lộ trình 9 cuốn
         </div>
         <div className="grid grid-cols-9 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
@@ -171,7 +165,7 @@ function DesktopMatrix() {
               className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
               style={{ gridColumn: `span ${stage.span}` }}
             >
-              <p className={`text-sm font-black ${stage.text}`}>Level {stage.levels}</p>
+              <p className={`text-sm font-black ${stage.text}`}>Cuốn {stage.levels}</p>
               <p className={`mt-0.5 text-xs font-black ${stage.text}`}>{stage.title}</p>
               <p className="mt-1 hidden max-w-[34rem] text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
             </div>
@@ -187,7 +181,7 @@ function DesktopMatrix() {
               key={index}
               className="flex min-h-16 items-center justify-center border-l border-[#10213A]/10 text-sm font-black"
             >
-              L{index + 1}
+              C{index + 1}
             </div>
           ))}
         </div>
@@ -240,12 +234,12 @@ function MobileMatrix() {
       {/* Ba chặng năng lực — bản rút gọn cho điện thoại */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <p className="bg-[#FFC107] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#10213A]">
-          Lộ trình 9 cấp độ
+          Lộ trình 9 cuốn
         </p>
         <div className="grid grid-cols-3 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
             <div key={stage.title} className={`px-2 py-2.5 text-center ${stage.surface}`}>
-              <p className={`text-xs font-black leading-4 ${stage.text}`}>Level {stage.levels}</p>
+              <p className={`text-xs font-black leading-4 ${stage.text}`}>Cuốn {stage.levels}</p>
               <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.title}</p>
               <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">{stage.note}</p>
             </div>
@@ -295,82 +289,21 @@ function MobileMatrix() {
 export function ChuongTrinhHocPage() {
   // Khối nội dung do admin cấu hình trong trang "Nội dung trang web"
   const { content } = useSiteContent('curriculum')
-  const primaryHero = content.blocks.find((block) => block.type === 'hero' && block.enabled)
-  const extraBlocks = content.blocks.filter((block) => block.id !== primaryHero?.id)
+  const extraBlocks = content.blocks.filter((block) => block.type !== 'hero')
 
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-white font-[var(--font-quicksand)] text-[#10213A]">
       <PublicNav />
 
       <main>
-        <section className="relative overflow-hidden">
-          <div className="program-orbit pointer-events-none absolute -right-24 top-8 h-72 w-72 rounded-full border-[42px] border-[#FFC107]/10" />
-          <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 md:py-20 lg:px-12">
-            <div className="program-hero-copy relative">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
-                {primaryHero?.eyebrow || 'Chương Trình Tiêu Chuẩn 123English'}
-              </p>
-              <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.045em] sm:text-5xl lg:text-6xl">
-                {primaryHero?.title || 'Chọn đúng giáo trình cho từng chặng tiến bộ.'}
-              </h1>
-              <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
-                {primaryHero?.subtitle || '9 cấp độ rõ ràng, 16 giáo trình và lộ trình phù hợp cho từng độ tuổi.'}
-              </p>
-              <a
-                href={primaryHero?.ctaHref || '#ban-do-giao-trinh'}
-                className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-6 text-sm font-black text-[#10213A] shadow-[0_12px_30px_rgba(217,141,0,0.22)] transition-transform hover:-translate-y-0.5 active:translate-y-px"
-              >
-                {primaryHero?.ctaLabel || 'Xem bản đồ giáo trình'}
-                <ArrowDown className="h-4 w-4" />
-              </a>
-            </div>
-
-          </div>
-        </section>
-
-        <section id="basic-english-150-bai" className="program-scroll-reveal scroll-mt-20 px-5 pb-6 sm:px-8 lg:px-12">
-          <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-amber-200 bg-[#FFFBEB] shadow-[0_22px_60px_rgba(138,88,0,0.1)]">
-            <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-end lg:p-10">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#A76500]">Lộ trình học từng buổi</p>
-                <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] text-[#10213A] sm:text-4xl">
-                  150 bài học Basic English 1–4
-                </h2>
-                <p className="mt-4 max-w-xl text-sm font-medium leading-6 text-slate-600 sm:text-base sm:leading-7">
-                  Xem mục tiêu và hoạt động chi tiết của từng buổi. Chọn đúng cấp độ để mở toàn bộ lộ trình.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {BASIC_ENGLISH_ENTRY_POINTS.map((entry) => (
-                  <Link
-                    key={entry.level}
-                    to={`/chuong-trinh-hoc/tieng-anh-nen-tang-nguoi-lon/level/${entry.level}`}
-                    className="group flex min-h-24 items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-white px-5 py-4 shadow-[0_10px_24px_rgba(35,55,80,0.06)] transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-[0_14px_30px_rgba(35,55,80,0.1)] focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
-                    aria-label={`Mở lộ trình Basic English ${entry.level}, ${entry.lessons} bài học`}
-                  >
-                    <span>
-                      <span className="block text-base font-black text-[#10213A]">Basic English {entry.level}</span>
-                      <span className="mt-1 block text-xs font-bold text-slate-500">
-                        {entry.lessons} bài · {entry.focus}
-                      </span>
-                    </span>
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFC107] text-[#10213A] transition-transform group-hover:translate-x-0.5">
-                      <ArrowRight className="h-5 w-5" />
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
+        <TutoringInfoSection href="#ban-do-giao-trinh" className="pt-14 lg:pt-20" />
 
         <section id="ban-do-giao-trinh" className="program-scroll-reveal scroll-mt-20 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Bản đồ giáo trình theo 9 cấp độ</h2>
+              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Bản đồ giáo trình theo 9 cuốn</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
-                Mỗi thanh màu thể hiện phạm vi cấp độ của một giáo trình. Chọn giáo trình để xem đầy đủ nội dung bên dưới.
+                Mỗi thanh màu thể hiện phạm vi cuốn của một giáo trình. Chọn giáo trình để xem đầy đủ nội dung bên dưới.
               </p>
             </div>
 

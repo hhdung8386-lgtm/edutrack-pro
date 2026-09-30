@@ -1,3 +1,4 @@
+import { TutoringInfoSection } from './TutoringInfoSection'
 import vietnam from '@svg-maps/vietnam'
 import world from '@svg-maps/world'
 import {
@@ -16,45 +17,45 @@ import {
 
 const ECOSYSTEM_ITEMS = [
   {
-    Icon: BookOpenCheck,
-    eyebrow: '123 TEACHING METHOD™',
-    title: 'Phương pháp vượt trội',
-    copy: 'Phương pháp độc quyền 3 bước: tập trung, tương tác và thực hành ngay trong lớp.',
-    tone: 'blue',
+    Icon: GraduationCap,
+    eyebrow: '123 TEACHERS',
+    title: 'Gia sư được tuyển chọn',
+    copy: 'Gia sư được kiểm tra hồ sơ, năng lực tiếng Anh và được hướng dẫn quy trình thực hiện buổi học 1 kèm 1 trước khi nhận học viên.',
+    tone: 'mint',
   },
   {
     Icon: Network,
     eyebrow: '123 LEARNING PATH',
-    title: 'Lộ trình bứt phá',
-    copy: '9 cấp độ rõ ràng: Nền tảng, Thực chiến và Bứt phá.',
+    title: 'Lộ trình phù hợp',
+    copy: 'Nội dung học được lựa chọn theo độ tuổi, trình độ và mục tiêu của từng học viên.',
     tone: 'yellow',
   },
   {
-    Icon: GraduationCap,
-    eyebrow: '123 TEACHERS',
-    title: 'Đội ngũ tinh tuyển',
-    copy: 'Gia sư đạt chuẩn, trải qua 60+ giờ đào tạo nội bộ và có trình độ từ B2+.',
-    tone: 'mint',
-  },
-  {
-    Icon: Cpu,
-    eyebrow: '123 LEARNING TECHNOLOGY',
-    title: 'Ứng dụng công nghệ',
-    copy: 'Theo dõi tiến độ và cá nhân hóa trải nghiệm học tập cho từng học viên.',
-    tone: 'rose',
-  },
-  {
-    Icon: BadgeCheck,
-    eyebrow: '123 QUALITY VERIFICATION',
-    title: 'Chuẩn hóa chất lượng',
-    copy: 'Theo dõi, phản hồi và cải thiện chất lượng qua từng buổi học.',
+    Icon: BookOpenCheck,
+    eyebrow: '123 ONE-ON-ONE',
+    title: 'Học trực tuyến 1 kèm 1',
+    copy: 'Một gia sư đồng hành trực tiếp với một học viên trong từng buổi học.',
     tone: 'blue',
   },
   {
+    Icon: BadgeCheck,
+    eyebrow: '123 PROGRESS TRACKING',
+    title: 'Theo dõi tiến độ',
+    copy: 'Thông tin về nội dung đã học, nhận xét và các điểm cần cải thiện được cập nhật sau buổi học.',
+    tone: 'blue',
+  },
+  {
+    Icon: Cpu,
+    eyebrow: '123 PERSONALIZED SUPPORT',
+    title: 'Hỗ trợ cá nhân hóa',
+    copy: 'Dữ liệu học tập được sử dụng để hỗ trợ điều chỉnh nội dung và tốc độ học.',
+    tone: 'rose',
+  },
+  {
     Icon: BriefcaseBusiness,
-    eyebrow: '123 BUSINESS SOLUTIONS',
-    title: 'Giải pháp doanh nghiệp',
-    copy: 'Chương trình được thiết kế theo nhu cầu thực tế của từng tổ chức.',
+    eyebrow: '123 STUDENT SUPPORT',
+    title: 'Hỗ trợ học viên',
+    copy: 'Đội ngũ 123English hỗ trợ học viên và phụ huynh trong quá trình sử dụng dịch vụ.',
     tone: 'yellow',
   },
 ] as const
@@ -140,7 +141,7 @@ const AWARDS = [
   {
     image: '/brand-award-recipient-2026.jpg',
     title: 'Ghi nhận cho hành trình bền bỉ',
-    copy: 'Những cột mốc được xây dựng từ chất lượng lớp học và niềm tin của gia đình.',
+    copy: 'Những cột mốc được xây dựng từ chất lượng buổi học 1 kèm 1 và niềm tin của gia đình.',
   },
   {
     image: '/brand-award-stage-2026.jpg',
@@ -153,7 +154,7 @@ const BRAND_TIMELINE = [
   {
     year: '2021',
     title: 'Khởi nguồn',
-    copy: 'Hình thành định hướng giáo dục tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trung tâm.',
+    copy: 'Hình thành định hướng dịch vụ gia sư tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trọng tâm.',
   },
   {
     year: '2022',
@@ -162,8 +163,8 @@ const BRAND_TIMELINE = [
   },
   {
     year: '2023',
-    title: 'Kiến tạo hệ sinh thái',
-    copy: 'Chương trình, gia sư, quy trình đào tạo và công nghệ được kết nối trong một hệ thống thống nhất.',
+    title: 'Xây dựng quy trình hỗ trợ',
+    copy: 'Lộ trình học, gia sư, quy trình hướng dẫn và công cụ theo dõi được kết nối trong một quy trình hỗ trợ thống nhất.',
   },
   {
     year: '2024',
@@ -172,8 +173,8 @@ const BRAND_TIMELINE = [
   },
   {
     year: '2025',
-    title: 'Mở rộng hệ thống',
-    copy: 'Đa dạng chương trình học, hoàn thiện vận hành và đầu tư công nghệ cho trải nghiệm nhất quán.',
+    title: 'Mở rộng dịch vụ',
+    copy: 'Đa dạng lộ trình học, hoàn thiện vận hành và đầu tư công cụ hỗ trợ cho trải nghiệm nhất quán.',
   },
   {
     year: '2026',
@@ -186,30 +187,30 @@ const AUDIENCE_SEGMENTS = [
   {
     Icon: BookOpenCheck,
     title: 'Trẻ em',
-    copy: 'Xây dựng môi trường 100% tiếng Anh từ sớm, giúp trẻ hình thành tư duy và phản xạ ngôn ngữ một cách tự nhiên.',
+    copy: 'Gia sư đồng hành 1 kèm 1, sử dụng các hoạt động nghe, nói, trò chơi và tài liệu phù hợp với độ tuổi để hỗ trợ trẻ làm quen và sử dụng tiếng Anh tự nhiên hơn.',
     image: '/audience-children-english-2026.jpg',
     imageAlt: 'Trẻ em học tiếng Anh tương tác cùng gia sư',
   },
   {
     Icon: GraduationCap,
     title: 'Thanh thiếu niên',
-    copy: 'Lộ trình từ củng cố nền tảng đến luyện thi IELTS, TOEIC, Cambridge và các kỳ thi học thuật.',
+    copy: 'Gia sư hỗ trợ củng cố kiến thức, giao tiếp, đọc hiểu, viết và các kỹ năng tiếng Anh theo mục tiêu của học viên.',
     image: '/audience-teen-english-2026.jpg',
     imageAlt: 'Thanh thiếu niên ôn luyện tiếng Anh học thuật cùng gia sư',
   },
   {
     Icon: BriefcaseBusiness,
     title: 'Người đi làm',
-    copy: 'Xây dựng sự tự tin khi làm việc trong môi trường đa quốc gia và mở rộng cơ hội phát triển nghề nghiệp.',
+    copy: 'Nội dung các buổi học được lựa chọn theo nhu cầu sử dụng tiếng Anh trong công việc và giao tiếp thực tế.',
     image: '/audience-professional-english-2026.jpg',
     imageAlt: 'Người đi làm sử dụng tiếng Anh trong môi trường quốc tế',
   },
   {
     Icon: Network,
-    title: 'Doanh nghiệp',
-    copy: 'Thiết kế chương trình tiếng Anh theo ngành nghề và vị trí công việc, đồng hành cùng doanh nghiệp trong phát triển nguồn nhân lực.',
+    title: 'Gia sư tiếng Anh theo nhu cầu doanh nghiệp',
+    copy: 'Hỗ trợ xây dựng nội dung học và bố trí gia sư theo nhu cầu sử dụng tiếng Anh của từng nhóm nhân sự.',
     image: '/audience-business-english-2026.jpg',
-    imageAlt: 'Đội ngũ doanh nghiệp tham gia chương trình đào tạo tiếng Anh',
+    imageAlt: 'Nhóm nhân sự doanh nghiệp học tiếng Anh cùng gia sư',
   },
 ] as const
 
@@ -471,25 +472,25 @@ export function NationalBrandStory() {
               <div className="national-heading">
                 <span className="national-kicker">
                   <Sparkles className="h-4 w-4" />
-                  123 ENGLISH ECOSYSTEM
+                  123ENGLISH · GIA SƯ 1 KÈM 1
                 </span>
-                <h2>Một hệ sinh thái học tập.</h2>
+                <h2>Dịch vụ gia sư 1 kèm 1 tại 123English</h2>
                 <p>
-                  Kết nối phương pháp, lộ trình, gia sư và công nghệ trong một trải nghiệm thống nhất.
+                  Một hành trình học được theo sát từ đầu đến cuối. 123English cung cấp dịch vụ gia sư tiếng Anh trực tuyến 1 kèm 1, kết hợp lộ trình học, tài liệu hỗ trợ, công cụ theo dõi tiến độ và phản hồi sau từng buổi học.
                 </p>
               </div>
 
               <article className="national-ecosystem-feature">
                 <img
                   src="/home-hero-vietnam-2026-v2.png"
-                  alt="Gia đình đồng hành cùng học viên trong lớp học trực tuyến"
+                  alt="Gia đình đồng hành cùng học viên trong buổi học trực tuyến 1 kèm 1"
                   loading="lazy"
                 />
                 <div>
                   <span className="national-feature-mark">
                     <ShieldCheck className="h-5 w-5" />
                   </span>
-                  <h3>Học trực tuyến gần gũi, rõ ràng và có người theo sát.</h3>
+                  <h3>Học trực tuyến 1 kèm 1, rõ ràng và có người theo sát.</h3>
                   <p>
                     Nội dung học, nhận xét và bước tiếp theo được lưu lại để gia đình dễ dàng theo dõi hành trình.
                   </p>
@@ -517,10 +518,21 @@ export function NationalBrandStory() {
           <div className="national-trust-heading">
             <span>123 ENGLISH STORY</span>
             <h2>Về 123English</h2>
-            <p>Chương trình được thiết kế theo từng độ tuổi, mục tiêu học tập và bối cảnh sử dụng tiếng Anh trong đời sống thực tế.</p>
+            <p>
+              123English là thương hiệu cung cấp <strong>dịch vụ gia sư tiếng Anh trực tuyến 1 kèm 1</strong>, hoạt động dưới hình thức <strong>hộ kinh doanh</strong>.
+            </p>
+            <p>
+              123English kết nối học viên với gia sư phù hợp, đồng thời cung cấp tài liệu học tập, công cụ theo dõi tiến độ và hỗ trợ xây dựng lộ trình dựa trên nhu cầu của từng học viên.
+            </p>
+            <p>
+              Các buổi học được tổ chức trực tuyến theo hình thức 1 gia sư – 1 học viên, giúp gia sư có thể tập trung vào khả năng, tốc độ tiếp thu và mục tiêu cụ thể của từng người học.
+            </p>
+            <p className="national-trust-lead">
+              Dịch vụ gia sư và lộ trình học được lựa chọn theo từng độ tuổi, trình độ và mục tiêu sử dụng tiếng Anh.
+            </p>
           </div>
 
-          <div className="national-trust-signals" aria-label="Chương trình tiếng Anh cho từng nhóm người học">
+          <div className="national-trust-signals" aria-label="Dịch vụ gia sư tiếng Anh cho từng nhóm người học">
             {AUDIENCE_SEGMENTS.map(({ Icon, title, copy, image, imageAlt }) => (
               <article key={title} className="national-trust-signal">
                 <div className="national-trust-signal-media">
@@ -537,13 +549,15 @@ export function NationalBrandStory() {
         </div>
       </section>
 
+      <TutoringInfoSection href="/chuong-trinh-hoc#ban-do-giao-trinh" />
+
       {/* Hành trình phát triển tách thành khối riêng, nền xanh để phân biệt với khối "Về 123English" */}
       <section className="national-section national-section-journey">
         <div className="national-container">
           <div className="national-growth-story">
             <div className="national-growth-heading">
               <h3>Hành trình phát triển</h3>
-              <p>Từng cột mốc góp phần hoàn thiện một hệ sinh thái học tập rõ ràng và bền vững.</p>
+              <p>Từng cột mốc góp phần hoàn thiện dịch vụ gia sư 1 kèm 1 rõ ràng và bền vững.</p>
             </div>
             <div className="national-growth-track">
               {BRAND_TIMELINE.map((milestone) => (

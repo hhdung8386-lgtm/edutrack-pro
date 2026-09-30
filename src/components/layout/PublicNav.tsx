@@ -5,8 +5,8 @@ import { Logo } from '@/components/shared/Logo'
 
 const NAV_ITEMS = [
   { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
-  { to: '/chuong-trinh-hoc', label: 'Chương Trình Tiêu Chuẩn', match: ['/chuong-trinh-hoc'] },
-  { to: '/chuong-trinh-ca-nhan-hoa', label: 'Chương Trình Cá Nhân Hoá', match: ['/chuong-trinh-ca-nhan-hoa'] },
+  { to: '/chuong-trinh-hoc', label: 'Lộ trình tiêu chuẩn', match: ['/chuong-trinh-hoc'] },
+  { to: '/chuong-trinh-ca-nhan-hoa', label: 'Lộ trình cá nhân', match: ['/chuong-trinh-ca-nhan-hoa'] },
   { to: '/giao-vien', label: 'Gia sư', match: ['/giao-vien'] },
   { to: '/bai-viet', label: 'Bài viết', match: ['/bai-viet'] },
   { to: '/lien-he', label: 'Liên hệ', match: ['/lien-he'] },
