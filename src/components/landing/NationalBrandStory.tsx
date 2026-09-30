@@ -1,9 +1,6 @@
-import { TutoringInfoSection } from './TutoringInfoSection'
 import vietnam from '@svg-maps/vietnam'
 import world from '@svg-maps/world'
 import {
-  ArrowUpRight,
-  Award,
   BadgeCheck,
   BookOpenCheck,
   BriefcaseBusiness,
@@ -132,24 +129,6 @@ const OTHER_DESTINATIONS = DESTINATIONS.filter(
   (d) => d.x < MAP_VIEWBOX.x || d.x > MAP_VIEWBOX.x + MAP_VIEWBOX.width
 )
 
-const AWARDS = [
-  {
-    image: '/brand-national-award-2026.jpg',
-    title: 'Dấu ấn thương hiệu giáo dục',
-    copy: '123English tại chương trình vinh danh Thương hiệu mạnh quốc gia 2026.',
-  },
-  {
-    image: '/brand-award-recipient-2026.jpg',
-    title: 'Ghi nhận cho hành trình bền bỉ',
-    copy: 'Những cột mốc được xây dựng từ chất lượng buổi học 1 kèm 1 và niềm tin của gia đình.',
-  },
-  {
-    image: '/brand-award-stage-2026.jpg',
-    title: 'Kết nối trong cộng đồng doanh nghiệp',
-    copy: 'Mở rộng hợp tác để đưa trải nghiệm học tập Việt Nam đến gần hơn với thế giới.',
-  },
-] as const
-
 const BRAND_TIMELINE = [
   {
     year: '2021',
@@ -168,8 +147,8 @@ const BRAND_TIMELINE = [
   },
   {
     year: '2024',
-    title: '1.000 học viên',
-    copy: 'Một nghìn điểm bắt đầu, mục tiêu riêng và hành trình tiến bộ được cộng đồng gia đình tin tưởng.',
+    title: '3.000 học viên',
+    copy: 'Ba nghìn điểm bắt đầu, mục tiêu riêng và hành trình tiến bộ được cộng đồng gia đình tin tưởng.',
   },
   {
     year: '2025',
@@ -212,14 +191,6 @@ const AUDIENCE_SEGMENTS = [
     image: '/audience-business-english-2026.jpg',
     imageAlt: 'Nhóm nhân sự doanh nghiệp học tiếng Anh cùng gia sư',
   },
-] as const
-
-const STUDENT_MILESTONES = [
-  'Dám nói câu tiếng Anh đầu tiên.',
-  'Giao tiếp tự tin hơn mỗi ngày.',
-  'Vượt qua nỗi sợ mắc lỗi.',
-  'Đạt được mục tiêu học tập.',
-  'Mở ra một cơ hội mới cho bản thân.',
 ] as const
 
 /**
@@ -549,8 +520,6 @@ export function NationalBrandStory() {
         </div>
       </section>
 
-      <TutoringInfoSection href="/chuong-trinh-hoc#ban-do-giao-trinh" />
-
       {/* Hành trình phát triển tách thành khối riêng, nền xanh để phân biệt với khối "Về 123English" */}
       <section className="national-section national-section-journey">
         <div className="national-container">
@@ -589,62 +558,6 @@ export function NationalBrandStory() {
         </div>
       </section>
 
-      <section className="national-section national-section-awards">
-        <div className="national-container">
-          <div className="national-milestones-intro">
-            <div className="national-milestones-title">
-              <span className="national-kicker">
-                <Award className="h-4 w-4" />
-                Dấu ấn được ghi nhận
-              </span>
-              <h2>Những cột mốc đáng nhớ.</h2>
-            </div>
-
-            <div className="national-milestones-copy">
-              <div className="national-milestones-opening">
-                Mỗi giải thưởng, chứng nhận hay cột mốc đều là sự ghi nhận cho một chặng đường đã đi qua.
-                Nhưng với 123English, thành tựu lớn nhất không chỉ nằm ở những con số.
-              </div>
-              <p className="national-milestones-lead">Thành tựu thật bắt đầu khi một học viên:</p>
-              <div className="national-milestones-grid">
-                {STUDENT_MILESTONES.map((milestone) => (
-                  <div key={milestone}>
-                    <BadgeCheck className="h-5 w-5" />
-                    <span>{milestone}</span>
-                  </div>
-                ))}
-              </div>
-              <strong>EVERY MILESTONE MOVES US FORWARD.</strong>
-            </div>
-          </div>
-
-          <div className="national-award-gallery">
-            {AWARDS.map((award, index) => (
-              <article key={award.title} className={index === 0 ? 'is-featured' : ''}>
-                <img src={award.image} alt={award.title} loading="lazy" />
-                <div>
-                  <h3>{award.title}</h3>
-                  <p>{award.copy}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <div className="national-trust-cta">
-            <span className="national-feature-mark">
-              <Globe2 className="h-5 w-5" />
-            </span>
-            <div>
-              <h3>Bắt đầu từ một lộ trình phù hợp với chính bạn.</h3>
-              <p>Tra cứu tiến độ đang có hoặc trao đổi trực tiếp với đội ngũ 123English.</p>
-            </div>
-            <a href="#tra-cuu">
-              Tra cứu tiến độ
-              <ArrowUpRight className="h-4 w-4" />
-            </a>
-          </div>
-        </div>
-      </section>
     </div>
   )
 }

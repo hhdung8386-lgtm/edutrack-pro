@@ -12,6 +12,18 @@ import type { SitePost } from '@/lib/siteContent'
 import { ArrowLeft, ArrowRight, CalendarDays, Newspaper, Sparkles } from 'lucide-react'
 
 const timestamp = (date: string) => ({ toMillis: () => new Date(`${date}T08:00:00+07:00`).getTime() })
+const MILESTONE_2024_SLUG = '2024-cot-moc-1000-hoc-vien'
+const MILESTONE_2024_COPY = {
+  title: '2024 | Cột mốc 3.000 học viên',
+  excerpt: 'Đằng sau con số 3.000 là 3.000 điểm bắt đầu, 3.000 mục tiêu và hàng nghìn giờ học tập.',
+  body: '123English chạm mốc 3.000 học viên.\n\nĐằng sau con số đó là 3.000 hành trình học tập khác nhau.\n\n3.000 điểm bắt đầu.\n3.000 mục tiêu.\nVà hàng nghìn giờ học, thực hành và tiến bộ.\n\nCột mốc này đánh dấu sự tin tưởng của cộng đồng người học dành cho 123English, đồng thời trở thành động lực để đội ngũ tiếp tục phát triển.',
+} as const
+
+function applyPublicMilestoneCopy(post: SitePost): SitePost {
+  return post.slug === MILESTONE_2024_SLUG || post.id === 'milestone-2024'
+    ? { ...post, ...MILESTONE_2024_COPY }
+    : post
+}
 
 const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
   {
@@ -58,12 +70,8 @@ const DEFAULT_EDITORIAL_POSTS: SitePost[] = [
   },
   {
     id: 'milestone-2024',
-    slug: '2024-cot-moc-1000-hoc-vien',
-    title: '2024 | Cột mốc 1.000 học viên',
-    excerpt:
-      'Đằng sau con số 1.000 là 1.000 điểm bắt đầu, 1.000 mục tiêu và hàng nghìn giờ học tập.',
-    body:
-      '123English chạm mốc 1.000 học viên.\n\nĐằng sau con số đó là 1.000 hành trình học tập khác nhau.\n\n1.000 điểm bắt đầu.\n1.000 mục tiêu.\nVà hàng nghìn giờ học, thực hành và tiến bộ.\n\nCột mốc này đánh dấu sự tin tưởng của cộng đồng người học dành cho 123English, đồng thời trở thành động lực để đội ngũ tiếp tục phát triển.',
+    slug: MILESTONE_2024_SLUG,
+    ...MILESTONE_2024_COPY,
     coverImage: '/home-teacher-student-2026.png',
     category: 'Hành trình phát triển',
     author: '123English',
@@ -122,7 +130,7 @@ function usePublishedPosts() {
     const unsub = onSnapshot(
       query(collection(db, 'posts'), where('published', '==', true)),
       (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as SitePost))
+        const list = snap.docs.map((d) => applyPublicMilestoneCopy({ id: d.id, ...d.data() } as SitePost))
         list.sort((a, b) => {
           const av = (a.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() || 0
           const bv = (b.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() || 0

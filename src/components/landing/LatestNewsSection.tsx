@@ -12,8 +12,10 @@ interface NewsItem {
   createdAt: number
 }
 
-const NEWS_CACHE_KEY = '123english_latest_news_v1'
+const NEWS_CACHE_KEY = '123english_latest_news_v2'
 const NEWS_CACHE_MS = 10 * 60 * 1000
+const MILESTONE_2024_SLUG = '2024-cot-moc-1000-hoc-vien'
+const MILESTONE_2024_TITLE = '2024 | Cột mốc 3.000 học viên'
 
 const FALLBACK_NEWS: NewsItem[] = [
   {
@@ -36,8 +38,8 @@ const FALLBACK_NEWS: NewsItem[] = [
   },
   {
     id: 'milestone-2024',
-    slug: '2024-cot-moc-1000-hoc-vien',
-    title: '2024 | Cột mốc 1.000 học viên',
+    slug: MILESTONE_2024_SLUG,
+    title: MILESTONE_2024_TITLE,
     createdAt: new Date('2024-09-05T08:00:00+07:00').getTime(),
   },
 ]
@@ -92,10 +94,13 @@ export function LatestNewsSection() {
         if (!active) return
         const remoteItems = snapshot.docs.map((document) => {
           const post = { id: document.id, ...document.data() } as SitePost
+          const slug = post.slug || post.id
           return {
             id: post.id,
-            slug: post.slug || post.id,
-            title: post.title,
+            slug,
+            title: slug === MILESTONE_2024_SLUG || post.id === 'milestone-2024'
+              ? MILESTONE_2024_TITLE
+              : post.title,
             createdAt: postTimestamp(post.createdAt),
           }
         })
