@@ -589,10 +589,7 @@
 .national-section-journey {
   padding-top: clamp(4rem, 7vw, 6rem);
   padding-bottom: clamp(4.5rem, 8vw, 7rem);
-  background:
-    radial-gradient(circle at 6% 6%, rgb(255 255 255 / 0.9), transparent 24rem),
-    radial-gradient(circle at 92% 16%, rgb(32 179 229 / 0.18), transparent 24rem),
-    linear-gradient(180deg, #f2fbff 0%, #e4f5fd 58%, #f4fcff 100%);
+  background: #e4f5fd;
 }
 
 .national-growth-story {
@@ -641,7 +638,7 @@
   bottom: 1rem;
   left: 50%;
   width: 2px;
-  background: linear-gradient(180deg, #ffc107 0%, #20b3e5 50%, #0e7eba 100%);
+  background: var(--national-blue);
   transform: translateX(-50%);
   content: "";
 }
@@ -1281,7 +1278,7 @@
     left: 1.55rem;
     width: 2px;
     height: auto;
-    background: linear-gradient(180deg, #ffc107, #20b3e5 48%, #00b983);
+    background: var(--national-blue);
     transform: none;
   }
 

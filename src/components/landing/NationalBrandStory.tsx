@@ -130,33 +130,33 @@ const OTHER_DESTINATIONS = DESTINATIONS.filter(
 const BRAND_TIMELINE = [
   {
     year: '2021',
-    title: 'Khởi nguồn',
-    copy: 'Hình thành định hướng dịch vụ gia sư tiếng Anh thực tế, dễ tiếp cận và lấy người học làm trọng tâm.',
+    title: 'Ấp ủ ý tưởng',
+    copy: 'Bắt đầu tìm hiểu nhu cầu học tiếng Anh trực tuyến và hình thức học 1 kèm 1, hướng đến sự linh hoạt về thời gian và địa điểm.',
   },
   {
     year: '2022',
-    title: 'Định hình phương pháp',
-    copy: '123 Teaching Method™ được xây dựng trên ba nguyên tắc: tập trung, tương tác và thực hành.',
+    title: 'Nghiên cứu mô hình',
+    copy: 'Tập trung nghiên cứu cách kết nối học viên với gia sư phù hợp, đồng thời thử nghiệm cách sắp xếp lịch và hỗ trợ quá trình học trực tuyến.',
   },
   {
     year: '2023',
-    title: 'Xây dựng quy trình hỗ trợ',
-    copy: 'Lộ trình học, gia sư, quy trình hướng dẫn và công cụ theo dõi được kết nối trong một quy trình hỗ trợ thống nhất.',
+    title: 'Hoàn thiện cách tổ chức buổi học',
+    copy: 'Qua quá trình thử nghiệm, dự án từng bước hoàn thiện cách sắp xếp một buổi học 1 kèm 1 theo cấu trúc 1–2–3, kết hợp một nội dung chính, hai hoạt động tương tác và ba phần thực hành.',
   },
   {
     year: '2024',
-    title: '3.000 học viên',
-    copy: 'Ba nghìn điểm bắt đầu, mục tiêu riêng và hành trình tiến bộ được cộng đồng gia đình tin tưởng.',
+    title: 'Hoàn thiện dự án',
+    copy: 'Tiếp tục thử nghiệm và hoàn thiện quy trình, công cụ hỗ trợ cùng trải nghiệm kết nối giữa học viên và gia sư, chuẩn bị cho giai đoạn phát triển tiếp theo.',
   },
   {
     year: '2025',
-    title: 'Mở rộng dịch vụ',
-    copy: 'Đa dạng lộ trình học, hoàn thiện vận hành và đầu tư công cụ hỗ trợ cho trải nghiệm nhất quán.',
+    title: 'Phát triển dưới đơn vị chủ quản',
+    copy: '123English được phát triển dưới sự chủ quản của Gia Sư Toàn Năng, tập trung vào dịch vụ hỗ trợ học tiếng Anh trực tuyến 1 kèm 1.',
   },
   {
     year: '2026',
-    title: 'Kết nối quốc tế',
-    copy: 'Cộng đồng học viên được kết nối với gia sư, kiến thức và cơ hội tại hơn 10 quốc gia.',
+    title: 'Mở rộng kết nối',
+    copy: 'Tiếp tục mở rộng mạng lưới học viên và gia sư, đồng thời hoàn thiện các công cụ hỗ trợ việc kết nối, sắp xếp và theo dõi lịch học trực tuyến.',
   },
 ] as const
 
@@ -184,7 +184,7 @@ const AUDIENCE_SEGMENTS = [
   },
   {
     Icon: Network,
-    title: 'Gia sư tiếng Anh theo nhu cầu doanh nghiệp',
+    title: 'Nhu cầu doanh nghiệp',
     copy: 'Hỗ trợ xây dựng nội dung học và bố trí gia sư theo nhu cầu sử dụng tiếng Anh của từng nhóm nhân sự.',
     image: '/audience-business-english-2026.jpg',
     imageAlt: 'Nhóm nhân sự doanh nghiệp học tiếng Anh cùng gia sư',
@@ -473,16 +473,13 @@ export function NationalBrandStory() {
           <div className="national-trust-heading">
             <h2>Về 123English</h2>
             <p>
-              123English là thương hiệu cung cấp <strong>dịch vụ gia sư tiếng Anh trực tuyến 1 kèm 1</strong>, hoạt động dưới hình thức <strong>hộ kinh doanh</strong>.
+              123English là thương hiệu cung cấp dịch vụ dạy thêm tiếng Anh trực tuyến 1 kèm 1, thuộc đơn vị chủ quản Gia Sư Toàn Năng.
             </p>
             <p>
-              123English kết nối học viên với gia sư phù hợp, đồng thời cung cấp tài liệu học tập, công cụ theo dõi tiến độ và hỗ trợ xây dựng lộ trình dựa trên nhu cầu của từng học viên.
+              123English kết nối học viên với gia sư phù hợp, xây dựng nội dung và lộ trình học dựa trên độ tuổi, trình độ và mục tiêu của từng học viên.
             </p>
             <p>
-              Các buổi học được tổ chức trực tuyến theo hình thức 1 gia sư – 1 học viên, giúp gia sư có thể tập trung vào khả năng, tốc độ tiếp thu và mục tiêu cụ thể của từng người học.
-            </p>
-            <p className="national-trust-lead">
-              Dịch vụ gia sư và lộ trình học được lựa chọn theo từng độ tuổi, trình độ và mục tiêu sử dụng tiếng Anh.
+              Trong quá trình học, kết quả và tiến độ được theo dõi thường xuyên nhằm giúp phụ huynh dễ dàng nắm bắt tình hình học tập và đồng hành cùng học viên.
             </p>
           </div>
 
@@ -509,7 +506,7 @@ export function NationalBrandStory() {
           <div className="national-growth-story">
             <div className="national-growth-heading">
               <h3>Hành trình phát triển</h3>
-              <p>Từng cột mốc góp phần hoàn thiện dịch vụ gia sư 1 kèm 1 rõ ràng và bền vững.</p>
+              <p>Từ một dự án được ấp ủ, nghiên cứu và thử nghiệm đến dịch vụ hỗ trợ học tiếng Anh trực tuyến 1 kèm 1 dưới sự chủ quản của Gia Sư Toàn Năng.</p>
             </div>
             <div className="national-growth-track">
               {BRAND_TIMELINE.map((milestone) => (
