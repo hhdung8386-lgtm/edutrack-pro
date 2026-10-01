@@ -474,11 +474,7 @@ export function NationalBrandStory() {
             <h2>Về 123English</h2>
             <p>
               123English là thương hiệu cung cấp dịch vụ dạy thêm tiếng Anh trực tuyến 1 kèm 1, thuộc đơn vị chủ quản Gia Sư Toàn Năng.
-            </p>
-            <p>
               123English kết nối học viên với gia sư phù hợp, xây dựng nội dung và lộ trình học dựa trên độ tuổi, trình độ và mục tiêu của từng học viên.
-            </p>
-            <p>
               Trong quá trình học, kết quả và tiến độ được theo dõi thường xuyên nhằm giúp phụ huynh dễ dàng nắm bắt tình hình học tập và đồng hành cùng học viên.
             </p>
           </div>
