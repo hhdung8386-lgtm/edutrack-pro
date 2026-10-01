@@ -505,8 +505,12 @@
   display: flex;
   gap: 1.5rem;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  scroll-snap-type: none;
   scrollbar-width: none;
+}
+
+.activity-track.is-reduced-motion {
+  scroll-snap-type: x mandatory;
 }
 
 .activity-track::-webkit-scrollbar {
