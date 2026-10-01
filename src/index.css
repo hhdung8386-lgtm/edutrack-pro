@@ -412,7 +412,7 @@
 }
 
 .national-trust-heading {
-  max-width: 48rem;
+  max-width: 100%;
   margin: 0 auto;
   text-align: center;
 }
@@ -459,17 +459,135 @@
 }
 
 .national-trust-heading p {
-  max-width: 46rem;
+  max-width: none;
   margin: 1rem auto 0;
   color: #665f43;
-  font-size: clamp(1rem, 1.7vw, 1.15rem);
+  font-size: clamp(1rem, 1.3vw, 1.0625rem);
   font-weight: 600;
   line-height: 1.75;
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 
 .national-trust-heading p + p {
   margin-top: 0.7rem;
+}
+
+.public-faq {
+  padding: clamp(3.5rem, 6vw, 5.5rem) clamp(1.25rem, 3vw, 3rem);
+  color: #10213a;
+  background: #f8fafb;
+  font-family: var(--font-quicksand);
+}
+
+.public-faq h2 {
+  margin: 0 0 clamp(1.75rem, 3vw, 2.75rem);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.public-faq-list {
+  border-top: 1px solid #dde3e8;
+}
+
+.public-faq-item {
+  border-bottom: 1px solid #dde3e8;
+}
+
+.public-faq-item summary {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.public-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.public-faq-item summary:focus-visible {
+  outline: 2px solid #087aa1;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.public-faq-number {
+  flex: 0 0 2rem;
+  color: #87939f;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.public-faq-item h3 {
+  flex: 1;
+  margin: 0;
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.public-faq-toggle {
+  position: relative;
+  flex: 0 0 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.25rem;
+}
+
+.public-faq-toggle::before,
+.public-faq-toggle::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  background: currentColor;
+  content: '';
+  transform: translate(-50%, -50%);
+}
+
+.public-faq-toggle::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.public-faq-item[open] .public-faq-toggle::after {
+  display: none;
+}
+
+.public-faq-item[open] h3,
+.public-faq-item summary:hover h3 {
+  color: #087aa1;
+}
+
+.public-faq-item > p {
+  margin: 0;
+  padding: 0 2.75rem 1.5rem 3.25rem;
+  color: #536171;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.8;
+}
+
+@media (max-width: 639px) {
+  .public-faq-item summary {
+    gap: 0.75rem;
+    min-height: 72px;
+    padding: 1rem 0;
+  }
+
+  .public-faq-number {
+    flex-basis: 1.25rem;
+  }
+
+  .public-faq-item > p {
+    padding: 0 0 1.25rem 2rem;
+    font-size: 0.92rem;
+  }
 }
 
 .national-trust-heading .national-trust-lead {

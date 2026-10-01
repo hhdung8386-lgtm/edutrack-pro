@@ -164,7 +164,6 @@ function DesktopMatrix() {
               className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
               style={{ gridColumn: `span ${stage.span}` }}
             >
-              <p className={`text-sm font-black ${stage.text}`}>Cuốn {stage.levels}</p>
               <p className={`mt-0.5 text-xs font-black ${stage.text}`}>{stage.title}</p>
               <p className="mt-1 hidden max-w-[34rem] text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
             </div>
@@ -238,7 +237,6 @@ function MobileMatrix() {
         <div className="grid grid-cols-3 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
             <div key={stage.title} className={`px-2 py-2.5 text-center ${stage.surface}`}>
-              <p className={`text-xs font-black leading-4 ${stage.text}`}>Cuốn {stage.levels}</p>
               <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.title}</p>
               <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">{stage.note}</p>
             </div>
@@ -299,7 +297,7 @@ export function ChuongTrinhHocPage() {
 
         <section id="ban-do-giao-trinh" className="program-scroll-reveal scroll-mt-20 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
-            <div className="max-w-3xl">
+            <div className="w-full">
               <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">TÀI LIỆU HỖ TRỢ DẠY THÊM</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
                 123English chuẩn bị nhiều bộ tài liệu để gia sư tham khảo và lựa chọn trong quá trình dạy thêm 1 kèm 1.

@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
+import { PublicFaq } from '@/components/landing/PublicFaq'
 import { LatestNewsSection } from '@/components/landing/LatestNewsSection'
 
 const loginSchema = z.object({
@@ -334,6 +335,7 @@ export function LoginPage() {
       <LatestNewsSection />
 
       {/* Compact Footer */}
+      <PublicFaq />
       <PublicFooter />
 
       {/* Section Modal */}
