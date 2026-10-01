@@ -38,60 +38,70 @@ const SOCIAL_LINKS = [
 
 export function PublicFooter() {
   return (
-    <footer className="w-full border-t border-slate-100 bg-white text-[#10213A]">
-      <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:px-8 lg:grid-cols-[1.4fr_1fr] lg:px-12">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#9B6C00]">Thông tin đơn vị</p>
-          <img src="/brand-logo.png" alt="123English" className="mt-3 h-10 w-auto" />
-          <p className="mt-3 text-base font-black leading-snug text-[#10213A]">{COMPANY_INFO.brandLine}</p>
-          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-            Đơn vị chủ quản: <span className="font-black text-[#10213A]">{COMPANY_INFO.owner}</span>
-            <br />
-            Mã số hộ kinh doanh: <span className="font-black text-[#10213A]">{COMPANY_INFO.businessCode}</span>
-          </p>
+    <footer className="w-full border-t border-slate-200/70 bg-white px-[clamp(1.25rem,3vw,3rem)] font-[var(--font-quicksand)] text-[#10213A]">
+      <div className="mx-auto grid w-full max-w-7xl gap-8 py-10 sm:grid-cols-2 sm:gap-x-10 sm:py-12 lg:grid-cols-[1.05fr_1.25fr_0.8fr] lg:gap-x-12 lg:py-14">
+        <section aria-labelledby="footer-company-title" className="min-w-0">
+          <h2 id="footer-company-title" className="text-sm font-bold leading-6 text-[#10213A]">Thông tin đơn vị</h2>
+          <img src="/brand-logo.png" alt="123English" className="mt-5 h-10 w-auto" width={156} height={40} loading="lazy" />
+          <p className="mt-4 max-w-md text-balance text-[15px] font-bold leading-6">{COMPANY_INFO.brandLine}</p>
+          <dl className="mt-5 space-y-3 text-sm leading-6">
+            <div>
+              <dt className="font-medium text-slate-500">Đơn vị chủ quản</dt>
+              <dd className="font-bold">{COMPANY_INFO.owner}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Mã số hộ kinh doanh</dt>
+              <dd className="font-semibold tabular-nums">{COMPANY_INFO.businessCode}</dd>
+            </div>
+          </dl>
+        </section>
 
-          <div className="mt-6 space-y-5 text-[15px]">
+        <section aria-labelledby="footer-address-title" className="min-w-0 border-t border-slate-200/70 pt-7 sm:row-span-2 sm:border-0 sm:pt-0 lg:row-span-1">
+          <h2 id="footer-address-title" className="text-sm font-bold leading-6">Địa chỉ</h2>
+          <div className="mt-5 space-y-5 text-sm">
             <div className="flex gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <div>
-                <p className="font-black">Trụ sở đăng ký</p>
-                <p className="mt-1 font-semibold leading-6 text-slate-600">{COMPANY_INFO.registeredOffice}</p>
+                <h3 className="font-bold leading-6">Trụ sở đăng ký</h3>
+                <p className="mt-1 font-medium leading-6 text-slate-600">{COMPANY_INFO.registeredOffice}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <div className="space-y-3">
-                <p className="font-black">Văn phòng đại diện</p>
+                <h3 className="font-bold leading-6">Văn phòng đại diện</h3>
                 {COMPANY_INFO.offices.map((office) => (
                   <div key={office.name}>
-                    <p className="font-black">{office.name}:</p>
-                    <p className="mt-0.5 font-semibold leading-6 text-slate-600">{office.address}</p>
+                    <p className="font-semibold leading-6">{office.name}</p>
+                    <p className="mt-0.5 font-medium leading-6 text-slate-600">{office.address}</p>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="text-sm">
-          <p className="text-base font-black text-[#0D8FC7]">Liên hệ</p>
-          <div className="mt-4 space-y-3">
-            <a href={COMPANY_INFO.academicPhone.href} className="flex items-center gap-3 font-black hover:text-[#0D8FC7]">
-              <Phone className="h-5 w-5 shrink-0 text-[#0D8FC7]" />
-              <span>
-                Giáo vụ: {COMPANY_INFO.academicPhone.label}
+        <section aria-labelledby="footer-contact-title" className="min-w-0 border-t border-slate-200/70 pt-7 text-sm sm:col-start-1 sm:row-start-2 sm:border-0 sm:pt-0 lg:col-start-auto lg:row-start-auto">
+          <h2 id="footer-contact-title" className="text-sm font-bold leading-6">Liên hệ</h2>
+          <div className="mt-5 space-y-4">
+            <a href={COMPANY_INFO.academicPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+              <Phone className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
+              <span className="leading-6">
+                <span className="block font-medium text-slate-500">Giáo vụ</span>
+                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.academicPhone.label}</span>
               </span>
             </a>
-            <a href={COMPANY_INFO.consultingPhone.href} className="flex items-center gap-3 font-black hover:text-[#0D8FC7]">
-              <Phone className="h-5 w-5 shrink-0 text-[#0D8FC7]" />
-              <span>
-                Tư vấn học thêm: {COMPANY_INFO.consultingPhone.label}
+            <a href={COMPANY_INFO.consultingPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+              <Phone className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
+              <span className="leading-6">
+                <span className="block font-medium text-slate-500">Tư vấn học thêm</span>
+                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.consultingPhone.label}</span>
               </span>
             </a>
           </div>
 
           <nav aria-label="Mạng xã hội 123English" className="mt-7">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Theo dõi 123English</p>
+            <h3 className="font-bold leading-6">Theo dõi 123English</h3>
             <div className="mt-3 flex items-center gap-3">
               {SOCIAL_LINKS.map((social) => (
                 <a
@@ -101,7 +111,7 @@ export function PublicFooter() {
                   rel="noopener noreferrer"
                   aria-label={`123English trên ${social.label}`}
                   title={social.label}
-                  className={`inline-flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-4 ${social.className}`}
+                  className={`inline-flex h-11 w-11 items-center justify-center rounded-[10px] text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 ${social.className}`}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
                     <path d={social.path} />
@@ -111,10 +121,10 @@ export function PublicFooter() {
               ))}
             </div>
           </nav>
-        </div>
+        </section>
       </div>
 
-      <div className="border-t border-slate-100 py-4 text-center text-xs font-medium text-slate-400">
+      <div className="mx-auto w-full max-w-7xl border-t border-slate-200/70 py-5 text-center text-xs font-medium leading-5 text-slate-500 sm:text-left">
         © 2026 123English. All rights reserved.
       </div>
     </footer>
