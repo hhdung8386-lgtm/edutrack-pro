@@ -149,19 +149,18 @@ export function PublicTeachersPage() {
               Mỗi gia sư được hỗ trợ bởi một quy trình thống nhất — từ tuyển chọn, đào tạo và hướng dẫn nghiệp vụ, phương pháp thực hiện buổi học đến theo dõi tiến độ và cá nhân hóa lộ trình học.
             </p>
 
-            <div className="mx-auto mt-10 grid max-w-5xl grid-cols-2 items-end gap-3 sm:grid-cols-4 sm:gap-5">
+            <div className="mx-auto mt-10 grid max-w-4xl grid-cols-2 items-end gap-3 sm:grid-cols-4 sm:gap-5">
               {[
-                { position: '8% center', height: 'sm:h-[22rem]' },
-                { position: '36% center', height: 'sm:h-[19rem]' },
-                { position: '63% center', height: 'sm:h-[19rem]' },
-                { position: '91% center', height: 'sm:h-[22rem]' },
+                { position: '4.3% top', alt: 'Gia sư nam mặc áo vàng' },
+                { position: '34% top', alt: 'Gia sư nữ mặc áo xanh' },
+                { position: '60.3% top', alt: 'Gia sư nữ mặc áo vàng' },
+                { position: '88% top', alt: 'Gia sư nam mặc áo xanh' },
               ].map((portrait, index) => (
-                <div key={portrait.position} className={`relative h-56 overflow-hidden rounded-[3.75rem] bg-[#edf7ff] shadow-[0_22px_55px_-32px_rgba(15,23,42,0.4)] ${portrait.height} ${index === 1 || index === 2 ? 'sm:translate-y-5' : ''}`}>
+                <div key={portrait.position} className={`relative aspect-[1/2] overflow-hidden rounded-[2.5rem] bg-[#edf7ff] shadow-[0_22px_55px_-32px_rgba(15,23,42,0.4)] ${index === 1 || index === 2 ? 'sm:translate-y-5' : ''}`}>
                   <img
                     src="/teacher-system-hero-2026.webp"
-                    alt={index === 0 ? 'Mạng lưới gia sư 123English' : ''}
-                    aria-hidden={index !== 0}
-                    className="h-full w-full scale-[1.42] object-cover"
+                    alt={portrait.alt}
+                    className="h-full w-full object-cover"
                     style={{ objectPosition: portrait.position }}
                   />
                 </div>
