@@ -43,15 +43,22 @@ import {
   validateExcusedAbsenceNote, composeExcusedAbsenceComment, excusedAbsenceFields,
 } from '@/components/lessons/absenceReport'
 import { ExcusedAbsenceNoteForm } from '@/components/lessons/ExcusedAbsenceNoteForm'
+import { MakeupProposalFields } from '@/components/bookings/MakeupProposalFields'
 import {
+  TEACHER_CANCELLATION_MAKEUP_MAX,
   TEACHER_CANCELLATION_REASON_MAX,
   TEACHER_CANCELLATION_REASON_MIN,
   canRequestTeacherClassCancellation,
+  evaluateMakeupProposals,
+  formatMakeupProposal,
   lateTeacherCancellationPenaltyApplies,
+  makeupProposalDateRange,
   submitTeacherClassCancellation,
   teacherCancellationErrorMessage,
+  teacherCancellationMakeupProposalsOf,
   teacherCancellationStatusOf,
   withdrawTeacherClassCancellation,
+  type MakeupProposalDraft,
 } from '@/lib/teacherClassCancellation'
 import {
   attendanceDeadlineMessage,
@@ -97,6 +104,10 @@ const CANCELLATION_REASON_PRESETS = [
   { vi: 'Sự cố mạng / mất điện', en: 'Internet or power outage' },
   { vi: 'Việc gia đình', en: 'Family matter' },
 ] as const
+
+function emptyMakeupRows(): MakeupProposalDraft[] {
+  return Array.from({ length: TEACHER_CANCELLATION_MAKEUP_MAX }, () => ({ date: '', time: '' }))
+}
 
 function emptySlots(): Record<DayOfWeek, DayAvailability> {
   return {
@@ -310,6 +321,8 @@ export function BookingSchedulesPage() {
   // Xin huỷ lớp (gia sư bận xin nghỉ) — giáo vụ duyệt ở trang admin
   const [showCancelRequestModal, setShowCancelRequestModal] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  // Đề xuất lịch học bù (ghi chú cho giáo vụ), nhập theo múi giờ của gia sư
+  const [makeupRows, setMakeupRows] = useState<MakeupProposalDraft[]>(() => emptyMakeupRows())
   const [submittingCancelRequest, setSubmittingCancelRequest] = useState(false)
   const [withdrawingCancelRequest, setWithdrawingCancelRequest] = useState(false)
 
@@ -569,6 +582,14 @@ export function BookingSchedulesPage() {
     [localBookings, selectedBooking],
   )
   const lateCancellationPenalty = lateTeacherCancellationPenaltyApplies(liveSelectedBooking, attendanceNow)
+  const makeupEvaluation = useMemo(
+    () => evaluateMakeupProposals(makeupRows, teacherOffset, attendanceNow),
+    [makeupRows, teacherOffset, attendanceNow],
+  )
+  const makeupDateRange = useMemo(
+    () => makeupProposalDateRange(attendanceNow, teacherOffset),
+    [attendanceNow, teacherOffset],
+  )
 
   // Ghi giờ bấm "Vào lớp" (giờ máy chủ) để chấm công. Không chờ kết quả: phòng học
   // vẫn mở ngay trong tab mới dù mạng chậm hay lỗi.
@@ -589,6 +610,7 @@ export function BookingSchedulesPage() {
 
   const openCancelRequestModal = () => {
     setCancelReason('')
+    setMakeupRows(emptyMakeupRows())
     setShowCancelRequestModal(true)
   }
 
@@ -601,18 +623,28 @@ export function BookingSchedulesPage() {
         : `Please enter a reason (at least ${TEACHER_CANCELLATION_REASON_MIN} characters).`)
       return
     }
+    // Đánh giá lại theo giờ hiện tại: modal có thể đã mở lâu
+    const makeup = evaluateMakeupProposals(makeupRows, teacherOffset, Date.now())
+    if (!makeup.valid) {
+      toast.warning(lang === 'vi'
+        ? 'Vui lòng nhập ít nhất 1 lịch học bù hợp lệ (ngày + giờ) trong 7 ngày tới.'
+        : 'Please enter at least 1 valid make-up slot (date + time) within the next 7 days.')
+      return
+    }
     setSubmittingCancelRequest(true)
     try {
       await submitTeacherClassCancellation(
         liveSelectedBooking.id,
         reason,
         lateTeacherCancellationPenaltyApplies(liveSelectedBooking, Date.now()),
+        makeup.proposals,
       )
       toast.success(lang === 'vi'
         ? 'Đã gửi yêu cầu huỷ lớp. Giáo vụ sẽ duyệt và sắp xếp lại lịch.'
         : 'Cancellation request sent. The academic team will review it.')
       setShowCancelRequestModal(false)
       setCancelReason('')
+      setMakeupRows(emptyMakeupRows())
     } catch (error) {
       console.error('Teacher class cancellation request failed:', error)
       toast.error(teacherCancellationErrorMessage(error, lang === 'vi' ? 'vi' : 'en'))
@@ -1635,6 +1667,28 @@ export function BookingSchedulesPage() {
                             {lang === 'vi' ? 'Lý do: ' : 'Reason: '}{liveSelectedBooking.teacherCancellationReason}
                           </p>
                         )}
+                        {(() => {
+                          const proposals = teacherCancellationMakeupProposalsOf(liveSelectedBooking)
+                          if (proposals.length === 0) return null
+                          return (
+                            <div className="mt-2 rounded-lg border border-rose-100 bg-white/70 px-3 py-2">
+                              <p className="text-[11px] font-bold uppercase tracking-wide text-rose-700">
+                                {lang === 'vi' ? 'Lịch học bù đã đề xuất' : 'Proposed make-up slots'}
+                              </p>
+                              <ul className="mt-1 space-y-0.5">
+                                {proposals.map((proposal, index) => {
+                                  const local = convertVnDateTimeToTeacher(proposal.date, proposal.time, teacherOffset)
+                                  return (
+                                    <li key={`${proposal.date}-${proposal.time}`} className="text-xs font-semibold text-slate-700">
+                                      {lang === 'vi' ? `Lịch ${index + 1}: ` : `Slot ${index + 1}: `}
+                                      {formatMakeupProposal(local.dateISO, local.timeStr, lang === 'vi' ? 'vi' : 'en')}
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            </div>
+                          )
+                        })()}
                         <p className="mt-1.5 text-[11px] leading-5 text-rose-700">
                           {lang === 'vi'
                             ? 'Ca vẫn nằm trong lịch cho tới khi được duyệt. Nếu vẫn dạy được, hãy rút yêu cầu.'
@@ -1719,7 +1773,7 @@ export function BookingSchedulesPage() {
               <Button
                 variant="danger"
                 loading={submittingCancelRequest}
-                disabled={cancelReason.trim().length < TEACHER_CANCELLATION_REASON_MIN}
+                disabled={cancelReason.trim().length < TEACHER_CANCELLATION_REASON_MIN || !makeupEvaluation.valid}
                 onClick={submitCancelRequest}
               >
                 <CalendarX2 className="h-4 w-4" />
@@ -1783,6 +1837,17 @@ export function BookingSchedulesPage() {
                 {cancelReason.length}/{TEACHER_CANCELLATION_REASON_MAX}
               </span>
             </label>
+
+            <MakeupProposalFields
+              rows={makeupRows}
+              issues={makeupEvaluation.issues}
+              onChange={setMakeupRows}
+              minDate={makeupDateRange.min}
+              maxDate={makeupDateRange.max}
+              teacherOffset={teacherOffset}
+              lang={lang === 'vi' ? 'vi' : 'en'}
+              disabled={submittingCancelRequest}
+            />
 
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-600">
               {lang === 'vi'

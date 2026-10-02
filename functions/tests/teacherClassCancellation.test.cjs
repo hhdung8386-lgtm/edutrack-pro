@@ -4,6 +4,7 @@ const test = require('node:test')
 const {
   TeacherClassCancellationValidationError,
   bookingStartMs,
+  makeupProposalWindowBlocker,
   normalizeTeacherClassCancellationRequest,
   teacherCancellationPenaltySnapshot,
   teacherCancellationRequestBlocker,
@@ -29,7 +30,7 @@ const START_MS = Date.UTC(2026, 8, 20, 12, 0)
 test('request input needs a safe booking id and a real reason', () => {
   assert.deepEqual(
     normalizeTeacherClassCancellationRequest({ bookingId: ' b-1 ', reason: '  Bận việc gia đình  ' }),
-    { bookingId: 'b-1', action: 'request', reason: 'Bận việc gia đình', acceptLatePenalty: false },
+    { bookingId: 'b-1', action: 'request', reason: 'Bận việc gia đình', acceptLatePenalty: false, makeupProposals: null },
   )
   assert.throws(
     () => normalizeTeacherClassCancellationRequest({ bookingId: 'b/1', reason: 'Bận việc gia đình' }),
@@ -49,7 +50,7 @@ test('request input needs a safe booking id and a real reason', () => {
   )
   assert.deepEqual(
     normalizeTeacherClassCancellationRequest({ bookingId: 'b-1', action: 'withdraw' }),
-    { bookingId: 'b-1', action: 'withdraw', reason: '', acceptLatePenalty: false },
+    { bookingId: 'b-1', action: 'withdraw', reason: '', acceptLatePenalty: false, makeupProposals: null },
   )
 })
 
@@ -109,4 +110,63 @@ test('withdraw only works on the own pending request', () => {
     'CANCELLATION_NOT_PENDING',
   )
   assert.equal(teacherCancellationWithdrawBlocker(booking(), 'teacher-a'), 'CANCELLATION_NOT_PENDING')
+})
+
+test('makeup proposals are optional only for legacy clients and must be 1-3 valid unique slots', () => {
+  const base = { bookingId: 'b-1', reason: 'Bận việc gia đình' }
+  assert.deepEqual(
+    normalizeTeacherClassCancellationRequest({
+      ...base,
+      makeupProposals: [{ date: '2026-09-22', time: '19:00' }, { date: ' 2026-09-23 ', time: '20:30' }],
+    }).makeupProposals,
+    [{ date: '2026-09-22', time: '19:00' }, { date: '2026-09-23', time: '20:30' }],
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({ ...base, makeupProposals: [] }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_REQUIRED',
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({
+      ...base,
+      makeupProposals: [1, 2, 3, 4].map((day) => ({ date: `2026-09-2${day}`, time: '19:00' })),
+    }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_TOO_MANY',
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({ ...base, makeupProposals: [{ date: '2026-09-22', time: '' }] }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_INVALID',
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({ ...base, makeupProposals: [{ date: '2026-02-30', time: '19:00' }] }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_INVALID',
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({ ...base, makeupProposals: 'thu 2' }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_INVALID',
+  )
+  assert.throws(
+    () => normalizeTeacherClassCancellationRequest({
+      ...base,
+      makeupProposals: [{ date: '2026-09-22', time: '19:00' }, { date: '2026-09-22', time: '19:00' }],
+    }),
+    (error) => error.reason === 'MAKEUP_PROPOSALS_DUPLICATE',
+  )
+  assert.equal(
+    normalizeTeacherClassCancellationRequest({ bookingId: 'b-1', action: 'withdraw', makeupProposals: 'x' }).makeupProposals,
+    null,
+  )
+})
+
+test('makeup proposals must be after now and within the next 7 Vietnam days', () => {
+  // 2026-09-20 23:30 giờ VN
+  const now = Date.UTC(2026, 8, 20, 16, 30)
+  assert.equal(makeupProposalWindowBlocker(null, now), '')
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-20', time: '23:45' }], now), '')
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-27', time: '23:55' }], now), '')
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-20', time: '23:30' }], now), 'MAKEUP_PROPOSAL_IN_PAST')
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-19', time: '19:00' }], now), 'MAKEUP_PROPOSAL_IN_PAST')
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-28', time: '00:00' }], now), 'MAKEUP_PROPOSAL_OUT_OF_WINDOW')
+  // 00:30 giờ VN ngày 21 (vẫn là 20/09 theo UTC): hôm nay là 21/09 nên hạn chót là 28/09
+  const afterMidnight = Date.UTC(2026, 8, 20, 17, 30)
+  assert.equal(makeupProposalWindowBlocker([{ date: '2026-09-28', time: '21:00' }], afterMidnight), '')
 })

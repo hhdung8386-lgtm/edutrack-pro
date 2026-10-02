@@ -1,7 +1,9 @@
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db } from '@/lib/firebase'
-import type { BookingRequest, Student, TeacherClassCancellationStatus } from '@/types'
+import type {
+  BookingRequest, Student, TeacherCancellationMakeupProposal, TeacherClassCancellationStatus,
+} from '@/types'
 import { getBookingPoints } from '@/lib/points'
 import { isBookingCancellable } from '@/lib/bookingLogic'
 import {
@@ -16,7 +18,14 @@ export {
   bookingStartMs,
   lateCancellationPenaltyPayrollId,
   lateTeacherCancellationPenaltyApplies,
+  TEACHER_CANCELLATION_MAKEUP_MAX,
+  TEACHER_CANCELLATION_MAKEUP_WINDOW_DAYS,
+  evaluateMakeupProposals,
+  makeupProposalDateRange,
+  formatMakeupProposal,
+  teacherDateTimeToVietnam,
 } from '@/lib/teacherClassCancellationPolicy'
+export type { MakeupProposalDraft, MakeupProposalIssue } from '@/lib/teacherClassCancellationPolicy'
 
 /**
  * Gia sư xin huỷ lớp (xin nghỉ) → giáo vụ duyệt.
@@ -33,12 +42,36 @@ export const TEACHER_CANCELLATION_REASON_MAX = 500
 
 const functions = getFunctions(app, 'asia-southeast1')
 const cancellationCallable = httpsCallable<
-  { bookingId: string; action: 'request' | 'withdraw'; reason?: string; acceptLatePenalty?: boolean },
+  {
+    bookingId: string
+    action: 'request' | 'withdraw'
+    reason?: string
+    acceptLatePenalty?: boolean
+    makeupProposals?: TeacherCancellationMakeupProposal[]
+  },
   unknown
 >(functions, 'requestTeacherClassCancellation')
 
-export async function submitTeacherClassCancellation(bookingId: string, reason: string, acceptLatePenalty: boolean) {
-  await cancellationCallable({ bookingId, action: 'request', reason: reason.trim(), acceptLatePenalty })
+export async function submitTeacherClassCancellation(
+  bookingId: string,
+  reason: string,
+  acceptLatePenalty: boolean,
+  makeupProposals: TeacherCancellationMakeupProposal[],
+) {
+  await cancellationCallable({ bookingId, action: 'request', reason: reason.trim(), acceptLatePenalty, makeupProposals })
+}
+
+/** Đề xuất lịch học bù hợp lệ đã lưu trên ca (bỏ qua dữ liệu lỗi/legacy). */
+export function teacherCancellationMakeupProposalsOf(
+  booking: Pick<BookingRequest, 'teacherCancellationMakeupProposals'> | null | undefined,
+): TeacherCancellationMakeupProposal[] {
+  const value = booking?.teacherCancellationMakeupProposals
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is TeacherCancellationMakeupProposal => Boolean(item)
+      && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || ''))
+      && /^\d{2}:\d{2}$/.test(String(item.time || '')))
+    .slice(0, 3)
 }
 
 export async function withdrawTeacherClassCancellation(bookingId: string) {
@@ -81,6 +114,12 @@ export function teacherCancellationErrorMessage(error: unknown, lang: 'vi' | 'en
     CANCELLATION_REASON_TOO_LONG: `Lý do tối đa ${TEACHER_CANCELLATION_REASON_MAX} ký tự.`,
     TEACHER_PROFILE_INACTIVE: 'Hồ sơ gia sư không còn hoạt động.',
     LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED: 'Huỷ lớp khi còn dưới 1 giờ sẽ bị trừ 50.000đ. Vui lòng bấm “Chấp nhận bị trừ 50k” để xác nhận.',
+    MAKEUP_PROPOSALS_REQUIRED: 'Vui lòng đề xuất ít nhất 1 lịch học bù.',
+    MAKEUP_PROPOSALS_TOO_MANY: 'Chỉ được đề xuất tối đa 3 lịch học bù.',
+    MAKEUP_PROPOSALS_INVALID: 'Mỗi lịch học bù cần có đủ ngày và giờ hợp lệ.',
+    MAKEUP_PROPOSALS_DUPLICATE: 'Các lịch học bù đề xuất không được trùng nhau.',
+    MAKEUP_PROPOSAL_IN_PAST: 'Lịch học bù đề xuất phải ở sau thời điểm hiện tại.',
+    MAKEUP_PROPOSAL_OUT_OF_WINDOW: 'Lịch học bù đề xuất phải nằm trong 7 ngày tới.',
   }
   const en: Record<string, string> = {
     BOOKING_NOT_FOUND: 'This class could not be found. Please reload the schedule.',
@@ -95,6 +134,12 @@ export function teacherCancellationErrorMessage(error: unknown, lang: 'vi' | 'en
     CANCELLATION_REASON_TOO_LONG: `The reason can be at most ${TEACHER_CANCELLATION_REASON_MAX} characters.`,
     TEACHER_PROFILE_INACTIVE: 'This tutor profile is no longer active.',
     LATE_CANCELLATION_PENALTY_CONSENT_REQUIRED: 'Cancelling with less than one hour notice deducts 50,000 VND. Please confirm the deduction.',
+    MAKEUP_PROPOSALS_REQUIRED: 'Please propose at least 1 make-up slot.',
+    MAKEUP_PROPOSALS_TOO_MANY: 'You can propose at most 3 make-up slots.',
+    MAKEUP_PROPOSALS_INVALID: 'Each make-up slot needs a valid date and time.',
+    MAKEUP_PROPOSALS_DUPLICATE: 'Make-up slots must not repeat.',
+    MAKEUP_PROPOSAL_IN_PAST: 'Make-up slots must be later than now.',
+    MAKEUP_PROPOSAL_OUT_OF_WINDOW: 'Make-up slots must be within the next 7 days.',
   }
   const table = lang === 'vi' ? vi : en
   if (reason && table[reason]) return table[reason]
@@ -192,6 +237,7 @@ export async function approveTeacherClassCancellation(input: {
         requestedDate: booking.requestedDate || '',
         requestedStart: booking.requestedStart || '',
         reason: booking.teacherCancellationReason || '',
+        makeupProposals: teacherCancellationMakeupProposalsOf(booking),
         requestedReleasePoints: points,
         releasedPoints: released,
         adminNote: note,

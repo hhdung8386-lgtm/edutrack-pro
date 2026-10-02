@@ -108,6 +108,15 @@ export function validateLessonReport(d: LessonReportDraft): string | null {
   return null
 }
 
+/**
+ * Có loại bài tập đã TICK nhưng chưa nhập nội dung không? normalizeHomeworkItems bỏ
+ * các dòng này khi lưu, nên phải chặn trước để gia sư không tưởng đã giao bài
+ * (chữ "Ví dụ: ..." trong ô chỉ là gợi ý, không được lưu).
+ */
+export function hasSelectedHomeworkWithoutContent(items: HomeworkItem[] | undefined | null): boolean {
+  return (items || []).some((item) => Boolean(item) && HOMEWORK_TYPES.includes(item.type) && !(item.content || '').trim())
+}
+
 /** Bỏ loại trống/trùng và cắt khoảng trắng thừa — dùng chung cho validate, compose và lưu. */
 export function normalizeHomeworkItems(items: HomeworkItem[] | undefined | null): HomeworkItem[] {
   const seen = new Set<HomeworkType>()

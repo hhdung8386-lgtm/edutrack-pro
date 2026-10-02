@@ -529,6 +529,11 @@ export interface BookingRequest {
   /** Ghi chú của giáo vụ khi duyệt/từ chối, gia sư đọc được. */
   teacherCancellationAdminNote?: string
   /**
+   * Gia sư đề xuất tối đa 3 lịch học bù (giờ VN) khi xin huỷ. Chỉ là ghi chú cho
+   * giáo vụ sắp xếp — không tạo ca, không giữ kim cương. Yêu cầu cũ không có trường này.
+   */
+  teacherCancellationMakeupProposals?: TeacherCancellationMakeupProposal[]
+  /**
    * Chấm công giờ vào lớp: callable recordTeacherClassroomEntry ghi GIỜ MÁY CHỦ khi gia sư
    * bấm "Vào lớp" trên Lịch dạy. FirstAt = lần bấm đầu trong khung (60' trước giờ học → hết ca).
    */
@@ -542,6 +547,13 @@ export interface BookingRequest {
   teacherLatePenaltyAt?: Timestamp
   teacherLatePenaltyBy?: string
   teacherClassroomEntryBy?: string
+}
+
+export interface TeacherCancellationMakeupProposal {
+  /** YYYY-MM-DD theo giờ Việt Nam */
+  date: string
+  /** HH:MM theo giờ Việt Nam */
+  time: string
 }
 
 export type TeacherClassCancellationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'closed'

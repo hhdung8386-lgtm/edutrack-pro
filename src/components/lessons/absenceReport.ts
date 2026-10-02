@@ -12,7 +12,10 @@
  * lịch sử, nút copy) hiển thị được như buổi thường.
  */
 
-import { HomeworkItem, composeHomeworkText, normalizeHomeworkItems, MAX_HOMEWORK_CONTENT_CHARS, MAX_HOMEWORK_TYPES } from './lessonReport'
+import {
+  HomeworkItem, composeHomeworkText, hasSelectedHomeworkWithoutContent, normalizeHomeworkItems,
+  MAX_HOMEWORK_CONTENT_CHARS, MAX_HOMEWORK_TYPES,
+} from './lessonReport'
 
 /** Số ký tự tối thiểu của phần dặn dò — chống ghi hời hợt kiểu "nghỉ". */
 export const MIN_ABSENCE_ADVICE_CHARS = 50
@@ -48,6 +51,7 @@ export function validateAbsenceReport(d: AbsenceReportDraft, imageCount: number)
   if (!d.advice.trim()) return 'absence.err_advice_required'
   if (absenceAdviceCharCount(d.advice) < MIN_ABSENCE_ADVICE_CHARS) return 'absence.err_advice_short'
   if (d.advice.length > MAX_ABSENCE_ADVICE_CHARS) return 'absence.err_advice_long'
+  if (hasSelectedHomeworkWithoutContent(d.homeworkItems)) return 'report.err_homework_content_missing'
   const homework = normalizeHomeworkItems(d.homeworkItems)
   if (homework.length === 0) return 'absence.err_homework'
   if (homework.length > MAX_HOMEWORK_TYPES) return 'report.err_homework_max'
@@ -83,6 +87,7 @@ export function composeAbsenceHomeworkText(d: AbsenceReportDraft): string {
  */
 export function validateExcusedAbsenceNote(d: AbsenceReportDraft): string | null {
   if (d.advice.length > MAX_ABSENCE_ADVICE_CHARS) return 'absence.err_advice_long'
+  if (hasSelectedHomeworkWithoutContent(d.homeworkItems)) return 'report.err_homework_content_missing'
   const homework = normalizeHomeworkItems(d.homeworkItems)
   if (homework.length > MAX_HOMEWORK_TYPES) return 'report.err_homework_max'
   if (homework.some((item) => item.content.length > MAX_HOMEWORK_CONTENT_CHARS)) return 'report.err_homework_long'

@@ -12,6 +12,9 @@ export const TEACHER_CANCELLATION_REASON_MAX = 500
 export const TEACHER_CANCELLATION_REASON_MIN = 5
 export const TEACHER_CANCELLATION_NOTICE_MS = 60 * 60 * 1000
 export const LATE_CANCELLATION_PENALTY_AMOUNT_VND = 50_000
+/** Đề xuất lịch học bù: ghi chú cho giáo vụ, tối đa 3 lịch, trong 7 ngày tới (giờ VN). */
+export const TEACHER_CANCELLATION_MAKEUP_MAX = 3
+export const TEACHER_CANCELLATION_MAKEUP_WINDOW_DAYS = 7
 
 export type TeacherClassCancellationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'closed'
 
@@ -20,7 +23,15 @@ export type TeacherClassCancellationRequest = {
   action: 'request' | 'withdraw'
   reason: string
   acceptLatePenalty: boolean
+  /**
+   * Chỉ là ghi chú hiển thị cho giáo vụ, không tạo ca. `null` = client cũ chưa có
+   * mục này (vẫn nhận yêu cầu như trước); client mới luôn gửi 1–3 lịch.
+   */
+  makeupProposals: TeacherCancellationMakeupProposal[] | null
 }
+
+/** Ngày giờ theo giờ Việt Nam (cùng quy ước với requestedDate/requestedStart của ca). */
+export type TeacherCancellationMakeupProposal = { date: string; time: string }
 
 export class TeacherClassCancellationValidationError extends Error {
   constructor(public readonly reason: string, message: string) {
@@ -63,7 +74,68 @@ export function normalizeTeacherClassCancellationRequest(value: unknown): Teache
     action,
     reason: action === 'request' ? rawReason : '',
     acceptLatePenalty: action === 'request' && data.acceptLatePenalty === true,
+    makeupProposals: action === 'request' ? normalizeMakeupProposals(data.makeupProposals) : null,
   }
+}
+
+function makeupProposalMs(date: string, time: string): number | null {
+  return bookingStartMs({ requestedDate: date, requestedStart: time })
+}
+
+/** Kiểm tra định dạng, số lượng và trùng lặp. Mốc thời gian kiểm tra ở makeupProposalWindowBlocker. */
+export function normalizeMakeupProposals(value: unknown): TeacherCancellationMakeupProposal[] | null {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value)) {
+    throw new TeacherClassCancellationValidationError('MAKEUP_PROPOSALS_INVALID', 'Đề xuất lịch học bù không hợp lệ.')
+  }
+  if (value.length > TEACHER_CANCELLATION_MAKEUP_MAX) {
+    throw new TeacherClassCancellationValidationError('MAKEUP_PROPOSALS_TOO_MANY', 'Chỉ được đề xuất tối đa 3 lịch học bù.')
+  }
+  const result: TeacherCancellationMakeupProposal[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    const row = record(item)
+    const date = cleanText(row.date, 10)
+    const time = cleanText(row.time, 5)
+    if (!DATE_PATTERN.test(date) || !TIME_PATTERN.test(time) || makeupProposalMs(date, time) === null) {
+      throw new TeacherClassCancellationValidationError('MAKEUP_PROPOSALS_INVALID', 'Mỗi lịch học bù cần có ngày và giờ hợp lệ.')
+    }
+    const key = `${date} ${time}`
+    if (seen.has(key)) {
+      throw new TeacherClassCancellationValidationError('MAKEUP_PROPOSALS_DUPLICATE', 'Các lịch học bù đề xuất không được trùng nhau.')
+    }
+    seen.add(key)
+    result.push({ date, time })
+  }
+  if (result.length === 0) {
+    throw new TeacherClassCancellationValidationError('MAKEUP_PROPOSALS_REQUIRED', 'Vui lòng đề xuất ít nhất 1 lịch học bù.')
+  }
+  return result
+}
+
+/** Ngày YYYY-MM-DD theo giờ Việt Nam của một mốc thời gian. */
+function vietnamDateISO(ms: number): string {
+  return new Date(ms + VIETNAM_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/**
+ * Mỗi lịch học bù phải ở sau thời điểm gửi và không quá hết ngày thứ 7 kể từ
+ * hôm nay (giờ VN). Trả '' nếu hợp lệ.
+ */
+export function makeupProposalWindowBlocker(
+  proposals: TeacherCancellationMakeupProposal[] | null,
+  nowMs: number,
+): string {
+  if (!proposals) return ''
+  const today = vietnamDateISO(nowMs)
+  const [year, month, day] = today.split('-').map(Number)
+  const lastDate = new Date(Date.UTC(year, month - 1, day + TEACHER_CANCELLATION_MAKEUP_WINDOW_DAYS)).toISOString().slice(0, 10)
+  for (const proposal of proposals) {
+    const startMs = makeupProposalMs(proposal.date, proposal.time)
+    if (startMs === null || startMs <= nowMs) return 'MAKEUP_PROPOSAL_IN_PAST'
+    if (proposal.date > lastDate) return 'MAKEUP_PROPOSAL_OUT_OF_WINDOW'
+  }
+  return ''
 }
 
 /** Mốc bắt đầu ca theo giờ Việt Nam (dữ liệu booking luôn lưu giờ VN). */
@@ -147,4 +219,6 @@ export const TEACHER_CANCELLATION_BLOCKER_MESSAGES: Record<string, string> = {
   BOOKING_TIME_INVALID: 'Ca học chưa có ngày giờ hợp lệ. Vui lòng liên hệ giáo vụ.',
   BOOKING_ALREADY_STARTED: 'Ca học đã bắt đầu hoặc đã qua. Vui lòng liên hệ giáo vụ.',
   CANCELLATION_NOT_PENDING: 'Yêu cầu huỷ không còn ở trạng thái chờ duyệt.',
+  MAKEUP_PROPOSAL_IN_PAST: 'Lịch học bù đề xuất phải ở sau thời điểm hiện tại.',
+  MAKEUP_PROPOSAL_OUT_OF_WINDOW: 'Lịch học bù đề xuất phải nằm trong 7 ngày tới.',
 }

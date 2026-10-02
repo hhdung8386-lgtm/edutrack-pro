@@ -12,6 +12,7 @@ import {
   TEACHER_CANCELLATION_BLOCKER_MESSAGES,
   TeacherClassCancellationValidationError,
   normalizeTeacherClassCancellationRequest,
+  makeupProposalWindowBlocker,
   teacherCancellationPenaltySnapshot,
   teacherCancellationRequestBlocker,
   teacherCancellationWithdrawBlocker,
@@ -263,6 +264,7 @@ export const requestTeacherClassCancellation = onCall({
     }
 
     const blocker = teacherCancellationRequestBlocker(booking, actor.teacherId, Date.now())
+      || makeupProposalWindowBlocker(request.makeupProposals, Date.now())
     if (blocker) {
       throw callableError(
         blocker === 'BOOKING_TEACHER_MISMATCH' ? 'permission-denied' : 'failed-precondition',
@@ -294,6 +296,9 @@ export const requestTeacherClassCancellation = onCall({
       teacherCancellationResolvedAt: FieldValue.delete(),
       teacherCancellationResolvedBy: FieldValue.delete(),
       teacherCancellationAdminNote: FieldValue.delete(),
+      // Ghi chú đề xuất lịch học bù cho giáo vụ (không tạo ca). Client cũ không gửi
+      // thì xoá đề xuất của lần xin trước để admin không đọc nhầm.
+      teacherCancellationMakeupProposals: request.makeupProposals || FieldValue.delete(),
     })
   })
   return { bookingId: request.bookingId, action: request.action }

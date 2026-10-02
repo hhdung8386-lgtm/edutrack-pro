@@ -20,7 +20,9 @@ import {
   TEACHER_CANCELLATION_REASON_MAX,
   approveTeacherClassCancellation,
   bookingStartMs,
+  formatMakeupProposal,
   resolveTeacherClassCancellationWithoutRelease,
+  teacherCancellationMakeupProposalsOf,
 } from '@/lib/teacherClassCancellation'
 
 type TabKey = 'pending' | 'approved' | 'rejected' | 'closed'
@@ -263,6 +265,7 @@ export function TeacherClassCancellationsPage() {
             const points = getBookingPoints(booking)
             const hasLatePenalty = booking.teacherCancellationPenaltyAmount === LATE_CANCELLATION_PENALTY_AMOUNT_VND
               && booking.teacherCancellationPenaltyCurrency === 'VND'
+            const makeupProposals = teacherCancellationMakeupProposalsOf(booking)
             return (
               <article key={booking.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="grid gap-4 p-4 lg:grid-cols-[1fr_260px] lg:p-5">
@@ -307,6 +310,27 @@ export function TeacherClassCancellationsPage() {
                     <div className="mt-3 rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-slate-700">
                       <span className="font-semibold text-rose-700">Lý do: </span>
                       <span className="break-words">{booking.teacherCancellationReason || '—'}</span>
+                    </div>
+                    <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-indigo-600">
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        Đề xuất lịch học bù (giờ Việt Nam)
+                      </p>
+                      {makeupProposals.length > 0 ? (
+                        <ol className="mt-2 grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+                          {makeupProposals.map((proposal, index) => (
+                            <li
+                              key={`${proposal.date}-${proposal.time}`}
+                              className="rounded-xl border border-indigo-100 bg-white px-3 py-2"
+                            >
+                              <span className="block text-[11px] font-bold text-indigo-500">Lịch {index + 1}</span>
+                              <span className="block text-sm font-semibold text-slate-800">{formatMakeupProposal(proposal.date, proposal.time)}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="mt-1 text-sm text-slate-500">Gia sư chưa đề xuất lịch học bù cho yêu cầu này.</p>
+                      )}
                     </div>
                     {booking.teacherCancellationAdminNote && (
                       <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">

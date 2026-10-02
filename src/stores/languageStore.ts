@@ -106,6 +106,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'report.err_exercises': { vi: 'Vui lòng nhập nhận xét mục Bài tập trên lớp', en: 'Please enter a comment for In-class Exercises' },
   'report.err_too_short': { vi: 'Nhận xét quá ngắn — vui lòng viết tối thiểu 120 ký tự cho 3 mục để phụ huynh nắm được buổi học', en: 'Feedback is too short — please write at least 120 characters across the 3 sections' },
   'report.err_homework': { vi: 'Vui lòng chọn ít nhất 1 loại Bài tập về nhà và nhập nội dung giao', en: 'Please choose at least 1 homework type and enter its content' },
+  'report.err_homework_content_missing': { vi: 'Bạn đã chọn loại bài tập nhưng chưa nhập nội dung giao. Chữ "Ví dụ" trong ô chỉ là gợi ý — hãy nhập nội dung hoặc bỏ chọn loại đó.', en: 'You selected a homework type without entering its content. The "E.g." text is only a hint — enter the content or untick that type.' },
   'report.err_homework_max': { vi: 'Chỉ được chọn tối đa 2 loại bài tập về nhà', en: 'You can choose at most 2 homework types' },
   'report.err_homework_long': { vi: 'Nội dung mỗi loại bài tập không được quá 500 ký tự', en: 'Each homework type must not exceed 500 characters' },
   'report.err_rating': { vi: 'Vui lòng chấm điểm buổi học từ 3 đến 5 sao', en: 'Please rate the lesson from 3 to 5 stars' },
