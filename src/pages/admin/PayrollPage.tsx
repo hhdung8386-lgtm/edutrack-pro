@@ -28,6 +28,7 @@ import {
   requiresIndividualSubjectReconciliation,
 } from '@/lib/bookingLogic'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
+import { isReleasedNickname } from '@/lib/teacherDisplay'
 
 function payrollCurrency(value?: string): string {
   return String(value || 'VND').toUpperCase()
@@ -202,7 +203,7 @@ export function PayrollPage() {
   }[]
 
   const filteredTeacherPayrolls = teacherPayrolls.filter(tp => 
-    tp.teacher.name.toLowerCase().includes(search.toLowerCase())
+    `${isReleasedNickname(tp.teacher.code) ? tp.teacher.code : ''} ${tp.teacher.name}`.toLowerCase().includes(search.toLowerCase())
   )
 
   const selectableApprovedPayrolls = payrolls.filter((payroll) => {
@@ -685,7 +686,9 @@ export function PayrollPage() {
             summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0 ? 'cần kế toán kiểm tra' : '',
           ].filter(Boolean)
           return [
-            teacherPayroll.teacher.name,
+            isReleasedNickname(teacherPayroll.teacher.code)
+              ? `${teacherPayroll.teacher.code.trim()} - ${teacherPayroll.teacher.name}`
+              : teacherPayroll.teacher.name,
             teacherPayroll.teacher.level,
             minutes,
             settlementStatus,
@@ -854,7 +857,12 @@ export function PayrollPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-700 truncate">{teacher.name}</p>
+                  <p className="font-medium text-slate-700 truncate">
+                    {isReleasedNickname(teacher.code) && (
+                      <span className="font-semibold text-indigo-600">{teacher.code.trim()} - </span>
+                    )}
+                    {teacher.name}
+                  </p>
                   <p className="text-xs text-slate-500">
                     ×{teacher.level} · {tp.filter(p => p.type !== 'adjustment').length} buổi · {minutes} phút
                     {tp.some(p => p.type === 'adjustment') && (
