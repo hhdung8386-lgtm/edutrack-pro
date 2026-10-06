@@ -21,7 +21,7 @@ import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { courseDeletionBlock, courseDeletionBlockMessage, studentFieldsAfterCourseRemoval } from '@/lib/courseDeletion'
-import { getCountryRate } from '@/lib/countryPricing'
+import { getCanonicalSubjectRate, getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
@@ -1151,9 +1151,14 @@ export function StudentDetailPage() {
       }
 
       const teacherLevel = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
-      const pricePerMinute = nextSubject.pricePerMinute || liveRates.subjectPrice[nextSubjectId] || 0
+      // Đổi môn phải đổi cả TIỀN TỆ theo gói mới; trước đây chỉ đổi giá nên
+      // buổi chuyển từ gói PHP sang gói VND vẫn bị ghi PHP trên lương.
+      const catalogData = (await getDoc(doc(db, 'subjects', nextSubjectId))).data()
+      const catalogRate = catalogData ? getCanonicalSubjectRate(catalogData) : null
+      const pricePerMinute = Number(nextSubject.pricePerMinute) || catalogRate?.price || 0
+      const currency = nextSubject.currency || catalogRate?.currency || 'VND'
       const salary = lesson.status === 'approved'
-        ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel)
+        ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
         : 0
       const lessonPoints = lessonFundPoints(lesson)
 
@@ -1249,6 +1254,7 @@ export function StudentDetailPage() {
           subjectId: nextSubject.subjectId,
           subjectName: nextSubject.subjectName,
           pricePerMinute,
+          currency,
           teacherLevel,
           salary,
           sessionsBeforeApproval,
@@ -1269,6 +1275,7 @@ export function StudentDetailPage() {
           tx.update(payrollDoc.ref, {
             amount: salary,
             pricePerMinute,
+            currency,
             level: teacherLevel,
             subjectId: nextSubject.subjectId,
             subjectName: nextSubject.subjectName,
@@ -1291,6 +1298,8 @@ export function StudentDetailPage() {
           oldSalary: lesson.salary || 0,
           newSalary: salary,
           pricePerMinute,
+          oldCurrency: lesson.currency || 'VND',
+          newCurrency: currency,
         },
         createdAt: serverTimestamp(),
       })
