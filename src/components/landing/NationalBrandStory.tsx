@@ -1,5 +1,3 @@
-import vietnam from '@svg-maps/vietnam'
-import world from '@svg-maps/world'
 import {
   BadgeCheck,
   BookOpenCheck,
@@ -54,78 +52,6 @@ const ECOSYSTEM_ITEMS = [
     tone: 'yellow',
   },
 ] as const
-
-/**
- * Chuyển toạ độ địa lý (vĩ độ / kinh độ) sang toạ độ trên bản đồ SVG.
- *
- * Bản đồ nền `@svg-maps/world` vẽ theo phép chiếu MERCATOR, không phải phép
- * chiếu tuyến tính. Trước đây dùng công thức tuyến tính nên mọi điểm đánh dấu
- * đều lệch khỏi vị trí thật.
- *
- * Hệ số dưới đây được hiệu chuẩn bằng cách đối chiếu hộp bao của 9 quốc gia
- * trong chính file bản đồ với toạ độ địa lý thật của các nước đó
- * (độ khớp R² ≈ 0.98).
- */
-const PROJECTION = {
-  lonScale: 2.78149,
-  lonOffset: 477.583,
-  latScale: -159.85237,
-  latOffset: 464.35,
-}
-
-/** Toạ độ Y theo Mercator: ln(tan(45° + vĩ độ / 2)). */
-function mercatorY(latitude: number) {
-  const clamped = Math.max(-84, Math.min(84, latitude))
-  return Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360))
-}
-
-function projectCoordinates(latitude: number, longitude: number) {
-  return {
-    x: PROJECTION.lonScale * longitude + PROJECTION.lonOffset,
-    y: PROJECTION.latScale * mercatorY(latitude) + PROJECTION.latOffset,
-  }
-}
-
-const DESTINATIONS = [
-  { name: 'Nhật Bản', city: 'Tokyo', latitude: 35.6762, longitude: 139.6503, labelDx: -18, labelDy: -10, anchor: 'end' },
-  { name: 'Hàn Quốc', city: 'Seoul', latitude: 37.5665, longitude: 126.978, labelDx: -18, labelDy: 12, anchor: 'end' },
-  { name: 'Trung Quốc', city: 'Bắc Kinh', latitude: 39.9042, longitude: 116.4074, labelDx: -18, labelDy: -12, anchor: 'end' },
-  { name: 'Đài Loan', city: 'Đài Bắc', latitude: 25.033, longitude: 121.5654, labelDx: 18, labelDy: -8, anchor: 'start' },
-  { name: 'Hồng Kông', city: 'Hồng Kông', latitude: 22.3193, longitude: 114.1694, labelDx: -16, labelDy: -26, anchor: 'end' },
-  { name: 'Thái Lan', city: 'Bangkok', latitude: 13.7563, longitude: 100.5018, labelDx: 18, labelDy: 20, anchor: 'start' },
-  { name: 'Lào', city: 'Viêng Chăn', latitude: 17.9757, longitude: 102.6331, labelDx: -18, labelDy: -15, anchor: 'end' },
-  { name: 'Campuchia', city: 'Phnom Penh', latitude: 11.5564, longitude: 104.9282, labelDx: -20, labelDy: 40, anchor: 'end' },
-  { name: 'Malaysia', city: 'Kuala Lumpur', latitude: 3.139, longitude: 101.6869, labelDx: 18, labelDy: 12, anchor: 'start' },
-  { name: 'Indonesia', city: 'Jakarta', latitude: -6.2088, longitude: 106.8456, labelDx: 18, labelDy: 20, anchor: 'start' },
-  { name: 'Nga', city: 'Moscow', latitude: 55.7558, longitude: 37.6173, labelDx: 18, labelDy: -6, anchor: 'start' },
-  { name: 'Pháp', city: 'Paris', latitude: 48.8566, longitude: 2.3522, labelDx: -18, labelDy: -8, anchor: 'end' },
-  { name: 'Tây Ban Nha', city: 'Madrid', latitude: 40.4168, longitude: -3.7038, labelDx: -18, labelDy: 22, anchor: 'end' },
-  { name: 'Cộng hòa Séc', city: 'Prague', latitude: 50.0755, longitude: 14.4378, labelDx: 18, labelDy: -9, anchor: 'start' },
-].map((destination) => ({ ...destination, ...projectCoordinates(destination.latitude, destination.longitude) }))
-
-/**
- * Khung nhìn của bản đồ: thu gọn về khu vực châu Á để Việt Nam hiện đủ lớn,
- * thay vì trải cả thế giới khiến hình chữ S nhỏ tới mức không nhìn ra.
- * Toạ độ dưới đây bao trọn mọi điểm đến châu Á, hai quần đảo và toàn bộ nhãn.
- */
-const MAP_VIEWBOX = { x: 655, y: 306, width: 270, height: 216 }
-
-/**
- * Hệ số thu nhỏ cho chữ, chấm tròn và khoảng cách nhãn.
- * Khung nhìn hẹp lại nghĩa là mọi thứ được phóng to theo, nên các kích thước
- * hiển thị phải nhân với hệ số này để giữ nguyên độ lớn như thiết kế cũ.
- */
-const MAP_SCALE = MAP_VIEWBOX.width / 1010
-
-/** Điểm đến nằm trong khung nhìn châu Á -> vẽ trực tiếp trên bản đồ. */
-const ASIA_DESTINATIONS = DESTINATIONS.filter(
-  (d) => d.x >= MAP_VIEWBOX.x && d.x <= MAP_VIEWBOX.x + MAP_VIEWBOX.width
-)
-
-/** Điểm đến ngoài khung nhìn (châu Âu) -> liệt kê thành hàng riêng bên dưới. */
-const OTHER_DESTINATIONS = DESTINATIONS.filter(
-  (d) => d.x < MAP_VIEWBOX.x || d.x > MAP_VIEWBOX.x + MAP_VIEWBOX.width
-)
 
 const BRAND_TIMELINE = [
   {
@@ -191,229 +117,77 @@ const AUDIENCE_SEGMENTS = [
   },
 ] as const
 
-/**
- * Quần đảo Hoàng Sa và Trường Sa — khai báo bằng toạ độ địa lý THẬT của các
- * đảo/đá tiêu biểu rồi chiếu lên bản đồ, thay vì gán cứng toạ độ pixel.
- * Nhờ vậy các cụm đảo luôn nằm đúng vị trí trên Biển Đông.
+/*
+ * Câu chuyện học viên. Khi có ảnh thật (đã được phụ huynh đồng ý), đặt file vào
+ * /public/student-stories/ và điền `photo`; chưa có ảnh thì thẻ hiện khung tên.
  */
-/**
- * Vị trí đặt bản đồ Việt Nam chi tiết lên bản đồ thế giới.
- *
- * Khung bao được tính từ chính toạ độ địa lý của đất liền Việt Nam
- * (cực Bắc Lũng Cú 23.39°N, cực Nam mũi Cà Mau 8.56°N,
- *  cực Tây A Pa Chải 102.14°E, cực Đông mũi Đôi 109.47°E)
- * nên hình chữ S nằm khít đúng chỗ trên bản đồ nền.
- *
- * `viewBox` là hộp bao phần ĐẤT LIỀN trong bộ bản đồ Việt Nam (đã loại hai
- * quần đảo, vì hai quần đảo được vẽ riêng bằng toạ độ thật ở trên).
- */
-const VIETNAM_BOUNDS = { north: 23.393, south: 8.559, west: 102.144, east: 109.469 }
-
-const VIETNAM_PLACEMENT = (() => {
-  const topLeft = projectCoordinates(VIETNAM_BOUNDS.north, VIETNAM_BOUNDS.west)
-  const bottomRight = projectCoordinates(VIETNAM_BOUNDS.south, VIETNAM_BOUNDS.east)
-  return {
-    x: topLeft.x,
-    y: topLeft.y,
-    width: bottomRight.x - topLeft.x,
-    height: bottomRight.y - topLeft.y,
-    // Hộp bao phần đất liền trong @svg-maps/vietnam (đo từ dữ liệu path)
-    viewBox: '0 0 380.51 800',
-  }
-})()
-
-/**
- * Điểm nhấn "Việt Nam": đặt ngoài khơi miền Trung (không phủ lên đất liền) và
- * nối bằng nét chỉ dẫn về đúng vùng Tây Nguyên trên lãnh thổ.
- */
-const VIETNAM_HUB = projectCoordinates(12.6, 112.6)
-const VIETNAM_ANCHOR = projectCoordinates(13.9, 108.4)
-
-/** Nhãn quần đảo — đặt lệch sang phải cụm đảo để không che các chấm. */
-const HOANG_SA_LABEL = (() => {
-  const p = projectCoordinates(16.4, 113.4)
-  return { x: p.x + 8, y: p.y }
-})()
-const TRUONG_SA_LABEL = (() => {
-  const p = projectCoordinates(8.9, 114.8)
-  return { x: p.x + 5, y: p.y }
-})()
-
-const HOANG_SA_ISLANDS: [number, number, number][] = [
-  // [vĩ độ, kinh độ, bán kính chấm]
-  [16.83, 112.34, 2.9], // Phú Lâm
-  [16.53, 111.61, 2.4], // Hoàng Sa (Pattle)
-  [16.45, 111.70, 2.1], // Hữu Nhật
-  [16.97, 112.26, 2.2], // Đảo Cây
-  [16.72, 112.74, 2.5], // Linh Côn
-  [16.34, 111.68, 2.0], // Quang Ảnh
-  [16.03, 112.55, 2.3], // Bãi Bông Bay
-  [15.78, 111.19, 2.1], // Tri Tôn
+const STUDENT_STORIES: {
+  name: string
+  meta: string
+  story: string
+  photo?: string
+  tone: 'sky' | 'peach' | 'mint'
+}[] = [
+  {
+    name: 'Bảo Ngọc',
+    meta: '9 tuổi · Hà Nội',
+    story:
+      'Hồi mới học, Ngọc nói câu nào cũng phải nhìn mẹ trước rồi mới dám trả lời. Học với cô được khoảng hai tháng thì con tự kể chuyện ở trường bằng tiếng Anh, sai thì cô sửa nhẹ nhàng nên con không ngại nữa. Giờ tối nào có lịch học là con tự mở máy ngồi chờ.',
+    tone: 'sky',
+  },
+  {
+    name: 'Minh Khang',
+    meta: '7 tuổi · TP. Hồ Chí Minh',
+    story:
+      'Khang hiếu động, ngồi yên 10 phút đã khó. Thầy chia buổi học thành nhiều phần ngắn, xen hát và trò chơi đoán chữ nên con theo được hết 25 phút. Sau mỗi buổi bố mẹ đọc nhận xét của thầy để biết con đang yếu phần nào và ôn thêm ở nhà.',
+    tone: 'peach',
+  },
+  {
+    name: 'Gia Hân',
+    meta: '11 tuổi · Đà Nẵng',
+    story:
+      'Hân đọc khá nhưng phát âm hay nuốt âm cuối. Cô cho con ghi âm lại từng câu, nghe lại rồi so với cô. Sau một học kỳ, bài nói trên lớp của con được cô giáo ở trường khen rõ hơn hẳn, con cũng mạnh dạn xung phong hơn.',
+    tone: 'mint',
+  },
+  {
+    name: 'Đức Anh',
+    meta: '14 tuổi · Hải Phòng',
+    story:
+      'Em học thêm để chuẩn bị thi vào lớp 10. Thầy bám theo đúng dạng bài trong đề, buổi nào em sai nhiều thì buổi sau làm lại phần đó. Em thích nhất là được chọn giờ học buổi tối, không bị chồng với lịch học trên trường.',
+    tone: 'sky',
+  },
+  {
+    name: 'Khánh Linh',
+    meta: '6 tuổi · Cần Thơ',
+    story:
+      'Linh mới vào lớp 1, mẹ chỉ mong con làm quen với tiếng Anh cho vui. Cô dùng tranh, đồ vật trong nhà để dạy từ mới, có hôm con cầm cả gấu bông lên giới thiệu. Bây giờ con thuộc bảng chữ cái và hơn trăm từ quen thuộc.',
+    tone: 'peach',
+  },
+  {
+    name: 'Hoàng Nam',
+    meta: '12 tuổi · Bình Dương',
+    story:
+      'Nam ngại nói vì sợ các bạn cười. Học 1 kèm 1 chỉ có con với thầy nên con thoải mái hỏi lại khi chưa hiểu. Thầy hay hỏi về bóng đá, chủ đề con thích, nên con nói nhiều hơn. Giờ con đã tự đặt câu hỏi ngược lại cho thầy.',
+    tone: 'mint',
+  },
 ]
 
-const TRUONG_SA_ISLANDS: [number, number, number][] = [
-  [11.05, 114.28, 2.6], // Thị Tứ
-  [10.72, 115.82, 2.3], // Vành Khăn
-  [10.37, 114.36, 2.8], // Sinh Tồn
-  [10.18, 114.22, 2.2], // Gạc Ma
-  [9.88, 114.34, 2.4],  // Châu Viên
-  [8.64, 111.92, 2.7],  // Trường Sa Lớn
-  [8.85, 112.90, 2.1],  // Đá Tây
-  [9.60, 112.90, 2.5],  // Nam Yết
-  [10.83, 114.37, 2.2], // Song Tử Tây
-  [7.38, 113.80, 2.3],  // An Bang
-  [8.10, 113.30, 2.0],  // Thuyền Chài
-  [9.20, 113.60, 2.4],  // Phan Vinh
-]
-
-function VietnamGlobalMap() {
+function StudentStoryCard({ name, meta, story, photo, tone }: (typeof STUDENT_STORIES)[number]) {
   return (
-    <div className="national-map-stage" aria-label="Bản đồ Việt Nam kết nối với các điểm đến quốc tế">
-      <svg
-        viewBox={`${MAP_VIEWBOX.x} ${MAP_VIEWBOX.y} ${MAP_VIEWBOX.width} ${MAP_VIEWBOX.height}`}
-        role="img"
-        className="h-auto w-full"
-      >
-        <defs>
-          <filter id="vn-glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="7" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="hub-glow" x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <g className="national-world-map" aria-hidden="true">
-          {world.locations.map((location: { id: string; name: string; path: string }) => (
-            <path key={location.id} d={location.path} />
-          ))}
-        </g>
-
-        {/*
-          Bản đồ Việt Nam chi tiết được đặt CHỒNG KHÍT lên đúng vị trí Việt Nam
-          của bản đồ thế giới (Đông Nam Á), theo đúng tỷ lệ địa lý thật —
-          xem VIETNAM_PLACEMENT để biết cách tính.
-        */}
-        <svg
-          x={VIETNAM_PLACEMENT.x}
-          y={VIETNAM_PLACEMENT.y}
-          width={VIETNAM_PLACEMENT.width}
-          height={VIETNAM_PLACEMENT.height}
-          viewBox={VIETNAM_PLACEMENT.viewBox}
-          preserveAspectRatio="none"
-          overflow="visible"
-        >
-          {vietnam.locations.map((location: { id: string; name: string; path: string }) => {
-            const isIsland = location.id === 'hoangsa' || location.id === 'truongsa'
-            if (isIsland) return null
-            return (
-              <path
-                key={location.id}
-                d={location.path}
-                className="national-map-province"
-                vectorEffect="non-scaling-stroke"
-              />
-            )
-          })}
-        </svg>
-
-        <g className="national-island-cluster" aria-hidden="true">
-          {HOANG_SA_ISLANDS.map(([lat, lon, r], index) => {
-            const { x, y } = projectCoordinates(lat, lon)
-            return <circle key={`hoang-sa-${index}`} cx={x} cy={y} r={r * MAP_SCALE} style={{ animationDelay: `${index * 0.12}s` }} />
-          })}
-          {TRUONG_SA_ISLANDS.map(([lat, lon, r], index) => {
-            const { x, y } = projectCoordinates(lat, lon)
-            return <circle key={`truong-sa-${index}`} cx={x} cy={y} r={r * MAP_SCALE} style={{ animationDelay: `${0.45 + index * 0.1}s` }} />
-          })}
-        </g>
-
-        {/*
-          Điểm nhấn Việt Nam. Bán kính được thu nhỏ cho cân xứng với kích thước
-          thật của lãnh thổ trên bản đồ (rộng ~20px), tránh che mất hình chữ S.
-          Điểm được đặt ngoài khơi miền Trung và nối vào đất liền bằng một nét
-          chỉ dẫn, nhờ vậy vẫn nổi bật mà không phủ lên bản đồ.
-        */}
-        <g className="national-map-hub" filter="url(#hub-glow)">
-          <line
-            className="national-map-hub-leader"
-            x1={VIETNAM_HUB.x}
-            y1={VIETNAM_HUB.y}
-            x2={VIETNAM_ANCHOR.x}
-            y2={VIETNAM_ANCHOR.y}
-          />
-          <circle cx={VIETNAM_HUB.x} cy={VIETNAM_HUB.y} r={9 * MAP_SCALE} />
-          <circle cx={VIETNAM_HUB.x} cy={VIETNAM_HUB.y} r={4 * MAP_SCALE} />
-          <circle className="national-map-pulse" cx={VIETNAM_HUB.x} cy={VIETNAM_HUB.y} r={14 * MAP_SCALE} />
-          <text
-            x={VIETNAM_HUB.x}
-            y={VIETNAM_HUB.y + 22 * MAP_SCALE}
-            textAnchor="middle"
-          >
-            Việt Nam
-          </text>
-        </g>
-
-        {ASIA_DESTINATIONS.map((destination, index) => {
-          const textX = destination.x + destination.labelDx * MAP_SCALE
-          const textY = destination.y + destination.labelDy * MAP_SCALE
-          return (
-            <g key={destination.name} className="national-map-destination" style={{ animationDelay: `${index * 0.12}s` }}>
-              <circle cx={destination.x} cy={destination.y} r={3.4 * MAP_SCALE} />
-              <circle className="national-map-pulse" cx={destination.x} cy={destination.y} r={6.4 * MAP_SCALE} />
-              <text x={textX} y={textY} textAnchor={destination.anchor as 'start' | 'end'}>
-                {destination.name}
-              </text>
-            </g>
-          )
-        })}
-
-        {/* Nhãn hai quần đảo — neo theo đúng cụm đảo đã chiếu ở trên */}
-        <g className="national-island-label">
-          <text x={HOANG_SA_LABEL.x} y={HOANG_SA_LABEL.y}>QUẦN ĐẢO</text>
-          <text x={HOANG_SA_LABEL.x} y={HOANG_SA_LABEL.y + 19 * MAP_SCALE}>HOÀNG SA</text>
-          <text x={TRUONG_SA_LABEL.x} y={TRUONG_SA_LABEL.y}>QUẦN ĐẢO</text>
-          <text x={TRUONG_SA_LABEL.x} y={TRUONG_SA_LABEL.y + 19 * MAP_SCALE}>TRƯỜNG SA</text>
-        </g>
-      </svg>
-
-      {/*
-        Danh sách điểm đến dạng thẻ.
-        - Máy tính: chỉ liệt kê các nước NGOÀI khung nhìn châu Á (châu Âu),
-          vì các nước châu Á đã có nhãn ngay trên bản đồ.
-        - Điện thoại: bản đồ quá hẹp nên nhãn bị chồng nhau — khi đó nhãn trên
-          bản đồ được ẩn và toàn bộ điểm đến hiện ở danh sách này.
-      */}
-      <div className="national-map-outside">
-        <span className="national-map-outside-label">Cộng đồng học viên tại</span>
-        <ul>
-          {ASIA_DESTINATIONS.map((destination) => (
-            <li key={destination.name} className="national-map-outside-asia">
-              <span className="national-map-outside-dot" aria-hidden="true" />
-              <span>
-                <strong>{destination.name}</strong>
-              </span>
-            </li>
-          ))}
-          {OTHER_DESTINATIONS.map((destination) => (
-            <li key={destination.name}>
-              <span className="national-map-outside-dot" aria-hidden="true" />
-              <span>
-                <strong>{destination.name}</strong>
-              </span>
-            </li>
-          ))}
-        </ul>
+    <article className={`national-story-card is-${tone}`}>
+      <div className="national-story-media">
+        {photo ? (
+          <img src={photo} alt={`Học viên ${name} trong buổi học trực tuyến`} loading="lazy" width={480} height={300} />
+        ) : (
+          <span className="national-story-initial" aria-hidden="true">{name.split(' ').pop()?.charAt(0)}</span>
+        )}
       </div>
-    </div>
+      <div className="national-story-body">
+        <h3>{name}</h3>
+        <span className="national-story-meta">{meta}</span>
+        <p>{story}</p>
+      </div>
+    </article>
   )
 }
 
@@ -518,15 +292,17 @@ export function NationalBrandStory() {
         </div>
       </section>
 
-      <section className="national-section national-section-map">
+      <section className="national-section national-section-stories">
         <div className="national-container">
           <div className="national-heading national-heading-centered">
-            <h2>Cộng đồng học viên đa quốc gia</h2>
-            <p>
-              Dịch vụ gia sư tiếng Anh trực tuyến được học viên tại Việt Nam và nhiều quốc gia sử dụng.
-            </p>
+            <h2>Câu chuyện học viên</h2>
+            <p>Những thay đổi nhỏ mà phụ huynh và học viên kể lại sau một thời gian học cùng gia sư 123English.</p>
           </div>
-          <VietnamGlobalMap />
+          <div className="national-story-grid">
+            {STUDENT_STORIES.map((item) => (
+              <StudentStoryCard key={item.name} {...item} />
+            ))}
+          </div>
         </div>
       </section>
 
