@@ -118,8 +118,7 @@ const AUDIENCE_SEGMENTS = [
 ] as const
 
 /*
- * Câu chuyện học viên. Khi có ảnh thật (đã được phụ huynh đồng ý), đặt file vào
- * /public/student-stories/ và điền `photo`; chưa có ảnh thì thẻ hiện khung tên.
+ * Nội dung và ảnh minh họa; thay bằng lời kể đã xác minh khi có tư liệu thật.
  */
 const STUDENT_STORIES: {
   name: string
@@ -129,45 +128,51 @@ const STUDENT_STORIES: {
   tone: 'sky' | 'peach' | 'mint'
 }[] = [
   {
-    name: 'Bảo Ngọc',
-    meta: '9 tuổi · Hà Nội',
+    name: 'Minh Anh',
+    meta: 'Tự tin nói hơn',
+    photo: '/student-stories/minh-anh.png',
     story:
-      'Hồi mới học, Ngọc nói câu nào cũng phải nhìn mẹ trước rồi mới dám trả lời. Học với cô được khoảng hai tháng thì con tự kể chuyện ở trường bằng tiếng Anh, sai thì cô sửa nhẹ nhàng nên con không ngại nữa. Giờ tối nào có lịch học là con tự mở máy ngồi chờ.',
+      'Trước đây, con thường nói rất nhỏ khi học tiếng Anh. Giờ con đã dám trả lời cô và kể vài câu về một ngày của mình. Có lúc vẫn ngập ngừng, nhưng con chịu nói hơn trước.',
     tone: 'sky',
   },
   {
-    name: 'Minh Khang',
-    meta: '7 tuổi · TP. Hồ Chí Minh',
+    name: 'Gia Bảo',
+    meta: 'Học từ những điều quen thuộc',
+    photo: '/student-stories/gia-bao.png',
     story:
-      'Khang hiếu động, ngồi yên 10 phút đã khó. Thầy chia buổi học thành nhiều phần ngắn, xen hát và trò chơi đoán chữ nên con theo được hết 25 phút. Sau mỗi buổi bố mẹ đọc nhận xét của thầy để biết con đang yếu phần nào và ôn thêm ở nhà.',
+      'Con thích nhất những buổi học có trò chơi đoán từ. Học xong, con hay lấy đồ vật trong nhà ra hỏi mẹ bằng tiếng Anh. Có từ chưa nhớ, hai mẹ con lại cùng xem.',
     tone: 'peach',
   },
   {
-    name: 'Gia Hân',
-    meta: '11 tuổi · Đà Nẵng',
+    name: 'Khánh Linh',
+    meta: 'Tự chuẩn bị cho buổi học',
+    photo: '/student-stories/khanh-linh.png',
     story:
-      'Hân đọc khá nhưng phát âm hay nuốt âm cuối. Cô cho con ghi âm lại từng câu, nghe lại rồi so với cô. Sau một học kỳ, bài nói trên lớp của con được cô giáo ở trường khen rõ hơn hẳn, con cũng mạnh dạn xung phong hơn.',
+      'Lúc mới học, con cứ chờ mẹ ngồi bên cạnh. Dần dần, con tự chuẩn bị tai nghe và mở bài học. Mẹ vui nhất là thấy con chủ động, không phải nhắc nhiều như trước.',
     tone: 'mint',
   },
   {
-    name: 'Đức Anh',
-    meta: '14 tuổi · Hải Phòng',
+    name: 'Đức Minh',
+    meta: 'Bắt đầu từ chủ đề yêu thích',
+    photo: '/student-stories/duc-minh.png',
     story:
-      'Em học thêm để chuẩn bị thi vào lớp 10. Thầy bám theo đúng dạng bài trong đề, buổi nào em sai nhiều thì buổi sau làm lại phần đó. Em thích nhất là được chọn giờ học buổi tối, không bị chồng với lịch học trên trường.',
+      'Con mê ô tô nên rất hào hứng khi được nói về chủ đề này. Từ những từ đơn lẻ, con bắt đầu ghép thành câu ngắn. Con vẫn nói sai, nhưng đã bớt sợ sai.',
     tone: 'sky',
   },
   {
-    name: 'Khánh Linh',
-    meta: '6 tuổi · Cần Thơ',
+    name: 'Ngọc Hà',
+    meta: 'Nhớ từ qua những bài hát',
+    photo: '/student-stories/ngoc-ha.png',
     story:
-      'Linh mới vào lớp 1, mẹ chỉ mong con làm quen với tiếng Anh cho vui. Cô dùng tranh, đồ vật trong nhà để dạy từ mới, có hôm con cầm cả gấu bông lên giới thiệu. Bây giờ con thuộc bảng chữ cái và hơn trăm từ quen thuộc.',
+      'Con hay hát lại những bài đã học trên lớp, có khi vừa hát vừa làm động tác. Nhờ vậy, con nhớ thêm nhiều từ. Với con, tiếng Anh đang trở thành một phần vui vẻ trong ngày.',
     tone: 'peach',
   },
   {
     name: 'Hoàng Nam',
-    meta: '12 tuổi · Bình Dương',
+    meta: 'Kiên nhẫn với từng bài học',
+    photo: '/student-stories/hoang-nam.png',
     story:
-      'Nam ngại nói vì sợ các bạn cười. Học 1 kèm 1 chỉ có con với thầy nên con thoải mái hỏi lại khi chưa hiểu. Thầy hay hỏi về bóng đá, chủ đề con thích, nên con nói nhiều hơn. Giờ con đã tự đặt câu hỏi ngược lại cho thầy.',
+      'Trước kia, gặp từ lạ là con bỏ qua. Bây giờ con thử đọc, rồi hỏi cô nếu chưa hiểu. Chưa phải bài nào cũng dễ, nhưng con đã kiên nhẫn hơn khi học.',
     tone: 'mint',
   },
 ]
@@ -177,7 +182,7 @@ function StudentStoryCard({ name, meta, story, photo, tone }: (typeof STUDENT_ST
     <article className={`national-story-card is-${tone}`}>
       <div className="national-story-media">
         {photo ? (
-          <img src={photo} alt={`Học viên ${name} trong buổi học trực tuyến`} loading="lazy" width={480} height={300} />
+          <img src={photo} alt={`Ảnh minh họa ${name} học tiếng Anh tại nhà`} loading="lazy" decoding="async" width={1536} height={1024} />
         ) : (
           <span className="national-story-initial" aria-hidden="true">{name.split(' ').pop()?.charAt(0)}</span>
         )}
@@ -295,14 +300,15 @@ export function NationalBrandStory() {
       <section className="national-section national-section-stories">
         <div className="national-container">
           <div className="national-heading national-heading-centered">
-            <h2>Câu chuyện học viên</h2>
-            <p>Những thay đổi nhỏ mà phụ huynh và học viên kể lại sau một thời gian học cùng gia sư 123English.</p>
+            <h2>Mỗi bạn nhỏ, một câu chuyện</h2>
+            <p>Những thay đổi nhỏ trên hành trình học tiếng Anh.</p>
           </div>
           <div className="national-story-grid">
             {STUDENT_STORIES.map((item) => (
               <StudentStoryCard key={item.name} {...item} />
             ))}
           </div>
+          <p className="national-story-disclosure">Tên, hình ảnh và câu chuyện được minh họa để giới thiệu trải nghiệm học tập.</p>
         </div>
       </section>
 
