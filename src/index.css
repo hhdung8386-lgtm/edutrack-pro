@@ -3094,3 +3094,93 @@
   .pkg-float { animation: none; }
   .pkg-shine::after { display: none; }
 }
+
+/* Câu chuyện học viên (thay khối bản đồ) */
+.national-section-stories {
+  background: linear-gradient(180deg, #fff 0%, #f6fbff 100%);
+}
+
+.national-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  margin-top: 3rem;
+}
+
+.national-story-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e4edf5;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 20px 44px -36px rgb(30 70 110 / 0.45);
+}
+
+.national-story-media {
+  display: grid;
+  aspect-ratio: 16 / 10;
+  place-items: center;
+  background: #e8f3fc;
+}
+
+.national-story-card.is-peach .national-story-media { background: #fdeee4; }
+.national-story-card.is-mint .national-story-media { background: #e6f6ef; }
+
+.national-story-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.national-story-initial {
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #2a6fa8;
+  font-size: 1.9rem;
+  font-weight: 800;
+}
+
+.national-story-card.is-peach .national-story-initial { color: #c4622d; }
+.national-story-card.is-mint .national-story-initial { color: #2b8a62; }
+
+.national-story-body {
+  padding: 1.35rem 1.4rem 1.6rem;
+}
+
+.national-story-body h3 {
+  color: #1f2a37;
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.national-story-meta {
+  display: block;
+  margin-top: 0.2rem;
+  color: #7a8794;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.national-story-body p {
+  position: relative;
+  margin-top: 0.9rem;
+  padding-left: 0.9rem;
+  border-left: 3px solid #ffc107;
+  color: #4b5563;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+@media (max-width: 1023px) {
+  .national-story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .national-story-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; margin-top: 2rem; }
+}
