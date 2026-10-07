@@ -3097,7 +3097,7 @@
 
 /* Câu chuyện học viên (thay khối bản đồ) */
 .national-section-stories {
-  background: linear-gradient(180deg, #fff 0%, #f6fbff 100%);
+  background: #f8f9fd;
 }
 
 .national-story-grid {
@@ -3120,9 +3120,17 @@
 
 .national-story-media {
   display: grid;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 3 / 2;
   place-items: center;
   background: #e8f3fc;
+}
+
+.national-story-disclosure {
+  margin-top: 1.5rem;
+  color: #737d8e;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.6;
 }
 
 .national-story-card.is-peach .national-story-media { background: #fdeee4; }

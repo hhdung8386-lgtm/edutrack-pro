@@ -24,6 +24,7 @@ import { courseDeletionBlock, courseDeletionBlockMessage, studentFieldsAfterCour
 import { getCanonicalSubjectRate, getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
+import { planLessonCurrencyCorrection } from '@/lib/lessonCurrencyCorrection'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
@@ -1115,6 +1116,54 @@ export function StudentDetailPage() {
     status: actualRemainingMinutes <= 0 ? 'expired' : student.status,
   }
 
+  const handleCorrectLessonCurrency = async (lesson: Lesson) => {
+    if (!student || !user || changingSubjectLessonId) return
+    if (!window.confirm(`Đối soát tiền tệ buổi ${lesson.date} theo gói ${lesson.subjectName}? Chỉ cập nhật lương chưa thanh toán khi đơn giá khớp; giữ nguyên kim cương và lịch học.`)) return
+    setChangingSubjectLessonId(lesson.id)
+    try {
+      const payrollQuery = await getDocs(query(collection(db, 'payroll'), where('lessonId', '==', lesson.id)))
+      const logRef = doc(collection(db, 'adminLogs'))
+      await runTransaction(db, async (tx) => {
+        const lessonRef = doc(db, 'lessons', lesson.id)
+        const [lessonSnap, studentSnap, catalogSnap, ...payrollSnaps] = await Promise.all([
+          tx.get(lessonRef), tx.get(doc(db, 'students', student.id)),
+          tx.get(doc(db, 'subjects', lesson.subjectId)),
+          ...payrollQuery.docs.map((row) => tx.get(row.ref)),
+        ])
+        if (!lessonSnap.exists() || !studentSnap.exists()) throw new Error('Không tìm thấy buổi học hoặc học viên')
+        const current = lessonSnap.data() as Lesson
+        if (current.studentId !== student.id || current.subjectId !== lesson.subjectId
+          || current.currency !== lesson.currency || current.salary !== lesson.salary) {
+          throw new Error('Buổi học vừa thay đổi; vui lòng tải lại để đối soát')
+        }
+        const pkg = (studentSnap.data().subjects as StudentSubject[] | undefined)?.find((item) => item.subjectId === current.subjectId)
+        if (!pkg || (!pkg.currency && !catalogSnap.exists())) throw new Error('Không đủ thông tin gói học để xác định tiền tệ')
+        const catalogRate = catalogSnap.exists() ? getCanonicalSubjectRate(catalogSnap.data()) : null
+        const rate = { price: Number(pkg.pricePerMinute) || catalogRate?.price || 0, currency: pkg.currency || catalogRate?.currency || '' }
+        const payrollRows = payrollSnaps.filter((row) => row.exists() && !row.data()?.voided)
+        if (payrollRows.length !== 1) throw new Error('Cần đúng một khoản lương đang hoạt động để đối soát')
+        const correction = planLessonCurrencyCorrection(current, rate, payrollRows.map((row) => row.data()!))
+        const payroll = payrollRows[0]
+        const data = payroll.data()!
+        if (data.teacherId !== current.teacherId || data.lessonId !== lesson.id || data.studentId !== student.id) {
+          throw new Error('Liên kết bảng lương chưa khớp buổi học')
+        }
+        tx.update(lessonRef, { ...correction, updatedAt: serverTimestamp() })
+        tx.update(payroll.ref, { amount: correction.salary, currency: correction.currency, recalculatedAt: serverTimestamp(), recalculatedBy: user.uid })
+        tx.set(logRef, {
+          adminId: user.uid, action: 'CORRECT_LESSON_CURRENCY', targetType: 'lesson', targetId: lesson.id,
+          changes: { oldCurrency: current.currency || 'VND', newCurrency: correction.currency, oldSalary: current.salary || 0, newSalary: correction.salary, payrollId: payroll.id },
+          createdAt: serverTimestamp(),
+        })
+      })
+      toast.success('Đã đối soát tiền tệ của buổi học và bảng lương')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Không thể đối soát tiền tệ')
+    } finally {
+      setChangingSubjectLessonId(null)
+    }
+  }
+
   const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string, silent = false): Promise<boolean> => {
     if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return false
     if (classHuntCompensationFromLesson(lesson) || lesson.classHuntCompensation !== undefined) {
@@ -2058,6 +2107,12 @@ export function StudentDetailPage() {
                             </option>
                           ))}
                         </select>
+                        {lesson.status === 'approved' && activeSubjects.some((subject) => subject.subjectId === lesson.subjectId && subject.currency && subject.currency !== lesson.currency) && (
+                          <button type="button" onClick={() => handleCorrectLessonCurrency(lesson)} disabled={changingSubjectLessonId !== null}
+                            className="mt-2 min-h-10 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 disabled:opacity-50">
+                            Đối soát tiền tệ
+                          </button>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={lesson.book || ''}>{lesson.book || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{lesson.minutes}'</td>
