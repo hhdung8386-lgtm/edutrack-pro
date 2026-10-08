@@ -117,7 +117,7 @@ function SectionTitle({ eyebrow, title, light = false }: { eyebrow: string; titl
         <Sparkles className="h-3.5 w-3.5" aria-hidden />
         {eyebrow}
       </p>
-      <h2 className={`mt-2 text-[1.6rem] font-black leading-tight tracking-[-0.02em] ${light ? 'text-white' : 'text-[#10213A]'}`}>
+      <h2 className={`mt-2 text-[1.6rem] font-black leading-tight tracking-normal ${light ? 'text-white' : 'text-[#10213A]'}`}>
         {title}
       </h2>
     </div>
@@ -152,7 +152,7 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
     return (
       <div className="rounded-[28px] bg-white p-6 text-center shadow-[0_18px_50px_-20px_rgba(16,33,58,0.35)]">
         <Mascot123 pose="cheer" className="mx-auto h-32 w-32" />
-        <h3 className="mt-2 text-xl font-black text-[#10213A]">Đăng ký thành công!</h3>
+        <h3 className="text-balance mt-2 text-xl font-black text-[#10213A]">Đăng ký thành công!</h3>
         <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
           123English đã nhận thông tin của bạn. Tư vấn viên sẽ liên hệ số <b>{normalizeVietnamPhone(form.phone)}</b> để xếp lịch học thử trong giờ làm việc.
         </p>
@@ -297,7 +297,7 @@ export function HocThuMienPhiPage() {
           <p className="relative mx-auto w-fit rounded-full bg-[#E53935] px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-white">
             🎁 Ưu đãi đăng ký hôm nay
           </p>
-          <h1 className="relative mt-3 text-center text-[1.35rem] font-black leading-tight">
+          <h1 className="text-balance relative mt-3 text-center text-[1.35rem] font-black leading-tight">
             Học thử MIỄN PHÍ 1 kèm 1 cùng
           </h1>
           <p className="relative text-center text-[2.6rem] font-black leading-none tracking-[-0.03em] text-[#1667B8]">
@@ -403,7 +403,7 @@ export function HocThuMienPhiPage() {
                     <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <div>
-                    <h3 className="font-black leading-snug">{title}</h3>
+                    <h3 className="text-balance font-black leading-snug">{title}</h3>
                     <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{text}</p>
                   </div>
                 </div>
@@ -427,7 +427,7 @@ export function HocThuMienPhiPage() {
                 <img src={program.image} alt={program.title} loading="lazy" className="aspect-[4/3] w-full object-cover" />
                 <div className="p-3">
                   <span className="rounded-full bg-[#FFF4C7] px-2 py-0.5 text-[10px] font-black text-[#B37400]">{program.tag}</span>
-                  <h3 className="mt-1.5 text-sm font-black leading-snug">{program.title}</h3>
+                  <h3 className="text-balance mt-1.5 text-sm font-black leading-snug">{program.title}</h3>
                   <p className="text-xs font-bold text-slate-500">{program.age}</p>
                 </div>
               </article>
@@ -440,7 +440,7 @@ export function HocThuMienPhiPage() {
           <div className="text-center">
             <Trophy className="mx-auto h-9 w-9 text-[#E53935]" aria-hidden />
             <p className="mt-2 text-sm font-black text-[#5C3D00]">Tự hào được vinh danh</p>
-            <h2 className="mt-1 text-[1.7rem] font-black leading-tight text-[#1667B8]">Thương hiệu mạnh quốc gia 2026</h2>
+            <h2 className="text-balance mt-1 text-[1.7rem] font-black leading-tight text-[#1667B8]">Thương hiệu mạnh quốc gia 2026</h2>
             <p className="text-sm font-bold text-[#5C3D00]">Viet Nam Top Brand Awards · Dinh Độc Lập</p>
           </div>
           <div className="relative mt-6 rounded-[26px] bg-[#1463B4] p-2.5 shadow-xl">
@@ -521,7 +521,7 @@ export function HocThuMienPhiPage() {
         {/* Final CTA */}
         <section className="mx-4 overflow-hidden rounded-[30px] bg-gradient-to-br from-[#1E8BE0] to-[#1463B4] p-6 text-center text-white">
           <Mascot123 pose="wave" className="mx-auto h-32 w-32" />
-          <h2 className="mt-1 text-2xl font-black leading-tight">Sẵn sàng cho buổi học đầu tiên?</h2>
+          <h2 className="text-balance mt-1 text-2xl font-black leading-tight">Sẵn sàng cho buổi học đầu tiên?</h2>
           <p className="mt-2 text-sm font-semibold text-white/85">Đăng ký hôm nay để giữ suất học thử miễn phí.</p>
           <button
             type="button"

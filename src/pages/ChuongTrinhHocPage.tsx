@@ -192,7 +192,7 @@ function DesktopMatrix() {
             <div className="grid grid-cols-[250px_minmax(0,1fr)]">
               <div className={`px-6 py-5 ${style.accent}`}>
                 <p className="text-xs font-black uppercase tracking-[0.12em]">{style.label}</p>
-                <h3 className="mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
+                <h3 className="text-balance mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{group.summary}</p>
               </div>
               <div className="space-y-2 border-l border-slate-200 p-4">
@@ -252,7 +252,7 @@ function MobileMatrix() {
             className={`rounded-[1.5rem] border p-4 ${style.border} ${style.background}`}
           >
             <p className={`text-[11px] font-black uppercase tracking-[0.1em] ${style.accent}`}>{style.label}</p>
-            <h3 className="mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
+            <h3 className="text-balance mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
             <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{group.summary}</p>
 
             <div className="mt-4 space-y-3">
@@ -298,7 +298,7 @@ export function ChuongTrinhHocPage() {
         <section id="ban-do-giao-trinh" className="program-scroll-reveal scroll-mt-20 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="w-full">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">TÀI LIỆU HỖ TRỢ DẠY THÊM</h2>
+              <h2 className="text-balance text-3xl font-black tracking-normal sm:text-4xl">TÀI LIỆU HỖ TRỢ DẠY THÊM</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
                 123English chuẩn bị nhiều bộ tài liệu để gia sư tham khảo và lựa chọn trong quá trình dạy thêm 1 kèm 1.
               </p>
@@ -320,7 +320,7 @@ export function ChuongTrinhHocPage() {
         <section className="program-scroll-reveal bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng bộ tài liệu</h2>
+              <h2 className="text-balance text-3xl font-black tracking-normal sm:text-4xl">Chi tiết từng bộ tài liệu</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
                 Nội dung giúp gia sư, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.
               </p>
@@ -339,7 +339,7 @@ export function ChuongTrinhHocPage() {
                         <GroupIcon className="h-6 w-6" />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black tracking-[-0.025em]">{group.label}</h3>
+                        <h3 className="text-balance text-2xl font-black tracking-normal">{group.label}</h3>
                         <p className="mt-1 max-w-2xl text-sm font-medium leading-6 text-slate-500">{group.summary}</p>
                       </div>
                     </div>
@@ -385,7 +385,7 @@ export function ChuongTrinhHocPage() {
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-2xl font-black">Chưa chắc lộ trình nào phù hợp?</h2>
+                <h2 className="text-balance text-2xl font-black">Chưa chắc lộ trình nào phù hợp?</h2>
                 <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-300">
                   Tra cứu tiến độ hiện tại hoặc liên hệ 123English để được tư vấn theo độ tuổi và mục tiêu học tập.
                 </p>

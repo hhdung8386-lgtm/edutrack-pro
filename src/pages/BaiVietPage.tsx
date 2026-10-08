@@ -174,7 +174,7 @@ export function BaiVietPage() {
                 <Sparkles className="h-4 w-4" />
                 Góc chia sẻ 123English
               </p>
-              <h1 className="mt-4 max-w-3xl text-[clamp(2.7rem,5.4vw,5.2rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
+              <h1 className="text-balance mt-4 max-w-3xl text-[clamp(2.7rem,5.4vw,5.2rem)] font-black leading-[1.3] tracking-normal text-[#10213A]">
                 Một hành trình.<br />
                 Nhiều câu chuyện đáng nhớ.
               </h1>
@@ -218,7 +218,7 @@ export function BaiVietPage() {
                         {featured.category}
                       </span>
                     )}
-                    <h2 className="mt-4 text-2xl font-black leading-[1.2] tracking-[-0.03em] text-[#10213A] sm:text-3xl">
+                    <h2 className="text-balance mt-4 text-2xl font-black leading-[1.2] tracking-normal text-[#10213A] sm:text-3xl">
                       {featured.title}
                     </h2>
                     {featured.excerpt && (
@@ -280,7 +280,7 @@ export function BaiVietPage() {
                             {post.category}
                           </span>
                         )}
-                        <h3 className="text-base font-black leading-6 text-[#10213A] group-hover:text-[#0E7EBA]">
+                        <h3 className="text-balance text-base font-black leading-6 text-[#10213A] group-hover:text-[#0E7EBA]">
                           {post.title}
                         </h3>
                         {post.excerpt && (
@@ -342,7 +342,7 @@ export function BaiVietChiTietPage() {
                   {post.category}
                 </span>
               )}
-              <h1 className="mt-4 text-3xl font-extrabold leading-[1.15] tracking-tight text-[#10213A] sm:text-4xl">
+              <h1 className="text-balance mt-4 text-3xl font-extrabold leading-[1.15] tracking-tight text-[#10213A] sm:text-4xl">
                 {post.title}
               </h1>
               <div className="mt-4 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500">

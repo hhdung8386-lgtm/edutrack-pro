@@ -36,3 +36,13 @@ Scenes: Minh Anh speaking at a laptop; Gia Bảo showing a red-car picture; Khá
 ## Deployment
 
 Build from this isolated branch based on production, not the dirty primary checkout. Stage a production build without domain assignment, verify it, re-check live baseline then promote. Keep baseline deployment for rollback. Local production build uses existing project Firebase configuration; pulled Vercel variables were empty and must not be used to build a blank/invalid Firebase client. Environment files remain ignored and are not committed.
+
+## October 8 typography follow-up
+
+Updated production baseline: 7768ae6e36ee92233431c06d5c6a4786051883f7 (dpl_CZM2H8fCTGoqrwAGwhbBKsT3dD1g). Rebased story/currency changes onto it to retain production fixes for course selection and charged absences.
+
+Public heading audit: personalization, home, articles, contact, tutors, curriculum overview/level, free trial and home news/outcome sections. Removed compressed tracking and sub-1.1 headline line heights, balanced wrapping, widened personalization section headings to 1024px, and used pretty paragraph wrapping on home/personalization. Three example learning paths now use ordered six-item lists; student story cards contain no top icons.
+
+Follow-up impact: heading classes and static ordered lists only; navigation targets, article queries, curriculum lookup, contact/trial submission handlers, auth, booking and payroll readers preserved. Home story assets remain static and disclosed as illustrative.
+
+Verified 65 finance/attendance/booking/ledger regression cases; TypeScript/Vite build passed. Browser desktop 1272px and mobile 390px personalization tested without overflow; each example list has six items. The two reported section headings fit one desktop line. Home mobile has six cards and zero card SVG icons. Public CTA anchor navigation tested. Admin/accounting/tutor/parent/backend remain static-audit for financial repair; real Kimberley historical repair pending connected Chrome admin session. No Firestore rules/index/config deployment.

@@ -32,7 +32,7 @@ export function TutoringInfoSection({ href, className = '' }: TutoringInfoSectio
             </p>
             <h2
               id="day-them-tieng-anh-title"
-              className="mt-5 text-3xl font-black uppercase leading-tight tracking-[-0.03em] text-[#10213A] sm:text-4xl lg:text-[2.6rem]"
+              className="text-balance mt-5 text-3xl font-black uppercase leading-tight tracking-normal text-[#10213A] sm:text-4xl lg:text-[2.6rem]"
             >
               Dạy thêm tiếng Anh 1 kèm 1
             </h2>

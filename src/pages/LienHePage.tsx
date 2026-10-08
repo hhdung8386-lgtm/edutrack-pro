@@ -73,7 +73,7 @@ export function LienHePage() {
                 <Sparkles className="h-4 w-4" />
                 {primaryHero?.eyebrow || 'Liên hệ 123English'}
               </span>
-              <h1 className="mt-5 text-[clamp(2.6rem,5.4vw,5rem)] font-black leading-[0.98] tracking-[-0.055em]">
+              <h1 className="text-balance mt-5 text-[clamp(2.6rem,5.4vw,5rem)] font-black leading-[1.3] tracking-normal">
                 {primaryHero?.title || 'Bắt đầu bằng một cuộc trò chuyện rõ ràng.'}
               </h1>
               <p className="mt-6 max-w-lg text-base font-semibold leading-8 text-slate-600">
@@ -117,7 +117,7 @@ export function LienHePage() {
           <div className="mx-auto grid w-full max-w-7xl gap-8 lg:grid-cols-[0.72fr_1.28fr]">
             <aside className="rounded-[2rem] bg-[#10213A] p-6 text-white sm:p-8">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-[#FFD344]">Kết nối trực tiếp</p>
-              <h2 className="mt-4 text-2xl font-black leading-tight">Chọn kênh thuận tiện nhất cho bạn.</h2>
+              <h2 className="text-balance mt-4 text-2xl font-black leading-tight">Chọn kênh thuận tiện nhất cho bạn.</h2>
               <div className="mt-8 grid gap-7">
                 <div className="flex gap-4">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#FFD344]">
@@ -174,7 +174,7 @@ export function LienHePage() {
 
             <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_28px_70px_-52px_rgba(16,33,58,0.5)] sm:p-8 lg:p-10">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#0D8FC7]">Yêu cầu tư vấn</span>
-              <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] sm:text-3xl">Bạn đang hướng đến mục tiêu nào?</h2>
+              <h2 className="text-balance mt-3 text-2xl font-black tracking-normal sm:text-3xl">Bạn đang hướng đến mục tiêu nào?</h2>
               <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
                 Điền thông tin cơ bản, tư vấn viên 123English sẽ liên hệ lại với bạn trong giờ làm việc.
               </p>

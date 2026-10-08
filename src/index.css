@@ -107,6 +107,19 @@
 }
 
 /* Public homepage and teacher storytelling */
+/* Vietnamese accents need space; balance headings without forcing a fixed break. */
+.national-home :is(h1, h2, h3),
+.personal-learning-page :is(h1, h2, h3) {
+  text-wrap: balance;
+  letter-spacing: normal;
+  line-height: 1.3;
+}
+
+.national-home p,
+.personal-learning-page p {
+  text-wrap: pretty;
+}
+
 .national-hero-shell {
   position: relative;
   isolation: isolate;

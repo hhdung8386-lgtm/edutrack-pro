@@ -68,7 +68,7 @@ export function CurriculumLevelPage() {
                   </span>
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.12em] text-amber-700">Người lớn · Cuốn {level}</p>
-                    <h1 className="mt-2 text-3xl font-black tracking-[-0.035em] sm:text-4xl">{curriculum.name}</h1>
+                    <h1 className="text-balance mt-2 text-3xl font-black tracking-normal sm:text-4xl">{curriculum.name}</h1>
                     <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-slate-600 sm:text-base">{curriculum.description}</p>
                   </div>
                 </div>
@@ -110,7 +110,7 @@ export function CurriculumLevelPage() {
 
               <aside className="rounded-[1.75rem] bg-[#10213A] p-6 text-white shadow-[0_26px_70px_-44px_rgba(16,33,58,0.75)] xl:sticky xl:top-24">
                 <Headphones className="h-7 w-7 text-[#FFC107]" />
-                <h2 className="mt-4 text-2xl font-black tracking-[-0.025em]">Cần tư vấn Cuốn {level}?</h2>
+                <h2 className="text-balance mt-4 text-2xl font-black tracking-normal">Cần tư vấn Cuốn {level}?</h2>
                 <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">Đội ngũ 123English sẽ đối chiếu trình độ hiện tại và mục tiêu để đề xuất lộ trình phù hợp.</p>
                 <Link to="/lien-he" className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FFC107] px-5 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:bg-[#FFB300] focus:outline-none focus:ring-2 focus:ring-amber-300">
                   <MessageCircleMore className="h-4 w-4" />
@@ -125,7 +125,7 @@ export function CurriculumLevelPage() {
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.12em] text-amber-700">Study plan · Basic English {level}</p>
-              <h2 className="mt-3 text-3xl font-black tracking-[-0.035em]">Nội dung chương trình Cuốn {level}</h2>
+              <h2 className="text-balance mt-3 text-3xl font-black tracking-normal">Nội dung chương trình Cuốn {level}</h2>
               <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">Chọn từng bài để xem mục tiêu và hoạt động giảng dạy chi tiết.</p>
             </div>
 

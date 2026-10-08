@@ -233,8 +233,8 @@ const BENEFITS: { icon: IconComponent; title: string; body: string }[] = [
 
 function SectionHeading({ title, body, align = 'left' }: { title: string; body?: string; align?: 'left' | 'center' }) {
   return (
-    <div className={align === 'center' ? 'mx-auto max-w-3xl text-center' : 'max-w-3xl'}>
-      <h2 className="text-3xl font-black leading-[1.08] tracking-[-0.04em] text-[#10213A] sm:text-4xl lg:text-5xl">
+    <div className={align === 'center' ? 'mx-auto max-w-5xl text-center' : 'max-w-5xl'}>
+      <h2 className="text-3xl font-bold leading-[1.3] tracking-normal text-[#10213A] sm:text-4xl lg:text-5xl">
         {title}
       </h2>
       {body && <p className="mt-5 text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">{body}</p>}
@@ -279,7 +279,7 @@ export function ChuongTrinhCaNhanHoaPage() {
   }, [])
 
   return (
-    <div className="min-h-[100dvh] overflow-x-clip bg-white font-[var(--font-quicksand)] text-[#10213A]">
+    <div className="personal-learning-page min-h-[100dvh] overflow-x-clip bg-white font-[var(--font-quicksand)] text-[#10213A]">
       <PublicNav />
 
       <main>
@@ -288,7 +288,7 @@ export function ChuongTrinhCaNhanHoaPage() {
           <div className="mx-auto grid min-h-[calc(100dvh-72px)] max-w-7xl items-center gap-10 px-5 py-12 sm:px-8 lg:grid-cols-[0.92fr_1.08fr] lg:px-12 lg:py-16">
             <div className="relative z-10 max-w-2xl">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#946400]">AI PERSONAL LEARNING</p>
-              <h1 className="mt-4 text-[clamp(2.65rem,5.4vw,4.9rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
+              <h1 className="mt-4 text-[clamp(2.25rem,4.6vw,4.25rem)] font-bold leading-[1.25] tracking-normal text-[#10213A]">
                 Lộ trình học tiếng Anh được xây dựng theo nhu cầu của từng học viên
               </h1>
               <p className="mt-6 max-w-xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
@@ -429,14 +429,14 @@ export function ChuongTrinhCaNhanHoaPage() {
                       <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{goal}</p>
                     </div>
                   </div>
-                  <div className="mt-6 flex flex-wrap items-center gap-x-2 gap-y-3">
+                  <ol className="mt-6 grid gap-0 border-t border-[#E8D28A]/60">
                     {path.map((item, pathIndex) => (
-                      <span key={item} className="inline-flex items-center gap-2">
-                        {pathIndex > 0 && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[#A76500]" aria-hidden />}
-                        <span className="whitespace-nowrap rounded-xl border border-[#E8D28A] bg-white px-3 py-2 text-xs font-black text-slate-700">{item}</span>
-                      </span>
+                      <li key={item} className="flex items-start gap-3 border-b border-[#E8D28A]/40 py-3 text-sm font-semibold leading-6 text-slate-700">
+                        <span className="w-6 shrink-0 text-xs font-bold leading-6 tabular-nums text-[#946400]" aria-hidden>{String(pathIndex + 1).padStart(2, '0')}</span>
+                        <span>{item}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ol>
                 </article>
               ))}
             </div>
@@ -536,7 +536,7 @@ export function ChuongTrinhCaNhanHoaPage() {
 
             <div className="mt-16 grid gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
               <div>
-                <h3 className="text-2xl font-black leading-tight tracking-[-0.03em] sm:text-3xl">Từ kiến thức đến khả năng sử dụng thực tế</h3>
+                <h3 className="text-2xl font-bold leading-[1.3] tracking-normal sm:text-3xl">Từ kiến thức đến khả năng sử dụng thực tế</h3>
                 <p className="mt-4 text-base font-semibold leading-7 text-slate-600">
                   Không chỉ đo bạn đã học bao nhiêu. Chương trình hướng tới việc bạn có thể làm được gì bằng tiếng Anh.
                 </p>
@@ -705,7 +705,7 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-5xl rounded-[2.25rem] bg-[#FFC107] px-6 py-12 text-center text-[#10213A] sm:px-10 sm:py-16 lg:px-16">
             <Layers3 className="mx-auto h-8 w-8" aria-hidden />
-            <h2 className="mt-6 text-3xl font-black leading-[1.08] tracking-[-0.04em] sm:text-4xl lg:text-5xl">
+            <h2 className="mt-6 text-3xl font-bold leading-[1.3] tracking-normal sm:text-4xl lg:text-5xl">
               Your English. Your Goals. Your Learning Path.
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-base font-bold leading-7 text-[#4C3B00] sm:text-lg">

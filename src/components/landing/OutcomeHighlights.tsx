@@ -342,7 +342,7 @@ export function OutcomeHighlights() {
               <Sparkles className="h-4 w-4 text-[#FFC107]" />
               Thành quả được đo bằng tiến bộ thật
             </div>
-            <h2 className="max-w-4xl text-3xl font-black leading-[1.04] tracking-[-0.04em] text-[#10213A] sm:text-4xl lg:text-6xl">
+            <h2 className="text-balance max-w-4xl text-3xl font-black leading-[1.3] tracking-normal text-[#10213A] sm:text-4xl lg:text-6xl">
               Những con số tạo nên
               <span className="block text-[#118ED0]">niềm tin học tập.</span>
             </h2>
@@ -401,7 +401,7 @@ export function OutcomeHighlights() {
                     <TrendingUp className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black tracking-[-0.025em] text-[#10213A] sm:text-2xl">
+                    <h3 className="text-balance text-xl font-black tracking-normal text-[#10213A] sm:text-2xl">
                       Bản đồ quy đổi năng lực 16 cấp độ
                     </h3>
                     <p className="mt-1 text-xs font-medium leading-5 text-slate-500 sm:text-sm">
@@ -459,7 +459,7 @@ export function OutcomeHighlights() {
 
             <article className="mt-4 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,35,60,0.05)]">
               <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-                <h3 className="text-sm font-black uppercase tracking-[0.08em] text-[#10213A]">Bảng quy đổi tham khảo</h3>
+                <h3 className="text-balance text-sm font-black uppercase tracking-[0.08em] text-[#10213A]">Bảng quy đổi tham khảo</h3>
                 <span className="text-xs font-semibold text-slate-400">Đọc từ trái sang phải theo từng nhóm trình độ</span>
               </div>
               <div className="hidden sm:block">
@@ -515,7 +515,7 @@ export function OutcomeHighlights() {
             <div className="absolute -right-14 -top-14 h-44 w-44 rounded-full border-[26px] border-[#FFC107]/15" />
             <div className="relative">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">Kết quả nổi bật</p>
-              <h3 className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#10213A]">Thành tích theo từng cột mốc.</h3>
+              <h3 className="text-balance mt-2 text-2xl font-black tracking-normal text-[#10213A]">Thành tích theo từng cột mốc.</h3>
 
               <div className="mt-7 space-y-3">
                 {RESULT_HIGHLIGHTS.map((item) => (
@@ -553,7 +553,7 @@ export function OutcomeHighlights() {
         <div className="outcome-reveal outcome-delay-three mt-7 overflow-hidden rounded-[2.25rem] border border-amber-200/70 bg-white shadow-[0_24px_70px_rgba(217,141,0,0.08)]">
           <div className="px-6 pb-5 pt-7 text-center sm:px-9">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">Mục tiêu học thuật được quan tâm</p>
-            <h3 className="mt-2 text-2xl font-black tracking-[-0.035em] text-[#10213A] sm:text-3xl">
+            <h3 className="text-balance mt-2 text-2xl font-black tracking-normal text-[#10213A] sm:text-3xl">
               Những mục tiêu được học viên quan tâm
             </h3>
             <p className="mx-auto mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-500">
@@ -654,7 +654,7 @@ export function OutcomeHighlights() {
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 text-[#9A6100] shadow-sm">
                 <CircleCheckBig className="h-5 w-5" />
               </div>
-              <h3 className="mt-7 text-3xl font-black tracking-[-0.04em] text-[#10213A]">
+              <h3 className="text-balance mt-7 text-3xl font-black tracking-normal text-[#10213A]">
                 Trải nghiệm khiến người học muốn tiếp tục.
               </h3>
             </div>
@@ -681,7 +681,7 @@ export function OutcomeHighlights() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#118ED0]">Cảm nhận từ người học</p>
-                <h3 className="mt-1 text-xl font-black tracking-[-0.025em] text-[#10213A]">Ba câu chuyện đang được hiển thị</h3>
+                <h3 className="text-balance mt-1 text-xl font-black tracking-normal text-[#10213A]">Ba câu chuyện đang được hiển thị</h3>
               </div>
               <a
                 href="/lien-he?muc=danh-gia"
@@ -761,7 +761,7 @@ export function OutcomeHighlights() {
               <BookOpenCheck className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-lg font-black">Bắt đầu bằng một lộ trình phù hợp, không phải một lời hứa chung chung.</h3>
+              <h3 className="text-balance text-lg font-black">Bắt đầu bằng một lộ trình phù hợp, không phải một lời hứa chung chung.</h3>
               <p className="mt-1 text-sm font-medium leading-6 text-slate-300">
                 Tra cứu tiến độ đang có hoặc liên hệ để được tư vấn mục tiêu IELTS và học thuật.
               </p>

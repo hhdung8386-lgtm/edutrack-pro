@@ -122,7 +122,7 @@ export function LatestNewsSection() {
     <section className="bg-[#F5F6F7] px-5 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24" aria-labelledby="latest-news-title">
       <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-20">
         <div className="lg:pt-1">
-          <h2 id="latest-news-title" className="max-w-[8ch] text-4xl font-black leading-[1.05] tracking-[-0.04em] text-[#10213A] sm:text-5xl">
+          <h2 id="latest-news-title" className="text-balance max-w-xl text-4xl font-black leading-[1.3] tracking-normal text-[#10213A] sm:text-5xl">
             Tin tức mới nhất
           </h2>
           <Link
