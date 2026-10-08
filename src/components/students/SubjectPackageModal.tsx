@@ -161,6 +161,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
 
+  // Môn học viên đã có không cho thêm lần hai (mỗi môn một quỹ), nhưng vẫn hiện
+  // để người dùng biết phải cộng/tặng trên dòng khóa có sẵn thay vì tưởng thiếu môn.
+  const ownedMatches = currentSubjects.filter((owned) =>
+    owned.subjectId !== editingSubjectId
+    && owned.subjectName.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
+  )
+
   const subjectIdsKey = student.subjects?.map(s => s.subjectId).join(',') || ''
 
   useEffect(() => {
@@ -499,7 +506,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                   </div>
                 </div>
                 <div className="max-h-64 overflow-y-auto p-1.5">
-                  {filteredSubjects.length === 0 ? (
+                  {filteredSubjects.length === 0 && ownedMatches.length === 0 ? (
                     <p className="px-3 py-6 text-center text-sm text-slate-500">Không tìm thấy môn học.</p>
                   ) : filteredSubjects.map((subject) => (
                     <button
@@ -520,6 +527,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                       </span>
                       {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
                     </button>
+                  ))}
+                  {subjectSearch.trim() && ownedMatches.map((owned) => (
+                    <div key={`owned-${owned.subjectId}`} className="rounded-lg px-3 py-2.5 text-sm" aria-disabled="true">
+                      <span className="block font-medium text-slate-400">{owned.subjectName}</span>
+                      <span className="text-xs font-semibold text-violet-700">Học viên đã có khóa này — đóng cửa sổ, bấm nút quà (Tặng) hoặc “+” trên dòng khóa ở mục Đang học.</span>
+                    </div>
                   ))}
                 </div>
               </div>
