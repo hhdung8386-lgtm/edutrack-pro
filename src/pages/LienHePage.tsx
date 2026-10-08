@@ -158,10 +158,10 @@ export function LienHePage() {
                   <div>
                     <p className="text-sm font-black">Kênh chính thức</p>
                     <a
-                      href="https://www.123english.edu.vn"
+                      href="https://123english.edu.vn"
                       className="mt-1 block text-sm font-semibold text-slate-300 hover:text-white"
                     >
-                      www.123english.edu.vn
+                      123english.edu.vn
                     </a>
                   </div>
                 </div>

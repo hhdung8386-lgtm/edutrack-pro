@@ -166,7 +166,7 @@ export default function PublicEvaluationPage() {
           <h1 className="text-5xl font-extrabold text-rose-500 mb-4">404</h1>
           <p className="text-lg font-bold text-slate-800 mb-2">Không tìm thấy kết quả đánh giá</p>
           <p className="text-sm text-slate-500 mb-6">Đường link chia sẻ không tồn tại hoặc đã bị xóa khỏi hệ thống.</p>
-          <Button onClick={() => window.location.href = 'https://www.123english.edu.vn'}>Quay lại trang chủ</Button>
+          <Button onClick={() => window.location.href = 'https://123english.edu.vn'}>Quay lại trang chủ</Button>
         </div>
       </div>
     )
