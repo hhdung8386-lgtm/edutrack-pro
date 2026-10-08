@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { CalendarDays, Gift, Info, ReceiptText } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import type { Student, StudentSubject, TopUpBatch } from '@/types'
@@ -65,10 +66,18 @@ function displayDate(iso: string) {
 export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'gift' }: AddSessionsModalProps) {
   const { user } = useAuthStore()
   const studentSubjects = fallbackSubjects(student)
-  const initialSubject = studentSubjects.find((subject) => subject.subjectId === initialSubjectId) || studentSubjects[0]
+  // Môn đã xoá/tạm dừng trong danh mục bị chặn khi lưu; null = đang kiểm tra.
+  const [blockedSubjectIds, setBlockedSubjectIds] = useState<Set<string> | null>(null)
+  const pickDefaultSubject = (blocked: Set<string>) => {
+    const usable = studentSubjects.filter((subject) => !blocked.has(subject.subjectId))
+    return usable.find((subject) => subject.subjectId === initialSubjectId)
+      || usable.find((subject) => Number(subject.remainingMinutes || 0) > 0)
+      || usable[0]
+  }
+  const initialSubject = pickDefaultSubject(new Set())
   const nextPaymentNumber = (initialSubject?.batches || []).filter((batch) => batch.kind !== 'gift').length + 1
 
-  const { register, control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormInput, unknown, FormData>({
+  const { register, control, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm<FormInput, unknown, FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       subjectId: initialSubject?.subjectId || '',
@@ -80,6 +89,28 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
     },
   })
 
+  const subjectIdsKey = studentSubjects.map((subject) => subject.subjectId).join('|')
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(subjectIdsKey.split('|').filter(Boolean).map(async (subjectId) => {
+      try {
+        const snap = await getDoc(doc(db, 'subjects', subjectId))
+        return !snap.exists() || !isSelectableSubject(snap.data()) ? subjectId : null
+      } catch {
+        return null // lỗi mạng: không ẩn môn, transaction vẫn kiểm tra lại khi lưu
+      }
+    })).then((ids) => {
+      if (cancelled) return
+      const blocked = new Set(ids.filter((id): id is string => Boolean(id)))
+      setBlockedSubjectIds(blocked)
+      const current = getValues('subjectId')
+      if (!current || blocked.has(current)) setValue('subjectId', pickDefaultSubject(blocked)?.subjectId || '', { shouldValidate: true })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subjectIdsKey])
+
+  const selectableSubjects = studentSubjects.filter((subject) => !blockedSubjectIds?.has(subject.subjectId))
   const selectedSubjectId = useWatch({ control, name: 'subjectId' })
   const selectedPkg = studentSubjects.find((subject) => subject.subjectId === selectedSubjectId)
   const minutesToAdd = Math.max(0, Number(useWatch({ control, name: 'minutes' }) || 0))
@@ -195,7 +226,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
     <Modal open onClose={onClose} title={title} size="lg" footer={
       <div className="grid grid-cols-2 gap-3">
         <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Hủy</Button>
-        <Button form="add-sessions-form" type="submit" loading={isSubmitting}>Xác nhận</Button>
+        <Button form="add-sessions-form" type="submit" loading={isSubmitting} disabled={!blockedSubjectIds || selectableSubjects.length === 0}>Xác nhận</Button>
       </div>
     }>
       <form id="add-sessions-form" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -207,8 +238,15 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
         <div>
           <label className="mb-1.5 block text-sm font-semibold text-slate-700">Khóa học *</label>
           <select className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" {...register('subjectId')}>
-            {studentSubjects.map((subject) => <option key={subject.subjectId} value={subject.subjectId}>{subject.subjectName}</option>)}
+            {selectableSubjects.length === 0 && <option value="">Không có khóa học đang hoạt động</option>}
+            {selectableSubjects.map((subject) => <option key={subject.subjectId} value={subject.subjectId}>{subject.subjectName}</option>)}
           </select>
+          {initialSubjectId && blockedSubjectIds?.has(initialSubjectId) && (
+            <p className="mt-1.5 text-xs font-semibold text-amber-700">Khóa “{studentSubjects.find((subject) => subject.subjectId === initialSubjectId)?.subjectName}” đã bị xoá hoặc tạm dừng trong danh mục, không cộng thêm được. Hãy kiểm tra lại khóa đang chọn.</p>
+          )}
+          {blockedSubjectIds && blockedSubjectIds.size > 0 && (
+            <p className="mt-1.5 text-xs text-slate-500">Đã ẩn {blockedSubjectIds.size} khóa cũ đã xoá hoặc tạm dừng trong danh mục môn học.</p>
+          )}
           {errors.subjectId && <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.subjectId.message}</p>}
         </div>
 

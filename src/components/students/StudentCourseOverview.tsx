@@ -35,6 +35,7 @@ interface StudentCourseOverviewProps {
   studentCreatedAtLabel: string
   onAddSubject: () => void
   onAddRights: (subjectId: string) => void
+  onAddGift: (subjectId: string) => void
   onEditEntry: (subjectId: string, batchId: string) => void
   onDeleteEntry: (subjectId: string, batchId: string) => void
   onEditSubject: (subjectId: string) => void
@@ -335,6 +336,7 @@ export function StudentCourseOverview({
   studentCreatedAtLabel,
   onAddSubject,
   onAddRights,
+  onAddGift,
   onEditEntry,
   onDeleteEntry,
   onEditSubject,
@@ -442,7 +444,7 @@ export function StudentCourseOverview({
                   <td className="px-4 py-4"><Metric minutes={row.learnedMinutes} diamonds={row.learnedDiamonds} tone="indigo" /></td>
                   <td className="px-4 py-4"><Metric minutes={row.bookedMinutes} diamonds={row.bookedDiamonds} tone="amber" /></td>
                   <td className="px-4 py-4"><Metric minutes={row.remainingMinutes} diamonds={row.remainingDiamonds} tone="emerald" /></td>
-                  <td className="px-4 py-4"><div className="flex justify-center gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 transition hover:-translate-y-0.5 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Cộng thêm quyền học cho ${row.subject.subjectName}`}><Plus className="h-5 w-5" /></button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Xem chi tiết ${row.subject.subjectName}`}><ChevronRight className="h-5 w-5" /></button></div></td>
+                  <td className="px-4 py-4"><div className="flex justify-center gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 transition hover:-translate-y-0.5 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Cộng thêm quyền học cho ${row.subject.subjectName}`}><Plus className="h-5 w-5" /></button><button type="button" onClick={() => onAddGift(row.subject.subjectId)} title="Tặng buổi cho khóa này" className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-100 bg-violet-50 text-violet-700 transition hover:-translate-y-0.5 hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-300 active:translate-y-0" aria-label={`Tặng buổi cho ${row.subject.subjectName}`}><Gift className="h-5 w-5" /></button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 active:translate-y-0" aria-label={`Xem chi tiết ${row.subject.subjectName}`}><ChevronRight className="h-5 w-5" /></button></div></td>
                 </tr>)}
               </tbody>
             </table>
@@ -451,10 +453,10 @@ export function StudentCourseOverview({
             {activeRows.map((row) => <article key={row.subject.subjectId} className="p-4">
               <CourseIdentity subject={row.subject} paymentCount={row.payments.length} />
               <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3"><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đăng ký</p><Metric minutes={row.registeredMinutes} diamonds={row.registeredDiamonds} /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã học</p><Metric minutes={row.learnedMinutes} diamonds={row.learnedDiamonds} tone="indigo" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Đã đặt</p><Metric minutes={row.bookedMinutes} diamonds={row.bookedDiamonds} tone="amber" /></div><div><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Còn lại</p><Metric minutes={row.remainingMinutes} diamonds={row.remainingDiamonds} tone="emerald" /></div></div>
-              <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 ring-1 ring-inset ring-indigo-100"><CirclePlus className="h-4 w-4" />Cộng thêm</button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white text-sm font-bold text-slate-700 ring-1 ring-inset ring-slate-200">Chi tiết<ChevronRight className="h-4 w-4" /></button></div>
+              <div className="mt-3 grid grid-cols-3 gap-2"><button type="button" onClick={() => onAddRights(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-indigo-50 px-2 text-sm font-bold text-indigo-700 ring-1 ring-inset ring-indigo-100"><CirclePlus className="h-4 w-4 shrink-0" />Cộng</button><button type="button" onClick={() => onAddGift(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-violet-50 px-2 text-sm font-bold text-violet-700 ring-1 ring-inset ring-violet-100" aria-label={`Tặng buổi cho ${row.subject.subjectName}`}><Gift className="h-4 w-4 shrink-0" />Tặng</button><button type="button" onClick={() => setDetailSubjectId(row.subject.subjectId)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white text-sm font-bold text-slate-700 ring-1 ring-inset ring-slate-200">Chi tiết<ChevronRight className="h-4 w-4" /></button></div>
             </article>)}
           </div>
-          <div className="border-t border-indigo-100 bg-indigo-50/45 px-4 py-3 text-xs font-medium text-indigo-700 sm:px-5">Dùng nút “+” để cộng quyền học; nút “›” mở lịch sử và thông tin chi tiết.</div>
+          <div className="border-t border-indigo-100 bg-indigo-50/45 px-4 py-3 text-xs font-medium text-indigo-700 sm:px-5">Dùng nút “+” để cộng quyền học; nút quà để tặng buổi đúng khóa đó; nút “›” mở lịch sử và thông tin chi tiết.</div>
           {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || row.learnedDiamondPremium > 0) && (
             <ul className="space-y-1.5 border-t border-amber-100 bg-amber-50/60 px-4 py-3 text-xs leading-5 text-amber-900 sm:px-5">
               {activeRows.map((row) => {

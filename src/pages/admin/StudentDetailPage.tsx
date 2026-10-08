@@ -1558,6 +1558,7 @@ export function StudentDetailPage() {
             setShowSubjectPkg(true)
           }}
           onAddRights={(subjectId) => setAddSessionsContext({ mode: 'payment', subjectId })}
+          onAddGift={(subjectId) => setAddSessionsContext({ mode: 'gift', subjectId })}
           onEditEntry={(subjectId, batchId) => setEditCourseEntryContext({ subjectId, batchId })}
           onDeleteEntry={(subjectId, batchId) => setDeleteCourseEntryContext({ subjectId, batchId })}
           onEditSubject={(subjectId) => {
