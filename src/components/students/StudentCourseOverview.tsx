@@ -20,7 +20,8 @@ import {
   Target,
 } from 'lucide-react'
 import type { BookingRequest, Lesson, StudentSubject, TopUpBatch } from '@/types'
-import { getBookingPoints } from '@/lib/points'
+import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { isCompletedLearningLesson } from '@/lib/lessonAttendance'
 import { allocateApprovedLearningMinutes, courseLearnedDiamondPremium, courseRemainingMinutes } from '@/lib/courseProgress'
 import { courseDeletionBlock, courseDeletionBlockMessage, type CourseDeletionBlock } from '@/lib/courseDeletion'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
@@ -62,6 +63,8 @@ interface CourseRow {
   learnedDiamonds: number
   /** Kim cương đã dùng vượt so với phút đã học theo tỉ lệ gói (đơn giá gia sư, buổi vắng có phí). */
   learnedDiamondPremium: number
+  /** Buổi đã duyệt có trừ kim cương nhưng không tính là phút đã học (vắng không phép...). */
+  chargedAbsences: { id: string; date: string; teacherName: string; diamonds: number; label: string }[]
   bookedMinutes: number
   bookedDiamonds: number
   remainingMinutes: number
@@ -72,6 +75,11 @@ interface CourseRow {
   deleteBlock: CourseDeletionBlock | null
   completedAt: string
   isCompleted: boolean
+}
+
+const formatLessonDate = (iso: string) => {
+  const [year, month, day] = String(iso || '').split('-')
+  return year && month && day ? `${day}/${month}/${year}` : iso
 }
 
 const number = (value: number) => Math.max(0, Math.round(Number(value) || 0)).toLocaleString('vi-VN')
@@ -372,6 +380,16 @@ export function StudentCourseOverview({
         learnedMinutes,
         learnedDiamonds,
         learnedDiamondPremium: courseLearnedDiamondPremium({ registeredMinutes, registeredDiamonds, learnedMinutes, learnedDiamonds }),
+        chargedAbsences: subjectLessons
+          .filter((lesson) => !isCompletedLearningLesson(lesson) && getLessonPoints(lesson) > 0)
+          .map((lesson) => ({
+            id: lesson.id,
+            date: lesson.date,
+            teacherName: lesson.teacherName || '',
+            diamonds: getLessonPoints(lesson),
+            label: lesson.attendanceStatus === 'without_permission' ? 'vắng không phép' : 'vắng có tính phí',
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date)),
         bookedMinutes,
         bookedDiamonds,
         // Còn lại đi theo kim cương còn lại để hai con số luôn khớp nhau.
@@ -474,7 +492,9 @@ export function StudentCourseOverview({
                   return (
                     <li key={row.subject.subjectId} className="flex items-start gap-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span><strong>{row.subject.subjectName}</strong>: đã học {number(row.learnedMinutes)} phút nhưng dùng {number(row.learnedDiamonds)} kim cương (nhiều hơn {number(row.learnedDiamondPremium)} kim cương) do có buổi với gia sư đơn giá cao hơn giá gói hoặc buổi vắng có tính phí. Cột “Còn lại” quy đổi từ kim cương còn lại nên phút và kim cương khớp nhau.</span>
+                      <span><strong>{row.subject.subjectName}</strong>: đã học {number(row.learnedMinutes)} phút nhưng dùng {number(row.learnedDiamonds)} kim cương (nhiều hơn {number(row.learnedDiamondPremium)} kim cương){row.chargedAbsences.length > 0
+                        ? <>. Phần chênh gồm {row.chargedAbsences.map((absence, index) => <Fragment key={absence.id}>{index > 0 && ', '}<strong>{number(absence.diamonds)} kim cương buổi {absence.label} {formatLessonDate(absence.date)}{absence.teacherName ? ` (${absence.teacherName})` : ''}</strong></Fragment>)}: buổi này vẫn trừ kim cương nhưng không cộng vào phút đã học{row.learnedDiamondPremium > row.chargedAbsences.reduce((sum, absence) => sum + absence.diamonds, 0) ? '; phần còn lại do buổi với gia sư đơn giá cao hơn giá gói' : ''}.</>
+                        : ' do có buổi với gia sư đơn giá cao hơn giá gói.'} Cột “Còn lại” quy đổi từ kim cương còn lại nên phút và kim cương khớp nhau.</span>
                     </li>
                   )
                 }
