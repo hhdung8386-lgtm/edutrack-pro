@@ -97,9 +97,11 @@ interface Props {
   student: Student
   editingSubjectId?: string // If present, edit mode; otherwise, add mode
   onClose: () => void
+  /** Chọn môn học viên đã có: mở form cộng đợt thanh toán mới vào đúng khóa đó. */
+  onAddToOwnedCourse?: (subjectId: string) => void
 }
 
-export function SubjectPackageModal({ student, editingSubjectId, onClose }: Props) {
+export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddToOwnedCourse }: Props) {
   const [subjectsList, setSubjectsList] = useState<Subject[]>([])
   const [loading, setLoading] = useState(false)
   const [subjectSearch, setSubjectSearch] = useState('')
@@ -161,10 +163,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
 
-  // Môn học viên đã có không cho thêm lần hai (mỗi môn một quỹ), nhưng vẫn hiện
-  // để người dùng biết phải cộng/tặng trên dòng khóa có sẵn thay vì tưởng thiếu môn.
+  // Mỗi môn một quỹ: môn học viên đã có (kể cả học với nhiều gia sư) không tạo
+  // khóa thứ hai mà mở form cộng đợt thanh toán mới vào khóa có sẵn.
   const ownedMatches = currentSubjects.filter((owned) =>
-    owned.subjectId !== editingSubjectId
+    !isEdit
+    && owned.subjectId !== editingSubjectId
     && owned.subjectName.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
 
@@ -528,11 +531,25 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose }: Prop
                       {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
                     </button>
                   ))}
-                  {subjectSearch.trim() && ownedMatches.map((owned) => (
-                    <div key={`owned-${owned.subjectId}`} className="rounded-lg px-3 py-2.5 text-sm" aria-disabled="true">
-                      <span className="block font-medium text-slate-400">{owned.subjectName}</span>
-                      <span className="text-xs font-semibold text-violet-700">Học viên đã có khóa này — đóng cửa sổ, bấm nút quà (Tặng) hoặc “+” trên dòng khóa ở mục Đang học.</span>
-                    </div>
+                  {ownedMatches.length > 0 && (
+                    <p className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Khóa học viên đang có</p>
+                  )}
+                  {ownedMatches.map((owned) => (
+                    <button
+                      key={`owned-${owned.subjectId}`}
+                      type="button"
+                      onClick={() => {
+                        if (onAddToOwnedCourse) onAddToOwnedCourse(owned.subjectId)
+                        else toast.info('Học viên đã có khóa này — bấm “+” trên dòng khóa ở mục Đang học để thêm đợt mới.')
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-violet-50 focus:bg-violet-50 focus:outline-none"
+                    >
+                      <span>
+                        <span className="block font-medium text-slate-800">{owned.subjectName}</span>
+                        <span className="text-xs font-semibold text-violet-700">Đã có khóa này — bấm để thêm đợt thanh toán mới vào khóa (học nhiều gia sư vẫn dùng chung khóa).</span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">+ Thêm đợt</span>
+                    </button>
                   ))}
                 </div>
               </div>
