@@ -232,7 +232,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
       <form id="add-sessions-form" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm leading-6 text-indigo-900">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 ring-1 ring-indigo-100">{mode === 'gift' ? <Gift className="h-4.5 w-4.5" /> : <Info className="h-4.5 w-4.5" />}</span>
-          <p>{mode === 'gift' ? 'Buổi tặng vẫn được cộng vào đúng quỹ môn học và có lịch sử riêng.' : 'Phút học và kim cương sẽ được ghi thành một đợt mới, không làm thay đổi lịch sử các đợt trước.'}</p>
+          <p>{mode === 'gift' ? 'Buổi tặng vẫn được cộng vào đúng quỹ môn học và có lịch sử riêng.' : 'Phút học và kim cương sẽ được ghi thành một đợt mới, không làm thay đổi lịch sử các đợt trước. Học viên học cùng môn với nhiều gia sư vẫn dùng chung khóa này — ghi tên gia sư vào Ghi chú nếu cần.'}</p>
         </div>
 
         <div>

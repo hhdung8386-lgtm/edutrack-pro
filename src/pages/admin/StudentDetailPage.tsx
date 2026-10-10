@@ -2174,6 +2174,11 @@ export function StudentDetailPage() {
             setShowSubjectPkg(false)
             setEditingSubjectId(undefined)
           }}
+          onAddToOwnedCourse={(subjectId) => {
+            setShowSubjectPkg(false)
+            setEditingSubjectId(undefined)
+            setAddSessionsContext({ mode: 'payment', subjectId })
+          }}
         />
       )}
 
