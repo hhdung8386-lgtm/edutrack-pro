@@ -25,6 +25,7 @@ import {
   loadStaffAccounts,
   type StaffAccount,
 } from '@/lib/staffAccounts'
+import { ChangeOwnPasswordCard } from '@/components/admin/ChangeOwnPasswordCard'
 
 export interface Branch {
   id: string
@@ -111,7 +112,7 @@ function isValidStaffEmail(value: string) {
 
 export function SettingsPage() {
   const { role, user } = useAuthStore()
-  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'payroll_tax'>('branch')
+  const [activeTab, setActiveTab] = useState<'branch' | 'accounts' | 'nicknames' | 'payroll_tax' | 'password'>('branch')
   const [payrollTaxLoading, setPayrollTaxLoading] = useState(true)
   const [payrollTaxSaving, setPayrollTaxSaving] = useState(false)
   const [payrollTaxEnabled, setPayrollTaxEnabled] = useState(false)
@@ -648,6 +649,16 @@ export function SettingsPage() {
           >
             Thuế TNCN / Lương
           </button>
+          <button
+            onClick={() => setActiveTab('password')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-all px-4 ${
+              activeTab === 'password'
+                ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Đổi mật khẩu
+          </button>
         </div>
       )}
 
@@ -985,6 +996,8 @@ export function SettingsPage() {
           )}
         </Card>
       )}
+
+      {activeTab === 'password' && role === 'admin' && <ChangeOwnPasswordCard />}
 
       {activeTab === 'payroll_tax' && role === 'admin' && (
         <Card className="animate-slide-up overflow-hidden">
