@@ -14,6 +14,7 @@ import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
 import { PublicFaq } from '@/components/landing/PublicFaq'
 import { ActivityHighlights } from '@/components/landing/ActivityHighlights'
 import { LatestNewsSection } from '@/components/landing/LatestNewsSection'
+import { PressCoverage } from '@/components/landing/PressCoverage'
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
@@ -334,6 +335,7 @@ export function LoginPage() {
       <NationalBrandStory />
 
       <ActivityHighlights />
+      <PressCoverage />
       <LatestNewsSection />
 
       {/* Compact Footer */}

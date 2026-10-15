@@ -125,6 +125,25 @@
   content: "";
 }
 
+/*
+  Một cỡ chữ duy nhất cho mọi tiêu đề khối ở trang chủ (Dịch vụ, Về 123English,
+  Hành trình phát triển, Câu chuyện, Hoạt động, Báo chí, Tin tức, FAQ).
+*/
+:root {
+  --landing-title-size: clamp(1.3rem, 4.2vw + 0.35rem, 2.25rem);
+  --landing-title-weight: 800;
+  --landing-title-tracking: -0.035em;
+  --landing-title-leading: 1.2;
+}
+
+.landing-section-title {
+  color: #10213a;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
+}
+
 .national-home {
   --national-navy: #10213a;
   --national-blue: #20b3e5;
@@ -205,10 +224,10 @@
 .national-heading h2 {
   margin-top: 1rem;
   color: var(--national-navy);
-  font-size: clamp(2.15rem, 4vw, 3.65rem);
-  font-weight: 800;
-  letter-spacing: -0.045em;
-  line-height: 1.06;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
 }
 
 .national-heading > p {
@@ -246,7 +265,6 @@
 /* Tiêu đề của riêng khối hệ sinh thái — nhỏ hơn tiêu đề mặc định */
 .national-section-ecosystem .national-heading h2 {
   margin-top: 0.75rem;
-  font-size: clamp(1.6rem, 2.6vw, 2.35rem);
 }
 
 .national-section-ecosystem .national-heading > p {
@@ -442,10 +460,10 @@
 .national-trust-heading h2 {
   margin-top: 0.9rem;
   color: var(--national-navy);
-  font-size: clamp(1.6rem, 2.6vw, 2.35rem);
-  font-weight: 880;
-  letter-spacing: -0.055em;
-  line-height: 1.06;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
   text-wrap: balance;
 }
 
@@ -487,10 +505,10 @@
 }
 
 .activity-heading h2 {
-  font-size: clamp(1.75rem, 3vw, 2.5rem);
-  font-weight: 850;
-  letter-spacing: -0.04em;
-  line-height: 1.2;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
 }
 
 .activity-heading p {
@@ -723,10 +741,10 @@
 
 .public-faq h2 {
   margin: 0 0 clamp(1.75rem, 3vw, 2.75rem);
-  font-size: clamp(1.75rem, 3vw, 2.5rem);
-  font-weight: 850;
-  letter-spacing: -0.04em;
-  line-height: 1.2;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
   text-align: center;
 }
 
@@ -968,10 +986,10 @@
 
 .national-growth-heading h3 {
   color: var(--national-navy);
-  font-size: clamp(1.75rem, 3vw, 2.5rem);
-  font-weight: 850;
-  letter-spacing: -0.045em;
-  line-height: 1.05;
+  font-size: var(--landing-title-size);
+  font-weight: var(--landing-title-weight);
+  letter-spacing: var(--landing-title-tracking);
+  line-height: var(--landing-title-leading);
 }
 
 .national-growth-heading p {
@@ -1535,10 +1553,6 @@
     padding-bottom: 4rem;
   }
 
-  .national-heading h2 {
-    font-size: clamp(2rem, 9vw, 2.85rem);
-  }
-
   .national-ecosystem-feature,
   .national-ecosystem-feature > img {
     min-height: 25rem;
@@ -1562,10 +1576,6 @@
     overflow: hidden;
     padding-top: 3.5rem;
     padding-bottom: 4.5rem;
-  }
-
-  .national-trust-heading h2 {
-    font-size: clamp(1.6rem, 2.6vw, 2.35rem);
   }
 
   .national-trust-heading p {
@@ -3191,4 +3201,198 @@
 
 @media (max-width: 639px) {
   .national-story-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; margin-top: 2rem; }
+}
+
+/* Báo chí nói về 123English */
+.press-coverage {
+  padding: clamp(3.5rem, 6vw, 5.5rem) 0;
+  color: #10213a;
+  background: #fffbea;
+  font-family: var(--font-quicksand);
+}
+
+.press-coverage-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+}
+
+.press-coverage-heading {
+  max-width: 44rem;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.press-coverage-heading p {
+  margin-top: 0.85rem;
+  color: #536171;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.65;
+}
+
+.press-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.press-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #f1e3b0;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 18px 40px -32px rgb(16 33 58 / 0.45);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.press-card:hover {
+  border-color: #ffc107;
+  box-shadow: 0 24px 48px -30px rgb(16 33 58 / 0.5);
+  transform: translateY(-3px);
+}
+
+.press-card:focus-visible {
+  outline: 3px solid #ffc107;
+  outline-offset: 3px;
+}
+
+.press-card-media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+
+.press-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.35s ease;
+}
+
+.press-card:hover .press-card-media img {
+  transform: scale(1.04);
+}
+
+.press-card-outlet {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.95);
+  color: #10213a;
+  font-size: 0.75rem;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgb(16 33 58 / 0.15);
+}
+
+.press-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1rem 1.1rem 1.15rem;
+}
+
+.press-card-body time {
+  color: #8a5800;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.press-card-body h3 {
+  display: -webkit-box;
+  margin-top: 0.4rem;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.press-card-body p {
+  display: -webkit-box;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  color: #536171;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.press-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: auto;
+  padding-top: 0.9rem;
+  color: #10213a;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.press-card:hover .press-card-link {
+  color: #d99b00;
+}
+
+@media (max-width: 1023px) {
+  .press-coverage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Điện thoại: vuốt ngang từng thẻ thay vì xếp chồng 4 thẻ dài */
+@media (max-width: 639px) {
+  .press-coverage-heading {
+    margin-bottom: 1.75rem;
+  }
+
+  .press-coverage-heading p {
+    font-size: 0.92rem;
+  }
+
+  .press-coverage-grid {
+    display: flex;
+    gap: 0.85rem;
+    margin: 0 calc(-1 * clamp(1rem, 3vw, 2rem));
+    padding: 0.25rem clamp(1rem, 3vw, 2rem) 0.75rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: clamp(1rem, 3vw, 2rem);
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .press-coverage-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .press-card {
+    flex: 0 0 82%;
+    scroll-snap-align: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press-card,
+  .press-card-media img {
+    transition: none;
+  }
+
+  .press-card:hover,
+  .press-card:hover .press-card-media img {
+    transform: none;
+  }
+}
+
+/* Tiêu đề "Mỗi bạn nhỏ, một câu chuyện" luôn nằm trên một dòng */
+.national-section-stories .national-heading h2 {
+  white-space: nowrap;
 }
