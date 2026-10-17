@@ -1,4 +1,3 @@
-import { getCompletedLearningMinutes } from './lessonAttendance.ts'
 import type { Lesson } from '../types'
 
 export type CourseProgressSubject = {
@@ -12,8 +11,19 @@ export type CourseProgressLesson = Pick<
 >
 
 /**
- * Phân bổ phút học thực tế theo từng quyền học: chỉ ca đã duyệt mà học viên có mặt
- * mới được tính. Khớp subjectId trước; lesson legacy/mất liên kết được lấp vào phần
+ * Phút đã dùng của một ca: ca đã duyệt có thời lượng > 0 (có mặt hoặc vắng không
+ * phép — buổi vắng không phép vẫn trừ kim cương nên cũng mất phút). Vắng có phép
+ * luôn 0 phút nên không bị tính.
+ */
+export function getConsumedLessonMinutes(lesson: Pick<CourseProgressLesson, 'status' | 'minutes'>): number {
+  if (lesson.status !== 'approved') return 0
+  const minutes = Number(lesson.minutes)
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 0
+}
+
+/**
+ * Phân bổ phút đã dùng theo từng quyền học: ca đã duyệt có thời lượng (kể cả vắng
+ * không phép) mới được tính. Khớp subjectId trước; lesson legacy/mất liên kết được lấp vào phần
  * quyền học còn trống theo thứ tự gói. Nếu đã học vượt, phần vượt thuộc gói đầu tiên
  * để không mất số.
  */
@@ -26,7 +36,7 @@ export function allocateApprovedLearningMinutes(
   let unmatchedMinutes = 0
 
   lessons.forEach((lesson) => {
-    const minutes = getCompletedLearningMinutes(lesson)
+    const minutes = getConsumedLessonMinutes(lesson)
     if (minutes <= 0) return
     const index = lesson.subjectId ? subjectIndexes.get(lesson.subjectId) : undefined
     if (index === undefined) unmatchedMinutes += minutes

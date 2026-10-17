@@ -30,7 +30,7 @@ test('lesson đúng môn được ưu tiên, phần legacy lấp theo thứ tự
   assert.deepEqual(result, [650, 500])
 })
 
-test('chỉ ca đã duyệt mà học viên có mặt mới tăng phút đã học', () => {
+test('ca đã duyệt có mặt hoặc vắng không phép (vẫn trừ kim cương) đều tăng phút đã học', () => {
   const result = allocateApprovedLearningMinutes(
     [{ subjectId: 'english', registeredMinutes: 1_000 }],
     [
@@ -42,5 +42,14 @@ test('chỉ ca đã duyệt mà học viên có mặt mới tăng phút đã h�
     ],
   )
 
-  assert.deepEqual(result, [50])
+  assert.deepEqual(result, [125])
+})
+
+test('học 925 phút + 2 buổi vắng không phép 25 phút = 975 phút, khớp 975 kim cương', () => {
+  const lessons = [
+    ...Array.from({ length: 37 }, () => ({ subjectId: 'gt160', status: 'approved' as const, attendanceStatus: 'present' as const, minutes: 25 })),
+    { subjectId: 'gt160', status: 'approved' as const, attendanceStatus: 'without_permission' as const, minutes: 25 },
+    { subjectId: 'gt160', status: 'approved' as const, attendanceStatus: 'without_permission' as const, minutes: 25 },
+  ]
+  assert.deepEqual(allocateApprovedLearningMinutes([{ subjectId: 'gt160', registeredMinutes: 1000 }], lessons), [975])
 })

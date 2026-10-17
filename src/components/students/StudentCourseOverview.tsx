@@ -475,7 +475,7 @@ export function StudentCourseOverview({
             </article>)}
           </div>
           <div className="border-t border-indigo-100 bg-indigo-50/45 px-4 py-3 text-xs font-medium text-indigo-700 sm:px-5">Dùng nút “+” để cộng quyền học; nút quà để tặng buổi đúng khóa đó; nút “›” mở lịch sử và thông tin chi tiết.</div>
-          {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || row.learnedDiamondPremium > 0) && (
+          {activeRows.some((row) => row.bookedDiamonds > Number(row.subject.remainingMinutes || 0) || row.learnedDiamondPremium > 0 || row.chargedAbsences.length > 0) && (
             <ul className="space-y-1.5 border-t border-amber-100 bg-amber-50/60 px-4 py-3 text-xs leading-5 text-amber-900 sm:px-5">
               {activeRows.map((row) => {
                 const fund = Math.max(0, Number(row.subject.remainingMinutes || 0))
@@ -488,17 +488,19 @@ export function StudentCourseOverview({
                     </li>
                   )
                 }
-                if (row.learnedDiamondPremium > 0) {
-                  return (
-                    <li key={row.subject.subjectId} className="flex items-start gap-2">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span><strong>{row.subject.subjectName}</strong>: đã học {number(row.learnedMinutes)} phút nhưng dùng {number(row.learnedDiamonds)} kim cương (nhiều hơn {number(row.learnedDiamondPremium)} kim cương){row.chargedAbsences.length > 0
-                        ? <>. Phần chênh gồm {row.chargedAbsences.map((absence, index) => <Fragment key={absence.id}>{index > 0 && ', '}<strong>{number(absence.diamonds)} kim cương buổi {absence.label} {formatLessonDate(absence.date)}{absence.teacherName ? ` (${absence.teacherName})` : ''}</strong></Fragment>)}: buổi này vẫn trừ kim cương nhưng không cộng vào phút đã học{row.learnedDiamondPremium > row.chargedAbsences.reduce((sum, absence) => sum + absence.diamonds, 0) ? '; phần còn lại do buổi với gia sư đơn giá cao hơn giá gói' : ''}.</>
-                        : ' do có buổi với gia sư đơn giá cao hơn giá gói.'} Cột “Còn lại” quy đổi từ kim cương còn lại nên phút và kim cương khớp nhau.</span>
-                    </li>
-                  )
-                }
-                return null
+                const premium = row.learnedDiamondPremium > 0 ? (
+                  <li key={`${row.subject.subjectId}-premium`} className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span><strong>{row.subject.subjectName}</strong>: đã học {number(row.learnedMinutes)} phút nhưng dùng {number(row.learnedDiamonds)} kim cương (nhiều hơn {number(row.learnedDiamondPremium)} kim cương) do có buổi với gia sư đơn giá cao hơn giá gói. Cột “Còn lại” quy đổi từ kim cương còn lại nên phút và kim cương khớp nhau.</span>
+                  </li>
+                ) : null
+                const absences = row.chargedAbsences.length > 0 ? (
+                  <li key={`${row.subject.subjectId}-absences`} className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span><strong>{row.subject.subjectName}</strong>: “Đã học” gồm cả {row.chargedAbsences.map((absence, index) => <Fragment key={absence.id}>{index > 0 && ', '}<strong>buổi {absence.label} {formatLessonDate(absence.date)}{absence.teacherName ? ` (${absence.teacherName})` : ''} – {number(absence.diamonds)} kim cương</strong></Fragment>)}: buổi vắng tính phí vẫn bị trừ phút và kim cương như buổi học.</span>
+                  </li>
+                ) : null
+                return premium || absences ? <Fragment key={row.subject.subjectId}>{premium}{absences}</Fragment> : null
               })}
             </ul>
           )}
