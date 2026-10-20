@@ -12,7 +12,6 @@ import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { NationalBrandStory } from '@/components/landing/NationalBrandStory'
 import { PublicFaq } from '@/components/landing/PublicFaq'
-import { ActivityHighlights } from '@/components/landing/ActivityHighlights'
 import { LatestNewsSection } from '@/components/landing/LatestNewsSection'
 import { PressCoverage } from '@/components/landing/PressCoverage'
 
@@ -334,7 +333,6 @@ export function LoginPage() {
 
       <NationalBrandStory />
 
-      <ActivityHighlights />
       <PressCoverage />
       <LatestNewsSection />
 

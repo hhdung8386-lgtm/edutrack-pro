@@ -899,3 +899,34 @@ test('a booking outside the read window can never conflict with the claim', () =
     assert.equal(findClassHuntBookingConflicts({ teacherId: 't1', studentId: 's1', sessions, bookings: [booking(date, '23:40')] }).length, 0)
   }
 })
+
+test('CLASS HUNTING gives tutors only safe textbook links of the offer package', () => {
+  const { classHuntCurriculumLinks } = require('../lib/classHunting.js')
+  const student = {
+    subjects: [
+      { subjectId: 'CAP3', curriculumLink: 'https://drive.google.com/drive/folders/abc', supplementaryCurriculumLink: '' },
+      { subjectId: 'BARE', curriculumLink: 'drive.google.com/file/d/x/view', supplementaryCurriculumLink: 'https://example.com/extra' },
+      { subjectId: 'TEXT', curriculumLink: 'Sách: https://drive.google.com/x (bản mới)' },
+      { subjectId: 'SAME', curriculumLink: 'https://example.com/book', supplementaryCurriculumLink: 'https://example.com/book' },
+      { subjectId: 'UNSAFE', curriculumLink: 'javascript:alert(1)', supplementaryCurriculumLink: 'chưa có' },
+      { subjectId: 'EMPTY' },
+      { subjectId: 'DUP', curriculumLink: 'https://example.com/1' },
+      { subjectId: 'DUP', curriculumLink: 'https://example.com/2' },
+    ],
+  }
+  assert.deepEqual(classHuntCurriculumLinks(student, 'CAP3'), { curriculumLink: 'https://drive.google.com/drive/folders/abc' })
+  assert.deepEqual(classHuntCurriculumLinks(student, 'BARE'), {
+    curriculumLink: 'https://drive.google.com/file/d/x/view',
+    supplementaryCurriculumLink: 'https://example.com/extra',
+  })
+  assert.deepEqual(classHuntCurriculumLinks(student, 'TEXT'), { curriculumLink: 'https://drive.google.com/x' })
+  assert.deepEqual(classHuntCurriculumLinks(student, 'SAME'), { curriculumLink: 'https://example.com/book' })
+  assert.deepEqual(classHuntCurriculumLinks(student, 'UNSAFE'), {})
+  assert.deepEqual(classHuntCurriculumLinks(student, 'EMPTY'), {})
+  assert.deepEqual(classHuntCurriculumLinks(student, 'DUP'), {})
+  assert.deepEqual(classHuntCurriculumLinks(student, 'MISSING'), {})
+  assert.deepEqual(
+    classHuntCurriculumLinks({ subjectId: 'LEGACY', curriculumLink: 'https://example.com/legacy' }, 'LEGACY'),
+    { curriculumLink: 'https://example.com/legacy' },
+  )
+})
