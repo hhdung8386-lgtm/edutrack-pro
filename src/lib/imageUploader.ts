@@ -153,14 +153,16 @@ export async function uploadTeacherIntroductionAudio(teacherId: string, file: Fi
   return withTimeout(getDownloadURL(uploadResult.ref), 30 * 1000)
 }
 
-export async function getTeacherIntroductionAudioURL(teacherId: string): Promise<string> {
+export async function getTeacherIntroductionAudioURL(teacherId: string, strict = false): Promise<string> {
   if (!teacherId) return ''
   try {
     return await withTimeout(
       getDownloadURL(ref(storage, `teacher-photos/${teacherId}/introduction.mp3`)),
       30 * 1000,
     )
-  } catch {
+  } catch (error) {
+    // The directory must distinguish a missing recording from a failed request.
+    if (strict && (error as { code?: string })?.code !== 'storage/object-not-found') throw error
     return ''
   }
 }

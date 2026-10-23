@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
+import { TeacherIntroductionAudioCell } from '@/components/teachers/TeacherIntroductionAudioCell'
+import { useTeacherIntroductionAudios } from '@/lib/useTeacherIntroductionAudios'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from '@/stores/toastStore'
 import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Mail, Plus, Send, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
@@ -440,6 +442,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       })
 
   const visibleTeachers = limitVal > 0 ? sortedTeachers.slice(0, limitVal) : sortedTeachers
+  const [audioRevision, setAudioRevision] = useState(0)
+  const audios = useTeacherIntroductionAudios(JSON.stringify(visibleTeachers.map(teacher => teacher.id)), audioRevision)
 
   const profileCounts = directoryTeachers.reduce((counts, teacher) => {
     const compliance = getTeacherCertificateCompliance(teacher)
@@ -866,7 +870,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Email', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Email', 'Ghi âm giới thiệu', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
@@ -941,6 +945,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       </td>
                       <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                         <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <TeacherIntroductionAudioCell teacherId={teacher.id} teacherName={teacher.name} state={audios.states[teacher.id]} onUpload={audios.upload} onRetry={audios.reload} />
                       </td>
                       <td className="px-4 py-3">
                         <CountryCell country={teacher.country} />
@@ -1021,6 +1028,9 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                     <div className="mt-1" onClick={(event) => event.stopPropagation()}>
                       <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
                     </div>
+                    <div className="mt-3">
+                      <TeacherIntroductionAudioCell teacherId={teacher.id} teacherName={teacher.name} state={audios.states[teacher.id]} onUpload={audios.upload} onRetry={audios.reload} />
+                    </div>
                     <div className="mt-2" onClick={(event) => event.stopPropagation()}>
                       <CertificateComplianceCell teacher={teacher} compact onEdit={() => setEditTeacher(teacher)} />
                     </div>
@@ -1075,7 +1085,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       )}
 
       {showAdd && <TeacherFormModal defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setShowAdd(false)} />}
-      {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => setEditTeacher(null)} />}
+      {editTeacher && <TeacherFormModal teacher={editTeacher} defaultCategory={category === 'resigned' ? 'online' : category} onClose={() => { setEditTeacher(null); setAudioRevision(current => current + 1) }} />}
       <ConfirmDialog
         open={!!emailTeacher}
         onClose={() => !sendingEmail && setEmailTeacher(null)}
