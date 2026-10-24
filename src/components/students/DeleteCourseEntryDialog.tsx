@@ -34,6 +34,10 @@ export function DeleteCourseEntryDialog({ student, subjectId, batchId, onClose }
     [batchId, fallbackDate, student, subjectId],
   )
   const isGift = entry?.batch.kind === 'gift'
+  // Same rule as deleteCourseEntry: the other entries must still cover what was already learned.
+  const usedDiamonds = Number(entry?.subject.usedMinutes || 0)
+  const coveredByOthers = Number(entry?.subject.totalMinutes || 0) - (entry?.diamonds || 0)
+  const consumedDiamonds = entry ? Math.min(entry.diamonds, Math.max(0, usedDiamonds - coveredByOthers)) : 0
 
   const handleDelete = async () => {
     if (!entry || deleting) return
@@ -148,7 +152,16 @@ export function DeleteCourseEntryDialog({ student, subjectId, batchId, onClose }
       confirmLabel="Xóa đợt này"
       confirmVariant="danger"
       loading={deleting}
+      confirmDisabled={consumedDiamonds > 0}
     >
+      {consumedDiamonds > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+          Không thể xóa: học viên đã học <strong>{usedDiamonds.toLocaleString('vi-VN')} kim cương</strong> trong khóa này, các đợt khác chỉ có{' '}
+          <strong>{Math.max(0, coveredByOthers).toLocaleString('vi-VN')}</strong>, nên{' '}
+          <strong>{consumedDiamonds.toLocaleString('vi-VN')}/{entry.diamonds.toLocaleString('vi-VN')} kim cương</strong> của {isGift ? 'buổi tặng' : 'đợt'} này đã được dùng.
+          Xóa sẽ làm khóa học âm quỹ. Nếu ghi nhận nhầm, hãy dùng “Sửa” để giảm phần chưa dùng.
+        </div>
+      )}
       <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
         <div className="flex items-center justify-between gap-4">
           <span className="inline-flex items-center gap-2 text-slate-600"><CalendarDays className="h-4 w-4 text-indigo-500" />Phút học</span>

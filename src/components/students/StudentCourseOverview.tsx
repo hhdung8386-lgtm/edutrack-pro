@@ -428,13 +428,15 @@ export function StudentCourseOverview({
         {giftRows.length > 0 ? (
           <div className="divide-y divide-slate-100">
             {giftRows.map((gift) => {
-              const remaining = Math.max(0, gift.diamonds - gift.usedDiamonds)
+              const used = Math.min(gift.diamonds, gift.usedDiamonds)
+              const usageLabel = used <= 0 ? 'Chưa dùng' : used >= gift.diamonds ? 'Đã dùng' : `Đã dùng ${used.toLocaleString('vi-VN')}/${gift.diamonds.toLocaleString('vi-VN')}`
+              const usageTone = used <= 0 ? 'bg-emerald-50 text-emerald-700' : used >= gift.diamonds ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-700'
               return <article key={`${gift.subjectName}-${gift.id}`} className="grid gap-3 px-4 py-4 sm:grid-cols-[1.2fr_1fr_1.2fr_auto] sm:items-center sm:px-5">
                 <div><p className="text-sm font-extrabold text-slate-900">{gift.content}</p><p className="mt-1 text-xs font-medium text-slate-500">{gift.subjectName}</p></div>
                 <Metric minutes={gift.learningMinutes} diamonds={gift.diamonds} tone="indigo" />
                 <div><p className="text-xs font-semibold text-slate-700">{gift.note || 'Không có ghi chú'}</p><p className="mt-1 text-[11px] text-slate-400">Ngày tặng: {gift.paymentDate}</p></div>
                 <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                  <span className={`w-fit rounded-lg px-2.5 py-1 text-xs font-bold ${remaining > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{remaining > 0 ? 'Chưa dùng' : 'Đã dùng'}</span>
+                  <span className={`w-fit rounded-lg px-2.5 py-1 text-xs font-bold ${usageTone}`}>{usageLabel}</span>
                   <div className="flex gap-1.5">
                     <button type="button" onClick={() => onEditEntry(gift.subjectId, gift.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-violet-100 bg-violet-50 px-3 text-xs font-bold text-violet-700 transition hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-300" aria-label={`Sửa ${gift.content}`}><Pencil className="h-3.5 w-3.5" />Sửa</button>
                     <button type="button" onClick={() => onDeleteEntry(gift.subjectId, gift.id)} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-rose-100 bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300" aria-label={`Xóa ${gift.content}`}><Trash2 className="h-3.5 w-3.5" />Xóa</button>
