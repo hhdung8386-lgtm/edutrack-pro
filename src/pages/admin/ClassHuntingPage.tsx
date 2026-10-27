@@ -5,12 +5,14 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  GraduationCap,
   NotebookPen,
   Pencil,
   RefreshCw,
   RotateCcw,
   Search,
   Send,
+  Tag,
   Target,
   Trash2,
   UserCheck,
@@ -28,6 +30,8 @@ import { db } from '@/lib/firebase'
 import { isGroupClass } from '@/lib/groupClasses'
 import {
   CLASS_HUNT_NOTE_MAX_LENGTH,
+  CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT,
+  CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT,
   CLASS_HUNT_STUDENT_AUDIENCES,
   CLASS_HUNT_STUDENT_AUDIENCE_LABELS,
   archiveClassHunt,
@@ -66,6 +70,7 @@ import type { Student } from '@/types'
 
 type StatusFilter = 'all' | ClassHuntStatus
 type SessionMode = 'all_remaining' | 'specific'
+type ClassOfferType = 'promo' | 'standard'
 
 const SLOT_TIMES = classHuntSlotTimes()
 const SEARCH_RESULT_LIMIT = 20
@@ -179,6 +184,103 @@ function StudentAudiencePicker({
   )
 }
 
+function PromoBadge({ percent }: { percent?: number }) {
+  if (!percent) {
+    return <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"><GraduationCap className="h-3.5 w-3.5" />Lớp thông thường</span>
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">
+      <Tag className="h-3.5 w-3.5" />Lớp ưu đãi · Giảm {percent}% thù lao
+    </span>
+  )
+}
+
+/** "Lớp ưu đãi" (operator-entered 10–50% off, tutor pay reduced by the same %) or "Lớp thông thường". */
+function ClassOfferTypePicker({
+  value,
+  onChange,
+  discount,
+  onDiscountChange,
+}: {
+  value: ClassOfferType | ''
+  onChange: (type: ClassOfferType) => void
+  discount: string
+  onDiscountChange: (value: string) => void
+}) {
+  const discountPercent = Number(discount)
+  const discountValid = Number.isInteger(discountPercent)
+    && discountPercent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+    && discountPercent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT
+  const card = 'flex min-h-[5.5rem] cursor-pointer items-center gap-3 rounded-2xl border p-3 text-left transition sm:p-4'
+  return (
+    <fieldset className="space-y-3" aria-required="true">
+      <legend className="sr-only">Loại lớp</legend>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className={`${card} ${value === 'promo' ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' : 'border-amber-200 bg-amber-50/50 hover:border-amber-300'}`}>
+          <input type="radio" name="class-hunt-offer-type" checked={value === 'promo'} onChange={() => onChange('promo')} className="h-5 w-5 shrink-0 accent-amber-500" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-white shadow-sm">
+            <Tag className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-extrabold text-slate-950">Lớp ưu đãi</span>
+              <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                Giảm {CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}% - {CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%
+              </span>
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-slate-600">
+              Tham gia chương trình giảm giá cùng trung tâm. Giáo viên sẽ được áp dụng mức lương đã giảm.
+            </span>
+          </span>
+        </label>
+        <label className={`${card} ${value === 'standard' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-slate-50/60 hover:border-blue-200'}`}>
+          <input type="radio" name="class-hunt-offer-type" checked={value === 'standard'} onChange={() => onChange('standard')} className="h-5 w-5 shrink-0 accent-blue-700" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-sm">
+            <GraduationCap className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-extrabold text-slate-950">Lớp thông thường</span>
+            <span className="mt-1 block text-xs leading-5 text-slate-600">
+              Lớp học tiêu chuẩn, không áp dụng ưu đãi. Giáo viên nhận mức lương bình thường.
+            </span>
+          </span>
+        </label>
+      </div>
+      {value === 'promo' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 sm:p-4">
+          <label className="block sm:max-w-xs">
+            <span className="mb-1.5 block text-xs font-bold text-slate-700">
+              Mức giảm giá (%) <span className="text-rose-600" aria-hidden="true">*</span>
+            </span>
+            <span className="relative block">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}
+                max={CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}
+                step={1}
+                value={discount}
+                onChange={(event) => onDiscountChange(event.target.value)}
+                className={`${FIELD} pr-9 ${discount && !discountValid ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100' : ''}`}
+                placeholder={`Nhập từ ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT} đến ${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}`}
+                aria-invalid={!discountValid}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">%</span>
+            </span>
+          </label>
+          <p className={`mt-2 text-xs leading-5 ${discount && !discountValid ? 'font-semibold text-rose-600' : 'text-slate-600'}`}>
+            {!discount
+              ? 'Bắt buộc nhập % giảm trước khi đăng lớp ưu đãi.'
+              : discountValid
+                ? `Học viên giảm ${discountPercent}% học phí, giáo viên giảm ${discountPercent}% thù lao. Gia sư thấy mức giảm này khi xem và nhận lớp.`
+                : `Mức giảm phải là số nguyên từ ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}% đến ${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%.`}
+          </p>
+        </div>
+      )}
+    </fieldset>
+  )
+}
+
 const FIELD ='min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
 
 export function ClassHuntingPage() {
@@ -201,6 +303,8 @@ export function ClassHuntingPage() {
   const [teacherTypes, setTeacherTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
   const [gender, setGender] = useState<ClassHuntTeacherGender>('any')
   const [note, setNote] = useState('')
+  const [offerType, setOfferType] = useState<ClassOfferType | ''>('')
+  const [promoDiscount, setPromoDiscount] = useState('')
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   const [checking, setChecking] = useState(false)
@@ -310,6 +414,10 @@ export function ClassHuntingPage() {
     nowMs,
   }), [nowMs, requestedSessions, sortedSlots, startDate])
   const plannedDiamonds = plan.length * CLASS_HUNT_SLOT_MINUTES
+  const promoDiscountPercent = offerType === 'promo' ? Number(promoDiscount) : NaN
+  const promoDiscountValid = Number.isInteger(promoDiscountPercent)
+    && promoDiscountPercent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+    && promoDiscountPercent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT
   const remainingAfter = availablePoints !== undefined ? availablePoints - plannedDiamonds : null
 
   const issues = useMemo(() => {
@@ -317,6 +425,10 @@ export function ClassHuntingPage() {
     if (!selectedStudent) list.push('Chọn học viên cần xếp lớp.')
     else if (lookupStudent && lookupStudent.eligibleForHunt === false) list.push('Học viên này không đủ điều kiện mở CLASS HUNTING (cần học viên 1 kèm 1 online đang học và còn gói).')
     if (selectedStudent && !lookingUp && lookupStudent && !selectedSubject) list.push('Chọn gói học cần xếp.')
+    if (!offerType) list.push('Chọn loại lớp: Lớp ưu đãi hoặc Lớp thông thường.')
+    else if (offerType === 'promo' && !promoDiscountValid) {
+      list.push(`Nhập mức giảm giá của lớp ưu đãi (số nguyên ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}–${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%).`)
+    }
     if (weeklySlots.length === 0) list.push('Chọn ít nhất một slot học trong bảng.')
     if (!studentAudience) list.push('Chọn đối tượng học viên: Trẻ em, Thanh thiếu niên hoặc Người lớn.')
     if (!startDate || startDate < todayInVietnam()) list.push('Ngày bắt đầu phải từ hôm nay trở đi.')
@@ -335,7 +447,7 @@ export function ClassHuntingPage() {
     if (teacherTypes.length === 0) list.push('Chọn ít nhất một loại giáo viên.')
     if (note.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH) list.push(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
     return list
-  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, plan.length, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, studentAudience, teacherTypes.length, weeklySlots.length])
+  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, offerType, plan.length, promoDiscountValid, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, studentAudience, teacherTypes.length, weeklySlots.length])
 
   const selectStudent = async (student: Student | null, preferredSubjectId?: string) => {
     const requestId = lookupRequestRef.current + 1
@@ -382,7 +494,8 @@ export function ClassHuntingPage() {
   }
 
   const buildDraft = (): ClassHuntDraftInput | null => {
-    if (!selectedStudent || !lookupStudent?.id || !selectedSubject || !studentAudience) return null
+    if (!selectedStudent || !lookupStudent?.id || !selectedSubject || !studentAudience || !offerType) return null
+    if (offerType === 'promo' && !promoDiscountValid) return null
     const trimmedNote = note.trim()
     return {
       ...(trimmedNote ? { note: trimmedNote } : {}),
@@ -398,6 +511,7 @@ export function ClassHuntingPage() {
         teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => teacherTypes.includes(type)),
         gender,
       },
+      ...(offerType === 'promo' ? { promoDiscountPercent } : {}),
     }
   }
 
@@ -443,6 +557,8 @@ export function ClassHuntingPage() {
       setWeeklySlots([])
       setNote('')
       setStudentAudience('')
+      setOfferType('')
+      setPromoDiscount('')
       toast.success(`Đã đăng CLASS HUNTING. Toàn bộ ${confirm.preview.activeTeacherCount ?? ''} gia sư đang hoạt động đều thấy lớp.`)
       await Promise.all([loadHunts(), selectedStudent ? selectStudent(selectedStudent) : Promise.resolve()])
     } catch (error) {
@@ -552,6 +668,8 @@ export function ClassHuntingPage() {
     setGender(hunt.teacherRequirements?.gender || 'any')
     setStudentAudience(hunt.studentAudience || '')
     setNote(hunt.note || '')
+    setOfferType(hunt.promoDiscountPercent ? 'promo' : 'standard')
+    setPromoDiscount(hunt.promoDiscountPercent ? String(hunt.promoDiscountPercent) : '')
     window.scrollTo({ top: 0, behavior: 'smooth' })
     await selectStudent(student, hunt.subject.id)
     toast.success(hunt.weeklySlots
@@ -598,7 +716,8 @@ export function ClassHuntingPage() {
                     value={studentSearch}
                     onChange={(event) => setStudentSearch(event.target.value)}
                     className={`${FIELD} pl-9`}
-                    placeholder={studentsLoading ? 'Đang tải học viên...' : 'Nhập tên, số điện thoại hoặc mã học viên'}
+                    placeholder={studentsLoading ? 'Đang tải học viên...' : 'Tên, SĐT hoặc mã HV'}
+                    title="Nhập tên, số điện thoại hoặc mã học viên"
                     autoComplete="off"
                     disabled={studentsLoading}
                   />
@@ -640,6 +759,12 @@ export function ClassHuntingPage() {
                 Gói còn {number(selectedSubject.remainingPoints || 0)} kim cương, đang giữ {selectedSubject.heldBookingCount} ca / {number(selectedSubject.heldPoints || 0)} kim cương nên khả dụng {number(selectedSubject.availablePoints || 0)} kim cương.
               </p>
             )}
+            <ClassOfferTypePicker
+              value={offerType}
+              onChange={setOfferType}
+              discount={promoDiscount}
+              onDiscountChange={setPromoDiscount}
+            />
           </Card>
 
           <Card className="space-y-4">
@@ -800,6 +925,9 @@ export function ClassHuntingPage() {
               {([
                 ['Học viên', selectedStudent ? selectedStudent.name : '—'],
                 ['Đối tượng', studentAudience ? CLASS_HUNT_STUDENT_AUDIENCE_LABELS[studentAudience] : '—'],
+                ['Loại lớp', offerType === 'promo'
+                  ? (promoDiscountValid ? `Lớp ưu đãi · giảm ${promoDiscountPercent}%` : 'Lớp ưu đãi · chưa nhập %')
+                  : offerType === 'standard' ? 'Lớp thông thường' : '—'],
                 ['Gói', selectedSubject?.name || '—'],
                 ['Khả dụng', availablePoints !== undefined ? `${number(availablePoints)} kim cương` : '—'],
                 ['Dự kiến sử dụng', `${number(plannedDiamonds)} kim cương`],
@@ -966,6 +1094,7 @@ export function ClassHuntingPage() {
                           ) : (
                             <p className="mt-1 text-sm font-semibold text-slate-500">Theo đơn giá môn x level</p>
                           )}
+                          {hunt.promoDiscountPercent && <div className="mt-1.5"><PromoBadge percent={hunt.promoDiscountPercent} /></div>}
                         </div>
                       </div>
                       {hunt.note && (
@@ -1015,7 +1144,9 @@ export function ClassHuntingPage() {
         title="Đăng CLASS HUNTING?"
         confirmLabel="Đăng lớp"
         loading={publishing}
-        consequence="Lịch và kim cương chỉ được giữ khi một gia sư nhận lớp thành công và không trùng ca. Lương theo đơn giá môn x level gia sư, giống lớp thường."
+        consequence={confirm?.draft.promoDiscountPercent
+          ? `Lịch và kim cương chỉ được giữ khi một gia sư nhận lớp thành công và không trùng ca. Lớp ưu đãi: lương = đơn giá môn x level gia sư, giảm ${confirm.draft.promoDiscountPercent}%, chốt lúc gia sư nhận lớp.`
+          : 'Lịch và kim cương chỉ được giữ khi một gia sư nhận lớp thành công và không trùng ca. Lương theo đơn giá môn x level gia sư, giống lớp thường.'}
       >
         {confirm && (
           <div className="space-y-3 rounded-xl bg-white p-3 text-sm">
@@ -1026,6 +1157,9 @@ export function ClassHuntingPage() {
               {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} kim cương
             </p>
             <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">Đối tượng: <StudentAudienceTag audience={confirm.draft.studentAudience} /></p>
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
+              Loại lớp: <PromoBadge percent={confirm.draft.promoDiscountPercent} />
+            </p>
             {confirmSlots.length > 0 && (
               <p className="text-xs text-slate-500">Từ {formatDate(confirmSlots[0].date)} đến {formatDate(confirmSlots[confirmSlots.length - 1].date)}</p>
             )}

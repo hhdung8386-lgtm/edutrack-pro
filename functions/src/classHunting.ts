@@ -33,6 +33,9 @@ export const CLASS_HUNT_NOTE_MAX_LENGTH = 500
 export const CLASS_HUNT_COMPENSATION_VERSION = 1
 export const CLASS_HUNT_COMPENSATION_CURRENCY = 'VND' as const
 export const CLASS_HUNT_COMPENSATION_FORMULA = 'flat_per_minute' as const
+/** "Lớp ưu đãi": the operator enters the discount; tutor pay drops by the same %. */
+export const CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT = 10
+export const CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT = 50
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,160}$/
@@ -102,6 +105,8 @@ export interface ClassHuntDraft {
   studentAudience?: ClassHuntStudentAudience
   /** Present only when the operator wrote a note; older offers have none. */
   note?: string
+  /** "Lớp ưu đãi" only (10–50). Absent = "Lớp thông thường"; older offers have none. */
+  promoDiscountPercent?: number
   /**
    * Present only for newly published, admin-priced hunts. Its absence is a
    * deliberate compatibility path for offers created before class-level pay
@@ -530,6 +535,46 @@ export function normalizeClassHuntTeacherRequirements(value: unknown): ClassHunt
   return { teacherTypes, gender }
 }
 
+/** Missing = "Lớp thông thường"; a promo class needs a whole percent in 10–50. */
+export function normalizeClassHuntPromoDiscount(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const percent = finiteInteger(value)
+  if (percent === null
+    || percent < CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+    || percent > CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_PROMO_DISCOUNT_INVALID',
+      `Mức giảm của lớp ưu đãi phải là số nguyên từ ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}% đến ${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%.`,
+    )
+  }
+  return percent
+}
+
+/**
+ * Tutor pay for a promo class, frozen at claim: the regular rate (subject price
+ * x tutor level, the same formula payroll uses) reduced by the class discount.
+ * Returned as the existing flat snapshot so approvals and payroll need no new path.
+ */
+export function classHuntPromoCompensation(input: {
+  pricePerMinute: number
+  currency: string
+  teacherLevel: number
+  discountPercent: number
+}): ClassHuntCompensation {
+  const discountPercent = normalizeClassHuntPromoDiscount(input.discountPercent)
+  const level = Number(input.teacherLevel) > 0 ? Number(input.teacherLevel) : 1
+  if (discountPercent === undefined
+    || cleanText(input.currency, 10).toUpperCase() !== CLASS_HUNT_COMPENSATION_CURRENCY
+    || !(Number(input.pricePerMinute) > 0)) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_PROMO_RATE_UNAVAILABLE',
+      'Gói học chưa có đơn giá VND nên chưa tính được thù lao lớp ưu đãi.',
+    )
+  }
+  const rate = Math.round(Number(input.pricePerMinute) * level * (100 - discountPercent) / 100)
+  return createClassHuntCompensation(Math.max(1, rate))
+}
+
 /** Missing is accepted for legacy clients/offers; any supplied value is strict. */
 export function normalizeClassHuntStudentAudience(value: unknown): ClassHuntStudentAudience | undefined {
   if (value === undefined || value === null || value === '') return undefined
@@ -726,6 +771,7 @@ export function buildClassHuntDraft(input: {
   teacherRequirements?: unknown
   studentAudience?: unknown
   note?: unknown
+  promoDiscountPercent?: unknown
 }, nowMs: number): ClassHuntDraft {
   const studentId = requiredDocumentId(input.studentId, 'CLASS_HUNT_STUDENT_ID_INVALID')
   const subjectId = requiredDocumentId(input.subjectId, 'CLASS_HUNT_SUBJECT_ID_INVALID')
@@ -745,7 +791,14 @@ export function buildClassHuntDraft(input: {
   const teacherRequirements = normalizeClassHuntTeacherRequirements(input.teacherRequirements)
   const studentAudience = normalizeClassHuntStudentAudience(input.studentAudience)
   const note = normalizeClassHuntNote(input.note)
+  const promoDiscountPercent = normalizeClassHuntPromoDiscount(input.promoDiscountPercent)
   const classHuntCompensation = optionalClassHuntCompensation(input.compensationRatePerMinute)
+  if (classHuntCompensation && promoDiscountPercent !== undefined) {
+    throw new ClassHuntValidationError(
+      'CLASS_HUNT_PROMO_WITH_FIXED_RATE',
+      'Lớp ưu đãi tính thù lao theo % giảm, không đi kèm đơn giá riêng.',
+    )
+  }
   if (classHuntCompensation) {
     // Validate the whole class amount at creation time. No value is rounded or
     // capped; a value that cannot remain exact is rejected before it reaches
@@ -772,6 +825,7 @@ export function buildClassHuntDraft(input: {
     teacherRequirements,
     ...(studentAudience ? { studentAudience } : {}),
     ...(note ? { note } : {}),
+    ...(promoDiscountPercent !== undefined ? { promoDiscountPercent } : {}),
     ...(classHuntCompensation ? { classHuntCompensation } : {}),
   }
 }
@@ -794,6 +848,7 @@ export function classHuntPublishFingerprint(draft: ClassHuntDraft): string {
     classHuntCompensation: draft.classHuntCompensation || null,
     // Only present when written, so note-less fingerprints stay unchanged.
     ...(draft.note ? { note: draft.note } : {}),
+    ...(draft.promoDiscountPercent !== undefined ? { promoDiscountPercent: draft.promoDiscountPercent } : {}),
   }), 'utf8').digest('hex')
 }
 
@@ -819,6 +874,7 @@ export function classHuntPublishRetryMatches(input: {
   teacherRequirements?: unknown
   studentAudience?: unknown
   note?: unknown
+  promoDiscountPercent?: unknown
 }, stored: {
   studentId: string
   studentCode: string
@@ -836,7 +892,14 @@ export function classHuntPublishRetryMatches(input: {
   teacherRequirements?: unknown
   studentAudience?: unknown
   note?: unknown
+  promoDiscountPercent?: unknown
 }): boolean {
+  try {
+    if (normalizeClassHuntPromoDiscount(input.promoDiscountPercent)
+      !== normalizeClassHuntPromoDiscount(stored.promoDiscountPercent)) return false
+  } catch {
+    return false
+  }
   try {
     // A cached client never sends a note; that equals a stored offer without one.
     if (normalizeClassHuntNote(input.note) !== storedClassHuntNote(stored.note)) return false

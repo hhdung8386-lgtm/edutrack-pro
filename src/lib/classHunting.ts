@@ -116,6 +116,20 @@ export interface ClassHuntClaimedTeacher {
 /** Mirrors CLASS_HUNT_NOTE_MAX_LENGTH in functions/src/classHunting.ts. */
 export const CLASS_HUNT_NOTE_MAX_LENGTH = 500
 
+/** Mirrors CLASS_HUNT_PROMO_DISCOUNT_*_PERCENT in functions/src/classHunting.ts. */
+export const CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT = 10
+export const CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT = 50
+
+/** "Lớp ưu đãi" carries a whole 10–50 discount; anything else reads as a regular class. */
+export function classHuntPromoDiscountFrom(value: unknown): number | undefined {
+  const percent = Number(value)
+  return Number.isInteger(percent)
+    && percent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+    && percent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT
+    ? percent
+    : undefined
+}
+
 export interface ClassHunt {
   id: string
   status: ClassHuntStatus
@@ -144,6 +158,8 @@ export interface ClassHunt {
   requirementMatch?: boolean
   /** Operator note shown to tutors before they claim (subject, level, learner needs). */
   note?: string
+  /** "Lớp ưu đãi": tutor pay is reduced by this % (10–50). Absent = regular class. */
+  promoDiscountPercent?: number
 }
 
 /** The teacher endpoint deliberately does not include a student object. */
@@ -180,6 +196,8 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   teacherRequirements: ClassHuntTeacherRequirements
   /** Omit when empty so a note-less publish keeps its original retry identity. */
   note?: string
+  /** "Lớp ưu đãi" only; omit for a regular class. */
+  promoDiscountPercent?: number
   // No `compensationRatePerMinute`: tutor pay follows the subject price. The
   // key must be absent (not undefined/null) or the server treats it as a rate.
 }
@@ -196,6 +214,7 @@ export interface ClassHuntPreview {
   teacherRequirements?: ClassHuntTeacherRequirements
   studentAudience?: ClassHuntStudentAudience
   note?: string
+  promoDiscountPercent?: number
   warnings?: string[]
   classHuntCompensation?: ClassHuntCompensation
   subjectRate?: ClassHuntSubjectRate
@@ -487,6 +506,7 @@ function previewFrom(value: unknown): ClassHuntPreview {
     ...(data.teacherRequirements ? { teacherRequirements: teacherRequirementsFrom(data.teacherRequirements) } : {}),
     ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
+    ...(classHuntPromoDiscountFrom(data.promoDiscountPercent) ? { promoDiscountPercent: classHuntPromoDiscountFrom(data.promoDiscountPercent) } : {}),
     student: studentFrom(data.student),
     subjects: asArray(data.subjects ?? data.packages)
       .map(subjectFrom)
@@ -541,6 +561,7 @@ function huntFrom(value: unknown): ClassHunt {
     teacherRequirements: teacherRequirementsFrom(data.teacherRequirements),
     ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
+    ...(classHuntPromoDiscountFrom(data.promoDiscountPercent) ? { promoDiscountPercent: classHuntPromoDiscountFrom(data.promoDiscountPercent) } : {}),
     ...(weeklySlotsFrom(data.weeklySlots) ? { weeklySlots: weeklySlotsFrom(data.weeklySlots) } : {}),
     ...(numberValue(data.activeTeacherCount) !== undefined ? { activeTeacherCount: numberValue(data.activeTeacherCount) } : {}),
   }
@@ -565,6 +586,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(studentAudienceFrom(data.studentAudience) ? { studentAudience: studentAudienceFrom(data.studentAudience) } : {}),
     ...(typeof data.requirementMatch === 'boolean' ? { requirementMatch: data.requirementMatch } : {}),
     ...(noteFrom(data.note) ? { note: noteFrom(data.note) } : {}),
+    ...(classHuntPromoDiscountFrom(data.promoDiscountPercent) ? { promoDiscountPercent: classHuntPromoDiscountFrom(data.promoDiscountPercent) } : {}),
     ...(externalLinkFrom(data.curriculumLink) ? { curriculumLink: externalLinkFrom(data.curriculumLink) } : {}),
     ...(externalLinkFrom(data.supplementaryCurriculumLink) ? { supplementaryCurriculumLink: externalLinkFrom(data.supplementaryCurriculumLink) } : {}),
     ...(dateFrom(data.claimedAt ?? data.claimedAtMs) ? { claimedAt: dateFrom(data.claimedAt ?? data.claimedAtMs) } : {}),

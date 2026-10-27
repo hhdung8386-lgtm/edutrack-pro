@@ -930,3 +930,58 @@ test('CLASS HUNTING gives tutors only safe textbook links of the offer package',
     { curriculumLink: 'https://example.com/legacy' },
   )
 })
+
+test('promo class discount is optional, whole and limited to 10-50%', () => {
+  const { normalizeClassHuntPromoDiscount } = require('../lib/classHunting')
+  assert.equal(normalizeClassHuntPromoDiscount(undefined), undefined)
+  assert.equal(normalizeClassHuntPromoDiscount(''), undefined)
+  assert.equal(normalizeClassHuntPromoDiscount(10), 10)
+  assert.equal(normalizeClassHuntPromoDiscount('30'), 30)
+  assert.equal(normalizeClassHuntPromoDiscount(50), 50)
+  for (const bad of [9, 51, 0, 25.5, 'abc', -10]) {
+    assert.throws(() => normalizeClassHuntPromoDiscount(bad), ClassHuntValidationError)
+  }
+})
+
+test('promo class pay is subject price x tutor level minus the class percent, frozen as a flat VND snapshot', () => {
+  const { classHuntPromoCompensation } = require('../lib/classHunting')
+  const compensation = classHuntPromoCompensation({ pricePerMinute: 1000, currency: 'VND', teacherLevel: 1.2, discountPercent: 30 })
+  assert.deepEqual(compensation, {
+    version: CLASS_HUNT_COMPENSATION_VERSION,
+    ratePerMinute: 840,
+    currency: CLASS_HUNT_COMPENSATION_CURRENCY,
+    formula: CLASS_HUNT_COMPENSATION_FORMULA,
+  })
+  assert.equal(classHuntPromoCompensation({ pricePerMinute: 1000, currency: 'VND', teacherLevel: 0, discountPercent: 50 }).ratePerMinute, 500)
+  assert.throws(() => classHuntPromoCompensation({ pricePerMinute: 2, currency: 'USD', teacherLevel: 1, discountPercent: 30 }), ClassHuntValidationError)
+  assert.throws(() => classHuntPromoCompensation({ pricePerMinute: 0, currency: 'VND', teacherLevel: 1, discountPercent: 30 }), ClassHuntValidationError)
+})
+
+test('promo discount is part of the draft and of publish retry matching', () => {
+  const nowMs = Date.parse('2026-10-27T01:00:00.000Z')
+  const input = {
+    studentId: 'student-1',
+    subjectId: 'subject-1',
+    startDate: '2026-10-28',
+    weeklySlots: [{ day: 'wed', start: '19:00' }],
+    sessionCount: 2,
+    sessionSelectionMode: 'specific',
+    studentAudience: 'adults',
+    promoDiscountPercent: 30,
+  }
+  const draft = buildClassHuntDraft(input, nowMs)
+  assert.equal(draft.promoDiscountPercent, 30)
+  assert.notEqual(classHuntPublishFingerprint(draft), classHuntPublishFingerprint(buildClassHuntDraft({ ...input, promoDiscountPercent: undefined }, nowMs)))
+  assert.throws(() => buildClassHuntDraft({ ...input, compensationRatePerMinute: 500 }, nowMs), ClassHuntValidationError)
+
+  const stored = {
+    studentId: 'student-1', studentCode: 'HV1', subjectId: 'subject-1', startDate: '2026-10-28',
+    selectedDays: draft.selectedDays, requestedStart: draft.requestedStart, requestedMinutes: draft.requestedMinutes,
+    sessionCount: 2, sessionSelectionMode: 'specific', createdAtMs: nowMs, expiresAtMs: nowMs + CLASS_HUNT_DEFAULT_TTL_MINUTES * 60_000,
+    weeklySlots: draft.weeklySlots, teacherRequirements: draft.teacherRequirements, studentAudience: 'adults', promoDiscountPercent: 30,
+  }
+  const retry = { ...input, studentCode: 'HV1' }
+  assert.equal(classHuntPublishRetryMatches(retry, stored), true)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, promoDiscountPercent: 20 }, stored), false)
+  assert.equal(classHuntPublishRetryMatches({ ...retry, promoDiscountPercent: undefined }, stored), false)
+})

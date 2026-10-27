@@ -36,6 +36,8 @@ import {
   classHuntClaimConflictReason,
   normalizeClassHuntSessionSelectionMode,
   normalizeClassHuntStudentAudience,
+  normalizeClassHuntPromoDiscount,
+  classHuntPromoCompensation,
   normalizeClassHuntTeacherRequirements,
   normalizeClassHuntWeeklySlots,
   pointsPer25Minutes,
@@ -148,6 +150,8 @@ type StoredClassHunt = {
   teacherRequirements: ClassHuntTeacherRequirements
   studentAudience?: ClassHuntStudentAudience
   note?: string
+  /** "Lớp ưu đãi": % giảm thù lao gia sư (10–50). Absent = lớp thông thường. */
+  promoDiscountPercent?: number
   claimedByTeacherId?: string
   claimedByUid?: string
   claimedAtMs?: number
@@ -260,6 +264,15 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   let teacherRequirements: ClassHuntTeacherRequirements
   let studentAudience: ClassHuntStudentAudience | undefined
   let weeklySlots: ClassHuntWeeklySlot[] | undefined
+  let promoDiscountPercent: number | undefined
+  try {
+    promoDiscountPercent = normalizeClassHuntPromoDiscount(data.promoDiscountPercent)
+  } catch {
+    throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Mức giảm của lớp ưu đãi không hợp lệ.')
+  }
+  if (promoDiscountPercent !== undefined && classHuntCompensation) {
+    throw error('failed-precondition', 'CLASS_HUNT_DATA_INVALID', 'Lớp ưu đãi không được kèm đơn giá riêng.')
+  }
   try {
     // Offers published before requirements existed are open to every tutor.
     teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
@@ -275,6 +288,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
     teacherRequirements,
     ...(studentAudience ? { studentAudience } : {}),
     ...(note ? { note } : {}),
+    ...(promoDiscountPercent !== undefined ? { promoDiscountPercent } : {}),
     ...(weeklySlots ? { weeklySlots } : {}),
     ...(Number.isSafeInteger(Number(data.activeTeacherCount)) && Number(data.activeTeacherCount) >= 0
       ? { activeTeacherCount: Number(data.activeTeacherCount) }
@@ -414,6 +428,25 @@ function noRemainingClassHuntSessionMessage(
   return `${classHuntFundSummary(availability, minutes)} Không đủ cho 1 buổi.`
 }
 
+/** A promo class must be payable: the package needs a VND subject price to discount. */
+function assertPromoClassPayable(draft: ClassHuntDraft, student: ClassHuntStudentLike) {
+  if (draft.promoDiscountPercent === undefined) return
+  const rate = classHuntSubjectRate(student, draft.subjectId)
+  try {
+    classHuntPromoCompensation({
+      pricePerMinute: rate?.pricePerMinute ?? 0,
+      currency: rate?.currency ?? '',
+      teacherLevel: 1,
+      discountPercent: draft.promoDiscountPercent,
+    })
+  } catch (cause) {
+    if (cause instanceof ClassHuntValidationError) {
+      throw error('failed-precondition', cause.reason, cause.message)
+    }
+    throw cause
+  }
+}
+
 function draftFromRequest(
   data: Record<string, unknown>,
   studentId: string,
@@ -456,6 +489,7 @@ function draftFromRequest(
         teacherRequirements: data.teacherRequirements,
         studentAudience: data.studentAudience,
         note: data.note,
+        promoDiscountPercent: data.promoDiscountPercent,
       }, nowMs)
     } catch (cause) {
       if (cause instanceof ClassHuntValidationError) {
@@ -790,6 +824,7 @@ function serializeAdminHunt(
     teacherRequirements: hunt.teacherRequirements,
     ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
+    ...(hunt.promoDiscountPercent !== undefined ? { promoDiscountPercent: hunt.promoDiscountPercent } : {}),
     ...(hunt.weeklySlots ? { weeklySlots: hunt.weeklySlots } : {}),
     ...(hunt.activeTeacherCount !== undefined ? { activeTeacherCount: hunt.activeTeacherCount } : {}),
     ...(hunt.eligibleTeacherCount !== undefined ? { eligibleTeacherCount: hunt.eligibleTeacherCount } : {}),
@@ -846,6 +881,8 @@ function serializeTeacherHunt(
     teacherRequirements: hunt.teacherRequirements,
     ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
+    // Shown before claiming so the tutor knows pay is reduced by this %.
+    ...(hunt.promoDiscountPercent !== undefined ? { promoDiscountPercent: hunt.promoDiscountPercent } : {}),
     ...curriculum,
     ...(requirementMatch === undefined ? {} : { requirementMatch }),
   }
@@ -876,6 +913,7 @@ function serializeTeacherClaimedHunt(hunt: StoredClassHunt, viewerTeacherId: str
     teacherRequirements: hunt.teacherRequirements,
     ...(hunt.studentAudience ? { studentAudience: hunt.studentAudience } : {}),
     ...(hunt.note ? { note: hunt.note } : {}),
+    ...(hunt.promoDiscountPercent !== undefined ? { promoDiscountPercent: hunt.promoDiscountPercent } : {}),
     ...(hunt.claimedAtMs ? { claimedAt: isoFromMillis(hunt.claimedAtMs) } : {}),
     ...(nickname ? { claimedTeacherCode: nickname } : {}),
     claimedByMe: Boolean(hunt.claimedByTeacherId) && hunt.claimedByTeacherId === viewerTeacherId,
@@ -892,6 +930,7 @@ function isLookupOnlyPreviewRequest(data: Record<string, unknown>): boolean {
     && data.teacherRequirements === undefined
     && data.studentAudience === undefined
     && data.note === undefined
+    && data.promoDiscountPercent === undefined
     && data.sessionCount === undefined
     && data.sessionSelectionMode === undefined
     // A supplied rate is never a harmless lookup-only field: even a malformed
@@ -1048,6 +1087,7 @@ export const previewClassHunt = onCall({
   }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
+  assertPromoClassPayable(context.draft, context.student)
   const { activeTeacherCount, matchingTeacherCount } = await countClassHuntAudience(context.draft.teacherRequirements)
   const warnings = matchingTeacherCount === 0
     ? ['Không có gia sư đang hoạt động nào phù hợp yêu cầu loại giáo viên/giới tính đã chọn. Hãy nới yêu cầu rồi đăng lại.']
@@ -1074,6 +1114,7 @@ export const previewClassHunt = onCall({
     teacherRequirements: context.draft.teacherRequirements,
     ...(context.draft.studentAudience ? { studentAudience: context.draft.studentAudience } : {}),
     ...(context.draft.note ? { note: context.draft.note } : {}),
+    ...(context.draft.promoDiscountPercent !== undefined ? { promoDiscountPercent: context.draft.promoDiscountPercent } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   }
 })
@@ -1102,6 +1143,7 @@ export const publishClassHunt = onCall({
   if (existing) return { hunt: serializeAdminHunt(existing, Date.now(), actor.role === 'admin') }
   const nowMs = Date.now()
   const context = await buildOperatorContext(data, nowMs)
+  assertPromoClassPayable(context.draft, context.student)
   const { activeTeacherCount, matchingTeacherCount } = await countClassHuntAudience(context.draft.teacherRequirements)
   assertMatchingClassHuntTeacherCount(matchingTeacherCount)
   const publishRequestRef = db.collection(CLASS_HUNT_PUBLISH_REQUESTS_COLLECTION)
@@ -1169,6 +1211,7 @@ export const publishClassHunt = onCall({
       transactionNowMs,
     )
     const { subjectName } = assertStudentCanBeHunted(student, draft.subjectId)
+    assertPromoClassPayable(draft, student)
     assertNoStudentScheduleConflict(context.draft.studentId, draft.sessions, studentScheduleBookings)
 
     const expiresAtMs = transactionNowMs + draft.expiresInMinutes * 60_000
@@ -1193,6 +1236,7 @@ export const publishClassHunt = onCall({
       teacherRequirements: draft.teacherRequirements,
       ...(draft.studentAudience ? { studentAudience: draft.studentAudience } : {}),
       ...(draft.note ? { note: draft.note } : {}),
+      ...(draft.promoDiscountPercent !== undefined ? { promoDiscountPercent: draft.promoDiscountPercent } : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
       ...(draft.classHuntCompensation ? {
@@ -1235,6 +1279,7 @@ export const publishClassHunt = onCall({
         classHuntCompensation: draft.classHuntCompensation || null,
         studentAudience: draft.studentAudience || null,
         note: draft.note || null,
+        promoDiscountPercent: draft.promoDiscountPercent ?? null,
       },
       createdAt: FieldValue.serverTimestamp(),
     })
@@ -1801,11 +1846,30 @@ export const claimClassHunt = onCall({
       studentScheduleBookings,
       nowMs: claimNowMs,
     })
-    const compensationAmountPerLesson = hunt.classHuntCompensation
-      ? classHuntCompensationAmount(hunt.classHuntCompensation, hunt.requestedMinutes)
+    // Promo class: freeze the discounted pay (package price x this tutor's
+    // level, minus the class %) as the flat snapshot payroll already honours.
+    let claimCompensation = hunt.classHuntCompensation
+    if (!claimCompensation && hunt.promoDiscountPercent !== undefined) {
+      const rate = classHuntSubjectRate(student, hunt.subjectId)
+      try {
+        claimCompensation = classHuntPromoCompensation({
+          pricePerMinute: rate?.pricePerMinute ?? 0,
+          currency: rate?.currency ?? '',
+          teacherLevel: teacherPayLevel(teacher.teacher),
+          discountPercent: hunt.promoDiscountPercent,
+        })
+      } catch (cause) {
+        if (cause instanceof ClassHuntValidationError) {
+          throw error('failed-precondition', cause.reason, cause.message)
+        }
+        throw cause
+      }
+    }
+    const compensationAmountPerLesson = claimCompensation
+      ? classHuntCompensationAmount(claimCompensation, hunt.requestedMinutes)
       : undefined
-    const totalCompensationAmount = hunt.classHuntCompensation
-      ? classHuntCompensationAmount(hunt.classHuntCompensation, hunt.requestedMinutes, hunt.sessions.length)
+    const totalCompensationAmount = claimCompensation
+      ? classHuntCompensationAmount(claimCompensation, hunt.requestedMinutes, hunt.sessions.length)
       : undefined
 
     const teacherCode = cleanText(teacher.teacher.code, 80)
@@ -1843,12 +1907,13 @@ export const claimClassHunt = onCall({
         requestedMinutes: session.requestedMinutes,
         requestedPoints: accounting.pointsPerLesson,
         pointsPer25Minutes: pointsPer25Minutes(teacher.teacher.pointsPer25Minutes),
-        ...(hunt.classHuntCompensation ? {
+        ...(claimCompensation ? {
           // The booking is the bridge into attendance, approvals, and payroll.
           // Copy the full snapshot rather than a derived value so every later
           // financial step can prove it used the price the tutor saw pre-claim.
-          classHuntCompensation: { ...hunt.classHuntCompensation },
+          classHuntCompensation: { ...claimCompensation },
         } : {}),
+        ...(hunt.promoDiscountPercent !== undefined ? { classHuntPromoDiscountPercent: hunt.promoDiscountPercent } : {}),
         heldImmediately: true,
         heldMinutesAfterConfirm: accounting.nextHeld,
         adminNote: 'Gia sư nhận lớp qua Săn lớp.',
@@ -1904,8 +1969,9 @@ export const claimClassHunt = onCall({
         pointsPerLesson: accounting.pointsPerLesson,
         totalHeldPoints: accounting.totalRequiredPoints,
         heldMinutesAfter: accounting.nextHeld,
-        ...(hunt.classHuntCompensation ? {
-          classHuntCompensation: { ...hunt.classHuntCompensation },
+        ...(hunt.promoDiscountPercent !== undefined ? { promoDiscountPercent: hunt.promoDiscountPercent } : {}),
+        ...(claimCompensation ? {
+          classHuntCompensation: { ...claimCompensation },
           compensationAmountPerLesson,
           totalCompensationAmount,
         } : {
