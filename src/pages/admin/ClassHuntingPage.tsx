@@ -24,6 +24,7 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StudentAudienceTag } from '@/components/shared/StudentAudienceTag'
+import { PromoDiscountPill, PromoRateCard, PromoSaleChip } from '@/components/shared/ClassHuntPromo'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { db } from '@/lib/firebase'
@@ -940,6 +941,8 @@ export function ClassHuntingPage() {
               ))}
             </dl>
 
+            {promoDiscountValid && <PromoRateCard percent={promoDiscountPercent} />}
+
             <div className="rounded-xl border border-slate-200">
               <p className="border-b border-slate-100 px-3 py-2 text-sm font-bold text-blue-800">Lịch dự kiến</p>
               {plan.length === 0 ? (
@@ -1094,14 +1097,19 @@ export function ClassHuntingPage() {
                           ) : (
                             <p className="mt-1 text-sm font-semibold text-slate-500">Theo đơn giá môn x level</p>
                           )}
-                          {hunt.promoDiscountPercent && <div className="mt-1.5"><PromoBadge percent={hunt.promoDiscountPercent} /></div>}
+                          {hunt.promoDiscountPercent && <PromoDiscountPill percent={hunt.promoDiscountPercent} className="mt-1.5" />}
                         </div>
                       </div>
-                      {hunt.note && (
-                        <p className="mt-3 flex items-start gap-2 whitespace-pre-line rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
-                          <NotebookPen className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span className="min-w-0 break-words">{hunt.note}</span>
-                        </p>
+                      {(hunt.note || hunt.promoDiscountPercent) && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-rose-50 px-3 py-2">
+                          {hunt.note && (
+                            <p className="flex min-w-0 items-start gap-2 whitespace-pre-line text-xs font-semibold leading-5 text-rose-700">
+                              <NotebookPen className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span className="min-w-0 break-words">{hunt.note}</span>
+                            </p>
+                          )}
+                          {hunt.promoDiscountPercent && <PromoSaleChip />}
+                        </div>
                       )}
                       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-600"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />{formatSlots(hunt, true)}</p>
                     </div>
@@ -1157,9 +1165,13 @@ export function ClassHuntingPage() {
               {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} kim cương
             </p>
             <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">Đối tượng: <StudentAudienceTag audience={confirm.draft.studentAudience} /></p>
-            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
-              Loại lớp: <PromoBadge percent={confirm.draft.promoDiscountPercent} />
-            </p>
+            {confirm.draft.promoDiscountPercent ? (
+              <PromoRateCard percent={confirm.draft.promoDiscountPercent} />
+            ) : (
+              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
+                Loại lớp: <PromoBadge />
+              </p>
+            )}
             {confirmSlots.length > 0 && (
               <p className="text-xs text-slate-500">Từ {formatDate(confirmSlots[0].date)} đến {formatDate(confirmSlots[confirmSlots.length - 1].date)}</p>
             )}

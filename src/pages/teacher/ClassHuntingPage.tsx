@@ -32,6 +32,7 @@ import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
 import { StudentAudienceTag } from '@/components/shared/StudentAudienceTag'
+import { PromoPerksButton, PromoTagRow } from '@/components/shared/ClassHuntPromo'
 import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -626,7 +627,7 @@ export function TeacherClassHuntingPage() {
                                 <Clock3 className="h-3.5 w-3.5" />{expiryLabel(hunt.expiresAt)}
                               </span>
                               {hunt.studentAudience && <StudentAudienceTag audience={hunt.studentAudience} />}
-                              <PromoTag percent={hunt.promoDiscountPercent} />
+                              {hunt.promoDiscountPercent && <PromoTagRow percent={hunt.promoDiscountPercent} />}
                             </div>
                             <h3 className="mt-3 break-words text-xl font-black text-slate-950 sm:text-2xl">{hunt.subject.name}</h3>
                             <SubjectTeacherNote note={subjectNotes[hunt.subject.id]} className="mt-2" />
@@ -870,9 +871,10 @@ export function TeacherClassHuntingPage() {
               </p>
             )}
             {confirmingHunt.promoDiscountPercent && (
-              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-900">
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-900">
                 Đây là lớp ưu đãi: học viên được giảm {confirmingHunt.promoDiscountPercent}% học phí nên thù lao của bạn cho lớp này cũng giảm {confirmingHunt.promoDiscountPercent}%.
-              </p>
+                <div className="mt-1"><PromoPerksButton /></div>
+              </div>
             )}
             {confirmingPay && (
               <p className="mt-2 text-sm leading-6 text-slate-500">
