@@ -39,10 +39,24 @@ export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
  * Number of lessons the spendable diamonds cover. The server resolves the
  * same figure again when publishing; the legacy session counter is not used.
  */
-export function classHuntAffordableSessions(availablePoints: number, minutes: number): number {
-  const pointsPerLesson = Math.round((minutes / 25) * CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES * 100) / 100
+export function classHuntAffordableSessions(
+  availablePoints: number,
+  minutes: number,
+  rate: number = CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES,
+): number {
+  const pointsPerLesson = Math.round((minutes / 25) * rate * 100) / 100
   if (!Number.isFinite(availablePoints) || availablePoints <= 0 || !(pointsPerLesson > 0)) return 0
   return Math.floor((availablePoints + 1e-6) / pointsPerLesson)
+}
+
+/**
+ * Mirrors classHuntPromoPointsPer25Minutes in functions/src/classHunting.ts:
+ * a promo class keeps its minutes but charges the % fewer diamonds per 25
+ * minutes, rounded to a whole rate (min 1).
+ */
+export function classHuntPromoPointsPer25Minutes(discountPercent?: number, baseRate = CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES): number {
+  if (!discountPercent) return baseRate
+  return Math.max(1, Math.round(baseRate * (100 - discountPercent) / 100))
 }
 
 /** Immutable teacher-pay snapshot supplied only by the Class Hunting backend. */

@@ -985,3 +985,17 @@ test('promo discount is part of the draft and of publish retry matching', () => 
   assert.equal(classHuntPublishRetryMatches({ ...retry, promoDiscountPercent: 20 }, stored), false)
   assert.equal(classHuntPublishRetryMatches({ ...retry, promoDiscountPercent: undefined }, stored), false)
 })
+
+test('promo class charges fewer diamonds per 25 minutes; minutes stay the same', () => {
+  const { classHuntPromoPointsPer25Minutes } = require('../lib/classHunting')
+  assert.equal(classHuntPromoPointsPer25Minutes(25, undefined), 25)
+  assert.equal(classHuntPromoPointsPer25Minutes(25, 20), 20)
+  assert.equal(classHuntPromoPointsPer25Minutes(25, 30), 18) // 17.5 rounds to a whole rate like every hold/charge path
+  assert.equal(classHuntPromoPointsPer25Minutes(25, 50), 13)
+  assert.equal(classHuntPromoPointsPer25Minutes(30, 50), 15) // discount applies to the tutor's own rate
+  assert.equal(classHuntPromoPointsPer25Minutes(undefined, 40), 15)
+  // 100 spendable diamonds: 4 regular 25' lessons, 5 at 20% off, 7 at 50% off.
+  assert.equal(affordableClassHuntSessionCount(100, 25), 4)
+  assert.equal(affordableClassHuntSessionCount(100, 25, classHuntPromoPointsPer25Minutes(25, 20)), 5)
+  assert.equal(affordableClassHuntSessionCount(100, 25, classHuntPromoPointsPer25Minutes(25, 50)), 7)
+})

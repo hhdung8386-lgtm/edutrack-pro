@@ -39,6 +39,7 @@ import {
   cancelClassHunt,
   updateClassHunt,
   classHuntAffordableSessions,
+  classHuntPromoPointsPer25Minutes,
   classHuntErrorReason,
   listAdminClassHunts,
   previewClassHunt,
@@ -273,7 +274,7 @@ function ClassOfferTypePicker({
             {!discount
               ? 'Bắt buộc nhập % giảm trước khi đăng lớp ưu đãi.'
               : discountValid
-                ? `Học viên giảm ${discountPercent}% học phí, giáo viên giảm ${discountPercent}% thù lao. Gia sư thấy mức giảm này khi xem và nhận lớp.`
+                ? `Học viên vẫn học đủ 25 phút/buổi nhưng chỉ trừ ${classHuntPromoPointsPer25Minutes(discountPercent)} kim cương (thay vì 25); giáo viên giảm ${discountPercent}% thù lao. Gia sư thấy mức giảm này khi xem và nhận lớp.`
                 : `Mức giảm phải là số nguyên từ ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}% đến ${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%.`}
           </p>
         </div>
@@ -401,7 +402,13 @@ export function ClassHuntingPage() {
   const subjects = lookup?.subjects || []
   const selectedSubject = subjects.find((subject) => subject.id === subjectId)
   const availablePoints = selectedSubject?.availablePoints
-  const affordableSessions = availablePoints !== undefined ? classHuntAffordableSessions(availablePoints, CLASS_HUNT_SLOT_MINUTES) : null
+  const promoDiscountPercent = offerType === 'promo' ? Number(promoDiscount) : NaN
+  const promoDiscountValid = Number.isInteger(promoDiscountPercent)
+    && promoDiscountPercent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+    && promoDiscountPercent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT
+  // Diamonds per 25-minute slot: a promo class keeps the minutes but charges % fewer diamonds.
+  const slotDiamonds = classHuntPromoPointsPer25Minutes(promoDiscountValid ? promoDiscountPercent : undefined)
+  const affordableSessions = availablePoints !== undefined ? classHuntAffordableSessions(availablePoints, CLASS_HUNT_SLOT_MINUTES, slotDiamonds) : null
   const requestedSessions = sessionMode === 'all_remaining'
     ? Math.min(affordableSessions ?? 0, CLASS_HUNT_MAX_SESSIONS)
     : Math.max(1, Math.min(CLASS_HUNT_MAX_SESSIONS, Math.floor(sessionCount) || 1))
@@ -414,11 +421,7 @@ export function ClassHuntingPage() {
     limit: requestedSessions,
     nowMs,
   }), [nowMs, requestedSessions, sortedSlots, startDate])
-  const plannedDiamonds = plan.length * CLASS_HUNT_SLOT_MINUTES
-  const promoDiscountPercent = offerType === 'promo' ? Number(promoDiscount) : NaN
-  const promoDiscountValid = Number.isInteger(promoDiscountPercent)
-    && promoDiscountPercent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
-    && promoDiscountPercent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT
+  const plannedDiamonds = plan.length * slotDiamonds
   const remainingAfter = availablePoints !== undefined ? availablePoints - plannedDiamonds : null
 
   const issues = useMemo(() => {
@@ -435,7 +438,7 @@ export function ClassHuntingPage() {
     if (!startDate || startDate < todayInVietnam()) list.push('Ngày bắt đầu phải từ hôm nay trở đi.')
     if (selectedSubject && affordableSessions !== null) {
       if (affordableSessions < 1) {
-        list.push(`Gói chỉ còn ${number(availablePoints || 0)} kim cương khả dụng, chưa đủ 1 buổi ${CLASS_HUNT_SLOT_MINUTES} phút.`)
+        list.push(`Gói chỉ còn ${number(availablePoints || 0)} kim cương khả dụng, chưa đủ 1 buổi ${CLASS_HUNT_SLOT_MINUTES} phút (${slotDiamonds} kim cương).`)
       } else if (sessionMode === 'all_remaining' && affordableSessions > CLASS_HUNT_MAX_SESSIONS) {
         list.push(`Kim cương đủ cho ${affordableSessions} buổi, vượt giới hạn ${CLASS_HUNT_MAX_SESSIONS} buổi/lần đăng. Hãy chọn "Xếp số buổi nhất định".`)
       } else if (sessionMode === 'specific' && requestedSessions > affordableSessions) {
@@ -448,7 +451,7 @@ export function ClassHuntingPage() {
     if (teacherTypes.length === 0) list.push('Chọn ít nhất một loại giáo viên.')
     if (note.trim().length > CLASS_HUNT_NOTE_MAX_LENGTH) list.push(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
     return list
-  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, offerType, plan.length, promoDiscountValid, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, studentAudience, teacherTypes.length, weeklySlots.length])
+  }, [affordableSessions, availablePoints, lookingUp, lookupStudent, note, offerType, plan.length, promoDiscountValid, slotDiamonds, requestedSessions, selectedStudent, selectedSubject, sessionMode, startDate, studentAudience, teacherTypes.length, weeklySlots.length])
 
   const selectStudent = async (student: Student | null, preferredSubjectId?: string) => {
     const requestId = lookupRequestRef.current + 1
@@ -834,7 +837,7 @@ export function ClassHuntingPage() {
                   <span className="block text-sm font-extrabold text-slate-900">Xếp toàn bộ số buổi có thể học</span>
                   <span className="mt-1 block text-xs leading-5 text-slate-600">
                     {affordableSessions !== null && availablePoints !== undefined
-                      ? `${affordableSessions} buổi · ${number(affordableSessions * CLASS_HUNT_SLOT_MINUTES)} phút · Sử dụng ${number(affordableSessions * CLASS_HUNT_SLOT_MINUTES)} kim cương · Còn lại ${number(availablePoints - affordableSessions * CLASS_HUNT_SLOT_MINUTES)} kim cương`
+                      ? `${affordableSessions} buổi · ${number(affordableSessions * CLASS_HUNT_SLOT_MINUTES)} phút · Sử dụng ${number(affordableSessions * slotDiamonds)} kim cương · Còn lại ${number(availablePoints - affordableSessions * slotDiamonds)} kim cương`
                       : 'Chọn học viên và gói học để tính số buổi.'}
                   </span>
                 </span>
@@ -1162,7 +1165,7 @@ export function ClassHuntingPage() {
               <strong className="text-slate-950">{selectedStudent?.name}</strong> · {confirm.preview.subject?.name || selectedSubject?.name}
             </p>
             <p className="font-bold text-slate-900">
-              {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} kim cương
+              {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * classHuntPromoPointsPer25Minutes(confirm.draft.promoDiscountPercent))} kim cương
             </p>
             <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">Đối tượng: <StudentAudienceTag audience={confirm.draft.studentAudience} /></p>
             {confirm.draft.promoDiscountPercent ? (

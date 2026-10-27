@@ -13,6 +13,7 @@ import {
   classHuntSubjectAvailability,
   classHuntCompensationAmount,
   classHuntLessonPoints,
+  classHuntPromoPointsPer25Minutes,
   classHuntPublicSlot,
   classHuntPublishFingerprint,
   classHuntPublishRetryMatches,
@@ -40,7 +41,6 @@ import {
   classHuntPromoCompensation,
   normalizeClassHuntTeacherRequirements,
   normalizeClassHuntWeeklySlots,
-  pointsPer25Minutes,
   resolveClassHuntSubjectFund,
   classHuntCurriculumLinks,
   sanitizeClassHuntForTeacher,
@@ -412,8 +412,12 @@ async function existingPublishedHuntForRetry(
   return hunt
 }
 
-function classHuntFundSummary(availability: NonNullable<ReturnType<typeof classHuntSubjectAvailability>>, minutes: number): string {
-  const perLesson = classHuntLessonPoints(minutes, CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES)
+function classHuntFundSummary(
+  availability: NonNullable<ReturnType<typeof classHuntSubjectAvailability>>,
+  minutes: number,
+  rate = CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES,
+): string {
+  const perLesson = classHuntLessonPoints(minutes, rate)
   const held = availability.heldBookingCount > 0
     ? ` sau khi trừ ${availability.heldBookingCount} ca đang giữ ${availability.heldPoints} kim cương`
     : ''
@@ -423,9 +427,10 @@ function classHuntFundSummary(availability: NonNullable<ReturnType<typeof classH
 function noRemainingClassHuntSessionMessage(
   availability: ReturnType<typeof classHuntSubjectAvailability>,
   minutes: number,
+  rate = CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES,
 ): string {
   if (!availability) return 'Gói học không còn kim cương khả dụng để xếp thêm buổi.'
-  return `${classHuntFundSummary(availability, minutes)} Không đủ cho 1 buổi.`
+  return `${classHuntFundSummary(availability, minutes, rate)} Không đủ cho 1 buổi.`
 }
 
 /** A promo class must be payable: the package needs a VND subject price to discount. */
@@ -510,15 +515,17 @@ function draftFromRequest(
       bookings: studentBookings,
     })
     if (availability) {
-      const affordable = affordableClassHuntSessionCount(availability.availablePoints, draft.requestedMinutes)
+      // A promo class is sized at its discounted diamond rate.
+      const rate = classHuntPromoPointsPer25Minutes(CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES, draft.promoDiscountPercent)
+      const affordable = affordableClassHuntSessionCount(availability.availablePoints, draft.requestedMinutes, rate)
       if (affordable < 1) {
-        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, draft.requestedMinutes))
+        throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, draft.requestedMinutes, rate))
       }
       if (draft.sessionCount > affordable) {
         throw error(
           'failed-precondition',
           'CLASS_HUNT_SESSION_COUNT_EXCEEDS_REMAINING',
-          `${classHuntFundSummary(availability, draft.requestedMinutes)} Chỉ xếp được tối đa ${affordable} buổi.`,
+          `${classHuntFundSummary(availability, draft.requestedMinutes, rate)} Chỉ xếp được tối đa ${affordable} buổi.`,
         )
       }
     }
@@ -544,9 +551,10 @@ function draftFromRequest(
       'Gói học đang trùng dữ liệu nên chưa tính được kim cương khả dụng. Vui lòng đối soát gói học trước.',
     )
   }
-  const remainingSessionCount = affordableClassHuntSessionCount(availability.availablePoints, provisional.requestedMinutes)
+  const allRate = classHuntPromoPointsPer25Minutes(CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES, provisional.promoDiscountPercent)
+  const remainingSessionCount = affordableClassHuntSessionCount(availability.availablePoints, provisional.requestedMinutes, allRate)
   if (remainingSessionCount < 1) {
-    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, provisional.requestedMinutes))
+    throw error('failed-precondition', 'CLASS_HUNT_NO_REMAINING_SESSIONS', noRemainingClassHuntSessionMessage(availability, provisional.requestedMinutes, allRate))
   }
   if (remainingSessionCount > CLASS_HUNT_MAX_SESSIONS) {
     throw error(
@@ -630,7 +638,7 @@ function assertTeacherClaimContext(input: {
    */
   includeTeacherSchedule?: boolean
   nowMs: number
-}): { totalRequiredPoints: number; pointsPerLesson: number; nextHeld: number; curriculumLink: string } {
+}): { totalRequiredPoints: number; pointsPerLesson: number; pointsPer25Minutes: number; nextHeld: number; curriculumLink: string } {
   const {
     hunt,
     teacherId,
@@ -685,7 +693,8 @@ function assertTeacherClaimContext(input: {
   if (!subjectFund || subjectFund.remainingMinutes <= 0) {
     throw error('failed-precondition', 'CLASS_HUNT_SUBJECT_NOT_ELIGIBLE', 'Gói môn của học viên không còn hợp lệ.')
   }
-  const rate = pointsPer25Minutes(teacher.pointsPer25Minutes)
+  // Promo class: the tutor's usual diamond rate minus the class %.
+  const rate = classHuntPromoPointsPer25Minutes(teacher.pointsPer25Minutes, hunt.promoDiscountPercent)
   const pointsPerLesson = classHuntLessonPoints(hunt.requestedMinutes, rate)
   const totalRequiredPoints = pointsPerLesson * hunt.sessions.length
   const subjectAlreadyHeld = heldPointsForClassHuntSubject(studentBookings, hunt.subjectId)
@@ -704,6 +713,7 @@ function assertTeacherClaimContext(input: {
   return {
     totalRequiredPoints,
     pointsPerLesson,
+    pointsPer25Minutes: rate,
     nextHeld: effectiveHold.heldPoints + totalRequiredPoints,
     curriculumLink: subjectFund.curriculumLink,
   }
@@ -1906,7 +1916,8 @@ export const claimClassHunt = onCall({
         requestedEnd: session.requestedEnd,
         requestedMinutes: session.requestedMinutes,
         requestedPoints: accounting.pointsPerLesson,
-        pointsPer25Minutes: pointsPer25Minutes(teacher.teacher.pointsPer25Minutes),
+        // Snapshot the (promo-discounted) rate: hold, approval and refund all read it.
+        pointsPer25Minutes: accounting.pointsPer25Minutes,
         ...(claimCompensation ? {
           // The booking is the bridge into attendance, approvals, and payroll.
           // Copy the full snapshot rather than a derived value so every later

@@ -1461,14 +1461,30 @@ export function classHuntLessonPoints(minutes: number, rate: unknown): number {
 export const CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES = 25
 
 /**
+ * "Lớp ưu đãi": lesson minutes stay the same, the diamonds charged per 25
+ * minutes drop by the class %. Rounded to a whole rate (min 1) because every
+ * hold/charge path normalizes rates to integers; the booking snapshot then
+ * keeps hold, approval and refund consistent.
+ */
+export function classHuntPromoPointsPer25Minutes(baseRate: unknown, discountPercent?: number): number {
+  const rate = pointsPer25Minutes(baseRate)
+  if (discountPercent === undefined) return rate
+  return Math.max(1, Math.round(rate * (100 - discountPercent) / 100))
+}
+
+/**
  * Diamonds are the canonical package balance. The legacy session counters
  * (`totalSessions`/`usedSessions`) drift whenever a lesson length or tutor rate
  * differs from the package default, so they must never size a hunt: a package
  * with 430 spendable diamonds is 8 standard 50-minute lessons, not whatever the
  * stale counter says. Claim time still re-checks the claiming tutor's own rate.
  */
-export function affordableClassHuntSessionCount(availablePoints: number, minutes: number): number {
-  const pointsPerLesson = classHuntLessonPoints(minutes, CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES)
+export function affordableClassHuntSessionCount(
+  availablePoints: number,
+  minutes: number,
+  rate: number = CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES,
+): number {
+  const pointsPerLesson = classHuntLessonPoints(minutes, rate)
   if (!Number.isFinite(availablePoints) || availablePoints <= 0 || !(pointsPerLesson > 0)) return 0
   // Guard binary rounding (e.g. 99.99999 for 100) without rounding a real shortfall up.
   return Math.floor((availablePoints + 1e-6) / pointsPerLesson)

@@ -13,6 +13,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { classHuntPromoPointsPer25Minutes } from '@/lib/classHunting'
 
 /** "Quyền lợi dành cho giáo viên": the short list behind the info button on a promo offer. */
 const TEACHER_BENEFITS: Array<{ icon: typeof Heart; className: string; text: string }> = [
@@ -217,6 +218,9 @@ export function PromoRateCard({ percent, className = '' }: { percent: number; cl
           <Tag className="h-4 w-4" aria-hidden="true" />Áp dụng giảm thù lao {percent}%
         </p>
         <p className="mt-1.5 text-xs text-slate-500">Gia sư xem mức thù lao sau ưu đãi trước khi nhận lớp.</p>
+        <p className="mt-1 text-xs font-semibold text-slate-600">
+          Học viên: {classHuntPromoPointsPer25Minutes(percent)} kim cương / 25 phút (thay vì 25), số phút học không đổi.
+        </p>
       </div>
     </div>
   )
