@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Globe, Menu, Phone, X } from 'lucide-react'
 import { Logo } from '@/components/shared/Logo'
+import { COMPANY_INFO } from '@/components/layout/PublicFooter'
 
 const NAV_ITEMS = [
   { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
@@ -57,11 +58,11 @@ export function PublicNav() {
 
         <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
           <a
-            href="tel:0906966691"
+            href={COMPANY_INFO.consultingPhone.href}
             className="hidden items-center gap-2 text-sm font-bold text-slate-800 transition-colors hover:text-[#D99B00] sm:flex"
           >
             <Phone className="h-4 w-4 text-[#FFC107]" />
-            090.696.6691
+            {COMPANY_INFO.consultingPhone.label}
           </a>
           <button
             type="button"
@@ -112,11 +113,11 @@ export function PublicNav() {
             )
           })}
           <a
-            href="tel:0906966691"
+            href={COMPANY_INFO.consultingPhone.href}
             className="mt-2 flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-800"
           >
             <Phone className="h-4 w-4 text-[#D99B00]" />
-            090.696.6691
+            {COMPANY_INFO.consultingPhone.label}
           </a>
         </div>
       </div>

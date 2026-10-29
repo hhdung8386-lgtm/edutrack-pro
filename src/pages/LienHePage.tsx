@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Clock3,
   Globe2,
+  Mail,
   MapPin,
   MessageCircle,
   Phone,
@@ -10,7 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { PublicNav } from '@/components/layout/PublicNav'
-import { PublicFooter } from '@/components/layout/PublicFooter'
+import { COMPANY_INFO, PublicFooter } from '@/components/layout/PublicFooter'
 import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
 import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
@@ -129,6 +130,17 @@ export function LienHePage() {
                     <p className="text-xs font-semibold text-slate-300">Giáo vụ</p>
                     <a href={CONSULTING_PHONE.href} className="mt-3 block text-lg font-black text-[#FFD344]">{CONSULTING_PHONE.label}</a>
                     <p className="text-xs font-semibold text-slate-300">Tư vấn khóa học</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#1C3557] text-[#68D5F2]">
+                    <Mail className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black">Người tiếp nhận</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-300">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</p>
+                    <a href={COMPANY_INFO.representative.phone.href} className="mt-1 block text-lg font-black text-[#FFD344]">{COMPANY_INFO.representative.phone.label}</a>
+                    <a href={`mailto:${COMPANY_INFO.representative.email}`} className="mt-1 block break-all text-sm font-semibold text-slate-300 hover:text-white">{COMPANY_INFO.representative.email}</a>
                   </div>
                 </div>
                 <div className="flex gap-4">

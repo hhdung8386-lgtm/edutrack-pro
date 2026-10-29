@@ -538,7 +538,9 @@ export function HocThuMienPhiPage() {
           <p className="mt-4 font-black text-white">{COMPANY_INFO.brandLine}</p>
           <p className="mt-2">Đơn vị chủ quản: <span className="font-black text-white">{COMPANY_INFO.owner}</span></p>
           <p className="mt-1">Mã số hộ kinh doanh: <span className="font-black text-white">{COMPANY_INFO.businessCode}</span></p>
+          <p className="mt-1">Người tiếp nhận: <span className="font-black text-white">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</span></p>
           <p className="mt-2">Hotline: <a href={HOTLINE.href} className="font-black text-[#FFD02E]">{HOTLINE.label}</a></p>
+          <p className="mt-1">Email: <a href={`mailto:${COMPANY_INFO.representative.email}`} className="break-all font-black text-[#FFD02E]">{COMPANY_INFO.representative.email}</a></p>
           <p className="mt-4 font-black text-white">Trụ sở đăng ký</p>
           <p className="mt-1">{COMPANY_INFO.registeredOffice}</p>
           <p className="mt-4 font-black text-white">Văn phòng đại diện</p>

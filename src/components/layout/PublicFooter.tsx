@@ -1,4 +1,4 @@
-import { MapPin, Phone } from 'lucide-react'
+import { Mail, MapPin, Phone } from 'lucide-react'
 
 // Shared by public contact forms that must display the same company details.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -13,6 +13,13 @@ export const COMPANY_INFO = {
   ],
   academicPhone: { label: '039.399.8733', href: 'tel:0393998733' },
   consultingPhone: { label: '0933.964.683', href: 'tel:0933964683' },
+  // Người tiếp nhận liên hệ của đơn vị (giám đốc).
+  representative: {
+    name: 'Viet Cường',
+    title: 'Giám đốc',
+    phone: { label: '0933.964.683', href: 'tel:0933964683' },
+    email: 'vietcuong20022001@gmail.com',
+  },
 }
 
 const SOCIAL_LINKS = [
@@ -52,6 +59,10 @@ export function PublicFooter() {
             <div>
               <dt className="font-medium text-slate-500">Mã số hộ kinh doanh</dt>
               <dd className="font-semibold tabular-nums">{COMPANY_INFO.businessCode}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Người tiếp nhận</dt>
+              <dd className="font-bold">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</dd>
             </div>
           </dl>
         </section>
@@ -96,6 +107,13 @@ export function PublicFooter() {
               <span className="leading-6">
                 <span className="block font-medium text-slate-500">Tư vấn học thêm</span>
                 <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.consultingPhone.label}</span>
+              </span>
+            </a>
+            <a href={`mailto:${COMPANY_INFO.representative.email}`} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+              <Mail className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
+              <span className="min-w-0 leading-6">
+                <span className="block font-medium text-slate-500">Email</span>
+                <span className="block break-all font-bold transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.representative.email}</span>
               </span>
             </a>
           </div>
