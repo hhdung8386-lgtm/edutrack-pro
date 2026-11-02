@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, setDoc, limit, orderBy, updateDoc, documentId } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { curriculumLinkLabel, extraCurriculumLinksOf, normalizeCurriculumUrl } from '@/lib/curriculumLinks'
 import { Student, StudentSubject, Lesson, BookingCancellationRequest, BookingRequest, Teacher, TeacherAvailability, DayOfWeek } from '@/types'
 import {
   Search, LogOut, X, ExternalLink, ChevronLeft, ChevronRight, Info, Clock,
@@ -2591,6 +2592,13 @@ function ParentView({ student, lessons, bookings, onBack, onBookingCancelled, on
                         </a>
                       </div>
                     )}
+                    {extraCurriculumLinksOf(subjectPkg).filter((link) => link.url !== normalizeCurriculumUrl(curriculumLink)).map((link) => (
+                      <div key={link.url} className="pt-3 border-t border-slate-100">
+                        <a href={link.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:underline">
+                          <BookOpen className="h-3.5 w-3.5" />{curriculumLinkLabel(link, lang)}
+                        </a>
+                      </div>
+                    ))}
                     {subjectPkg?.timetableNote && (
                       <div className="pt-3 border-t border-slate-100">
                         <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
@@ -3669,6 +3677,14 @@ function HistoryTab({ lessons, signedInStudentId, teacherMap, subjectPackages, r
                         )}
                       </div>
                     </section>
+                  )}
+
+                  {extraCurriculumLinksOf(subjectPackage).filter((link) => link.url !== normalizeCurriculumUrl(documentLink)).length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2.5">
+                      {extraCurriculumLinksOf(subjectPackage).filter((link) => link.url !== normalizeCurriculumUrl(documentLink)).map((link) => (
+                        <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-white px-2 text-center text-[11px] font-extrabold text-sky-700 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-brand-300 active:scale-[0.98]"><BookOpen className="h-4 w-4 shrink-0" />{curriculumLinkLabel(link, lang)}</a>
+                      ))}
+                    </div>
                   )}
 
                   <div className="mt-3 grid grid-cols-2 gap-2.5">

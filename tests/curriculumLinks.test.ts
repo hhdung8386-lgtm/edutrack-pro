@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { additionalCurriculumLinksOf, curriculumLinksOf, normalizeCurriculumUrl, parseAdditionalCurriculumRows } from '../src/lib/curriculumLinks.ts'
+import { additionalCurriculumLinksOf, curriculumLinkLabel, curriculumLinksOf, extraCurriculumLinksOf, normalizeCurriculumUrl, parseAdditionalCurriculumRows } from '../src/lib/curriculumLinks.ts'
 
 test('normalizeCurriculumUrl keeps only openable links', () => {
   assert.equal(normalizeCurriculumUrl(' https://drive.google.com/x '), 'https://drive.google.com/x')
@@ -29,6 +29,13 @@ test('additional links follow the two fixed ones, numbered without repeats or ba
     ['Giáo trình thêm 1', 'https://a.com/3'],
     ['Giáo trình thêm 2', 'https://a.com/4'],
   ])
+})
+
+test('student screens get every link but the main one, labelled per language', () => {
+  const extras = extraCurriculumLinksOf({ curriculumLink: 'https://a.com/1', supplementaryCurriculumLink: 'https://a.com/2', additionalCurriculumLinks: ['https://a.com/3'] })
+  assert.deepEqual(extras.map((link) => curriculumLinkLabel(link, 'vi')), ['Giáo trình bổ trợ', 'Giáo trình thêm 1'])
+  assert.deepEqual(extras.map((link) => curriculumLinkLabel(link, 'en')), ['Supplementary materials', 'Extra materials 1'])
+  assert.deepEqual(extraCurriculumLinksOf({ curriculumLink: 'https://a.com/1' }), [])
 })
 
 test('form rows drop blanks and repeats, and report what is not a link', () => {

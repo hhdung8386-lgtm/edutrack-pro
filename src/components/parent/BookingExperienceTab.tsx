@@ -14,6 +14,7 @@ import {
   Video,
 } from 'lucide-react'
 import type { BookingCancellationRequest, BookingRequest, StudentSubject } from '@/types'
+import { curriculumLinkLabel, extraCurriculumLinksOf } from '@/lib/curriculumLinks'
 import { TeacherAvatar } from '@/components/shared/TeacherAvatar'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 
@@ -123,6 +124,7 @@ function ScheduleCard({
 }) {
   const nickname = teacherNickname(teacher, booking.teacherCode, lang)
   const curriculumLink = normalizeLink(booking.curriculumLink || subjectPackage?.curriculumLink)
+  const extraCurriculumLinks = extraCurriculumLinksOf(subjectPackage).filter((link) => link.url !== curriculumLink)
   const classroomLink = normalizeLink(roomLink)
   const confirmed = booking.status === 'confirmed'
   const courseName = displayCourseName(booking.subjectName, lang)
@@ -211,6 +213,11 @@ function ScheduleCard({
                 <CalendarCheck2 className="h-4 w-4" />{lang === 'vi' ? 'Xem chi tiết' : 'View details'}
               </button>
             )}
+            {extraCurriculumLinks.map((link) => (
+              <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-brand-300 bg-white px-3 text-xs font-black text-brand-700 transition hover:bg-brand-50 active:scale-[0.98]">
+                <BookOpen className="h-4 w-4" />{curriculumLinkLabel(link, lang)}
+              </a>
+            ))}
           </div>
         </div>
       </div>

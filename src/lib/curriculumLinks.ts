@@ -52,6 +52,18 @@ export function curriculumLinksOf(pkg: CurriculumFields | null | undefined): Cur
   return entries
 }
 
+/** Every link except the main one, which each screen already renders itself. */
+export function extraCurriculumLinksOf(pkg: CurriculumFields | null | undefined): CurriculumLinkEntry[] {
+  return curriculumLinksOf(pkg).filter((entry) => entry.kind !== 'main')
+}
+
+export function curriculumLinkLabel(entry: CurriculumLinkEntry, lang: string): string {
+  if (lang === 'vi') return entry.label
+  if (entry.kind === 'main') return 'Main materials'
+  if (entry.kind === 'supplementary') return 'Supplementary materials'
+  return entry.label.replace('Giáo trình thêm', 'Extra materials')
+}
+
 export function additionalCurriculumLinksOf(pkg: CurriculumFields | null | undefined): CurriculumLinkEntry[] {
   return curriculumLinksOf(pkg).filter((entry) => entry.kind === 'additional')
 }
