@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
+import { additionalCurriculumLinksOf } from '@/lib/curriculumLinks'
 import { Student, StudentSubject, Lesson, BookingRequest } from '@/types'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
@@ -1709,6 +1710,20 @@ export function StudentDetailPage() {
                         </a>
                       </div>
                     )}
+                    {additionalCurriculumLinksOf(pkg).map((link) => (
+                      <div key={link.url} className="flex items-center gap-1">
+                        <span className="text-slate-400">{link.label}:</span>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-violet-600 hover:text-violet-800 font-semibold inline-flex items-center gap-0.5"
+                        >
+                          Mở link
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    ))}
                     {pkg.focusSkills && pkg.focusSkills.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         <span className="text-slate-400 block w-full">Kỹ năng trọng tâm:</span>

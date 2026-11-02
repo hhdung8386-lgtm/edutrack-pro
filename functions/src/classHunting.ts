@@ -1101,6 +1101,7 @@ export function classHuntSubjectRate(student: ClassHuntStudentLike, subjectId: s
 }
 
 const CLASS_HUNT_CURRICULUM_LINK_MAX_LENGTH = 2048
+const CLASS_HUNT_ADDITIONAL_CURRICULUM_LINKS_MAX = 20
 
 /** Only an http(s) link may reach a tutor; a bare domain gets https:// (same rule as reminder emails). */
 function classHuntCurriculumUrl(value: unknown): string {
@@ -1124,6 +1125,7 @@ function classHuntCurriculumUrl(value: unknown): string {
 export interface ClassHuntCurriculumLinks {
   curriculumLink?: string
   supplementaryCurriculumLink?: string
+  additionalCurriculumLinks?: string[]
 }
 
 /**
@@ -1138,9 +1140,14 @@ export function classHuntCurriculumLinks(student: ClassHuntStudentLike, subjectI
   if (matching.length !== 1) return {}
   const curriculumLink = classHuntCurriculumUrl(matching[0].curriculumLink)
   const supplementaryCurriculumLink = classHuntCurriculumUrl(matching[0].supplementaryCurriculumLink)
+  const rawAdditional = matching[0].additionalCurriculumLinks
+  const additionalCurriculumLinks = [...new Set((Array.isArray(rawAdditional) ? rawAdditional : []).map(classHuntCurriculumUrl))]
+    .filter((link) => link && link !== curriculumLink && link !== supplementaryCurriculumLink)
+    .slice(0, CLASS_HUNT_ADDITIONAL_CURRICULUM_LINKS_MAX)
   return {
     ...(curriculumLink ? { curriculumLink } : {}),
     ...(supplementaryCurriculumLink && supplementaryCurriculumLink !== curriculumLink ? { supplementaryCurriculumLink } : {}),
+    ...(additionalCurriculumLinks.length > 0 ? { additionalCurriculumLinks } : {}),
   }
 }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
 import { CalendarClock, ChevronLeft, ChevronRight, Clock, User, BookOpen, Link, CheckCircle2, AlertTriangle, ExternalLink, Image, Upload, X, Trash2, PenSquare, History, ListChecks, CalendarX2, Undo2 } from 'lucide-react'
 import { db } from '@/lib/firebase'
+import { additionalCurriculumLinksOf } from '@/lib/curriculumLinks'
 import { BookingRequest, DayAvailability, DayOfWeek, TeacherAvailability, TimeRange, Student, Subject, Lesson, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -1622,6 +1623,23 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
+                    {additionalCurriculumLinksOf(subjectPkg).map((link) => (
+                      <div key={link.url} className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs text-slate-500 font-semibold block">{link.label}</span>
+                          <p className="text-[11px] text-slate-400 truncate">{link.url}</p>
+                        </div>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                        >
+                          Mở giáo trình
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    ))}
                     {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
                       <div className="mt-2 pt-3 border-t border-slate-100">
                         <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
@@ -2046,6 +2064,23 @@ export function BookingSchedulesPage() {
                       </a>
                     </div>
                   )}
+                  {additionalCurriculumLinksOf(subjectPkg).map((link) => (
+                    <div key={link.url} className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs text-slate-500 font-semibold block">{link.label}</span>
+                        <p className="text-[11px] text-slate-400 truncate">{link.url}</p>
+                      </div>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+                      >
+                        Mở giáo trình
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  ))}
                   {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
                     <div className="py-2 border-t border-slate-100 last:border-0">
                       <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>

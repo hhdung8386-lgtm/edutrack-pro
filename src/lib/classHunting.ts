@@ -184,6 +184,7 @@ export type TeacherClassHunt = Omit<ClassHunt, 'student' | 'eligibleTeachers'> &
   /** Open offers only: textbook links of the package (absent on an older backend). */
   curriculumLink?: string
   supplementaryCurriculumLink?: string
+  additionalCurriculumLinks?: string[]
 }
 
 export interface TeacherClassHuntFeed {
@@ -347,6 +348,11 @@ function externalLinkFrom(value: unknown): string | undefined {
   } catch {
     return undefined
   }
+}
+
+function externalLinksFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map(externalLinkFrom).filter((link): link is string => Boolean(link))
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -603,6 +609,7 @@ function teacherHuntFrom(value: unknown): TeacherClassHunt {
     ...(classHuntPromoDiscountFrom(data.promoDiscountPercent) ? { promoDiscountPercent: classHuntPromoDiscountFrom(data.promoDiscountPercent) } : {}),
     ...(externalLinkFrom(data.curriculumLink) ? { curriculumLink: externalLinkFrom(data.curriculumLink) } : {}),
     ...(externalLinkFrom(data.supplementaryCurriculumLink) ? { supplementaryCurriculumLink: externalLinkFrom(data.supplementaryCurriculumLink) } : {}),
+    ...(externalLinksFrom(data.additionalCurriculumLinks).length > 0 ? { additionalCurriculumLinks: externalLinksFrom(data.additionalCurriculumLinks) } : {}),
     ...(dateFrom(data.claimedAt ?? data.claimedAtMs) ? { claimedAt: dateFrom(data.claimedAt ?? data.claimedAtMs) } : {}),
     ...(text(data.claimedTeacherCode) ? { claimedTeacherCode: text(data.claimedTeacherCode) } : {}),
     ...(typeof data.claimedByMe === 'boolean' ? { claimedByMe: data.claimedByMe } : {}),

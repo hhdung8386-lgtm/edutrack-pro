@@ -6,6 +6,7 @@ import {
   collection, query, where, getDocs, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { curriculumLinksOf } from '@/lib/curriculumLinks'
 import { BookingRequest, Student } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -728,6 +729,19 @@ export function AttendancePage() {
                       </a>
                     </div>
                   )}
+                  {curriculumLinksOf(selectedPkg).filter((link) => link.kind !== 'main').map((link) => (
+                    <div key={link.url} className="mt-2.5">
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 text-xs font-bold rounded-lg transition-colors"
+                      >
+                        {link.label}
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  ))}
                   {selectedPkg?.timetableNote && (
                     <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200/50 rounded-xl">
                       <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Note timetable học viên:</span>

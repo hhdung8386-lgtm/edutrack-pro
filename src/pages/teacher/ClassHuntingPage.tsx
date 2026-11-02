@@ -268,7 +268,7 @@ function ClassNote({ note, compact = false }: { note?: string; compact?: boolean
 
 /** Opens the package textbook in a new tab so tutors can judge the material before claiming. */
 function CurriculumButton({ hunt }: { hunt: TeacherClassHunt }) {
-  const link = hunt.curriculumLink || hunt.supplementaryCurriculumLink
+  const link = hunt.curriculumLink || hunt.supplementaryCurriculumLink || hunt.additionalCurriculumLinks?.[0]
   if (!link) {
     return (
       <span className={NO_CURRICULUM_LABEL} title="Lớp này chưa được gắn link giáo trình">
@@ -283,9 +283,9 @@ function CurriculumButton({ hunt }: { hunt: TeacherClassHunt }) {
   )
 }
 
-/** Every textbook link of the offer, including the supplementary one, inside the schedule popup. */
+/** Every textbook link of the offer, including supplementary and added ones, inside the schedule popup. */
 function CurriculumLinks({ hunt }: { hunt: TeacherClassHunt }) {
-  if (!hunt.curriculumLink && !hunt.supplementaryCurriculumLink) return null
+  if (!hunt.curriculumLink && !hunt.supplementaryCurriculumLink && !hunt.additionalCurriculumLinks?.length) return null
   const linkClass = 'inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400'
   return (
     <div className="mt-3 flex flex-wrap gap-2">
@@ -299,6 +299,11 @@ function CurriculumLinks({ hunt }: { hunt: TeacherClassHunt }) {
           <BookOpen className="h-4 w-4" aria-hidden="true" />Giáo trình bổ trợ
         </a>
       )}
+      {hunt.additionalCurriculumLinks?.map((link, index) => (
+        <a key={link} href={link} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          <BookOpen className="h-4 w-4" aria-hidden="true" />Giáo trình thêm {index + 1}
+        </a>
+      ))}
     </div>
   )
 }

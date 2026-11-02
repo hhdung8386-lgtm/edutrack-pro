@@ -24,6 +24,7 @@ import { getBookingPoints, getLessonPoints } from '@/lib/points'
 import { isCompletedLearningLesson } from '@/lib/lessonAttendance'
 import { allocateApprovedLearningMinutes, courseLearnedDiamondPremium, courseRemainingMinutes } from '@/lib/courseProgress'
 import { courseDeletionBlock, courseDeletionBlockMessage, type CourseDeletionBlock } from '@/lib/courseDeletion'
+import { additionalCurriculumLinksOf, curriculumLinksOf } from '@/lib/curriculumLinks'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -136,6 +137,7 @@ function Metric({ minutes, diamonds, tone = 'slate' }: { minutes: number; diamon
 }
 
 function CourseIdentity({ subject, paymentCount }: { subject: StudentSubject; paymentCount: number }) {
+  const firstCurriculum = curriculumLinksOf(subject)[0]
   return (
     <div className="flex min-w-[170px] items-center gap-3">
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-inset ring-indigo-100">
@@ -144,9 +146,9 @@ function CourseIdentity({ subject, paymentCount }: { subject: StudentSubject; pa
       <div className="min-w-0">
         <p className="truncate text-sm font-extrabold text-slate-950">{subject.subjectName}</p>
         <p className="mt-1 text-[11px] font-medium text-slate-500">{paymentCount} đợt thanh toán</p>
-        {subject.curriculumLink?.trim() && (
+        {firstCurriculum && (
           <a
-            href={subject.curriculumLink.trim()}
+            href={firstCurriculum.url}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-1.5 inline-flex min-h-7 items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline"
@@ -174,6 +176,10 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, o
     { label: 'Đã đặt', minutes: row.bookedMinutes, diamonds: row.bookedDiamonds, icon: CalendarDays, tone: 'text-amber-600 bg-amber-50' },
     { label: 'Còn lại', minutes: row.remainingMinutes, diamonds: row.remainingDiamonds, icon: Trophy, tone: 'text-sky-600 bg-sky-50' },
   ]
+
+  const curriculumLinks = curriculumLinksOf(row.subject)
+  const mainCurriculum = curriculumLinks.find((link) => link.kind === 'main')
+  const supplementaryCurriculum = curriculumLinks.find((link) => link.kind === 'supplementary')
 
   return (
     <Modal open onClose={onClose} size="xl" title="Chi tiết khóa học" footer={
@@ -238,16 +244,21 @@ function CourseDetailModal({ row, onClose, onEdit, onEditEntry, onDeleteEntry, o
               <h3 className="text-sm font-extrabold text-slate-950">Giáo trình</h3>
             </div>
             <div className="space-y-2 text-sm">
-              {row.subject.curriculumLink?.trim() ? (
-                <a href={row.subject.curriculumLink.trim()} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-indigo-50 px-3 font-bold text-indigo-700 hover:bg-indigo-100">
+              {mainCurriculum ? (
+                <a href={mainCurriculum.url} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-indigo-50 px-3 font-bold text-indigo-700 hover:bg-indigo-100">
                   <span>Giáo trình chính</span><ExternalLink className="h-4 w-4 shrink-0" />
                 </a>
               ) : <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-slate-500">Chưa có link giáo trình chính.</p>}
-              {row.subject.supplementaryCurriculumLink?.trim() ? (
-                <a href={row.subject.supplementaryCurriculumLink.trim()} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-sky-50 px-3 font-bold text-sky-700 hover:bg-sky-100">
+              {supplementaryCurriculum ? (
+                <a href={supplementaryCurriculum.url} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-sky-50 px-3 font-bold text-sky-700 hover:bg-sky-100">
                   <span>Giáo trình bổ trợ</span><ExternalLink className="h-4 w-4 shrink-0" />
                 </a>
               ) : <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-slate-500">Chưa có link giáo trình bổ trợ.</p>}
+              {additionalCurriculumLinksOf(row.subject).map((link) => (
+                <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-violet-50 px-3 font-bold text-violet-700 hover:bg-violet-100">
+                  <span>{link.label}</span><ExternalLink className="h-4 w-4 shrink-0" />
+                </a>
+              ))}
             </div>
           </article>
 

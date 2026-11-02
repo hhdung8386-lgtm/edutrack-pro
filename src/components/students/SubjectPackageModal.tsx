@@ -9,10 +9,11 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
-import { BookOpen, Check, ChevronDown, Globe2, Search } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, Globe2, Plus, Search, Trash2 } from 'lucide-react'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { formatPricePerMinute } from '@/lib/constants'
+import { MAX_ADDITIONAL_CURRICULUM_LINKS, parseAdditionalCurriculumRows } from '@/lib/curriculumLinks'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -118,6 +119,10 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
     ? currentSubjects.find(s => s.subjectId === editingSubjectId)
     : null
 
+  // Khởi tạo một lần: snapshot học viên về giữa chừng không được xoá dòng admin đang nhập.
+  const [additionalLinkRows, setAdditionalLinkRows] = useState<string[]>(() => editingPkg?.additionalCurriculumLinks || [])
+  const [invalidLinkRows, setInvalidLinkRows] = useState<number[]>([])
+
   useEffect(() => {
     if (editingPkg) {
       setSelectedRequests(editingPkg.studentRequests || [])
@@ -190,6 +195,12 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   }, [isEdit, editingSubjectId, student.id, subjectIdsKey, currentSubjects])
 
   const onSubmit = async (data: FormData) => {
+    const { links: additionalCurriculumLinks, invalidRows } = parseAdditionalCurriculumRows(additionalLinkRows)
+    setInvalidLinkRows(invalidRows)
+    if (invalidRows.length > 0) {
+      toast.error('Có link giáo trình thêm chưa đúng, vui lòng kiểm tra lại')
+      return
+    }
     setLoading(true)
     try {
       const minutesPerSession = 25
@@ -293,6 +304,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
                 }],
                 curriculumLink: data.curriculumLink || '',
                 supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                additionalCurriculumLinks,
                 timetableNote: data.timetableNote || '',
                 studentRequests: selectedRequests,
                 focusSkills: selectedSkills
@@ -314,6 +326,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
                 batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
                 curriculumLink: data.curriculumLink || '',
                 supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                additionalCurriculumLinks,
                 timetableNote: data.timetableNote || '',
                 studentRequests: selectedRequests,
                 focusSkills: selectedSkills
@@ -363,6 +376,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
               batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
               curriculumLink: data.curriculumLink || '',
               supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+              additionalCurriculumLinks,
               timetableNote: data.timetableNote || '',
               studentRequests: selectedRequests,
               focusSkills: selectedSkills
@@ -403,6 +417,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
           }],
           curriculumLink: data.curriculumLink || '',
           supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+          additionalCurriculumLinks,
           timetableNote: data.timetableNote || '',
           studentRequests: selectedRequests,
           focusSkills: selectedSkills
@@ -679,6 +694,47 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
           error={errors.supplementaryCurriculumLink?.message}
           {...register('supplementaryCurriculumLink')}
         />
+
+        {additionalLinkRows.map((link, index) => (
+          <div key={index} className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <Input
+                label={`Link giáo trình thêm ${index + 1}`}
+                placeholder="Nhập link giáo trình"
+                value={link}
+                autoFocus={index === additionalLinkRows.length - 1 && !link}
+                error={invalidLinkRows.includes(index) ? 'Link chưa đúng, ví dụ: https://drive.google.com/...' : undefined}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setAdditionalLinkRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? value : row))
+                  setInvalidLinkRows((rows) => rows.filter((rowIndex) => rowIndex !== index))
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              aria-label={`Xóa link giáo trình thêm ${index + 1}`}
+              title="Xóa dòng này"
+              onClick={() => {
+                setAdditionalLinkRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))
+                setInvalidLinkRows([])
+              }}
+              className="mt-[26px] flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+
+        <button
+          type="button"
+          disabled={additionalLinkRows.length >= MAX_ADDITIONAL_CURRICULUM_LINKS}
+          onClick={() => setAdditionalLinkRows((rows) => [...rows, ''])}
+          className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-dashed border-indigo-300 bg-indigo-50/50 px-4 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
+          Thêm giáo trình
+        </button>
 
         {/* Checkbox list of student requests */}
         <div className="space-y-2 rounded-xl border border-slate-200 p-4 bg-slate-50/50">

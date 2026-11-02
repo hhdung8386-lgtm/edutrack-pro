@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { db } from '@/lib/firebase'
+import { curriculumLinksOf } from '@/lib/curriculumLinks'
 import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailability, TimeRange, Student, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
@@ -2882,6 +2883,23 @@ export function BookingSchedulesPage() {
                         </a>
                       </div>
                     )}
+                    {curriculumLinksOf(subjectPkg).filter((link) => link.kind !== 'main').map((link) => (
+                      <div key={link.url} className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 font-semibold block">{link.label}:</span>
+                          <p className="text-[11px] text-slate-400 truncate">{link.url}</p>
+                        </div>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0 border border-sky-200/50"
+                        >
+                          Xem giáo trình
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    ))}
                     {subjectPkg?.timetableNote && (
                       <div className="mt-2 pt-3 border-t border-slate-100">
                         <span className="text-xs text-slate-500 font-semibold block">Note timetable học viên:</span>

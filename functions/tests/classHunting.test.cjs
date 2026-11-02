@@ -910,6 +910,7 @@ test('CLASS HUNTING gives tutors only safe textbook links of the offer package',
       { subjectId: 'SAME', curriculumLink: 'https://example.com/book', supplementaryCurriculumLink: 'https://example.com/book' },
       { subjectId: 'UNSAFE', curriculumLink: 'javascript:alert(1)', supplementaryCurriculumLink: 'chưa có' },
       { subjectId: 'EMPTY' },
+      { subjectId: 'MANY', curriculumLink: 'https://example.com/1', additionalCurriculumLinks: ['https://example.com/1', 'example.com/3', 'javascript:alert(1)', 'https://example.com/3', 7] },
       { subjectId: 'DUP', curriculumLink: 'https://example.com/1' },
       { subjectId: 'DUP', curriculumLink: 'https://example.com/2' },
     ],
@@ -921,6 +922,7 @@ test('CLASS HUNTING gives tutors only safe textbook links of the offer package',
   })
   assert.deepEqual(classHuntCurriculumLinks(student, 'TEXT'), { curriculumLink: 'https://drive.google.com/x' })
   assert.deepEqual(classHuntCurriculumLinks(student, 'SAME'), { curriculumLink: 'https://example.com/book' })
+  assert.deepEqual(classHuntCurriculumLinks(student, 'MANY'), { curriculumLink: 'https://example.com/1', additionalCurriculumLinks: ['https://example.com/3'] })
   assert.deepEqual(classHuntCurriculumLinks(student, 'UNSAFE'), {})
   assert.deepEqual(classHuntCurriculumLinks(student, 'EMPTY'), {})
   assert.deepEqual(classHuntCurriculumLinks(student, 'DUP'), {})

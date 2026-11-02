@@ -37,6 +37,8 @@ export interface StudentSubject {
   batches?: TopUpBatch[]
   curriculumLink?: string
   supplementaryCurriculumLink?: string
+  /** Giáo trình admin bấm "Thêm giáo trình"; gói cũ không có field này. */
+  additionalCurriculumLinks?: string[]
   timetableNote?: string
   studentRequests?: string[]
   otherCountriesPrices?: Record<string, number>
