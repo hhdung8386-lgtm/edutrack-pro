@@ -433,6 +433,14 @@ export function useL() {
   return useCallback(<T,>(vi: T, en: T): T => (lang === 'en' ? en : vi), [lang])
 }
 
+/**
+ * Chọn chữ theo ngôn ngữ hiện tại, dùng được cả ngoài component (thông báo lỗi,
+ * hàm tiện ích). Component dùng hàm này nên gọi useLang() để vẽ lại khi đổi ngôn ngữ.
+ */
+export function tl(vi: string, en: string): string {
+  return useLanguageStore.getState().lang === 'en' ? en : vi
+}
+
 export function pick(text: Bilingual, lang: Lang): string {
   return text[lang] || text.vi
 }

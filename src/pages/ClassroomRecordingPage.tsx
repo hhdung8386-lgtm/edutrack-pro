@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
+import { localizeClassroomServerMessage } from '@/lib/classroomServerMessagesEn'
 import { Logo } from '@/components/shared/Logo'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -223,7 +224,7 @@ export function ClassroomRecordingPage() {
       if (targetRecordingId === recordingIdRef.current) {
         toast.error(createdShareUrl
           ? 'Link mới đã tạo và đang hiển thị, nhưng trình duyệt chưa cho phép tự sao chép.'
-          : onlineClassroomRecordingErrorMessage(error))
+          : localizeClassroomServerMessage(onlineClassroomRecordingErrorMessage(error)))
       }
     } finally {
       setCopyingShareLink(false)
@@ -243,7 +244,7 @@ export function ClassroomRecordingPage() {
       setRecording(null)
     } catch (error) {
       if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {
-        toast.error(onlineClassroomRecordingErrorMessage(error))
+        toast.error(localizeClassroomServerMessage(onlineClassroomRecordingErrorMessage(error)))
       }
     } finally {
       if (loadEpoch === loadEpochRef.current && targetRecordingId === recordingIdRef.current) {

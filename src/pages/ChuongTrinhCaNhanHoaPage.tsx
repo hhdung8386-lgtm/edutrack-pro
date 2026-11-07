@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, type ComponentType } from 'react'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -42,6 +42,8 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useLang } from '@/stores/languageStore'
+import { CA_NHAN_HOA_EN } from '@/pages/chuongTrinhCaNhanHoaEn'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import { PublicNav } from '@/components/layout/PublicNav'
 
@@ -49,187 +51,192 @@ type IconComponent = ComponentType<{ className?: string; 'aria-hidden'?: boolean
 
 const CONSULTATION_PATH = '/lien-he'
 
-const HERO_PROOFS: { icon: IconComponent; label: string }[] = [
-  { icon: BrainCircuit, label: 'AI thiết kế lộ trình' },
-  { icon: UserRound, label: 'Gia sư 1 kèm 1' },
-  { icon: BarChart3, label: 'Theo dõi tiến bộ' },
-  { icon: RefreshCw, label: 'Điều chỉnh liên tục' },
-]
+/** Nội dung trang theo ngôn ngữ: T() trả bản tiếng Anh khi trang đang ở chế độ EN. */
+function buildContent(T: (vi: string) => string) {
+  const HERO_PROOFS: { icon: IconComponent; label: string }[] = [
+    { icon: BrainCircuit, label: T('AI thiết kế lộ trình') },
+    { icon: UserRound, label: T('Gia sư 1 kèm 1') },
+    { icon: BarChart3, label: T('Theo dõi tiến bộ') },
+    { icon: RefreshCw, label: T('Điều chỉnh liên tục') },
+  ]
 
-const PERSONAL_PATHS: {
-  icon: IconComponent
-  title: string
-  goal: string
-  path: string[]
-}[] = [
-  {
-    icon: BriefcaseBusiness,
-    title: 'Sales Manager',
-    goal: 'Làm việc với khách hàng quốc tế.',
-    path: ['Small Talk', 'Product Introduction', 'Client Meeting', 'Negotiation', 'Handling Objections', 'Follow-up'],
-  },
-  {
-    icon: Plane,
-    title: 'Chuẩn bị du lịch',
-    goal: 'Tự tin giao tiếp trong chuyến đi nước ngoài.',
-    path: ['Airport', 'Immigration', 'Hotel', 'Restaurant', 'Transportation', 'Emergency'],
-  },
-  {
-    icon: Monitor,
-    title: 'Nhân viên văn phòng',
-    goal: 'Sử dụng tiếng Anh trong môi trường công việc.',
-    path: ['Introducing Yourself', 'Emails', 'Meetings', 'Reporting', 'Presentations', 'International Teams'],
-  },
-]
+  const PERSONAL_PATHS: {
+    icon: IconComponent
+    title: string
+    goal: string
+    path: string[]
+  }[] = [
+    {
+      icon: BriefcaseBusiness,
+      title: 'Sales Manager',
+      goal: T('Làm việc với khách hàng quốc tế.'),
+      path: ['Small Talk', 'Product Introduction', 'Client Meeting', 'Negotiation', 'Handling Objections', 'Follow-up'],
+    },
+    {
+      icon: Plane,
+      title: T('Chuẩn bị du lịch'),
+      goal: T('Tự tin giao tiếp trong chuyến đi nước ngoài.'),
+      path: ['Airport', 'Immigration', 'Hotel', 'Restaurant', 'Transportation', 'Emergency'],
+    },
+    {
+      icon: Monitor,
+      title: T('Nhân viên văn phòng'),
+      goal: T('Sử dụng tiếng Anh trong môi trường công việc.'),
+      path: ['Introducing Yourself', 'Emails', 'Meetings', 'Reporting', 'Presentations', 'International Teams'],
+    },
+  ]
 
-const PERSONAL_DIMENSIONS: {
-  icon: IconComponent
-  title: string
-  body: string
-  layout: string
-}[] = [
-  {
-    icon: UserCheck,
-    title: 'Gia sư riêng',
-    body: 'Một gia sư tập trung vào một học viên.',
-    layout: 'md:col-span-5',
-  },
-  {
-    icon: Route,
-    title: 'Lộ trình riêng',
-    body: 'Mục tiêu học tập được xác định riêng.',
-    layout: 'md:col-span-7',
-  },
-  {
-    icon: BookOpenCheck,
-    title: 'Nội dung riêng',
-    body: 'Bài học được lựa chọn và xây dựng theo nhu cầu.',
-    layout: 'md:col-span-7',
-  },
-  {
-    icon: Target,
-    title: 'Trọng tâm riêng',
-    body: 'Tập trung nhiều hơn vào kỹ năng học viên còn yếu.',
-    layout: 'md:col-span-5',
-  },
-  {
-    icon: ClipboardCheck,
-    title: 'Bài luyện tập riêng',
-    body: 'Nội dung luyện tập bám sát kiến thức và mục tiêu.',
-    layout: 'md:col-span-5',
-  },
-  {
-    icon: TrendingUp,
-    title: 'Tiến độ riêng',
-    body: 'Lộ trình được điều chỉnh khi học viên tiến bộ.',
-    layout: 'md:col-span-7',
-  },
-]
+  const PERSONAL_DIMENSIONS: {
+    icon: IconComponent
+    title: string
+    body: string
+    layout: string
+  }[] = [
+    {
+      icon: UserCheck,
+      title: T('Gia sư riêng'),
+      body: T('Một gia sư tập trung vào một học viên.'),
+      layout: 'md:col-span-5',
+    },
+    {
+      icon: Route,
+      title: T('Lộ trình riêng'),
+      body: T('Mục tiêu học tập được xác định riêng.'),
+      layout: 'md:col-span-7',
+    },
+    {
+      icon: BookOpenCheck,
+      title: T('Nội dung riêng'),
+      body: T('Bài học được lựa chọn và xây dựng theo nhu cầu.'),
+      layout: 'md:col-span-7',
+    },
+    {
+      icon: Target,
+      title: T('Trọng tâm riêng'),
+      body: T('Tập trung nhiều hơn vào kỹ năng học viên còn yếu.'),
+      layout: 'md:col-span-5',
+    },
+    {
+      icon: ClipboardCheck,
+      title: T('Bài luyện tập riêng'),
+      body: T('Nội dung luyện tập bám sát kiến thức và mục tiêu.'),
+      layout: 'md:col-span-5',
+    },
+    {
+      icon: TrendingUp,
+      title: T('Tiến độ riêng'),
+      body: T('Lộ trình được điều chỉnh khi học viên tiến bộ.'),
+      layout: 'md:col-span-7',
+    },
+  ]
 
-const PROFILE_SIGNALS: { icon: IconComponent; title: string; body: string }[] = [
-  { icon: Gauge, title: 'Trình độ hiện tại', body: 'Bạn đang thực sự ở đâu trên hành trình tiếng Anh?' },
-  { icon: Flag, title: 'Mục tiêu', body: 'Bạn học tiếng Anh để làm gì?' },
-  { icon: Volume2, title: 'Kỹ năng cần cải thiện', body: 'Speaking, Listening, Pronunciation, Vocabulary hay Grammar?' },
-  { icon: MapPin, title: 'Bối cảnh sử dụng', body: 'Công việc, học tập, du lịch hay cuộc sống?' },
-  { icon: CalendarClock, title: 'Thời gian học', body: 'Bạn muốn đạt mục tiêu trong khoảng thời gian nào?' },
-  { icon: BarChart3, title: 'Tiến độ thực tế', body: 'Bạn tiến bộ nhanh ở đâu và còn gặp khó khăn ở đâu?' },
-]
+  const PROFILE_SIGNALS: { icon: IconComponent; title: string; body: string }[] = [
+    { icon: Gauge, title: T('Trình độ hiện tại'), body: T('Bạn đang thực sự ở đâu trên hành trình tiếng Anh?') },
+    { icon: Flag, title: T('Mục tiêu'), body: T('Bạn học tiếng Anh để làm gì?') },
+    { icon: Volume2, title: T('Kỹ năng cần cải thiện'), body: 'Speaking, Listening, Pronunciation, Vocabulary hay Grammar?' },
+    { icon: MapPin, title: T('Bối cảnh sử dụng'), body: T('Công việc, học tập, du lịch hay cuộc sống?') },
+    { icon: CalendarClock, title: T('Thời gian học'), body: T('Bạn muốn đạt mục tiêu trong khoảng thời gian nào?') },
+    { icon: BarChart3, title: T('Tiến độ thực tế'), body: T('Bạn tiến bộ nhanh ở đâu và còn gặp khó khăn ở đâu?') },
+  ]
 
-const ADAPTIVE_EXAMPLES = [
-  ['Phát âm đã tốt hơn', 'Giảm nội dung pronunciation.'],
-  ['Phản xạ vẫn chậm', 'Tăng speaking practice và role-play.'],
-  ['Sắp phỏng vấn', 'Bổ sung Interview English.'],
-  ['Chuyển sang vị trí quản lý', 'Thêm Meeting, Presentation và Leadership Communication.'],
-]
+  const ADAPTIVE_EXAMPLES = [
+    [T('Phát âm đã tốt hơn'), T('Giảm nội dung pronunciation.')],
+    [T('Phản xạ vẫn chậm'), T('Tăng speaking practice và role-play.')],
+    [T('Sắp phỏng vấn'), T('Bổ sung Interview English.')],
+    [T('Chuyển sang vị trí quản lý'), T('Thêm Meeting, Presentation và Leadership Communication.')],
+  ]
 
-const LEARNING_PRIORITIES = [
-  ['Bạn đã biết gì', 'Không dành quá nhiều thời gian học lại.'],
-  ['Bạn chưa tốt ở đâu', 'Tăng cường luyện tập đúng điểm yếu.'],
-  ['Bạn cần gì', 'Ưu tiên kiến thức liên quan trực tiếp đến mục tiêu.'],
-  ['Bạn sẽ dùng tiếng Anh ở đâu', 'Đưa tình huống thực tế vào bài học.'],
-]
+  const LEARNING_PRIORITIES = [
+    [T('Bạn đã biết gì'), T('Không dành quá nhiều thời gian học lại.')],
+    [T('Bạn chưa tốt ở đâu'), T('Tăng cường luyện tập đúng điểm yếu.')],
+    [T('Bạn cần gì'), T('Ưu tiên kiến thức liên quan trực tiếp đến mục tiêu.')],
+    [T('Bạn sẽ dùng tiếng Anh ở đâu'), T('Đưa tình huống thực tế vào bài học.')],
+  ]
 
-const REAL_OUTCOMES = [
-  'Giới thiệu bản thân tự nhiên hơn',
-  'Trò chuyện với người nước ngoài',
-  'Phản xạ nhanh hơn khi được hỏi',
-  'Giao tiếp với khách hàng',
-  'Tham gia cuộc họp bằng tiếng Anh',
-  'Đi du lịch và xử lý tình huống cơ bản',
-  'Phỏng vấn bằng tiếng Anh',
-  'Trình bày ý tưởng rõ ràng hơn',
-]
+  const REAL_OUTCOMES = [
+    T('Giới thiệu bản thân tự nhiên hơn'),
+    T('Trò chuyện với người nước ngoài'),
+    T('Phản xạ nhanh hơn khi được hỏi'),
+    T('Giao tiếp với khách hàng'),
+    T('Tham gia cuộc họp bằng tiếng Anh'),
+    T('Đi du lịch và xử lý tình huống cơ bản'),
+    T('Phỏng vấn bằng tiếng Anh'),
+    T('Trình bày ý tưởng rõ ràng hơn'),
+  ]
 
-const LEARNING_FLOW: { icon: IconComponent; label: string; title: string; body: string }[] = [
-  { icon: MapPin, label: 'REAL SITUATION', title: 'Tình huống thực tế', body: 'Bắt đầu từ việc bạn thực sự sẽ gặp.' },
-  { icon: Languages, label: 'LANGUAGE', title: 'Ngôn ngữ cần thiết', body: 'Từ vựng và mẫu câu phù hợp.' },
-  { icon: ClipboardCheck, label: 'PRACTICE', title: 'Thực hành có hướng dẫn', body: 'Xây phản xạ từng bước.' },
-  { icon: MessagesSquare, label: 'ROLE-PLAY', title: 'Mô phỏng với gia sư', body: 'Luyện đúng bối cảnh thật.' },
-  { icon: BadgeCheck, label: 'FEEDBACK', title: 'Nhận phản hồi', body: 'Sửa phát âm, ngữ pháp và cách diễn đạt.' },
-  { icon: FileText, label: 'PERSONAL PRACTICE', title: 'Bài luyện tập riêng', body: 'Bám sát điểm cần cải thiện.' },
-]
+  const LEARNING_FLOW: { icon: IconComponent; label: string; title: string; body: string }[] = [
+    { icon: MapPin, label: 'REAL SITUATION', title: T('Tình huống thực tế'), body: T('Bắt đầu từ việc bạn thực sự sẽ gặp.') },
+    { icon: Languages, label: 'LANGUAGE', title: T('Ngôn ngữ cần thiết'), body: T('Từ vựng và mẫu câu phù hợp.') },
+    { icon: ClipboardCheck, label: 'PRACTICE', title: T('Thực hành có hướng dẫn'), body: T('Xây phản xạ từng bước.') },
+    { icon: MessagesSquare, label: 'ROLE-PLAY', title: T('Mô phỏng với gia sư'), body: T('Luyện đúng bối cảnh thật.') },
+    { icon: BadgeCheck, label: 'FEEDBACK', title: T('Nhận phản hồi'), body: T('Sửa phát âm, ngữ pháp và cách diễn đạt.') },
+    { icon: FileText, label: 'PERSONAL PRACTICE', title: T('Bài luyện tập riêng'), body: T('Bám sát điểm cần cải thiện.') },
+  ]
 
-const AI_TASKS = [
-  'Phân tích nhu cầu',
-  'Xây dựng và đề xuất nội dung',
-  'Cá nhân hóa bài học',
-  'Tạo bài luyện tập',
-  'Theo dõi dữ liệu học tập',
-  'Hỗ trợ điều chỉnh lộ trình',
-]
+  const AI_TASKS = [
+    T('Phân tích nhu cầu'),
+    T('Xây dựng và đề xuất nội dung'),
+    T('Cá nhân hóa bài học'),
+    T('Tạo bài luyện tập'),
+    T('Theo dõi dữ liệu học tập'),
+    T('Hỗ trợ điều chỉnh lộ trình'),
+  ]
 
-const TUTOR_TASKS = [
-  'Giảng dạy và trò chuyện',
-  'Luyện phản xạ',
-  'Mô phỏng tình huống',
-  'Sửa lỗi trực tiếp',
-  'Đánh giá khả năng sử dụng',
-  'Đồng hành cùng học viên',
-]
+  const TUTOR_TASKS = [
+    T('Giảng dạy và trò chuyện'),
+    T('Luyện phản xạ'),
+    T('Mô phỏng tình huống'),
+    T('Sửa lỗi trực tiếp'),
+    T('Đánh giá khả năng sử dụng'),
+    T('Đồng hành cùng học viên'),
+  ]
 
-const PERSONAL_LAYERS: { icon: IconComponent; label: string; title: string; body: string }[] = [
-  { icon: Gauge, label: 'PERSONAL LEVEL', title: 'Cá nhân hóa trình độ', body: 'Nội dung phù hợp với năng lực hiện tại, không quá dễ và không vượt khả năng tiếp nhận.' },
-  { icon: Flag, label: 'PERSONAL GOAL', title: 'Cá nhân hóa mục tiêu', body: 'Giao tiếp, công việc, du lịch, phỏng vấn hoặc nhu cầu chuyên biệt.' },
-  { icon: BookOpenCheck, label: 'PERSONAL CONTENT', title: 'Cá nhân hóa nội dung', body: 'Chủ đề, từ vựng, mẫu câu và tình huống được chọn theo mục tiêu.' },
-  { icon: ClipboardCheck, label: 'PERSONAL PRACTICE', title: 'Cá nhân hóa luyện tập', body: 'Dành nhiều thời gian hơn cho những điểm học viên chưa thành thạo.' },
-  { icon: Clock3, label: 'PERSONAL PACE', title: 'Cá nhân hóa tốc độ', body: 'Không phải mọi học viên đều cần cùng số buổi cho một kiến thức.' },
-  { icon: Route, label: 'PERSONAL PATH', title: 'Cá nhân hóa lộ trình', body: 'Khi khả năng và mục tiêu thay đổi, chương trình được cập nhật tương ứng.' },
-]
+  const PERSONAL_LAYERS: { icon: IconComponent; label: string; title: string; body: string }[] = [
+    { icon: Gauge, label: 'PERSONAL LEVEL', title: T('Cá nhân hóa trình độ'), body: T('Nội dung phù hợp với năng lực hiện tại, không quá dễ và không vượt khả năng tiếp nhận.') },
+    { icon: Flag, label: 'PERSONAL GOAL', title: T('Cá nhân hóa mục tiêu'), body: T('Giao tiếp, công việc, du lịch, phỏng vấn hoặc nhu cầu chuyên biệt.') },
+    { icon: BookOpenCheck, label: 'PERSONAL CONTENT', title: T('Cá nhân hóa nội dung'), body: T('Chủ đề, từ vựng, mẫu câu và tình huống được chọn theo mục tiêu.') },
+    { icon: ClipboardCheck, label: 'PERSONAL PRACTICE', title: T('Cá nhân hóa luyện tập'), body: T('Dành nhiều thời gian hơn cho những điểm học viên chưa thành thạo.') },
+    { icon: Clock3, label: 'PERSONAL PACE', title: T('Cá nhân hóa tốc độ'), body: T('Không phải mọi học viên đều cần cùng số buổi cho một kiến thức.') },
+    { icon: Route, label: 'PERSONAL PATH', title: T('Cá nhân hóa lộ trình'), body: T('Khi khả năng và mục tiêu thay đổi, chương trình được cập nhật tương ứng.') },
+  ]
 
-const GOALS: { icon: IconComponent; title: string }[] = [
-  { icon: BriefcaseBusiness, title: 'Tiếng Anh công việc' },
-  { icon: BarChart3, title: 'Sales & Business' },
-  { icon: Presentation, title: 'Thuyết trình' },
-  { icon: Handshake, title: 'Meeting & Negotiation' },
-  { icon: MessageCircle, title: 'Giao tiếp hằng ngày' },
-  { icon: Plane, title: 'Du lịch' },
-  { icon: Luggage, title: 'Định cư' },
-  { icon: UserCheck, title: 'Phỏng vấn' },
-  { icon: School, title: 'Học tập' },
-  { icon: AudioLines, title: 'Phản xạ giao tiếp' },
-  { icon: Mic2, title: 'Phát âm' },
-  { icon: Building2, title: 'Tiếng Anh theo ngành nghề' },
-]
+  const GOALS: { icon: IconComponent; title: string }[] = [
+    { icon: BriefcaseBusiness, title: T('Tiếng Anh công việc') },
+    { icon: BarChart3, title: 'Sales & Business' },
+    { icon: Presentation, title: T('Thuyết trình') },
+    { icon: Handshake, title: 'Meeting & Negotiation' },
+    { icon: MessageCircle, title: T('Giao tiếp hằng ngày') },
+    { icon: Plane, title: T('Du lịch') },
+    { icon: Luggage, title: T('Định cư') },
+    { icon: UserCheck, title: T('Phỏng vấn') },
+    { icon: School, title: T('Học tập') },
+    { icon: AudioLines, title: T('Phản xạ giao tiếp') },
+    { icon: Mic2, title: T('Phát âm') },
+    { icon: Building2, title: T('Tiếng Anh theo ngành nghề') },
+  ]
 
-const SALES_PATH = [
-  ['FOUNDATION', 'Giới thiệu bản thân, công ty và sản phẩm.'],
-  ['CLIENT COMMUNICATION', 'Small talk, tìm hiểu nhu cầu và tư vấn khách hàng.'],
-  ['SALES CONVERSATION', 'Trình bày lợi ích, báo giá và giải đáp câu hỏi.'],
-  ['NEGOTIATION', 'Thương lượng và xử lý từ chối.'],
-  ['REAL PRACTICE', 'Role-play cuộc gọi và cuộc họp bán hàng thực tế.'],
-  ['PROFESSIONAL COMMUNICATION', 'Email, follow-up và duy trì quan hệ khách hàng.'],
-]
+  const SALES_PATH = [
+    ['FOUNDATION', T('Giới thiệu bản thân, công ty và sản phẩm.')],
+    ['CLIENT COMMUNICATION', T('Small talk, tìm hiểu nhu cầu và tư vấn khách hàng.')],
+    ['SALES CONVERSATION', T('Trình bày lợi ích, báo giá và giải đáp câu hỏi.')],
+    ['NEGOTIATION', T('Thương lượng và xử lý từ chối.')],
+    ['REAL PRACTICE', T('Role-play cuộc gọi và cuộc họp bán hàng thực tế.')],
+    ['PROFESSIONAL COMMUNICATION', T('Email, follow-up và duy trì quan hệ khách hàng.')],
+  ]
 
-const BENEFITS: { icon: IconComponent; title: string; body: string }[] = [
-  { icon: Target, title: 'Học đúng mục tiêu', body: 'Thời gian học tập trung hơn vào điều bạn thực sự muốn đạt được.' },
-  { icon: BookOpenCheck, title: 'Nội dung dành riêng', body: 'Không bắt buộc đi theo toàn bộ giáo trình đại trà.' },
-  { icon: WandSparkles, title: 'Tập trung vào điểm yếu', body: 'Những kỹ năng chưa tốt được ưu tiên luyện tập nhiều hơn.' },
-  { icon: BriefcaseBusiness, title: 'Ứng dụng thực tế', body: 'Đưa công việc, nhu cầu và tình huống thật vào chương trình.' },
-  { icon: RotateCcw, title: 'Linh hoạt theo tiến độ', body: 'Lộ trình có thể thay đổi khi nhu cầu học viên thay đổi.' },
-  { icon: UserRound, title: 'Gia sư 1 kèm 1', body: 'Toàn bộ buổi học dành cho một học viên.' },
-  { icon: BrainCircuit, title: 'AI hỗ trợ cá nhân hóa', body: 'Công nghệ giúp xây dựng và điều chỉnh nội dung linh hoạt hơn.' },
-  { icon: TrendingUp, title: 'Hướng tới kết quả thực tế', body: 'Không chỉ hoàn thành bài học mà hướng tới khả năng sử dụng tiếng Anh.' },
-]
+  const BENEFITS: { icon: IconComponent; title: string; body: string }[] = [
+    { icon: Target, title: T('Học đúng mục tiêu'), body: T('Thời gian học tập trung hơn vào điều bạn thực sự muốn đạt được.') },
+    { icon: BookOpenCheck, title: T('Nội dung dành riêng'), body: T('Không bắt buộc đi theo toàn bộ giáo trình đại trà.') },
+    { icon: WandSparkles, title: T('Tập trung vào điểm yếu'), body: T('Những kỹ năng chưa tốt được ưu tiên luyện tập nhiều hơn.') },
+    { icon: BriefcaseBusiness, title: T('Ứng dụng thực tế'), body: T('Đưa công việc, nhu cầu và tình huống thật vào chương trình.') },
+    { icon: RotateCcw, title: T('Linh hoạt theo tiến độ'), body: T('Lộ trình có thể thay đổi khi nhu cầu học viên thay đổi.') },
+    { icon: UserRound, title: T('Gia sư 1 kèm 1'), body: T('Toàn bộ buổi học dành cho một học viên.') },
+    { icon: BrainCircuit, title: T('AI hỗ trợ cá nhân hóa'), body: T('Công nghệ giúp xây dựng và điều chỉnh nội dung linh hoạt hơn.') },
+    { icon: TrendingUp, title: T('Hướng tới kết quả thực tế'), body: T('Không chỉ hoàn thành bài học mà hướng tới khả năng sử dụng tiếng Anh.') },
+  ]
+
+  return { HERO_PROOFS, PERSONAL_PATHS, PERSONAL_DIMENSIONS, PROFILE_SIGNALS, ADAPTIVE_EXAMPLES, LEARNING_PRIORITIES, REAL_OUTCOMES, LEARNING_FLOW, AI_TASKS, TUTOR_TASKS, PERSONAL_LAYERS, GOALS, SALES_PATH, BENEFITS }
+}
 
 function SectionHeading({ title, body, align = 'left' }: { title: string; body?: string; align?: 'left' | 'center' }) {
   return (
@@ -256,17 +263,19 @@ function CheckList({ items, dark = false }: { items: string[]; dark?: boolean })
 }
 
 export function ChuongTrinhCaNhanHoaPage() {
+  const lang = useLang()
+  const T = useCallback((vi: string) => (lang === 'en' ? CA_NHAN_HOA_EN[vi] ?? vi : vi), [lang])
+  const { HERO_PROOFS, PERSONAL_PATHS, PERSONAL_DIMENSIONS, PROFILE_SIGNALS, ADAPTIVE_EXAMPLES, LEARNING_PRIORITIES, REAL_OUTCOMES, LEARNING_FLOW, AI_TASKS, TUTOR_TASKS, PERSONAL_LAYERS, GOALS, SALES_PATH, BENEFITS } = useMemo(() => buildContent(T), [T])
   useEffect(() => {
     const previousTitle = document.title
     const existingDescription = document.querySelector<HTMLMetaElement>('meta[name="description"]')
     const previousDescription = existingDescription?.content
     const description = existingDescription ?? document.createElement('meta')
 
-    document.title = 'Lộ trình cá nhân | 123English'
+    document.title = T('Lộ trình cá nhân | 123English')
     description.name = 'description'
-    description.content = 'AI Personal Learning xây dựng lộ trình tiếng Anh riêng theo trình độ, mục tiêu và nhu cầu thực tế của từng học viên.'
+    description.content = T('AI Personal Learning xây dựng lộ trình tiếng Anh riêng theo trình độ, mục tiêu và nhu cầu thực tế của từng học viên.')
     if (!existingDescription) document.head.appendChild(description)
-    window.scrollTo({ top: 0, behavior: 'auto' })
 
     return () => {
       document.title = previousTitle
@@ -276,6 +285,10 @@ export function ChuongTrinhCaNhanHoaPage() {
         description.remove()
       }
     }
+  }, [T])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [])
 
   return (
@@ -289,24 +302,24 @@ export function ChuongTrinhCaNhanHoaPage() {
             <div className="relative z-10 max-w-2xl">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[#946400]">AI PERSONAL LEARNING</p>
               <h1 className="mt-4 text-[clamp(2.65rem,5.4vw,4.9rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
-                Lộ trình học tiếng Anh được xây dựng theo nhu cầu của từng học viên
+                {T('Lộ trình học tiếng Anh được xây dựng theo nhu cầu của từng học viên')}
               </h1>
               <p className="mt-6 max-w-xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
-                Mỗi học viên sở hữu một lộ trình riêng, dựa trên trình độ, mục tiêu và nhu cầu sử dụng tiếng Anh thực tế.
+                {T('Mỗi học viên sở hữu một lộ trình riêng, dựa trên trình độ, mục tiêu và nhu cầu sử dụng tiếng Anh thực tế.')}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
                   to={CONSULTATION_PATH}
                   className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#FFC107] px-5 text-sm font-black text-[#10213A] shadow-[0_18px_34px_-22px_rgba(183,124,0,0.9)] transition hover:-translate-y-0.5 hover:bg-[#FFB800] focus:outline-none focus:ring-2 focus:ring-[#A76500] focus:ring-offset-2 active:translate-y-px"
                 >
-                  Tạo lộ trình AI của tôi
+                  {T('Tạo lộ trình AI của tôi')}
                   <ArrowUpRight className="h-4 w-4" aria-hidden />
                 </Link>
                 <a
                   href="#cach-xay-dung"
                   className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 text-sm font-black text-[#10213A] transition hover:-translate-y-0.5 hover:border-[#D99B00] focus:outline-none focus:ring-2 focus:ring-[#A76500] focus:ring-offset-2 active:translate-y-px"
                 >
-                  Khám phá cách hoạt động
+                  {T('Khám phá cách hoạt động')}
                   <ArrowRight className="h-4 w-4" aria-hidden />
                 </a>
               </div>
@@ -316,7 +329,7 @@ export function ChuongTrinhCaNhanHoaPage() {
               <div className="absolute -right-4 -top-4 h-full w-full rounded-[2rem] bg-[#FFC107]" aria-hidden />
               <img
                 src="/teacher-personalization-2026.webp"
-                alt="Gia sư 123English đồng hành cùng học viên trong chương trình cá nhân hóa"
+                alt={T('Gia sư 123English đồng hành cùng học viên trong chương trình cá nhân hóa')}
                 width={1536}
                 height={1024}
                 fetchPriority="high"
@@ -342,22 +355,22 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <SectionHeading
-              title="Bạn đã học nhiều lần nhưng vẫn chưa đạt điều mình muốn?"
-              body="Có thể vấn đề không nằm ở việc bạn học chưa đủ nhiều. Bạn đang học quá nhiều thứ không thực sự dành cho mình."
+              title={T('Bạn đã học nhiều lần nhưng vẫn chưa đạt điều mình muốn?')}
+              body={T('Có thể vấn đề không nằm ở việc bạn học chưa đủ nhiều. Bạn đang học quá nhiều thứ không thực sự dành cho mình.')}
             />
             <div className="rounded-[2rem] border border-[#F1D77B] bg-[#FFF8DA] p-6 sm:p-8">
               <p className="text-xl font-black leading-8 text-[#10213A] sm:text-2xl">
-                Một giáo trình giao tiếp thông thường phải phục vụ hàng nghìn học viên, trong khi mục tiêu của mỗi người hoàn toàn khác nhau.
+                {T('Một giáo trình giao tiếp thông thường phải phục vụ hàng nghìn học viên, trong khi mục tiêu của mỗi người hoàn toàn khác nhau.')}
               </p>
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
-                {['Gặp khách hàng', 'Phỏng vấn xin việc', 'Đi du lịch', 'Thuyết trình bằng tiếng Anh', 'Cải thiện phát âm', 'Tăng phản xạ giao tiếp'].map((item) => (
+                {[T('Gặp khách hàng'), T('Phỏng vấn xin việc'), T('Đi du lịch'), T('Thuyết trình bằng tiếng Anh'), T('Cải thiện phát âm'), T('Tăng phản xạ giao tiếp')].map((item) => (
                   <div key={item} className="flex items-center gap-3 rounded-xl bg-white/80 px-4 py-3 text-sm font-bold text-slate-700">
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-[#A76500]" aria-hidden />
                     {item}
                   </div>
                 ))}
               </div>
-              <p className="mt-7 text-lg font-black text-[#8A5800]">Vậy tại sao tất cả phải học cùng một lộ trình?</p>
+              <p className="mt-7 text-lg font-black text-[#8A5800]">{T('Vậy tại sao tất cả phải học cùng một lộ trình?')}</p>
             </div>
           </div>
         </section>
@@ -365,18 +378,18 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section id="cach-xay-dung" className="scroll-mt-24 border-y border-slate-100 bg-slate-50 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Từ chọn giáo trình thành tạo giáo trình"
-              body="AI Personal Learning không xếp học viên vào một bộ giáo trình có sẵn. 123English bắt đầu từ chính học viên."
+              title={T('Từ chọn giáo trình thành tạo giáo trình')}
+              body={T('AI Personal Learning không xếp học viên vào một bộ giáo trình có sẵn. 123English bắt đầu từ chính học viên.')}
             />
 
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
               <div className="overflow-hidden rounded-[2rem] bg-[#10213A] p-6 text-white sm:p-8 lg:p-10">
                 <div className="grid gap-4">
                   {[
-                    'Bạn đang ở đâu?',
-                    'Bạn muốn đạt được điều gì?',
-                    'Bạn đang yếu ở đâu?',
-                    'Bạn cần dùng tiếng Anh trong tình huống nào?',
+                    T('Bạn đang ở đâu?'),
+                    T('Bạn muốn đạt được điều gì?'),
+                    T('Bạn đang yếu ở đâu?'),
+                    T('Bạn cần dùng tiếng Anh trong tình huống nào?'),
                   ].map((question, index) => (
                     <div key={question} className="flex items-center gap-4">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-black text-[#FFD344]">
@@ -389,15 +402,15 @@ export function ChuongTrinhCaNhanHoaPage() {
                 <div className="mt-8 flex items-start gap-4 rounded-2xl bg-[#FFC107] p-5 text-[#10213A]">
                   <BrainCircuit className="mt-0.5 h-6 w-6 shrink-0" aria-hidden />
                   <div>
-                    <p className="font-black">AI hỗ trợ xây dựng lộ trình dành riêng cho bạn.</p>
-                    <p className="mt-1 text-sm font-bold leading-6 text-[#4C3B00]">Không bắt đầu bằng Lesson 1. Bắt đầu bằng chính bạn.</p>
+                    <p className="font-black">{T('AI hỗ trợ xây dựng lộ trình dành riêng cho bạn.')}</p>
+                    <p className="mt-1 text-sm font-bold leading-6 text-[#4C3B00]">{T('Không bắt đầu bằng Lesson 1. Bắt đầu bằng chính bạn.')}</p>
                   </div>
                 </div>
               </div>
               <div className="relative min-h-80 overflow-hidden rounded-[2rem]">
                 <img
                   src="/home-learning-companion-2026.webp"
-                  alt="Học viên học trực tuyến cùng gia sư 123English"
+                  alt={T('Học viên học trực tuyến cùng gia sư 123English')}
                   width={1536}
                   height={1152}
                   loading="lazy"
@@ -411,8 +424,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Một học viên, một lộ trình"
-              body="Hai người có thể cùng trình độ tiếng Anh. Nếu mục tiêu khác nhau, chương trình cũng nên khác nhau."
+              title={T('Một học viên, một lộ trình')}
+              body={T('Hai người có thể cùng trình độ tiếng Anh. Nếu mục tiêu khác nhau, chương trình cũng nên khác nhau.')}
             />
             <div className="mt-10 grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
               {PERSONAL_PATHS.map(({ icon: Icon, title, goal, path }, index) => (
@@ -446,8 +459,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="border-y border-slate-100 bg-[#FFFCF2] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Đây mới thực sự là cá nhân hóa"
-              body="Học 1 kèm 1 chưa đủ nếu mọi học viên vẫn phải theo cùng một giáo trình. 123English cá nhân hóa sâu hơn."
+              title={T('Đây mới thực sự là cá nhân hóa')}
+              body={T('Học 1 kèm 1 chưa đủ nếu mọi học viên vẫn phải theo cùng một giáo trình. 123English cá nhân hóa sâu hơn.')}
             />
             <div className="mt-10 grid gap-4 md:grid-cols-12">
               {PERSONAL_DIMENSIONS.map(({ icon: Icon, title, body, layout }, index) => (
@@ -462,9 +475,9 @@ export function ChuongTrinhCaNhanHoaPage() {
               ))}
             </div>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-center text-base font-black text-[#10213A] sm:text-lg">
-              <span>Học riêng</span><span className="text-[#A76500]">+</span>
-              <span>Nội dung riêng</span><span className="text-[#A76500]">+</span>
-              <span>Lộ trình riêng</span>
+              <span>{T('Học riêng')}</span><span className="text-[#A76500]">+</span>
+              <span>{T('Nội dung riêng')}</span><span className="text-[#A76500]">+</span>
+              <span>{T('Lộ trình riêng')}</span>
             </div>
           </div>
         </section>
@@ -472,8 +485,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="AI hiểu bạn trước khi xây dựng lộ trình"
-              body="Từ sáu nhóm dữ liệu cốt lõi, AI hỗ trợ xây dựng Learning Profile riêng cho từng học viên."
+              title={T('AI hiểu bạn trước khi xây dựng lộ trình')}
+              body={T('Từ sáu nhóm dữ liệu cốt lõi, AI hỗ trợ xây dựng Learning Profile riêng cho từng học viên.')}
             />
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="grid gap-x-7 sm:grid-cols-2">
@@ -494,8 +507,8 @@ export function ChuongTrinhCaNhanHoaPage() {
 
               <aside className="rounded-[2rem] bg-[#10213A] p-6 text-white sm:p-8">
                 <RefreshCw className="h-7 w-7 text-[#FFD344]" aria-hidden />
-                <h3 className="mt-5 text-2xl font-black leading-tight">Bạn thay đổi. Chương trình cũng thay đổi.</h3>
-                <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">Một lộ trình không nên cố định mãi mãi.</p>
+                <h3 className="mt-5 text-2xl font-black leading-tight">{T('Bạn thay đổi. Chương trình cũng thay đổi.')}</h3>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">{T('Một lộ trình không nên cố định mãi mãi.')}</p>
                 <div className="mt-7 grid gap-4">
                   {ADAPTIVE_EXAMPLES.map(([situation, response]) => (
                     <div key={situation} className="rounded-2xl bg-white/8 p-4 ring-1 ring-white/10">
@@ -515,8 +528,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="border-y border-slate-100 bg-slate-50 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Học đúng thứ bạn cần"
-              body="Ít nội dung dư thừa hơn. Nhiều thời gian cho mục tiêu hơn. Không nhất thiết học nhiều hơn, hãy học đúng hơn."
+              title={T('Học đúng thứ bạn cần')}
+              body={T('Ít nội dung dư thừa hơn. Nhiều thời gian cho mục tiêu hơn. Không nhất thiết học nhiều hơn, hãy học đúng hơn.')}
             />
             <div className="mt-10 grid gap-5 md:grid-cols-2">
               {LEARNING_PRIORITIES.map(([title, body], index) => (
@@ -536,9 +549,9 @@ export function ChuongTrinhCaNhanHoaPage() {
 
             <div className="mt-16 grid gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
               <div>
-                <h3 className="text-2xl font-black leading-tight tracking-[-0.03em] sm:text-3xl">Từ kiến thức đến khả năng sử dụng thực tế</h3>
+                <h3 className="text-2xl font-black leading-tight tracking-[-0.03em] sm:text-3xl">{T('Từ kiến thức đến khả năng sử dụng thực tế')}</h3>
                 <p className="mt-4 text-base font-semibold leading-7 text-slate-600">
-                  Không chỉ đo bạn đã học bao nhiêu. Chương trình hướng tới việc bạn có thể làm được gì bằng tiếng Anh.
+                  {T('Không chỉ đo bạn đã học bao nhiêu. Chương trình hướng tới việc bạn có thể làm được gì bằng tiếng Anh.')}
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -556,8 +569,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Học từ chính những tình huống bạn sẽ gặp"
-              body="Bạn không chỉ học cách tạo một câu tiếng Anh. Bạn luyện cách sử dụng câu đó khi tình huống thật xảy ra."
+              title={T('Học từ chính những tình huống bạn sẽ gặp')}
+              body={T('Bạn không chỉ học cách tạo một câu tiếng Anh. Bạn luyện cách sử dụng câu đó khi tình huống thật xảy ra.')}
               align="center"
             />
             <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -576,26 +589,26 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="border-y border-slate-100 bg-[#FFFCF2] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="AI và gia sư cùng tạo nên trải nghiệm học thật"
-              body="AI không thay thế gia sư tại 123English. Công nghệ hỗ trợ phía sau, gia sư trực tiếp tạo tương tác và phản hồi trong từng buổi học."
+              title={T('AI và gia sư cùng tạo nên trải nghiệm học thật')}
+              body={T('AI không thay thế gia sư tại 123English. Công nghệ hỗ trợ phía sau, gia sư trực tiếp tạo tương tác và phản hồi trong từng buổi học.')}
             />
             <div className="mt-10 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="grid gap-5 sm:grid-cols-2">
                 <article className="rounded-[2rem] bg-[#10213A] p-6 text-white sm:p-8">
                   <BrainCircuit className="h-7 w-7 text-[#FFD344]" aria-hidden />
-                  <h3 className="mt-5 text-2xl font-black">AI hỗ trợ cá nhân hóa</h3>
+                  <h3 className="mt-5 text-2xl font-black">{T('AI hỗ trợ cá nhân hóa')}</h3>
                   <div className="mt-6"><CheckList items={AI_TASKS} dark /></div>
                 </article>
                 <article className="rounded-[2rem] border border-[#E8D28A] bg-white p-6 sm:p-8">
                   <HeartHandshake className="h-7 w-7 text-[#8A5800]" aria-hidden />
-                  <h3 className="mt-5 text-2xl font-black">Gia sư tạo trải nghiệm học</h3>
+                  <h3 className="mt-5 text-2xl font-black">{T('Gia sư tạo trải nghiệm học')}</h3>
                   <div className="mt-6"><CheckList items={TUTOR_TASKS} /></div>
                 </article>
               </div>
               <div className="min-h-80 overflow-hidden rounded-[2rem]">
                 <img
                   src="/home-teacher-student-2026.webp"
-                  alt="Gia sư 123English hướng dẫn học viên trong buổi học trực tuyến"
+                  alt={T('Gia sư 123English hướng dẫn học viên trong buổi học trực tuyến')}
                   width={1588}
                   height={988}
                   loading="lazy"
@@ -604,7 +617,7 @@ export function ChuongTrinhCaNhanHoaPage() {
               </div>
             </div>
             <p className="mx-auto mt-8 max-w-3xl text-center text-lg font-black leading-8 text-[#10213A]">
-              AI tạo sức mạnh cá nhân hóa. Gia sư tạo nên trải nghiệm học thật.
+              {T('AI tạo sức mạnh cá nhân hóa. Gia sư tạo nên trải nghiệm học thật.')}
             </p>
           </div>
         </section>
@@ -612,8 +625,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Sáu lớp cá nhân hóa xoay quanh chính bạn"
-              body="Mỗi lớp giải quyết một phần khác nhau của trải nghiệm học, từ điểm bắt đầu đến tốc độ và lộ trình dài hạn."
+              title={T('Sáu lớp cá nhân hóa xoay quanh chính bạn')}
+              body={T('Mỗi lớp giải quyết một phần khác nhau của trải nghiệm học, từ điểm bắt đầu đến tốc độ và lộ trình dài hạn.')}
             />
             <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {PERSONAL_LAYERS.map(({ icon: Icon, label, title, body }, index) => (
@@ -633,8 +646,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="border-y border-slate-100 bg-slate-50 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Bạn muốn học tiếng Anh để làm gì?"
-              body="Hãy để mục tiêu quyết định giáo trình. Mỗi nhu cầu có thể được xây dựng thành một lộ trình riêng."
+              title={T('Bạn muốn học tiếng Anh để làm gì?')}
+              body={T('Hãy để mục tiêu quyết định giáo trình. Mỗi nhu cầu có thể được xây dựng thành một lộ trình riêng.')}
               align="center"
             />
             <div className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
@@ -653,12 +666,12 @@ export function ChuongTrinhCaNhanHoaPage() {
             <div className="grid gap-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
               <div className="lg:sticky lg:top-24">
                 <SectionHeading
-                  title="Ví dụ: Tôi cần tiếng Anh để làm Sales"
-                  body="Thay vì một khóa Business English chung, chương trình phân tích những tình huống học viên thực sự gặp."
+                  title={T('Ví dụ: Tôi cần tiếng Anh để làm Sales')}
+                  body={T('Thay vì một khóa Business English chung, chương trình phân tích những tình huống học viên thực sự gặp.')}
                 />
                 <img
                   src="/adult_meeting.webp"
-                  alt="Học viên thực hành thuyết trình bằng tiếng Anh trong môi trường công việc"
+                  alt={T('Học viên thực hành thuyết trình bằng tiếng Anh trong môi trường công việc')}
                   width={1024}
                   height={1024}
                   loading="lazy"
@@ -673,7 +686,7 @@ export function ChuongTrinhCaNhanHoaPage() {
                   </article>
                 ))}
                 <div className="rounded-[1.5rem] bg-[#FFC107] p-6 text-lg font-black leading-8 text-[#10213A]">
-                  Đây không còn là một khóa học tiếng Anh. Đây là tiếng Anh được xây dựng quanh công việc của bạn.
+                  {T('Đây không còn là một khóa học tiếng Anh. Đây là tiếng Anh được xây dựng quanh công việc của bạn.')}
                 </div>
               </div>
             </div>
@@ -683,8 +696,8 @@ export function ChuongTrinhCaNhanHoaPage() {
         <section className="border-y border-slate-100 bg-[#FFFCF2] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <SectionHeading
-              title="Tại sao AI Personal Learning đáng để lựa chọn?"
-              body="Một khóa học được tạo từ chính mục tiêu của bạn, thay vì bắt bạn thích nghi với một giáo trình chung."
+              title={T('Tại sao AI Personal Learning đáng để lựa chọn?')}
+              body={T('Một khóa học được tạo từ chính mục tiêu của bạn, thay vì bắt bạn thích nghi với một giáo trình chung.')}
             />
             <div className="mt-10 grid gap-x-8 md:grid-cols-2">
               {BENEFITS.map(({ icon: Icon, title, body }) => (
@@ -709,21 +722,21 @@ export function ChuongTrinhCaNhanHoaPage() {
               Your English. Your Goals. Your Learning Path.
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-base font-bold leading-7 text-[#4C3B00] sm:text-lg">
-              Một học viên. Một mục tiêu. Một lộ trình riêng. Đừng cố gắng thích nghi với một giáo trình, hãy để giáo trình thích nghi với bạn.
+              {T('Một học viên. Một mục tiêu. Một lộ trình riêng. Đừng cố gắng thích nghi với một giáo trình, hãy để giáo trình thích nghi với bạn.')}
             </p>
-            <p className="mt-7 text-lg font-black">Bạn muốn sử dụng tiếng Anh để làm được điều gì?</p>
+            <p className="mt-7 text-lg font-black">{T('Bạn muốn sử dụng tiếng Anh để làm được điều gì?')}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link
                 to={CONSULTATION_PATH}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#10213A] px-6 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-[#1C3557] focus:outline-none focus:ring-2 focus:ring-[#10213A] focus:ring-offset-2 focus:ring-offset-[#FFC107] active:translate-y-px"
               >
-                Tạo lộ trình AI của tôi
+                {T('Tạo lộ trình AI của tôi')}
                 <ArrowUpRight className="h-4 w-4" aria-hidden />
               </Link>
             </div>
             <div className="mt-6 flex items-center justify-center gap-2 text-sm font-bold text-[#4C3B00]">
               <ShieldCheck className="h-4 w-4" aria-hidden />
-              Đăng ký đánh giá và tư vấn cùng 123English
+              {T('Đăng ký đánh giá và tư vấn cùng 123English')}
             </div>
           </div>
         </section>

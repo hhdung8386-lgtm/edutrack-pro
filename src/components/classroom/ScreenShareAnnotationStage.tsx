@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Radio,
 } from 'lucide-react'
+import { tl, useLang } from '@/stores/languageStore'
 import {
   CollaborativeWhiteboard,
   type CollaborativeWhiteboardProps,
@@ -99,6 +100,7 @@ export function ScreenShareAnnotationStage({
   onStudentCanWriteChange,
   onSave,
 }: ScreenShareAnnotationStageProps) {
+  useLang()
   const viewportRef = useRef<HTMLDivElement>(null)
   const annotationSurfaceRef = useRef<HTMLDivElement>(null)
   const [viewportSize, setViewportSize] = useState<Dimensions>(EMPTY_DIMENSIONS)
@@ -123,7 +125,7 @@ export function ScreenShareAnnotationStage({
       })
     }
     nextImage.onerror = () => {
-      if (!cancelled) setFrameDecodeError('Ảnh màn hình chia sẻ không tải được.')
+      if (!cancelled) setFrameDecodeError(tl('Ảnh màn hình chia sẻ không tải được.', 'The shared-screen image could not be loaded.'))
     }
     nextImage.src = frameUrl
     return () => {
@@ -173,13 +175,13 @@ export function ScreenShareAnnotationStage({
   const frameReady = hasFrame && containRect.width > 0 && containRect.height > 0
   const visibleError = (frameUrl ? frameDecodeError : '') || error
   const statusLabel = visibleError
-    ? 'Màn hình chia sẻ cần tải lại'
+    ? tl('Màn hình chia sẻ cần tải lại', 'The shared screen needs reloading')
     : loading
-      ? frameReady ? 'Đang cập nhật ảnh màn hình' : 'Đang tải màn hình chia sẻ'
+      ? frameReady ? tl('Đang cập nhật ảnh màn hình', 'Updating screen image') : tl('Đang tải màn hình chia sẻ', 'Loading shared screen')
       : frameReady
         ? canRefreshFrame
-          ? 'Khung cố định đã đồng bộ · làm mới khi đổi slide'
-          : 'Khung cố định do gia sư đồng bộ'
+          ? tl('Khung cố định đã đồng bộ · làm mới khi đổi slide', 'Frame synced · refresh when the slide changes')
+          : tl('Khung cố định do gia sư đồng bộ', 'Frame synced by the tutor')
         : 'Chưa có ảnh màn hình chia sẻ'
   const frameStyle = frameReady
     ? {
@@ -212,7 +214,7 @@ export function ScreenShareAnnotationStage({
   }
 
   return (
-    <section className="flex h-full min-h-[320px] w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] text-white shadow-[0_24px_70px_-42px_rgba(2,6,23,0.95)] sm:min-h-[420px]" aria-label="Màn hình chia sẻ có chú thích">
+    <section className="flex h-full min-h-[320px] w-full flex-col overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] text-white shadow-[0_24px_70px_-42px_rgba(2,6,23,0.95)] sm:min-h-[420px]" aria-label={tl('Màn hình chia sẻ có chú thích', 'Annotated shared screen')}>
       <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/95 px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${visibleError ? 'bg-rose-500/15 text-rose-300' : frameReady ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/10 text-slate-300'}`}>
@@ -223,7 +225,7 @@ export function ScreenShareAnnotationStage({
                 : <Radio className="h-4 w-4" aria-hidden="true" />}
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-black">Màn hình bài giảng</h2>
+            <h2 className="truncate text-sm font-black">{tl('Màn hình bài giảng', 'Lesson screen')}</h2>
             <p className={`truncate text-[11px] font-semibold ${visibleError ? 'text-rose-300' : 'text-slate-300'}`} aria-live="polite">
               {statusLabel}
             </p>
@@ -239,7 +241,7 @@ export function ScreenShareAnnotationStage({
               className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-extrabold text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-wait disabled:opacity-55"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-              <span className="hidden sm:inline">Đổi khung bài giảng</span>
+              <span className="hidden sm:inline">{tl('Đổi khung bài giảng', 'Change lesson frame')}</span>
             </button>
           )}
           <button
@@ -259,7 +261,7 @@ export function ScreenShareAnnotationStage({
         {frameUrl && frameLoadState.url && (
           <img
             src={frameLoadState.url}
-            alt="Nội dung màn hình đang được chia sẻ"
+            alt={tl('Nội dung màn hình đang được chia sẻ', 'Content of the shared screen')}
             draggable={false}
             className={`absolute select-none ${frameReady ? 'opacity-100' : 'opacity-0'}`}
             style={frameStyle}
@@ -271,7 +273,7 @@ export function ScreenShareAnnotationStage({
             ref={annotationSurfaceRef}
             role="region"
             tabIndex={0}
-            aria-label="Vùng chú thích trên màn hình chia sẻ"
+            aria-label={tl('Vùng chú thích trên màn hình chia sẻ', 'Annotation area on the shared screen')}
             aria-describedby="screen-annotation-shortcuts"
             aria-keyshortcuts="Control+Z Meta+Z Control+Shift+Z Meta+Shift+Z"
             className="absolute z-10 min-w-0 overflow-hidden rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300"
@@ -295,7 +297,7 @@ export function ScreenShareAnnotationStage({
               variant="overlay"
             />
             <span id="screen-annotation-shortcuts" className="sr-only">
-              Chọn công cụ rồi vẽ trực tiếp trên bài giảng. Gia sư hoặc quản trị viên có thể nhấn Control Z hoặc Command Z để hoàn tác, thêm Shift để làm lại.
+              {tl('Chọn công cụ rồi vẽ trực tiếp trên bài giảng. Gia sư hoặc quản trị viên có thể nhấn Control Z hoặc Command Z để hoàn tác, thêm Shift để làm lại.', 'Choose a tool and draw directly on the lesson. Tutors and admins can press Ctrl+Z or Cmd+Z to undo, and add Shift to redo.')}
             </span>
           </div>
         )}
@@ -306,8 +308,8 @@ export function ScreenShareAnnotationStage({
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
                 <Loader2 className="h-7 w-7 animate-spin text-amber-300" aria-hidden="true" />
               </span>
-              <p className="mt-4 text-sm font-extrabold">Đang lấy ảnh màn hình chia sẻ</p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">Ảnh và lớp viết sẽ tự căn trùng nhau khi tải xong.</p>
+              <p className="mt-4 text-sm font-extrabold">{tl('Đang lấy ảnh màn hình chia sẻ', 'Capturing the shared screen')}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">{tl('Ảnh và lớp viết sẽ tự căn trùng nhau khi tải xong.', 'The image and drawing layer line up automatically once loaded.')}</p>
             </div>
           </div>
         )}
@@ -318,8 +320,8 @@ export function ScreenShareAnnotationStage({
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-slate-300 ring-1 ring-white/15">
                 <ImageOff className="h-6 w-6" aria-hidden="true" />
               </span>
-              <p className="mt-4 text-sm font-extrabold">Chưa có ảnh màn hình chia sẻ</p>
-              <p className="mt-1 max-w-sm text-xs font-semibold leading-5 text-slate-400">Hãy trở về lớp trực tiếp hoặc bấm làm mới sau khi gia sư bắt đầu chia sẻ.</p>
+              <p className="mt-4 text-sm font-extrabold">{tl('Chưa có ảnh màn hình chia sẻ', 'No shared-screen image yet')}</p>
+              <p className="mt-1 max-w-sm text-xs font-semibold leading-5 text-slate-400">{tl('Hãy trở về lớp trực tiếp hoặc bấm làm mới sau khi gia sư bắt đầu chia sẻ.', 'Go back to the live class, or refresh once the tutor starts sharing.')}</p>
             </div>
           </div>
         )}
@@ -337,7 +339,7 @@ export function ScreenShareAnnotationStage({
                   className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 text-xs font-black text-slate-950 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-wait disabled:opacity-55"
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  Thử tải lại
+                  {tl('Thử tải lại', 'Try reloading')}
                 </button>
               )}
             </div>

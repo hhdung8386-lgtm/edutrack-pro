@@ -28,6 +28,7 @@ import {
   Unlock,
   X,
 } from 'lucide-react'
+import { tl, useLang } from '@/stores/languageStore'
 import {
   createBoardId,
   isBoardManager,
@@ -68,17 +69,17 @@ type ActiveBoardTool = BoardTool | 'pointer'
 const BOARD_COLORS = ['#10213a', '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#d97706'] as const
 
 const TOOL_META: Record<BoardTool, { label: string; Icon: typeof PenLine }> = {
-  pen: { label: 'Bút viết', Icon: PenLine },
-  highlighter: { label: 'Bút đánh dấu', Icon: Highlighter },
-  eraser: { label: 'Tẩy', Icon: Eraser },
-  rectangle: { label: 'Hình chữ nhật', Icon: Square },
-  ellipse: { label: 'Hình tròn hoặc ellipse', Icon: Circle },
-  arrow: { label: 'Mũi tên', Icon: MoveUpRight },
-  text: { label: 'Gõ chữ', Icon: Type },
+  pen: { get label() { return tl('Bút viết', 'Pen') }, Icon: PenLine },
+  highlighter: { get label() { return tl('Bút đánh dấu', 'Highlighter') }, Icon: Highlighter },
+  eraser: { get label() { return tl('Tẩy', 'Eraser') }, Icon: Eraser },
+  rectangle: { get label() { return tl('Hình chữ nhật', 'Rectangle') }, Icon: Square },
+  ellipse: { get label() { return tl('Hình tròn hoặc ellipse', 'Circle or ellipse') }, Icon: Circle },
+  arrow: { get label() { return tl('Mũi tên', 'Arrow') }, Icon: MoveUpRight },
+  text: { get label() { return tl('Gõ chữ', 'Text') }, Icon: Type },
 }
 
 const OVERLAY_TOOL_META: Record<ActiveBoardTool, { label: string; Icon: typeof PenLine }> = {
-  pointer: { label: 'Con trỏ', Icon: MousePointer2 },
+  pointer: { get label() { return tl('Con trỏ', 'Pointer') }, Icon: MousePointer2 },
   ...TOOL_META,
 }
 
@@ -256,7 +257,7 @@ export function CollaborativeWhiteboard({
   snapshot,
   role,
   backgroundImageUrl = null,
-  backgroundImageAlt = 'Ảnh bài học được dán lên bảng trắng',
+  backgroundImageAlt = tl('Ảnh bài học được dán lên bảng trắng', 'Lesson image pasted on the whiteboard'),
   backgroundImageFit = 'contain',
   canUndo,
   canRedo,
@@ -270,8 +271,9 @@ export function CollaborativeWhiteboard({
   onSave,
   variant = 'board',
   headerActions,
-  saveActionLabel = 'Lưu bảng ngay',
+  saveActionLabel = tl('Lưu bảng ngay', 'Save board now'),
 }: CollaborativeWhiteboardProps) {
+  useLang()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasShellRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<BoardOperation | null>(null)
@@ -462,15 +464,15 @@ export function CollaborativeWhiteboard({
 
   const saveLabel = !manager
     ? pendingOperationCount > 0
-      ? `${pendingOperationCount} nét đang chờ đồng bộ`
-      : `Đã đồng bộ phiên bản ${snapshot.version}`
+      ? tl(`${pendingOperationCount} nét đang chờ đồng bộ`, `${pendingOperationCount} strokes waiting to sync`)
+      : tl(`Đã đồng bộ phiên bản ${snapshot.version}`, `Synced version ${snapshot.version}`)
     : saveStatus === 'saving'
-      ? 'Đang lưu'
+      ? tl('Đang lưu', 'Saving')
       : saveStatus === 'error'
-        ? 'Lưu chưa thành công'
+        ? tl('Lưu chưa thành công', 'Save failed')
         : saveStatus === 'dirty'
-          ? 'Chưa lưu thay đổi mới'
-          : `Đã lưu phiên bản ${snapshot.version}`
+          ? tl('Chưa lưu thay đổi mới', 'Unsaved changes')
+          : tl(`Đã lưu phiên bản ${snapshot.version}`, `Saved version ${snapshot.version}`)
   const textEditorPosition = pendingText
     ? (() => {
         const inset = 12
@@ -522,15 +524,15 @@ export function CollaborativeWhiteboard({
       </div>
 
       {tool !== 'eraser' && tool !== 'pointer' && (
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label="Chọn màu chú thích">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label={tl('Chọn màu chú thích', 'Choose annotation colour')}>
           {BOARD_COLORS.map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setColor(item)}
               disabled={!canDraw}
-              aria-label={`Chọn màu ${item}`}
-              title={`Màu ${item}`}
+              aria-label={tl(`Chọn màu ${item}`, `Choose colour ${item}`)}
+              title={tl(`Màu ${item}`, `Colour ${item}`)}
               className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9 md:rounded-lg"
             >
               <span className="h-5 w-5 rounded-full border border-white/25" style={{ backgroundColor: item }} />
@@ -541,14 +543,14 @@ export function CollaborativeWhiteboard({
       )}
 
       {tool !== 'pointer' && (
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label="Chọn độ dày nét chú thích">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-white/10 bg-white/5 p-1" aria-label={tl('Chọn độ dày nét chú thích', 'Choose annotation thickness')}>
           {(['thin', 'medium', 'thick'] as StrokeSize[]).map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setStrokeSize(item)}
               disabled={!canDraw}
-              aria-label={`Độ dày ${item === 'thin' ? 'mảnh' : item === 'medium' ? 'vừa' : 'đậm'}`}
+              aria-label={tl(`Độ dày ${item === 'thin' ? 'mảnh' : item === 'medium' ? 'vừa' : 'đậm'}`, `Thickness: ${item}`)}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9 md:rounded-lg ${strokeSize === item ? 'bg-amber-300 text-slate-950' : 'hover:bg-white/10'}`}
             >
               <span className="rounded-full bg-current" style={{ width: WIDTHS.pen[item] + 3, height: WIDTHS.pen[item] + 3 }} />
@@ -561,7 +563,7 @@ export function CollaborativeWhiteboard({
         {manager ? (
           <OverlayToolButton
             active={!snapshot.studentCanWrite}
-            label={snapshot.studentCanWrite ? 'Khóa quyền viết của học viên' : 'Mở quyền viết cho học viên'}
+            label={snapshot.studentCanWrite ? tl('Khóa quyền viết của học viên', 'Lock student writing') : tl('Mở quyền viết cho học viên', 'Let the student write')}
             onClick={() => onStudentCanWriteChange(!snapshot.studentCanWrite)}
           >
             {snapshot.studentCanWrite ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
@@ -569,20 +571,20 @@ export function CollaborativeWhiteboard({
         ) : (
           <span className={`inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-extrabold md:h-9 md:rounded-lg ${snapshot.studentCanWrite ? 'bg-emerald-400/15 text-emerald-200' : 'bg-white/10 text-slate-300'}`}>
             {snapshot.studentCanWrite ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {snapshot.studentCanWrite ? 'Được viết' : 'Chỉ xem'}
+            {snapshot.studentCanWrite ? tl('Được viết', 'Can write') : tl('Chỉ xem', 'View only')}
           </span>
         )}
 
         {manager && (
           <>
-            <OverlayToolButton label="Hoàn tác" onClick={onUndo} disabled={!canUndo}>
+            <OverlayToolButton label={tl('Hoàn tác', 'Undo')} onClick={onUndo} disabled={!canUndo}>
               <Undo2 className="h-4 w-4" />
             </OverlayToolButton>
-            <OverlayToolButton label="Làm lại" onClick={onRedo} disabled={!canRedo}>
+            <OverlayToolButton label={tl('Làm lại', 'Redo')} onClick={onRedo} disabled={!canRedo}>
               <Redo2 className="h-4 w-4" />
             </OverlayToolButton>
             {!confirmClear ? (
-              <OverlayToolButton label="Xóa toàn bộ chú thích" onClick={() => setConfirmClear(true)} danger>
+              <OverlayToolButton label={tl('Xóa toàn bộ chú thích', 'Clear all annotations')} onClick={() => setConfirmClear(true)} danger>
                 <Trash2 className="h-4 w-4" />
               </OverlayToolButton>
             ) : (
@@ -595,19 +597,19 @@ export function CollaborativeWhiteboard({
                   }}
                   className="h-9 rounded-lg px-2 text-xs font-extrabold text-rose-100 hover:bg-rose-400/20 focus:outline-none focus:ring-2 focus:ring-rose-300 md:h-7"
                 >
-                  Xác nhận xóa
+                  {tl('Xác nhận xóa', 'Confirm clear')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmClear(false)}
-                  aria-label="Hủy xóa chú thích"
+                  aria-label={tl('Hủy xóa chú thích', 'Cancel clearing annotations')}
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300 md:h-7 md:w-7"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             )}
-            <OverlayToolButton label="Lưu chú thích ngay" onClick={onSave}>
+            <OverlayToolButton label={tl('Lưu chú thích ngay', 'Save annotations now')} onClick={onSave}>
               {saveStatus === 'saving' ? <RotateCcw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             </OverlayToolButton>
           </>
@@ -621,7 +623,7 @@ export function CollaborativeWhiteboard({
     return (
       <section
         className="pointer-events-none relative h-full min-h-0 w-full overflow-visible bg-transparent"
-        aria-label="Lớp chú thích trên màn hình chia sẻ"
+        aria-label={tl('Lớp chú thích trên màn hình chia sẻ', 'Annotation layer on the shared screen')}
         onKeyDown={handleKeyboard}
       >
         {overlayDesktopToolsVisible ? (
@@ -630,8 +632,8 @@ export function CollaborativeWhiteboard({
             <button
               type="button"
               onClick={() => setOverlayDesktopToolsVisible(false)}
-              aria-label="Thu gọn công cụ chú thích"
-              title="Thu gọn công cụ"
+              aria-label={tl('Thu gọn công cụ chú thích', 'Collapse annotation tools')}
+              title={tl('Thu gọn công cụ', 'Collapse tools')}
               className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-amber-300"
             >
               <ChevronUp className="h-4 w-4" />
@@ -644,7 +646,7 @@ export function CollaborativeWhiteboard({
             className="pointer-events-auto absolute left-1/2 top-3 z-20 hidden min-h-10 -translate-x-1/2 items-center gap-2 rounded-xl border border-white/15 bg-slate-950/92 px-3 text-xs font-extrabold text-white shadow-xl backdrop-blur-xl hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300 md:flex"
           >
             <PenLine className="h-4 w-4 text-amber-300" />
-            Hiện công cụ viết
+            {tl('Hiện công cụ viết', 'Show drawing tools')}
             <ChevronDown className="h-4 w-4" />
           </button>
         )}
@@ -662,7 +664,7 @@ export function CollaborativeWhiteboard({
                   <ActiveToolIcon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-xs font-black">Công cụ chú thích</span>
+                  <span className="block truncate text-xs font-black">{tl('Công cụ chú thích', 'Annotation tools')}</span>
                   <span className="block truncate text-[10px] font-semibold text-slate-300">{OVERLAY_TOOL_META[tool].label} · {saveLabel}</span>
                 </span>
               </span>
@@ -680,7 +682,7 @@ export function CollaborativeWhiteboard({
           <canvas
             ref={canvasRef}
             className={`block h-full w-full select-none ${drawingEnabled ? 'pointer-events-auto cursor-crosshair touch-none' : 'pointer-events-none cursor-default'}`}
-            aria-label={drawingEnabled ? 'Vùng chú thích trên màn hình chia sẻ' : tool === 'pointer' ? 'Chế độ con trỏ, không tạo nét mới' : 'Chú thích đang ở chế độ chỉ xem'}
+            aria-label={drawingEnabled ? tl('Vùng chú thích trên màn hình chia sẻ', 'Annotation area on the shared screen') : tool === 'pointer' ? tl('Chế độ con trỏ, không tạo nét mới', 'Pointer mode – no new strokes') : tl('Chú thích đang ở chế độ chỉ xem', 'Annotations are view-only')}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={finishStroke}
@@ -690,7 +692,7 @@ export function CollaborativeWhiteboard({
           {!canDraw && (
             <div className="pointer-events-none absolute bottom-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 text-xs font-extrabold text-white shadow-lg backdrop-blur md:bottom-4">
               <Lock className="h-3.5 w-3.5" />
-              Gia sư đang khóa quyền viết
+              {tl('Gia sư đang khóa quyền viết', 'The tutor has locked writing')}
             </div>
           )}
 
@@ -707,7 +709,7 @@ export function CollaborativeWhiteboard({
                 top: `${textEditorPosition?.top ?? 12}px`,
               }}
             >
-              <label htmlFor="classroom-overlay-text" className="text-xs font-extrabold text-slate-100">Nội dung cần thêm</label>
+              <label htmlFor="classroom-overlay-text" className="text-xs font-extrabold text-slate-100">{tl('Nội dung cần thêm', 'Text to add')}</label>
               <textarea
                 id="classroom-overlay-text"
                 value={textDraft}
@@ -716,7 +718,7 @@ export function CollaborativeWhiteboard({
                 rows={3}
                 maxLength={240}
                 autoFocus
-                placeholder="Nhập câu hỏi hoặc câu trả lời"
+                placeholder={tl('Nhập câu hỏi hoặc câu trả lời', 'Type a question or answer')}
                 className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-slate-400 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20"
               />
               <div className="mt-2 flex items-center justify-between gap-2">
@@ -730,14 +732,14 @@ export function CollaborativeWhiteboard({
                     }}
                     className="min-h-9 rounded-lg px-3 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300"
                   >
-                    Hủy
+                    {tl('Hủy', 'Cancel')}
                   </button>
                   <button
                     type="submit"
                     disabled={!textDraft.trim()}
                     className="min-h-9 rounded-lg bg-amber-300 px-3 text-xs font-black text-slate-950 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Thêm chữ
+                    {tl('Thêm chữ', 'Add text')}
                   </button>
                 </div>
               </div>
@@ -751,7 +753,7 @@ export function CollaborativeWhiteboard({
   return (
     <section
       className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_24px_70px_-52px_rgba(16,33,58,0.5)]"
-      aria-label="Bảng học tương tác"
+      aria-label={tl('Bảng học tương tác', 'Interactive lesson board')}
       onKeyDown={handleKeyboard}
     >
       <header className="border-b border-slate-200 bg-[#fffdf7] px-3 py-3 sm:px-4">
@@ -762,7 +764,7 @@ export function CollaborativeWhiteboard({
                 <PenLine className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-sm font-black text-[#10213a]">Bảng học tương tác</h2>
+                <h2 className="text-sm font-black text-[#10213a]">{tl('Bảng học tương tác', 'Interactive lesson board')}</h2>
                 <p className={`text-[11px] font-bold ${saveStatus === 'error' ? 'text-rose-700' : saveStatus === 'dirty' ? 'text-amber-700' : 'text-slate-500'}`} aria-live="polite">
                   {saveLabel}
                 </p>
@@ -774,36 +776,36 @@ export function CollaborativeWhiteboard({
             {!manager && (
               <span className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-extrabold ${snapshot.studentCanWrite ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                 {snapshot.studentCanWrite ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                {snapshot.studentCanWrite ? 'Được viết' : 'Chỉ xem'}
+                {snapshot.studentCanWrite ? tl('Được viết', 'Can write') : tl('Chỉ xem', 'View only')}
               </span>
             )}
             {manager && (
               <ToolButton
                 active={!snapshot.studentCanWrite}
-                label={snapshot.studentCanWrite ? 'Khóa quyền viết của học viên' : 'Mở quyền viết cho học viên'}
+                label={snapshot.studentCanWrite ? tl('Khóa quyền viết của học viên', 'Lock student writing') : tl('Mở quyền viết cho học viên', 'Let the student write')}
                 onClick={() => onStudentCanWriteChange(!snapshot.studentCanWrite)}
               >
                 {snapshot.studentCanWrite ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                <span className="hidden sm:inline">{snapshot.studentCanWrite ? 'Học viên được viết' : 'Đã khóa học viên'}</span>
+                <span className="hidden sm:inline">{snapshot.studentCanWrite ? tl('Học viên được viết', 'Student can write') : tl('Đã khóa học viên', 'Student locked')}</span>
               </ToolButton>
             )}
             <button
               type="button"
               onClick={() => setBoardToolsExpanded((current) => !current)}
               aria-expanded={boardToolsExpanded}
-              aria-label={boardToolsExpanded ? 'Ẩn công cụ bảng trắng' : 'Hiện công cụ bảng trắng'}
-              title={boardToolsExpanded ? 'Ẩn công cụ' : 'Hiện công cụ'}
+              aria-label={boardToolsExpanded ? tl('Ẩn công cụ bảng trắng', 'Hide whiteboard tools') : tl('Hiện công cụ bảng trắng', 'Show whiteboard tools')}
+              title={boardToolsExpanded ? tl('Ẩn công cụ', 'Hide tools') : tl('Hiện công cụ', 'Show tools')}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
             >
               {boardToolsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              <span className="hidden sm:inline">{boardToolsExpanded ? 'Ẩn công cụ' : 'Hiện công cụ'}</span>
+              <span className="hidden sm:inline">{boardToolsExpanded ? tl('Ẩn công cụ', 'Hide tools') : tl('Hiện công cụ', 'Show tools')}</span>
             </button>
             {headerActions}
           </div>
         </div>
 
         {boardToolsExpanded && (
-        <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Công cụ bảng học">
+        <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1" aria-label={tl('Công cụ bảng học', 'Board tools')}>
           <div className="flex shrink-0 items-center gap-1 rounded-2xl bg-slate-100 p-1">
             {(Object.keys(TOOL_META) as BoardTool[]).map((item) => {
               const { Icon, label } = TOOL_META[item]
@@ -824,14 +826,14 @@ export function CollaborativeWhiteboard({
           </div>
 
           {tool !== 'eraser' && (
-            <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1" aria-label="Chọn màu bút">
+            <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1" aria-label={tl('Chọn màu bút', 'Choose pen colour')}>
               {BOARD_COLORS.map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => setColor(item)}
-                  aria-label={`Chọn màu ${item}`}
-                  title={`Màu ${item}`}
+                  aria-label={tl(`Chọn màu ${item}`, `Choose colour ${item}`)}
+                  title={tl(`Màu ${item}`, `Colour ${item}`)}
                   className="relative flex h-9 w-9 items-center justify-center rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-300"
                 >
                   <span className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: item }} />
@@ -841,13 +843,13 @@ export function CollaborativeWhiteboard({
             </div>
           )}
 
-          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1" aria-label="Chọn độ dày nét">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1" aria-label={tl('Chọn độ dày nét', 'Choose stroke thickness')}>
             {(['thin', 'medium', 'thick'] as StrokeSize[]).map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => setStrokeSize(item)}
-                aria-label={`Độ dày ${item === 'thin' ? 'mảnh' : item === 'medium' ? 'vừa' : 'đậm'}`}
+                aria-label={tl(`Độ dày ${item === 'thin' ? 'mảnh' : item === 'medium' ? 'vừa' : 'đậm'}`, `Thickness: ${item}`)}
                 className={`flex h-9 w-9 items-center justify-center rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-300 ${strokeSize === item ? 'bg-amber-100' : 'hover:bg-slate-100'}`}
               >
                 <span className="rounded-full bg-slate-800" style={{ width: WIDTHS.pen[item] + 3, height: WIDTHS.pen[item] + 3 }} />
@@ -857,14 +859,14 @@ export function CollaborativeWhiteboard({
 
           {manager && (
             <div className="ml-auto flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
-              <ToolButton label="Hoàn tác" onClick={onUndo} disabled={!canUndo}>
+              <ToolButton label={tl('Hoàn tác', 'Undo')} onClick={onUndo} disabled={!canUndo}>
                 <Undo2 className="h-4 w-4" />
               </ToolButton>
-              <ToolButton label="Làm lại" onClick={onRedo} disabled={!canRedo}>
+              <ToolButton label={tl('Làm lại', 'Redo')} onClick={onRedo} disabled={!canRedo}>
                 <Redo2 className="h-4 w-4" />
               </ToolButton>
               {!confirmClear ? (
-                <ToolButton label="Xóa toàn bộ bảng" onClick={() => setConfirmClear(true)}>
+                <ToolButton label={tl('Xóa toàn bộ bảng', 'Clear the whole board')} onClick={() => setConfirmClear(true)}>
                   <Trash2 className="h-4 w-4 text-rose-600" />
                 </ToolButton>
               ) : (
@@ -878,12 +880,12 @@ export function CollaborativeWhiteboard({
                     className="flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-extrabold text-rose-700 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    Xóa bảng
+                    {tl('Xóa bảng', 'Clear board')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmClear(false)}
-                    aria-label="Hủy xóa bảng"
+                    aria-label={tl('Hủy xóa bảng', 'Cancel clearing the board')}
                     className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
                   >
                     <X className="h-4 w-4" />
@@ -911,7 +913,7 @@ export function CollaborativeWhiteboard({
         <canvas
           ref={canvasRef}
           className={`relative z-10 block h-full w-full select-none ${canDraw ? 'cursor-crosshair touch-none' : 'cursor-not-allowed'}`}
-          aria-label={canDraw ? 'Vùng vẽ bảng học' : 'Bảng học đang ở chế độ chỉ xem'}
+          aria-label={canDraw ? tl('Vùng vẽ bảng học', 'Board drawing area') : tl('Bảng học đang ở chế độ chỉ xem', 'The board is view-only')}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={finishStroke}
@@ -924,9 +926,9 @@ export function CollaborativeWhiteboard({
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-100">
                 <PenLine className="h-6 w-6" />
               </span>
-              <p className="mt-4 text-sm font-extrabold text-slate-700">Bảng đang trống</p>
+              <p className="mt-4 text-sm font-extrabold text-slate-700">{tl('Bảng đang trống', 'The board is empty')}</p>
               <p className="mt-1 max-w-xs text-xs font-semibold leading-5 text-slate-500">
-                {canDraw ? 'Chọn công cụ phía trên rồi viết trực tiếp bằng chuột, bút cảm ứng hoặc ngón tay.' : 'Gia sư sẽ mở quyền khi đến phần cần học viên viết.'}
+                {canDraw ? tl('Chọn công cụ phía trên rồi viết trực tiếp bằng chuột, bút cảm ứng hoặc ngón tay.', 'Choose a tool above, then write with your mouse, stylus or finger.') : tl('Gia sư sẽ mở quyền khi đến phần cần học viên viết.', 'The tutor will unlock writing when it is your turn.')}
               </p>
             </div>
           </div>
@@ -935,7 +937,7 @@ export function CollaborativeWhiteboard({
         {!canDraw && (
           <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-xs font-extrabold text-slate-700 shadow-lg backdrop-blur">
             <Lock className="h-3.5 w-3.5" />
-            Gia sư đang khóa quyền viết
+            {tl('Gia sư đang khóa quyền viết', 'The tutor has locked writing')}
           </div>
         )}
 
@@ -952,7 +954,7 @@ export function CollaborativeWhiteboard({
               top: `${textEditorPosition?.top ?? 12}px`,
             }}
           >
-            <label htmlFor="classroom-board-text" className="text-xs font-extrabold text-slate-700">Nội dung cần thêm</label>
+            <label htmlFor="classroom-board-text" className="text-xs font-extrabold text-slate-700">{tl('Nội dung cần thêm', 'Text to add')}</label>
             <textarea
               id="classroom-board-text"
               value={textDraft}
@@ -961,7 +963,7 @@ export function CollaborativeWhiteboard({
               rows={3}
               maxLength={240}
               autoFocus
-              placeholder="Nhập câu hỏi hoặc câu trả lời"
+              placeholder={tl('Nhập câu hỏi hoặc câu trả lời', 'Type a question or answer')}
               className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
             />
             <div className="mt-2 flex items-center justify-between gap-2">
@@ -975,14 +977,14 @@ export function CollaborativeWhiteboard({
                   }}
                   className="min-h-9 rounded-lg px-3 text-xs font-extrabold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 >
-                  Hủy
+                  {tl('Hủy', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={!textDraft.trim()}
                   className="min-h-9 rounded-lg bg-[#ffc107] px-3 text-xs font-black text-[#10213a] hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Thêm chữ
+                  {tl('Thêm chữ', 'Add text')}
                 </button>
               </div>
             </div>

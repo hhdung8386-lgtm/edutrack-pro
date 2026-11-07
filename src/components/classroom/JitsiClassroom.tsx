@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, RotateCcw, Video } from 'lucide-react'
+import { tl, useLang } from '@/stores/languageStore'
 import type { JitsiEventHandler, JitsiExternalApi } from '@/lib/jitsiExternalApi'
 import {
   jitsiClassroomInitialMediaMuted,
@@ -124,7 +125,7 @@ function loadJitsiScript(scriptUrl: string): Promise<void> {
     }, { once: true })
     script.addEventListener('error', () => {
       script.remove()
-      reject(new Error('Không tải được trình gọi video. Hãy kiểm tra mạng rồi thử lại.'))
+      reject(new Error(tl('Không tải được trình gọi video. Hãy kiểm tra mạng rồi thử lại.', 'Could not load the video call. Check your connection and try again.')))
     }, { once: true })
     document.head.appendChild(script)
   })
@@ -139,21 +140,22 @@ function loadJitsiScript(scriptUrl: string): Promise<void> {
 function mediaErrorMessage(kind: MediaKind, payload: unknown): string {
   const details = isRecord(payload) ? payload : null
   const rawError = `${readString(details?.type)} ${readString(details?.message)}`.toLowerCase()
-  const device = kind === 'camera' ? 'camera' : 'micro'
+  const device = kind === 'camera' ? 'camera' : tl('micro', 'microphone')
+  const Device = kind === 'camera' ? 'Camera' : tl('Micro', 'Microphone')
 
   if (/permission|notallowed|denied/.test(rawError)) {
-    return `${kind === 'camera' ? 'Camera' : 'Micro'} đang bị chặn. Hãy bấm biểu tượng camera hoặc ổ khóa cạnh thanh địa chỉ, chọn Cho phép, rồi thử lại cuộc gọi.`
+    return tl(`${Device} đang bị chặn. Hãy bấm biểu tượng camera hoặc ổ khóa cạnh thanh địa chỉ, chọn Cho phép, rồi thử lại cuộc gọi.`, `${Device} access is blocked. Click the camera or padlock icon next to the address bar, choose Allow, then retry the call.`)
   }
   if (/not.?found|devices?.?not.?found/.test(rawError)) {
-    return `Không tìm thấy ${device}. Hãy kiểm tra kết nối thiết bị hoặc chọn thiết bị khác trong phần cài đặt cuộc gọi.`
+    return tl(`Không tìm thấy ${device}. Hãy kiểm tra kết nối thiết bị hoặc chọn thiết bị khác trong phần cài đặt cuộc gọi.`, `No ${device} found. Check that it is connected or choose another device in the call settings.`)
   }
   if (/not.?readable|track.?start|in.?use|could.?not.?start/.test(rawError)) {
-    return `${kind === 'camera' ? 'Camera' : 'Micro'} có thể đang được ứng dụng khác sử dụng. Hãy đóng ứng dụng đó rồi thử lại cuộc gọi.`
+    return tl(`${Device} có thể đang được ứng dụng khác sử dụng. Hãy đóng ứng dụng đó rồi thử lại cuộc gọi.`, `Your ${device} may be in use by another app. Close that app and retry the call.`)
   }
   if (/constraint|overconstrained/.test(rawError)) {
-    return `Thiết lập ${device} hiện tại không tương thích. Hãy chọn thiết bị khác trong phần cài đặt cuộc gọi.`
+    return tl(`Thiết lập ${device} hiện tại không tương thích. Hãy chọn thiết bị khác trong phần cài đặt cuộc gọi.`, `The current ${device} settings are not supported. Choose another device in the call settings.`)
   }
-  return `Chưa thể mở ${device}. Hãy kiểm tra quyền trình duyệt và thiết bị, sau đó thử lại cuộc gọi.`
+  return tl(`Chưa thể mở ${device}. Hãy kiểm tra quyền trình duyệt và thiết bị, sau đó thử lại cuộc gọi.`, `Could not open your ${device}. Check browser permissions and the device, then retry the call.`)
 }
 
 function endpointMessage(payload: unknown): { text: string; senderId: string } | null {
@@ -210,7 +212,7 @@ export function JitsiClassroom({
   manageWaitingRoom = false,
   scheduledDurationSeconds = 0,
   scheduledElapsedSeconds = 0,
-  endedDescription = 'Bảng học vẫn được giữ theo buổi. Bạn có thể vào lại cuộc gọi nếu lớp chưa kết thúc.',
+  endedDescription = tl('Bảng học vẫn được giữ theo buổi. Bạn có thể vào lại cuộc gọi nếu lớp chưa kết thúc.', 'The lesson board is kept for this session. You can rejoin the call if the class has not ended.'),
   onApiReady,
   onConferenceJoined,
   onParticipantJoined,
@@ -224,6 +226,7 @@ export function JitsiClassroom({
   onEnded,
   onError,
 }: JitsiClassroomProps) {
+  useLang()
   const containerRef = useRef<HTMLDivElement>(null)
   const callbackRef = useRef({
     onApiReady,
@@ -496,7 +499,7 @@ export function JitsiClassroom({
 
     const mountConference = async () => {
       if (!parentNode) {
-        fail('Thông tin phòng học không hợp lệ.')
+        fail(tl('Thông tin phòng học không hợp lệ.', 'The classroom details are not valid.'))
         return
       }
 
@@ -513,14 +516,14 @@ export function JitsiClassroom({
         setMediaWarnings({})
         updateState('loading')
         loadTimeout = window.setTimeout(() => {
-          fail('Phòng học tải quá lâu. Hãy kiểm tra mạng rồi thử lại.')
+          fail(tl('Phòng học tải quá lâu. Hãy kiểm tra mạng rồi thử lại.', 'The classroom is taking too long to load. Check your connection and try again.'))
         }, JITSI_LOAD_TIMEOUT_MS)
         await loadJitsiScript(launch.scriptUrl)
         if (disposed || failed) return
         const ExternalApi = window.JitsiMeetExternalAPI
         if (!ExternalApi) {
           resetJitsiScript(launch.scriptUrl)
-          throw new Error('Trình gọi video chưa sẵn sàng. Hãy thử lại.')
+          throw new Error(tl('Trình gọi video chưa sẵn sàng. Hãy thử lại.', 'The video call is not ready yet. Please try again.'))
         }
 
         const toolbarButtons = jitsiClassroomToolbarButtons(canShareScreen)
@@ -531,7 +534,7 @@ export function JitsiClassroom({
           parentNode,
           width: '100%',
           height: '100%',
-          lang: 'vi',
+          lang: tl('vi', 'en'),
           userInfo: { displayName },
           ...(launch.jwt ? { jwt: launch.jwt } : {}),
           onload: () => {
@@ -540,7 +543,7 @@ export function JitsiClassroom({
             updateState('joining')
           },
           configOverwrite: {
-            defaultLanguage: 'vi',
+            defaultLanguage: tl('vi', 'en'),
             disableInviteFunctions: true,
             disableRemoteMute: true,
             disableThirdPartyRequests: true,
@@ -565,7 +568,7 @@ export function JitsiClassroom({
 
         const iframe = api.getIFrame?.()
         if (iframe) {
-          iframe.title = `Lớp học trực tuyến của ${displayName}`
+          iframe.title = tl(`Lớp học trực tuyến của ${displayName}`, `Online class for ${displayName}`)
           iframe.setAttribute(
             'allow',
             canShareScreen
@@ -577,7 +580,7 @@ export function JitsiClassroom({
 
         addListener('browserSupport', (payload) => {
           if (isRecord(payload) && payload.supported === false) {
-            fail('Trình duyệt này chưa hỗ trợ gọi video. Hãy mở bằng Chrome hoặc Edge mới nhất.')
+            fail(tl('Trình duyệt này chưa hỗ trợ gọi video. Hãy mở bằng Chrome hoặc Edge mới nhất.', 'This browser does not support video calls. Please use the latest Chrome or Edge.'))
           }
         })
         addListener('videoConferenceJoined', (payload) => {
@@ -662,7 +665,7 @@ export function JitsiClassroom({
         addListener('errorOccurred', (payload) => {
           const event = isRecord(payload) ? payload : null
           const error = event && isRecord(event.error) ? event.error : event
-          const message = readString(error?.message) || 'Cuộc gọi gặp lỗi. Vui lòng tải lại trang để vào lại.'
+          const message = readString(error?.message) || tl('Cuộc gọi gặp lỗi. Vui lòng tải lại trang để vào lại.', 'The call ran into a problem. Please reload the page to rejoin.')
           if (error?.isFatal === true) {
             // Theo IFrame API, lỗi fatal đã kích hoạt lớp reconnect của Jitsi.
             // Không dispose iframe ở đây vì sẽ cắt luôn cơ chế tự nối lại khi
@@ -675,7 +678,7 @@ export function JitsiClassroom({
 
         callbackRef.current.onApiReady?.(api)
       } catch (error) {
-        fail(error instanceof Error ? error.message : 'Không thể khởi tạo cuộc gọi video.')
+        fail(error instanceof Error ? error.message : tl('Không thể khởi tạo cuộc gọi video.', 'Could not start the video call.'))
       }
     }
 
@@ -705,7 +708,7 @@ export function JitsiClassroom({
   const warningMessages = Object.values(mediaWarnings).filter((message): message is string => Boolean(message))
 
   return (
-    <section className="relative h-full min-h-0 overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.85)]" aria-label="Cuộc gọi video">
+    <section className="relative h-full min-h-0 overflow-hidden rounded-[1.5rem] border border-slate-800 bg-[#070b12] shadow-[0_24px_70px_-48px_rgba(15,23,42,0.85)]" aria-label={tl('Cuộc gọi video', 'Video call')}>
       <div ref={containerRef} className="absolute inset-0" />
 
       {!hasStarted && (
@@ -714,9 +717,9 @@ export function JitsiClassroom({
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 ring-1 ring-amber-200/20">
               <Video className="h-7 w-7 text-amber-300" aria-hidden="true" />
             </span>
-            <h2 className="mt-4 text-lg font-extrabold">Sẵn sàng vào lớp?</h2>
+            <h2 className="mt-4 text-lg font-extrabold">{tl('Sẵn sàng vào lớp?', 'Ready to join?')}</h2>
             <p id="jitsi-start-help" className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-300">
-              Sau khi bấm, phòng học sẽ mở màn hình kiểm tra thiết bị ở trạng thái tắt an toàn. Bạn có thể bật camera, micro rồi bấm Vào lớp trong khung cuộc gọi.
+              {tl('Sau khi bấm, phòng học sẽ mở màn hình kiểm tra thiết bị ở trạng thái tắt an toàn. Bạn có thể bật camera, micro rồi bấm Vào lớp trong khung cuộc gọi.', 'After you click, the classroom opens a device check with your camera and microphone safely off. Turn them on, then click Join in the call window.')}
             </p>
             <button
               type="button"
@@ -725,7 +728,7 @@ export function JitsiClassroom({
               className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffc107] px-5 text-sm font-extrabold text-[#10213a] shadow-[0_12px_30px_-18px_rgba(255,193,7,0.9)] transition hover:bg-[#ffd54f] focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-[#070b12] active:translate-y-px sm:w-auto"
             >
               <Video className="h-5 w-5" aria-hidden="true" />
-              Mở kiểm tra camera, micro
+              {tl('Mở kiểm tra camera, micro', 'Open camera & microphone check')}
             </button>
           </div>
         </div>
@@ -737,8 +740,8 @@ export function JitsiClassroom({
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
               <Loader2 className="h-7 w-7 animate-spin text-amber-300" aria-hidden="true" />
             </span>
-            <p className="mt-4 text-sm font-bold">Đang mở màn hình kiểm tra thiết bị</p>
-            <p className="mt-1 text-xs text-slate-400">Vui lòng chờ trong giây lát.</p>
+            <p className="mt-4 text-sm font-bold">{tl('Đang mở màn hình kiểm tra thiết bị', 'Opening the device check')}</p>
+            <p className="mt-1 text-xs text-slate-400">{tl('Vui lòng chờ trong giây lát.', 'Please wait a moment.')}</p>
           </div>
         </div>
       )}
@@ -749,7 +752,7 @@ export function JitsiClassroom({
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-extrabold">Cần kiểm tra thiết bị</p>
+                <p className="text-sm font-extrabold">{tl('Cần kiểm tra thiết bị', 'Please check your devices')}</p>
                 {warningMessages.map((message) => (
                   <p key={message} className="mt-1 text-xs leading-5 text-slate-200">{message}</p>
                 ))}
@@ -759,7 +762,7 @@ export function JitsiClassroom({
                   className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-200/30 bg-amber-300 px-3 text-xs font-extrabold text-[#10213a] hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-slate-950 active:translate-y-px"
                 >
                   <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                  Thử lại cuộc gọi
+                  {tl('Thử lại cuộc gọi', 'Retry call')}
                 </button>
               </div>
             </div>
@@ -771,7 +774,7 @@ export function JitsiClassroom({
         <div className="absolute inset-0 flex items-center justify-center bg-[#070b12] px-6 text-white">
           <div className="max-w-md text-center">
             <AlertTriangle className="mx-auto h-9 w-9 text-amber-300" />
-            <p className="mt-4 text-base font-extrabold">Chưa thể mở cuộc gọi</p>
+            <p className="mt-4 text-base font-extrabold">{tl('Chưa thể mở cuộc gọi', 'The call could not be opened')}</p>
             <p className="mt-2 text-sm leading-6 text-slate-300">{errorMessage}</p>
             <button
               type="button"
@@ -779,7 +782,7 @@ export function JitsiClassroom({
               className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#ffc107] px-4 text-sm font-extrabold text-[#10213a] hover:bg-[#ffd54f] focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-[#070b12] active:translate-y-px"
             >
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Thử lại cuộc gọi
+              {tl('Thử lại cuộc gọi', 'Retry call')}
             </button>
           </div>
         </div>
@@ -789,7 +792,7 @@ export function JitsiClassroom({
         <div className="absolute inset-0 flex items-center justify-center bg-[#070b12] px-6 text-white">
           <div className="max-w-md text-center">
             <Video className="mx-auto h-10 w-10 text-amber-300" aria-hidden="true" />
-            <p className="mt-4 text-base font-extrabold">Bạn đã rời cuộc gọi</p>
+            <p className="mt-4 text-base font-extrabold">{tl('Bạn đã rời cuộc gọi', 'You left the call')}</p>
             <p className="mt-2 text-sm leading-6 text-slate-300">{endedDescription}</p>
             <button
               type="button"
@@ -797,14 +800,14 @@ export function JitsiClassroom({
               className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#ffc107] px-4 text-sm font-extrabold text-[#10213a] hover:bg-[#ffd54f] focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-offset-2 focus:ring-offset-[#070b12] active:translate-y-px"
             >
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Vào lại cuộc gọi
+              {tl('Vào lại cuộc gọi', 'Rejoin call')}
             </button>
           </div>
         </div>
       )}
 
       <p className="sr-only" aria-live="polite">
-        {hasStarted && state === 'joining' ? 'Màn hình kiểm tra camera và micro đã sẵn sàng. Hãy hoàn tất các bước trong khung cuộc gọi.' : ''}
+        {hasStarted && state === 'joining' ? tl('Màn hình kiểm tra camera và micro đã sẵn sàng. Hãy hoàn tất các bước trong khung cuộc gọi.', 'The camera and microphone check is ready. Finish the steps in the call window.') : ''}
       </p>
     </section>
   )

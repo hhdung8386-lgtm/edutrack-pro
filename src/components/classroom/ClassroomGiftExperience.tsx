@@ -14,6 +14,7 @@ import {
   type OnlineClassroomGiftType,
 } from '@/lib/onlineClassroomGifts'
 import './ClassroomGiftExperience.css'
+import { tl } from '@/stores/languageStore'
 
 type GiftIcon = ComponentType<LucideProps>
 
@@ -44,7 +45,7 @@ export function ClassroomGiftTray({
   onSend,
 }: ClassroomGiftTrayProps) {
   if (!canSend) return null
-  const safeStudentName = studentName.trim() || 'học viên'
+  const safeStudentName = studentName.trim() || tl('học viên', 'the student')
 
   return (
     <section
@@ -55,16 +56,16 @@ export function ClassroomGiftTray({
         <div className="min-w-0">
           <h2 id="classroom-gift-tray-title" className="flex items-center gap-2 text-sm font-extrabold text-slate-900">
             <Gift className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-            Tặng lời khen cho {safeStudentName}
+            {tl('Tặng lời khen cho', 'Send praise to')} {safeStudentName}
           </h2>
           <p className="mt-0.5 text-xs font-medium text-slate-600">
-            Quà chỉ tạo hiệu ứng trong lớp, không cộng kim cương và không ảnh hưởng lương.
+            {tl('Quà chỉ tạo hiệu ứng trong lớp, không cộng kim cương và không ảnh hưởng lương.', 'Gifts are just an in-class effect – no diamonds are added and pay is not affected.')}
           </p>
         </div>
         {loading && (
           <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-amber-800">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            Đồng bộ
+            {tl('Đồng bộ', 'Synced')}
           </span>
         )}
       </div>
@@ -80,13 +81,13 @@ export function ClassroomGiftTray({
               disabled={Boolean(sendingGiftType)}
               onClick={() => void onSend(item.type)}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55 motion-reduce:transform-none"
-              aria-label={`Tặng ${item.title} cho ${safeStudentName}`}
+              aria-label={tl(`Tặng ${item.title} cho ${safeStudentName}`, `Give ${item.title} to ${safeStudentName}`)}
               title={item.title}
             >
               {isSending
                 ? <Loader2 className="h-4 w-4 animate-spin text-amber-600" aria-hidden="true" />
                 : <Icon className="h-4 w-4 text-amber-600" strokeWidth={2.25} aria-hidden="true" />}
-              <span>{isSending ? 'Đang gửi' : item.shortLabel}</span>
+              <span>{isSending ? tl('Đang gửi', 'Sending') : item.shortLabel}</span>
             </button>
           )
         })}
@@ -94,7 +95,7 @@ export function ClassroomGiftTray({
 
       {(sendError || syncWarning) && (
         <p className="mt-2.5 text-xs font-semibold text-rose-700" role="alert">
-          {sendError || `Mất tín hiệu đồng bộ quà: ${syncWarning}`}
+          {sendError || `${tl('Mất tín hiệu đồng bộ quà', 'Gift sync lost')}: ${syncWarning}`}
         </p>
       )}
     </section>
@@ -124,7 +125,7 @@ export function ClassroomGiftOverlay({ gift, pendingGiftCount = 0 }: ClassroomGi
   return (
     <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-live="polite" aria-atomic="true">
       <p className="sr-only">
-        {gift.senderName} tặng {gift.title} cho {gift.recipientName}. {gift.message}
+        {tl(`${gift.senderName} tặng ${gift.title} cho ${gift.recipientName}.`, `${gift.senderName} gave ${gift.title} to ${gift.recipientName}.`)} {gift.message}
       </p>
       <div key={gift.id} className="classroom-gift-stage absolute inset-x-4 bottom-[14%] mx-auto w-fit max-w-[calc(100vw-2rem)]">
         <div className="classroom-gift-halo" aria-hidden="true" />
@@ -146,13 +147,13 @@ export function ClassroomGiftOverlay({ gift, pendingGiftCount = 0 }: ClassroomGi
         </div>
         <div className="classroom-gift-card relative mt-3 min-w-[260px] max-w-sm rounded-2xl border border-white/20 bg-slate-950/90 px-5 py-3.5 text-center text-white shadow-2xl shadow-amber-950/30 backdrop-blur-md">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
-            {gift.senderName} tặng {gift.recipientName}
+            {tl(`${gift.senderName} tặng ${gift.recipientName}`, `${gift.senderName} → ${gift.recipientName}`)}
           </p>
           <p className="mt-1 text-lg font-black tracking-tight text-white">{gift.title}</p>
           <p className="mt-0.5 text-sm font-semibold text-slate-200">{gift.message}</p>
           {pendingGiftCount > 0 && (
             <p className="mt-2 text-[11px] font-semibold text-amber-200">
-              Còn {pendingGiftCount} lời khen đang chờ
+              {tl(`Còn ${pendingGiftCount} lời khen đang chờ`, `${pendingGiftCount} more praise waiting`)}
             </p>
           )}
         </div>

@@ -81,6 +81,11 @@ import {
 } from '@/lib/trialScreenShare'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
+import { useLang, useLanguageStore } from '@/stores/languageStore'
+import { localizeClassroomServerMessage } from '@/lib/classroomServerMessagesEn'
+
+/** Chữ theo ngôn ngữ hiện tại (dùng được ngoài component); các component gọi useLang() để vẽ lại khi đổi. */
+const tl = (vi: string, en: string) => (useLanguageStore.getState().lang === 'en' ? en : vi)
 
 const EMPTY_BOARD: ValidatedBoardSnapshot = {
   version: 0,
@@ -121,10 +126,10 @@ type IncomingBoardImage = {
   sentAt: number
 }
 
-const GIFT_META: Record<GiftKind, { label: string; icon: string; message: string }> = {
-  trophy: { label: 'Cúp +5', icon: '🏆', message: 'Tuyệt vời! Bạn nhận được 5 cúp' },
-  star: { label: 'Ngôi sao', icon: '⭐', message: 'Một ngôi sao cho câu trả lời hay' },
-  heart: { label: 'Trái tim', icon: '💛', message: 'Cố gắng rất tốt, tiếp tục nhé!' },
+const GIFT_META: Record<GiftKind, { label: string; icon: string; message: string; labelEn: string; messageEn: string }> = {
+  trophy: { label: 'Cúp +5', icon: '🏆', message: 'Tuyệt vời! Bạn nhận được 5 cúp', labelEn: 'Trophy +5', messageEn: 'Amazing! You earned 5 trophies' },
+  star: { label: 'Ngôi sao', icon: '⭐', message: 'Một ngôi sao cho câu trả lời hay', labelEn: 'Star', messageEn: 'A star for a great answer' },
+  heart: { label: 'Trái tim', icon: '💛', message: 'Cố gắng rất tốt, tiếp tục nhé!', labelEn: 'Heart', messageEn: 'Great effort, keep going!' },
 }
 
 function isManager(role: OnlineClassroomRole): boolean {
@@ -132,17 +137,17 @@ function isManager(role: OnlineClassroomRole): boolean {
 }
 
 function roleLabel(role: OnlineClassroomRole): string {
-  if (role === 'admin') return 'Admin điều phối'
-  if (role === 'teacher') return 'Gia sư'
-  return 'Học viên'
+  if (role === 'admin') return tl('Admin điều phối', 'Admin (host)')
+  if (role === 'teacher') return tl('Gia sư', 'Tutor')
+  return tl('Học viên', 'Student')
 }
 
 function connectionLabel(state: JitsiConnectionState): string {
-  if (state === 'connected') return 'Kết nối ổn định'
-  if (state === 'joining') return 'Đang vào lớp'
-  if (state === 'ended') return 'Đã rời lớp'
-  if (state === 'error') return 'Mất kết nối'
-  return 'Đang chuẩn bị'
+  if (state === 'connected') return tl('Kết nối ổn định', 'Connected')
+  if (state === 'joining') return tl('Đang vào lớp', 'Joining')
+  if (state === 'ended') return tl('Đã rời lớp', 'Left the class')
+  if (state === 'error') return tl('Mất kết nối', 'Connection lost')
+  return tl('Đang chuẩn bị', 'Preparing')
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -243,14 +248,15 @@ async function compressClipboardImage(blob: Blob): Promise<string> {
 }
 
 function ClassroomLoading() {
+  useLang()
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6f8fb] px-5">
       <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-xl shadow-slate-900/5">
         <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
           <RefreshCw className="h-7 w-7 animate-spin text-amber-600" />
         </span>
-        <h1 className="mt-4 text-lg font-black text-[#10213a]">Đang chuẩn bị phòng học thử</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">Hệ thống đang xác nhận quyền và tạo kết nối riêng tư.</p>
+        <h1 className="mt-4 text-lg font-black text-[#10213a]">{tl('Đang chuẩn bị phòng học thử', 'Preparing the trial classroom')}</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{tl('Hệ thống đang xác nhận quyền và tạo kết nối riêng tư.', 'Checking access and creating a private connection.')}</p>
       </div>
     </div>
   )
@@ -275,7 +281,7 @@ function ClassroomStatePage({
           <Video className="h-7 w-7 text-amber-600" />
         </span>
         <h1 className="mt-4 text-xl font-black text-[#10213a]">{title}</h1>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{message}</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{localizeClassroomServerMessage(message)}</p>
         {actionLabel && onAction && (
           <Button className="mt-6 bg-[#10213a] hover:bg-[#1b3558]" onClick={onAction}>
             <RefreshCw className="h-4 w-4" />
@@ -318,12 +324,12 @@ function GuestJoinCard({
           <div className="relative max-w-xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs font-black text-emerald-200">
               <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              Trial Class · phòng chờ an toàn
+              {tl('Trial Class · phòng chờ an toàn', 'Trial Class · secure waiting room')}
             </span>
-            <h1 className="mt-5 text-4xl font-black leading-tight">Học trực tiếp ngay trên 123English.</h1>
-            <p className="mt-4 max-w-lg text-base leading-7 text-slate-300">Camera, micro, chia sẻ màn hình và bảng trắng tương tác nằm trong cùng một không gian học.</p>
+            <h1 className="mt-5 text-4xl font-black leading-tight">{tl('Học trực tiếp ngay trên 123English.', 'Learn live, right on 123English.')}</h1>
+            <p className="mt-4 max-w-lg text-base leading-7 text-slate-300">{tl('Camera, micro, chia sẻ màn hình và bảng trắng tương tác nằm trong cùng một không gian học.', 'Camera, microphone, screen sharing and an interactive whiteboard – all in one learning space.')}</p>
           </div>
-          <p className="relative text-xs font-semibold text-slate-400">Link này không tạo booking, không trừ phút học và không phát sinh lương.</p>
+          <p className="relative text-xs font-semibold text-slate-400">{tl('Link này không tạo booking, không trừ phút học và không phát sinh lương.', 'This link does not create a booking, use lesson minutes or generate pay.')}</p>
         </div>
 
         <div className="flex items-center px-5 py-8 sm:px-10 lg:px-12">
@@ -332,10 +338,10 @@ function GuestJoinCard({
             <span className="mt-8 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 lg:mt-0">
               <Video className="h-6 w-6" />
             </span>
-            <h2 className="mt-5 text-2xl font-black text-[#10213a]">Sẵn sàng vào lớp?</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Nhập tên để gia sư nhận ra bạn. Sau đó bạn sẽ chờ gia sư cho phép vào phòng.</p>
+            <h2 className="mt-5 text-2xl font-black text-[#10213a]">{tl('Sẵn sàng vào lớp?', 'Ready to join?')}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{tl('Nhập tên để gia sư nhận ra bạn. Sau đó bạn sẽ chờ gia sư cho phép vào phòng.', 'Enter your name so the tutor can recognise you. You will then wait for the tutor to let you in.')}</p>
 
-            <label className="mt-7 block text-sm font-extrabold text-slate-700" htmlFor="trial-display-name">Tên hiển thị</label>
+            <label className="mt-7 block text-sm font-extrabold text-slate-700" htmlFor="trial-display-name">{tl('Tên hiển thị', 'Display name')}</label>
             <input
               id="trial-display-name"
               value={name}
@@ -343,10 +349,10 @@ function GuestJoinCard({
               maxLength={80}
               autoComplete="name"
               autoFocus
-              placeholder="Ví dụ: Nguyễn Minh Anh"
+              placeholder={tl('Ví dụ: Nguyễn Minh Anh', 'e.g. Anna Smith')}
               className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
             />
-            <p className="mt-2 text-xs text-slate-400">Mã phòng: {roomId.slice(0, 12).toUpperCase()}</p>
+            <p className="mt-2 text-xs text-slate-400">{tl('Mã phòng:', 'Room code:')} {roomId.slice(0, 12).toUpperCase()}</p>
 
             {error && (
               <div className="mt-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-semibold text-rose-800" role="alert">
@@ -364,9 +370,9 @@ function GuestJoinCard({
               className="mt-6 bg-[#10213a] font-black hover:bg-[#1b3558]"
             >
               <Video className="h-5 w-5" />
-              Tiếp tục vào phòng học
+              {tl('Tiếp tục vào phòng học', 'Continue to the classroom')}
             </Button>
-            <p className="mt-5 text-center text-xs leading-5 text-slate-400">Khi tiếp tục, trình duyệt sẽ hỏi quyền camera và micro. Bạn có thể tắt từng thiết bị trước khi vào lớp.</p>
+            <p className="mt-5 text-center text-xs leading-5 text-slate-400">{tl('Khi tiếp tục, trình duyệt sẽ hỏi quyền camera và micro. Bạn có thể tắt từng thiết bị trước khi vào lớp.', 'When you continue, your browser will ask for camera and microphone access. You can turn each one off before joining.')}</p>
           </form>
         </div>
       </div>
@@ -375,6 +381,7 @@ function GuestJoinCard({
 }
 
 function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
+  useLang()
   const { user, role: authRole } = useAuthStore()
   const authenticatedManager = Boolean(user && (authRole === 'admin' || authRole === 'teacher'))
   const initialGuestName = useMemo(() => {
@@ -495,7 +502,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       sentAt: background.sentAt,
     }).map(serializeTrialBoardImageMessage)
     if (messages.length === 0) {
-      toast.error('Ảnh chụp vượt giới hạn đồng bộ của bảng trắng.')
+      toast.error(tl('Ảnh chụp vượt giới hạn đồng bộ của bảng trắng.', 'The image is too large to sync to the whiteboard.'))
       return
     }
     await broadcastJitsiTextMessages(apiRef.current, messages, localParticipantIdRef.current)
@@ -520,7 +527,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
 
   const loadAccess = useCallback(async (displayName?: string) => {
     if (!/^[A-Za-z0-9_-]{16,180}$/.test(trialClassId)) {
-      setPageError('Link phòng học không hợp lệ.')
+      setPageError(tl('Link phòng học không hợp lệ.', 'This classroom link is not valid.'))
       setLoadState('error')
       return
     }
@@ -536,7 +543,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       setLoadState('ready')
     } catch (error) {
       const message = onlineTrialClassErrorMessage(error)
-      if (/đã kết thúc|không còn/i.test(message)) setLoadState('ended')
+      if (/đã kết thúc|không còn|ended|no longer/i.test(message)) setLoadState('ended')
       else {
         setPageError(message)
         setLoadState('error')
@@ -589,9 +596,9 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(joinUrl)
-      toast.success('Đã sao chép link phòng học. Một link dùng cho cả gia sư và học viên.')
+      toast.success(tl('Đã sao chép link phòng học. Một link dùng cho cả gia sư và học viên.', 'Classroom link copied. The same link works for both tutor and student.'))
     } catch {
-      window.prompt('Sao chép link phòng học:', joinUrl)
+      window.prompt(tl('Sao chép link phòng học:', 'Copy the classroom link:'), joinUrl)
     }
   }
 
@@ -603,7 +610,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
     const capture = api?.captureLargeVideoScreenshot
     if (!api || !capture) {
       setScreenFrameState('error')
-      setScreenFrameError('Trình gọi video chưa hỗ trợ lấy khung trình chiếu để chú thích.')
+      setScreenFrameError(tl('Trình gọi video chưa hỗ trợ lấy khung trình chiếu để chú thích.', 'The video call cannot capture the shared screen for annotation yet.'))
       return
     }
     const presenterId = shareAtCaptureStart.participantIds[0]
@@ -633,7 +640,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
           screenShareStateRef.current.active,
         )) return
         if (!isSafeScreenFrameUrl(result?.dataURL)) {
-          throw new Error(result?.error || 'Chưa nhận được hình ảnh trình chiếu.')
+          throw new Error(result?.error || tl('Chưa nhận được hình ảnh trình chiếu.', 'No shared-screen image received yet.'))
         }
         screenFrameUrlRef.current = result.dataURL
         setScreenFrameUrl(result.dataURL)
@@ -646,7 +653,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
           screenShareStateRef.current.active,
         )) return
         setScreenFrameState(screenFrameUrlRef.current ? 'ready' : 'error')
-        setScreenFrameError(error instanceof Error ? error.message : 'Chưa làm mới được khung trình chiếu.')
+        setScreenFrameError(error instanceof Error ? error.message : tl('Chưa làm mới được khung trình chiếu.', 'Could not refresh the shared screen.'))
       } finally {
         try {
           const currentShare = screenShareStateRef.current
@@ -670,11 +677,11 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
 
   const applyClipboardImage = useCallback(async (blob: Blob, sourceName = 'Ảnh chụp màn hình') => {
     if (!access || (access.role === 'student' && !boardRef.current.studentCanWrite)) {
-      toast.warning('Gia sư đang khóa quyền thao tác trên bảng trắng.')
+      toast.warning(tl('Gia sư đang khóa quyền thao tác trên bảng trắng.', 'The tutor has locked the whiteboard.'))
       return
     }
     if (!dataChannelReady) {
-      toast.warning('Hãy vào cuộc gọi và chờ kết nối đồng bộ trước khi dán ảnh.')
+      toast.warning(tl('Hãy vào cuộc gọi và chờ kết nối đồng bộ trước khi dán ảnh.', 'Join the call and wait for sync before pasting an image.'))
       return
     }
     if (pastingImageRef.current) return
@@ -693,11 +700,11 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       incomingBoardImagesRef.current.clear()
       updateBoardBackground(background)
       await broadcastBoardBackground(background)
-      toast.success('Đã dán và đồng bộ ảnh chụp lên bảng trắng. Hai bên có thể viết trực tiếp lên ảnh.')
+      toast.success(tl('Đã dán và đồng bộ ảnh chụp lên bảng trắng. Hai bên có thể viết trực tiếp lên ảnh.', 'Image pasted and synced to the whiteboard. Both sides can write on it.'))
     } catch (error) {
       toast.error(error instanceof Error && error.message === 'CLIPBOARD_IMAGE_TOO_LARGE'
-        ? 'Ảnh chụp quá lớn để đồng bộ an toàn. Hãy chụp riêng vùng nội dung cần học rồi dán lại.'
-        : 'Chưa đọc được ảnh trong clipboard. Hãy chụp màn hình rồi thử Ctrl + V lại.')
+        ? tl('Ảnh chụp quá lớn để đồng bộ an toàn. Hãy chụp riêng vùng nội dung cần học rồi dán lại.', 'The image is too large to sync safely. Capture just the part you need and paste again.')
+        : tl('Chưa đọc được ảnh trong clipboard. Hãy chụp màn hình rồi thử Ctrl + V lại.', 'Could not read an image from the clipboard. Take a screenshot and try Ctrl + V again.'))
     } finally {
       pastingImageRef.current = false
       setPastingImage(false)
@@ -714,9 +721,9 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
         await applyClipboardImage(await item.getType(imageType), 'Ảnh từ clipboard')
         return
       }
-      toast.warning('Clipboard chưa có ảnh. Hãy chụp màn hình trước rồi bấm dán ảnh.')
+      toast.warning(tl('Clipboard chưa có ảnh. Hãy chụp màn hình trước rồi bấm dán ảnh.', 'There is no image on the clipboard. Take a screenshot first, then paste.'))
     } catch {
-      toast.warning('Trình duyệt chưa cho đọc clipboard bằng nút. Hãy dùng Ctrl + V khi bảng trắng đang mở.')
+      toast.warning(tl('Trình duyệt chưa cho đọc clipboard bằng nút. Hãy dùng Ctrl + V khi bảng trắng đang mở.', 'Your browser does not allow reading the clipboard from a button. Use Ctrl + V while the whiteboard is open.'))
     }
   }, [applyClipboardImage])
 
@@ -735,7 +742,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
         localParticipantIdRef.current,
       )
     }
-    toast.info('Đã gỡ ảnh nền khỏi bảng trắng.')
+    toast.info(tl('Đã gỡ ảnh nền khỏi bảng trắng.', 'Background image removed from the whiteboard.'))
   }, [access, trialClassId, updateBoardBackground])
 
   useEffect(() => {
@@ -825,7 +832,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
     const next = sanitizeBoardSnapshot({ ...current, version: current.version + 1, studentCanWrite: enabled })
     updateBoard(next)
     broadcastSnapshot(next)
-    toast.info(enabled ? 'Học viên có thể viết trên bảng.' : 'Đã khóa quyền viết của học viên.')
+    toast.info(enabled ? tl('Học viên có thể viết trên bảng.', 'The student can write on the board.') : tl('Đã khóa quyền viết của học viên.', 'The student can no longer write on the board.'))
   }
 
   const broadcastScreenSnapshot = useCallback((snapshot = screenBoardRef.current) => {
@@ -911,7 +918,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
     const next = sanitizeBoardSnapshot({ ...current, version: current.version + 1, studentCanWrite: enabled })
     updateScreenBoard(next)
     broadcastScreenSnapshot(next)
-    toast.info(enabled ? 'Học viên có thể chú thích lên bài trình chiếu.' : 'Đã khóa quyền chú thích của học viên.')
+    toast.info(enabled ? tl('Học viên có thể chú thích lên bài trình chiếu.', 'The student can annotate the shared screen.') : tl('Đã khóa quyền chú thích của học viên.', 'Student annotation is locked.'))
   }
 
   const resolveSenderModerator = async (senderId: string, fresh = false): Promise<boolean | null> => {
@@ -987,7 +994,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
           sourceName: 'Ảnh bài học được đồng bộ',
           sentAt: imageMessage.sentAt,
         })
-        toast.info('Ảnh bài học mới đã được đồng bộ lên bảng trắng.')
+        toast.info(tl('Ảnh bài học mới đã được đồng bộ lên bảng trắng.', 'A new lesson image was synced to the whiteboard.'))
       }
       return
     }
@@ -1172,7 +1179,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
 
   const refreshSharedScreenFrame = useCallback(async () => {
     if (!manager || !screenShareStateRef.current.local) {
-      toast.warning('Chỉ gia sư đang chia sẻ mới có thể đổi khung bài giảng cho cả lớp.')
+      toast.warning(tl('Chỉ gia sư đang chia sẻ mới có thể đổi khung bài giảng cho cả lớp.', 'Only the tutor who is sharing can change the lesson frame for everyone.'))
       return
     }
     await captureScreenShareFrame()
@@ -1204,9 +1211,9 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       }
       setShowEndConfirm(false)
       setLoadState('ended')
-      toast.success('Đã kết thúc phòng học thử cho tất cả mọi người.')
+      toast.success(tl('Đã kết thúc phòng học thử cho tất cả mọi người.', 'The trial classroom has been ended for everyone.'))
     } catch (error) {
-      toast.error(onlineTrialClassErrorMessage(error))
+      toast.error(localizeClassroomServerMessage(onlineTrialClassErrorMessage(error)))
     } finally {
       setEndingRoom(false)
     }
@@ -1225,7 +1232,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
   }
   if (loadState === 'idle' || loadState === 'loading') return <ClassroomLoading />
   if (loadState === 'ended') {
-    return <ClassroomStatePage title="Phòng học đã kết thúc" message="Link này đã được Admin hoặc gia sư đóng. Trial Class không phát sinh buổi dạy, phút học hoặc lương." />
+    return <ClassroomStatePage title={tl('Phòng học đã kết thúc', 'This class has ended')} message={tl('Link này đã được Admin hoặc gia sư đóng. Trial Class không phát sinh buổi dạy, phút học hoặc lương.', 'This link was closed by the Admin or tutor. Trial classes do not create lessons, use minutes or generate pay.')} />
   }
   if (loadState === 'error' || !access) {
     if (!authenticatedManager) {
@@ -1243,7 +1250,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
         />
       )
     }
-    return <ClassroomStatePage title="Chưa thể mở phòng học" message={pageError || 'Phòng học chưa sẵn sàng.'} actionLabel="Thử lại" onAction={() => void loadAccess()} />
+    return <ClassroomStatePage title={tl('Chưa thể mở phòng học', 'The classroom cannot be opened yet')} message={pageError || tl('Phòng học chưa sẵn sàng.', 'The classroom is not ready yet.')} actionLabel={tl('Thử lại', 'Try again')} onAction={() => void loadAccess()} />
   }
   const screenSnapshotAuthority = manager && screenShareState.active && screenShareState.local
 
@@ -1256,16 +1263,16 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
             <span className="hidden h-8 w-px bg-slate-200 sm:block" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-base font-black sm:text-lg">{access.title || 'Phòng học thử trực tuyến'}</h1>
+                <h1 className="truncate text-base font-black sm:text-lg">{access.title || tl('Phòng học thử trực tuyến', 'Online trial classroom')}</h1>
                 <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-sky-800">Trial Class</span>
               </div>
-              <p className="mt-0.5 truncate text-xs font-bold text-slate-500">{roleLabel(access.role)} · không liên kết booking</p>
+              <p className="mt-0.5 truncate text-xs font-bold text-slate-500">{roleLabel(access.role)} · {tl('không liên kết booking', 'not linked to a booking')}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             {conferenceJoined && (
-              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" title="Chỉ là thời gian đang ở trong phòng, không dùng tính lương">
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" title={tl('Chỉ là thời gian đang ở trong phòng, không dùng tính lương', 'Time in the room only – not used for pay')}>
                 <Clock3 className="h-4 w-4 text-amber-300" />
                 {formatElapsed(elapsedSeconds)}
               </span>
@@ -1277,12 +1284,12 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
             {manager && (
               <Button variant="outline" size="sm" onClick={() => void handleCopyLink()} className="border-sky-200 bg-sky-50 text-sky-800">
                 <Copy className="h-4 w-4" />
-                <span className="hidden sm:inline">Sao chép link lớp</span>
+                <span className="hidden sm:inline">{tl('Sao chép link lớp', 'Copy class link')}</span>
               </Button>
             )}
             {manager && (
               <Button variant="danger" size="sm" onClick={() => setShowEndConfirm(true)}>
-                Kết thúc lớp
+                {tl('Kết thúc lớp', 'End class')}
               </Button>
             )}
           </div>
@@ -1292,7 +1299,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       <main className={`mx-auto max-w-[1800px] px-3 py-3 sm:px-5 sm:py-5 ${meetingExpanded ? 'max-w-none p-0' : ''}`}>
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>Trial Class độc lập: thời gian hiển thị chỉ hỗ trợ theo dõi cuộc gọi, không cộng/trừ phút, không tạo buổi dạy và không tính lương.</p>
+          <p>{tl('Trial Class độc lập: thời gian hiển thị chỉ hỗ trợ theo dõi cuộc gọi, không cộng/trừ phút, không tạo buổi dạy và không tính lương.', 'Standalone trial class: the timer only helps you follow the call. It does not add or deduct minutes, create a lesson or count towards pay.')}</p>
         </div>
 
         <section className={`${meetingExpanded ? 'fixed inset-0 z-[80] flex h-[100dvh] flex-col rounded-none p-2' : 'relative flex flex-col rounded-[1.75rem] p-2.5'} overflow-hidden bg-[#080b10] text-white shadow-[0_30px_80px_-48px_rgba(2,6,23,0.95)]`}>
@@ -1300,8 +1307,8 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
             <div className="flex min-w-0 items-center gap-3">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${screenShareState.active ? 'animate-pulse bg-emerald-400' : connectionState === 'connected' ? 'bg-sky-400' : 'bg-slate-500'}`} />
               <div className="min-w-0">
-                <p className="truncate text-sm font-black">{screenShareState.active ? 'Đang trình chiếu bài học' : 'Lớp học thử trực tiếp 123English'}</p>
-                {!controlsCollapsed && <p className="truncate text-[11px] font-semibold text-slate-400">{remoteParticipantCount + (conferenceJoined ? 1 : 0)} người · {roleLabel(access.role)}</p>}
+                <p className="truncate text-sm font-black">{screenShareState.active ? tl('Đang trình chiếu bài học', 'Presenting the lesson') : tl('Lớp học thử trực tiếp 123English', '123English live trial class')}</p>
+                {!controlsCollapsed && <p className="truncate text-[11px] font-semibold text-slate-400">{remoteParticipantCount + (conferenceJoined ? 1 : 0)} {tl('người', 'people')} · {roleLabel(access.role)}</p>}
               </div>
             </div>
 
@@ -1320,7 +1327,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                   className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-45 ${screenShareState.local ? 'bg-rose-500 text-white' : 'bg-emerald-400 text-slate-950 hover:bg-emerald-300'}`}
                 >
                   <MonitorUp className="h-4 w-4" />
-                  <span className="hidden sm:inline">{screenShareState.local ? 'Dừng chia sẻ' : 'Chia sẻ màn hình'}</span>
+                  <span className="hidden sm:inline">{screenShareState.local ? tl('Dừng chia sẻ', 'Stop sharing') : tl('Chia sẻ màn hình', 'Share screen')}</span>
                 </button>
               )}
               {!controlsCollapsed && (
@@ -1331,7 +1338,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                   className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-black hover:bg-white/15 disabled:opacity-45"
                 >
                   <Sparkles className="h-4 w-4 text-fuchsia-300" />
-                  <span className="hidden sm:inline">Hiệu ứng nền</span>
+                  <span className="hidden sm:inline">{tl('Hiệu ứng nền', 'Background effects')}</span>
                 </button>
               )}
               {screenShareState.active && (
@@ -1345,7 +1352,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                   className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black ${screenAnnotationOpen ? 'border-cyan-300 bg-cyan-300 text-slate-950' : 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20'}`}
                 >
                   <PenLine className="h-4 w-4" />
-                  <span className={controlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>Chú thích màn hình</span>
+                  <span className={controlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>{tl('Chú thích màn hình', 'Annotate screen')}</span>
                 </button>
               )}
               <button
@@ -1357,13 +1364,13 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                 className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black ${whiteboardOpen ? 'border-amber-300 bg-amber-300 text-slate-950' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
               >
                 <PenLine className="h-4 w-4" />
-                <span className={controlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>Bảng trắng</span>
+                <span className={controlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>{tl('Bảng trắng', 'Whiteboard')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setControlsCollapsed((current) => !current)}
                 className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/15"
-                aria-label={controlsCollapsed ? 'Hiện điều khiển' : 'Thu gọn điều khiển'}
+                aria-label={controlsCollapsed ? tl('Hiện điều khiển', 'Show controls') : tl('Thu gọn điều khiển', 'Hide controls')}
               >
                 {controlsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
               </button>
@@ -1371,7 +1378,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                 type="button"
                 onClick={() => setMeetingExpanded((current) => !current)}
                 className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 hover:bg-white/15"
-                aria-label={meetingExpanded ? 'Thoát toàn màn hình' : 'Mở toàn màn hình'}
+                aria-label={meetingExpanded ? tl('Thoát toàn màn hình', 'Exit full screen') : tl('Mở toàn màn hình', 'Full screen')}
               >
                 {meetingExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
@@ -1380,14 +1387,14 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
 
           {manager && knockingParticipants.length > 0 && (
             <div className="mb-2.5 rounded-2xl border border-sky-300/30 bg-sky-400/10 p-3" role="status" aria-live="polite">
-              <p className="flex items-center gap-2 text-xs font-black text-sky-100"><Users className="h-4 w-4" />Có người đang xin vào lớp</p>
+              <p className="flex items-center gap-2 text-xs font-black text-sky-100"><Users className="h-4 w-4" />{tl('Có người đang xin vào lớp', 'Someone is asking to join')}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {knockingParticipants.map((participant) => (
                   <div key={participant.id} className="flex min-w-0 flex-1 basis-[280px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2">
                     <p className="min-w-0 truncate text-sm font-extrabold">{participant.name}</p>
                     <div className="flex shrink-0 gap-2">
-                      <button type="button" onClick={() => handleAnswerKnocking(participant.id, false)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-rose-300/25 bg-rose-500/15 px-3 text-xs font-black text-rose-100 hover:bg-rose-500/25"><UserX className="h-4 w-4" />Từ chối</button>
-                      <button type="button" onClick={() => handleAnswerKnocking(participant.id, true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-black text-slate-950 hover:bg-emerald-300"><UserCheck className="h-4 w-4" />Cho vào</button>
+                      <button type="button" onClick={() => handleAnswerKnocking(participant.id, false)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-rose-300/25 bg-rose-500/15 px-3 text-xs font-black text-rose-100 hover:bg-rose-500/25"><UserX className="h-4 w-4" />{tl('Từ chối', 'Decline')}</button>
+                      <button type="button" onClick={() => handleAnswerKnocking(participant.id, true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-black text-slate-950 hover:bg-emerald-300"><UserCheck className="h-4 w-4" />{tl('Cho vào', 'Admit')}</button>
                     </div>
                   </div>
                 ))}
@@ -1397,10 +1404,10 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
 
           {manager && !controlsCollapsed && conferenceJoined && (
             <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-black text-slate-300"><Gift className="h-4 w-4 text-amber-300" />Tặng động lực:</span>
+              <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-black text-slate-300"><Gift className="h-4 w-4 text-amber-300" />{tl('Tặng động lực:', 'Send a reward:')}</span>
               {(Object.keys(GIFT_META) as GiftKind[]).map((kind) => (
                 <button key={kind} type="button" onClick={() => handleSendGift(kind)} className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 text-xs font-extrabold hover:bg-white/15">
-                  <span aria-hidden="true">{GIFT_META[kind].icon}</span>{GIFT_META[kind].label}
+                  <span aria-hidden="true">{GIFT_META[kind].icon}</span>{tl(GIFT_META[kind].label, GIFT_META[kind].labelEn)}
                 </button>
               ))}
             </div>
@@ -1417,7 +1424,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
               observerMode={access.role === 'admin'}
               canShareScreen={manager}
               manageWaitingRoom={manager}
-              endedDescription="Bảng trắng của Trial Class chỉ đồng bộ trong lúc phiên học còn kết nối. Bạn có thể vào lại nếu lớp chưa bị kết thúc."
+              endedDescription={tl('Bảng trắng của Trial Class chỉ đồng bộ trong lúc phiên học còn kết nối. Bạn có thể vào lại nếu lớp chưa bị kết thúc.', 'The trial-class whiteboard only syncs while the session is connected. You can rejoin if the class has not been ended.')}
               onApiReady={(api) => {
                 apiRef.current = api
                 if (!api) {
@@ -1533,13 +1540,13 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
           </div>
 
           {manager && conferenceJoined && !waitingRoomReady && (
-            <p className="mt-2 text-center text-[11px] font-semibold text-amber-200">Đang kết nối bộ điều khiển phòng chờ; link vẫn được bảo vệ và học viên phải chờ duyệt.</p>
+            <p className="mt-2 text-center text-[11px] font-semibold text-amber-200">{tl('Đang kết nối bộ điều khiển phòng chờ; link vẫn được bảo vệ và học viên phải chờ duyệt.', 'Connecting the waiting-room controls; the link is still protected and students must wait to be admitted.')}</p>
           )}
         </section>
       </main>
 
       {screenAnnotationOpen && screenShareState.active && (
-        <div className="fixed inset-0 z-[95] bg-slate-950/80 p-2 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-label="Chú thích trên màn hình chia sẻ">
+        <div className="fixed inset-0 z-[95] bg-slate-950/80 p-2 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-label={tl('Chú thích trên màn hình chia sẻ', 'Annotate the shared screen')}>
           <div className="mx-auto h-full max-w-[1680px]">
             <ScreenShareAnnotationStage
               frameUrl={screenFrameUrl}
@@ -1549,7 +1556,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
               onRefresh={refreshSharedScreenFrame}
               onReturnToLive={() => setScreenAnnotationOpen(false)}
               showReturnToLiveOnDesktop
-              returnToLiveLabel="Thu nhỏ"
+              returnToLiveLabel={tl('Thu nhỏ', 'Minimise')}
               snapshot={screenBoardSnapshot}
               role={access.role}
               canUndo={screenSnapshotAuthority && screenHistoryAvailability.canUndo}
@@ -1564,7 +1571,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
               onSave={() => {
                 if (!isScreenSnapshotAuthority()) return
                 broadcastScreenSnapshot()
-                toast.success('Đã đồng bộ lớp chú thích tới người đang ở trong phòng.')
+                toast.success(tl('Đã đồng bộ lớp chú thích tới người đang ở trong phòng.', 'Annotations synced to everyone in the room.'))
               }}
             />
           </div>
@@ -1572,27 +1579,27 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       )}
 
       {whiteboardOpen && (
-        <div className="fixed inset-0 z-[100] bg-slate-950/75 p-2 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-label="Bảng trắng tương tác">
+        <div className="fixed inset-0 z-[100] bg-slate-950/75 p-2 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-label={tl('Bảng trắng tương tác', 'Interactive whiteboard')}>
           <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-200 px-4">
               <div className="min-w-0">
-                <p className="truncate text-sm font-black text-[#10213a]">Bảng trắng tương tác</p>
-                <p className="text-[11px] font-semibold text-slate-500">{dataChannelReady ? 'Chụp màn hình rồi Ctrl + V để cả hai cùng viết lên ảnh' : 'Đang chờ kênh đồng bộ cuộc gọi'}</p>
+                <p className="truncate text-sm font-black text-[#10213a]">{tl('Bảng trắng tương tác', 'Interactive whiteboard')}</p>
+                <p className="text-[11px] font-semibold text-slate-500">{dataChannelReady ? tl('Chụp màn hình rồi Ctrl + V để cả hai cùng viết lên ảnh', 'Take a screenshot, then Ctrl + V so you can both write on it') : tl('Đang chờ kênh đồng bộ cuộc gọi', 'Waiting for the call sync channel')}</p>
               </div>
-              <button type="button" onClick={() => setWhiteboardOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Thu nhỏ bảng trắng"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setWhiteboardOpen(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100" aria-label={tl('Thu nhỏ bảng trắng', 'Minimise whiteboard')}><X className="h-5 w-5" /></button>
             </div>
             <div className="min-h-0 flex-1 p-2 sm:p-3">
               <CollaborativeWhiteboard
                 snapshot={boardSnapshot}
                 role={access.role}
                 backgroundImageUrl={boardBackground?.dataUrl}
-                backgroundImageAlt={boardBackground?.sourceName || 'Ảnh bài học trên bảng trắng'}
+                backgroundImageAlt={boardBackground?.sourceName || tl('Ảnh bài học trên bảng trắng', 'Lesson image on the whiteboard')}
                 backgroundImageFit="fill"
                 canUndo={historyAvailability.canUndo}
                 canRedo={historyAvailability.canRedo}
                 saveStatus={dataChannelReady ? 'saved' : 'error'}
                 pendingOperationCount={0}
-                saveActionLabel="Đồng bộ lại cho cả lớp"
+                saveActionLabel={tl('Đồng bộ lại cho cả lớp', 'Re-sync for everyone')}
                 onOperation={handleBoardOperation}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
@@ -1600,7 +1607,7 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                 onStudentCanWriteChange={handleStudentWriteChange}
                 onSave={() => {
                   broadcastSnapshot()
-                  toast.success('Đã đồng bộ bảng trắng tới người đang ở trong phòng.')
+                  toast.success(tl('Đã đồng bộ bảng trắng tới người đang ở trong phòng.', 'Whiteboard synced to everyone in the room.'))
                 }}
                 headerActions={(
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1609,18 +1616,18 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
                       disabled={pastingImage || !dataChannelReady || (access.role === 'student' && !boardSnapshot.studentCanWrite)}
                       onClick={() => void readImageFromClipboard()}
                       className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Chụp màn hình rồi dùng nút này hoặc nhấn Ctrl + V"
+                      title={tl('Chụp màn hình rồi dùng nút này hoặc nhấn Ctrl + V', 'Take a screenshot, then use this button or press Ctrl + V')}
                     >
                       {pastingImage ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
-                      {pastingImage ? 'Đang nén ảnh' : 'Dán ảnh (Ctrl + V)'}
+                      {pastingImage ? tl('Đang nén ảnh', 'Compressing image') : tl('Dán ảnh (Ctrl + V)', 'Paste image (Ctrl + V)')}
                     </button>
                     {boardBackground && (
                       <button type="button" onClick={clearBoardBackground} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
-                        <ImageOff className="h-4 w-4" />Gỡ ảnh
+                        <ImageOff className="h-4 w-4" />{tl('Gỡ ảnh', 'Remove image')}
                       </button>
                     )}
                     <button type="button" onClick={() => setWhiteboardOpen(false)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
-                      <Minimize2 className="h-4 w-4" />Thu nhỏ
+                      <Minimize2 className="h-4 w-4" />{tl(tl('Thu nhỏ', 'Minimise'), 'Minimise')}
                     </button>
                   </div>
                 )}
@@ -1634,8 +1641,8 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
         <div className="pointer-events-none fixed inset-x-4 top-[18%] z-[120] flex justify-center" aria-live="polite">
           <div className="animate-bounce rounded-3xl border border-amber-200/70 bg-slate-950/92 px-6 py-5 text-center text-white shadow-[0_24px_80px_-28px_rgba(245,158,11,.9)] backdrop-blur-xl">
             <div className="text-6xl drop-shadow-lg" aria-hidden="true">{GIFT_META[activeGift.kind].icon}</div>
-            <p className="mt-2 text-lg font-black">{GIFT_META[activeGift.kind].message}</p>
-            <p className="mt-1 text-xs font-semibold text-amber-200">Từ {activeGift.senderName}</p>
+            <p className="mt-2 text-lg font-black">{tl(GIFT_META[activeGift.kind].message, GIFT_META[activeGift.kind].messageEn)}</p>
+            <p className="mt-1 text-xs font-semibold text-amber-200">{tl('Từ', 'From')} {activeGift.senderName}</p>
           </div>
         </div>
       )}
@@ -1643,16 +1650,16 @@ function TrialClassroomRoom({ trialClassId }: { trialClassId: string }) {
       <Modal
         open={showEndConfirm}
         onClose={() => { if (!endingRoom) setShowEndConfirm(false) }}
-        title="Kết thúc Trial Class?"
+        title={tl('Kết thúc Trial Class?', 'End the trial class?')}
         size="sm"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setShowEndConfirm(false)} disabled={endingRoom}>Tiếp tục lớp</Button>
-            <Button variant="danger" loading={endingRoom} onClick={() => void handleEndRoom()}>Kết thúc cho tất cả</Button>
+            <Button variant="outline" onClick={() => setShowEndConfirm(false)} disabled={endingRoom}>{tl('Tiếp tục lớp', 'Keep the class going')}</Button>
+            <Button variant="danger" loading={endingRoom} onClick={() => void handleEndRoom()}>{tl('Kết thúc cho tất cả', 'End for everyone')}</Button>
           </div>
         )}
       >
-        <p className="text-sm leading-6 text-slate-600">Mọi người sẽ rời cuộc gọi và link này không thể dùng để vào lại. Thao tác không tạo buổi dạy, không trừ phút và không tính lương.</p>
+        <p className="text-sm leading-6 text-slate-600">{tl('Mọi người sẽ rời cuộc gọi và link này không thể dùng để vào lại. Thao tác không tạo buổi dạy, không trừ phút và không tính lương.', 'Everyone will leave the call and this link can no longer be used to rejoin. This does not create a lesson, use minutes or count towards pay.')}</p>
       </Modal>
     </div>
   )

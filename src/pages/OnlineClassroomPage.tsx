@@ -78,6 +78,12 @@ import {
 } from '@/lib/onlineClassroom'
 import { formatClassroomElapsed, onlineClassroomMeetingTimer } from '@/lib/bookingTime'
 import { toast } from '@/stores/toastStore'
+import { tl, useLang, useLanguageStore } from '@/stores/languageStore'
+import { ONLINE_CLASSROOM_EN } from '@/pages/onlineClassroomEn'
+import { localizeClassroomServerMessage } from '@/lib/classroomServerMessagesEn'
+
+/** Chữ của phòng học theo ngôn ngữ đang chọn (tra bảng tiếng Anh). */
+const T = (vi: string) => (useLanguageStore.getState().lang === 'en' ? ONLINE_CLASSROOM_EN[vi] ?? vi : vi)
 import { broadcastJitsiTextMessage, type JitsiExternalApi } from '@/lib/jitsiExternalApi'
 import {
   ClassroomRecordingUploadError,
@@ -225,17 +231,17 @@ function formatVietnamClock(raw: string): string {
 }
 
 function roleLabel(role: OnlineClassroomAccess['role']): string {
-  if (role === 'admin') return 'Admin quan sát'
-  if (role === 'teacher') return 'Gia sư'
-  return 'Học viên'
+  if (role === 'admin') return T('Admin quan sát')
+  if (role === 'teacher') return T('Gia sư')
+  return T('Học viên')
 }
 
 function connectionLabel(state: JitsiConnectionState): string {
-  if (state === 'connected') return 'Đã kết nối'
-  if (state === 'joining') return 'Đang vào lớp'
-  if (state === 'ended') return 'Đã rời cuộc gọi'
-  if (state === 'error') return 'Lỗi cuộc gọi'
-  return 'Đang tải'
+  if (state === 'connected') return T('Đã kết nối')
+  if (state === 'joining') return T('Đang vào lớp')
+  if (state === 'ended') return T('Đã rời cuộc gọi')
+  if (state === 'error') return T('Lỗi cuộc gọi')
+  return T('Đang tải')
 }
 
 function recordingMimeType(): string {
@@ -262,6 +268,7 @@ function nestedDomExceptionName(error: unknown): string {
 }
 
 function ClassroomPageSkeleton() {
+  useLang()
   return (
     <div className="min-h-[100dvh] bg-[#f6f8fb] font-[var(--font-quicksand)] text-[#10213a]">
       <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -283,6 +290,7 @@ function ClassroomPageSkeleton() {
 }
 
 function ClassroomErrorPage({ message, onRetry }: { message: string; onRetry: () => void }) {
+  useLang()
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6f8fb] px-4 font-[var(--font-quicksand)] text-[#10213a]">
       <main className="w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-[0_28px_80px_-52px_rgba(16,33,58,0.6)] sm:p-10">
@@ -290,15 +298,15 @@ function ClassroomErrorPage({ message, onRetry }: { message: string; onRetry: ()
         <span className="mx-auto mt-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-100">
           <LockKeyhole className="h-7 w-7" />
         </span>
-        <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">Chưa thể vào lớp học</h1>
-        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{message}</p>
+        <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">{T('Chưa thể vào lớp học')}</h1>
+        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{localizeClassroomServerMessage(message)}</p>
         <div className="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Button onClick={onRetry} className="bg-[#ffc107] text-[#10213a] hover:bg-amber-400 focus:ring-amber-300">
             <RefreshCw className="h-4 w-4" />
-            Thử lại
+            {T('Thử lại')}
           </Button>
           <Link to="/" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-extrabold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300">
-            Về trang chính
+            {T('Về trang chính')}
           </Link>
         </div>
       </main>
@@ -307,6 +315,7 @@ function ClassroomErrorPage({ message, onRetry }: { message: string; onRetry: ()
 }
 
 function ClassroomEndedPage() {
+  useLang()
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6f8fb] px-4 font-[var(--font-quicksand)] text-[#10213a]">
       <main className="w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-[0_28px_80px_-52px_rgba(16,33,58,0.6)] sm:p-10">
@@ -314,12 +323,12 @@ function ClassroomEndedPage() {
         <span className="mx-auto mt-8 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
           <CheckCircle2 className="h-7 w-7" />
         </span>
-        <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">Buổi học đã kết thúc</h1>
+        <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">{T('Buổi học đã kết thúc')}</h1>
         <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
-          Phòng đã đóng theo lịch và không thể vào lại. Nếu có ghi hình, hệ thống tiếp tục hoàn tất bản ghi riêng tư và giữ tối đa 72 giờ.
+          {T('Phòng đã đóng theo lịch và không thể vào lại. Nếu có ghi hình, hệ thống tiếp tục hoàn tất bản ghi riêng tư và giữ tối đa 72 giờ.')}
         </p>
         <Link to="/" className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#ffc107] px-5 text-sm font-black text-[#10213a] hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300">
-          Về trang chính
+          {T('Về trang chính')}
         </Link>
       </main>
     </div>
@@ -327,6 +336,7 @@ function ClassroomEndedPage() {
 }
 
 export function OnlineClassroomPage() {
+  useLang()
   const { bookingId = '' } = useParams<{ bookingId: string }>()
   // The object identity is the route epoch. Unlike a booking-id-only check it
   // also fences a route that is left and later reopened with the same id.
@@ -562,7 +572,7 @@ export function OnlineClassroomPage() {
     const targetBookingId = bookingId
     setLoadStateRouteEpoch(routeEpoch)
     if (!bookingId) {
-      setPageError('Mã buổi học không hợp lệ.')
+      setPageError(T('Mã buổi học không hợp lệ.'))
       setLoadState('error')
       return
     }
@@ -684,7 +694,7 @@ export function OnlineClassroomPage() {
 
   useEffect(() => {
     if (!accessMatchesRoute || !access) return
-    document.title = `${access.subjectName || 'Lớp học trực tuyến'} | 123English`
+    document.title = `${access.subjectName || T('Lớp học trực tuyến')} | 123English`
   }, [access, accessMatchesRoute])
 
   useEffect(() => {
@@ -769,7 +779,7 @@ export function OnlineClassroomPage() {
       return sent
     } catch {
       if (!isRouteScopeActive(scope)) return 0
-      setSyncWarning('Kết nối bảng tạm gián đoạn. Thay đổi sẽ được gửi lại khi có người tham gia.')
+      setSyncWarning(T('Kết nối bảng tạm gián đoạn. Thay đổi sẽ được gửi lại khi có người tham gia.'))
       return 0
     }
   }, [captureRouteScope, isRouteScopeActive])
@@ -875,7 +885,7 @@ export function OnlineClassroomPage() {
             pendingBoardOperationsRef.current = pendingBoardOperationsRef.current
               .filter((item) => item.operation.id !== operation.id)
             setPendingBoardOperationCount(pendingBoardOperationsRef.current.length)
-            setSyncWarning(`Nét vẽ không được hệ thống nhận: ${onlineClassroomErrorMessage(error)}`)
+            setSyncWarning(`${tl('Nét vẽ không được hệ thống nhận', 'The system did not accept the stroke')}: ${localizeClassroomServerMessage(onlineClassroomErrorMessage(error))}`)
             try {
               const latestAccess = await requestOnlineClassroomAccess(scope.bookingId, tokenRef.current || undefined)
               if (!isRouteScopeActive(scope) || latestAccess.bookingId !== scope.bookingId) return
@@ -903,7 +913,7 @@ export function OnlineClassroomPage() {
             }
             continue
           }
-          setSyncWarning(`Nét vẽ đang chờ đồng bộ lên hệ thống: ${onlineClassroomErrorMessage(error)}`)
+          setSyncWarning(`${tl('Nét vẽ đang chờ đồng bộ lên hệ thống', 'Strokes are waiting to sync')}: ${localizeClassroomServerMessage(onlineClassroomErrorMessage(error))}`)
           setPendingBoardOperationCount(pendingBoardOperationsRef.current.length)
           break
         }
@@ -924,11 +934,11 @@ export function OnlineClassroomPage() {
     const previous = boardRef.current
     if (!isRouteScopeActive(scope) || !currentAccess || currentAccess.bookingId !== scope.bookingId) return false
     if (boardMutationRef.current) {
-      toast.info('Bảng đang hoàn tất một thao tác quản lý. Hãy viết tiếp sau giây lát.')
+      toast.info(T('Bảng đang hoàn tất một thao tác quản lý. Hãy viết tiếp sau giây lát.'))
       return false
     }
     if (previous.operations.length >= MAX_BOARD_OPERATIONS) {
-      toast.warning('Bảng đã đạt giới hạn nét vẽ. Gia sư hãy lưu rồi xóa bảng để tiếp tục.')
+      toast.warning(T('Bảng đã đạt giới hạn nét vẽ. Gia sư hãy lưu rồi xóa bảng để tiếp tục.'))
       return false
     }
     if (currentAccess.role === 'student' && !previous.studentCanWrite) return false
@@ -968,7 +978,7 @@ export function OnlineClassroomPage() {
         await flushPendingBoardOperations()
         if (!isRouteScopeActive(scope)) return false
         if (pendingBoardOperationsRef.current.length > 0) {
-          toast.warning('Một số nét vẽ chưa đồng bộ. Hãy kiểm tra mạng rồi thử lại thao tác quản lý bảng.')
+          toast.warning(T('Một số nét vẽ chưa đồng bộ. Hãy kiểm tra mạng rồi thử lại thao tác quản lý bảng.'))
           return false
         }
 
@@ -999,7 +1009,7 @@ export function OnlineClassroomPage() {
             if (!isRouteScopeActive(scope)) return false
             if (errorCode(error) !== 'failed-precondition') {
               replaceBoard(current, 'error')
-              toast.error(`Chưa lưu được bảng: ${onlineClassroomErrorMessage(error)}`)
+              toast.error(`${tl('Chưa lưu được bảng', 'Could not save the board')}: ${localizeClassroomServerMessage(onlineClassroomErrorMessage(error))}`)
               return false
             }
             try {
@@ -1014,16 +1024,16 @@ export function OnlineClassroomPage() {
             } catch (refreshError) {
               if (!isRouteScopeActive(scope)) return false
               setSaveStatus('error')
-              toast.error(`Chưa đồng bộ lại được bảng: ${onlineClassroomErrorMessage(refreshError)}`)
+              toast.error(`${tl('Chưa đồng bộ lại được bảng', 'Could not re-sync the board')}: ${localizeClassroomServerMessage(onlineClassroomErrorMessage(refreshError))}`)
               return false
             }
             if (!retryOnConflict) {
-              toast.warning('Bảng vừa có thay đổi từ người khác. Hệ thống đã giữ bản mới nhất; hãy thao tác lại nếu cần.')
+              toast.warning(T('Bảng vừa có thay đổi từ người khác. Hệ thống đã giữ bản mới nhất; hãy thao tác lại nếu cần.'))
               return false
             }
           }
         }
-        toast.warning('Bảng đang có nhiều thay đổi đồng thời. Hãy thử lại sau giây lát.')
+        toast.warning(T('Bảng đang có nhiều thay đổi đồng thời. Hãy thử lại sau giây lát.'))
         return false
       } finally {
         if (isRouteScopeActive(scope)) setBoardMutationBusy(false)
@@ -1171,7 +1181,7 @@ export function OnlineClassroomPage() {
           if (!isRouteScopeActive(scope)) return
           const savedSession = sanitizeScreenAnnotationSession(result)
           if (!savedSession || savedSession.sessionId !== pipeline.sessionId) {
-            throw new Error('Phiên chú thích trả về không hợp lệ.')
+            throw new Error(T('Phiên chú thích trả về không hợp lệ.'))
           }
           const liveSession = screenAnnotationSessionRef.current
           if (!liveSession?.active || liveSession.sessionId !== pipeline.sessionId) return
@@ -1230,7 +1240,7 @@ export function OnlineClassroomPage() {
         } catch (error) {
           if (!isRouteScopeActive(scope)) return
           setScreenAnnotationSaveStatus('error')
-          setScreenAnnotationError(`Nét chú thích đang chờ đồng bộ: ${onlineClassroomErrorMessage(error)}`)
+          setScreenAnnotationError(`${tl('Nét chú thích đang chờ đồng bộ', 'Annotations are waiting to sync')}: ${localizeClassroomServerMessage(onlineClassroomErrorMessage(error))}`)
           if (isTerminalScreenAnnotationOperationError(error)) {
             screenAnnotationPendingOperationsRef.current = []
             setScreenAnnotationPendingOperationCount(0)
@@ -1287,7 +1297,7 @@ export function OnlineClassroomPage() {
       || screenAnnotationMutationRef.current) return false
     const previousSnapshot = sanitizeBoardSnapshot(currentSession.boardSnapshot)
     if (previousSnapshot.operations.length >= MAX_BOARD_OPERATIONS) {
-      toast.warning('Phần chú thích đã đạt giới hạn. Gia sư hãy xóa chú thích để tiếp tục.')
+      toast.warning(T('Phần chú thích đã đạt giới hạn. Gia sư hãy xóa chú thích để tiếp tục.'))
       return false
     }
     if (currentAccess.role === 'student' && !previousSnapshot.studentCanWrite) return false
@@ -1322,7 +1332,7 @@ export function OnlineClassroomPage() {
       || !isBoardManager(currentAccess.role)
       || !currentSession?.active) return
     if (screenAnnotationMutationRef.current || screenAnnotationPendingOperationsRef.current.length > 0) {
-      toast.info('Đang đồng bộ chú thích. Vui lòng chờ giây lát.')
+      toast.info(T('Đang đồng bộ chú thích. Vui lòng chờ giây lát.'))
       return
     }
 
@@ -1349,7 +1359,7 @@ export function OnlineClassroomPage() {
         if (!isRouteScopeActive(scope)) return
         const savedSession = sanitizeScreenAnnotationSession(result)
         if (!savedSession || savedSession.sessionId !== currentSession.sessionId) {
-          throw new Error('Phiên chú thích trả về không hợp lệ.')
+          throw new Error(T('Phiên chú thích trả về không hợp lệ.'))
         }
         replaceScreenAnnotationSession(savedSession)
         setScreenAnnotationSaveStatus('saved')
@@ -1444,7 +1454,7 @@ export function OnlineClassroomPage() {
         const result = await beginOnlineClassroomScreenAnnotation(scope.bookingId)
         if (!isRouteScopeActive(scope)) return
         const session = sanitizeScreenAnnotationSession(result)
-        if (!session?.active) throw new Error('Chưa tạo được phiên chú thích màn hình.')
+        if (!session?.active) throw new Error(T('Chưa tạo được phiên chú thích màn hình.'))
         if (!screenShareStateRef.current.active
           || screenShareEpochRef.current !== expectedShareEpoch
           || screenAnnotationEndRequestedRef.current) {
@@ -1526,7 +1536,7 @@ export function OnlineClassroomPage() {
       }
       if (screenAnnotationPendingOperationsRef.current.length > 0) {
         if (isRouteScopeActive(scope)) {
-          setScreenAnnotationError('Vẫn còn nét chưa đồng bộ. Hãy chờ mạng ổn định trước khi tắt chú thích.')
+          setScreenAnnotationError(T('Vẫn còn nét chưa đồng bộ. Hãy chờ mạng ổn định trước khi tắt chú thích.'))
         }
         return
       }
@@ -1640,7 +1650,7 @@ export function OnlineClassroomPage() {
     const capture = api?.captureLargeVideoScreenshot
     if (!capture) {
       setScreenFrameState('error')
-      setScreenFrameError('Trình gọi video chưa hỗ trợ lấy khung trình chiếu để chú thích.')
+      setScreenFrameError(T('Trình gọi video chưa hỗ trợ lấy khung trình chiếu để chú thích.'))
       return
     }
     setScreenFrameState('loading')
@@ -1663,7 +1673,7 @@ export function OnlineClassroomPage() {
         const result = await capture.call(api)
         if (!isRouteScopeActive(scope) || screenAnnotationSessionRef.current?.sessionId !== captureSessionId) return
         if (!isSafeScreenFrameUrl(result?.dataURL)) {
-          throw new Error(result?.error || 'Chưa nhận được hình ảnh trình chiếu.')
+          throw new Error(result?.error || T('Chưa nhận được hình ảnh trình chiếu.'))
         }
         screenFrameUrlRef.current = result.dataURL
         setScreenFrameUrl(result.dataURL)
@@ -1671,7 +1681,7 @@ export function OnlineClassroomPage() {
         setScreenFrameError('')
       } catch (error) {
         if (!isRouteScopeActive(scope) || screenAnnotationSessionRef.current?.sessionId !== captureSessionId) return
-        setScreenFrameError(error instanceof Error ? error.message : 'Chưa làm mới được khung trình chiếu.')
+        setScreenFrameError(error instanceof Error ? error.message : T('Chưa làm mới được khung trình chiếu.'))
         setScreenFrameState(screenFrameUrlRef.current ? 'ready' : 'error')
       } finally {
         try {
@@ -1698,7 +1708,7 @@ export function OnlineClassroomPage() {
       && Boolean(localParticipantId)
       && shareState.participantIds.includes(localParticipantId)
     if (!localTeacherIsPresenter) {
-      toast.warning('Chỉ gia sư đang trình chiếu mới có thể đổi khung bài giảng cho cả lớp.')
+      toast.warning(T('Chỉ gia sư đang trình chiếu mới có thể đổi khung bài giảng cho cả lớp.'))
       return
     }
     await captureScreenShareFrame()
@@ -1750,7 +1760,7 @@ export function OnlineClassroomPage() {
     const currentAccess = accessRef.current
     if (!currentAccess || !isBoardManager(currentAccess.role)) return
     if (connectionStateRef.current !== 'connected' || !jitsiApiRef.current) {
-      toast.warning('Hãy vào cuộc gọi trước khi chia sẻ màn hình.')
+      toast.warning(T('Hãy vào cuộc gọi trước khi chia sẻ màn hình.'))
       return
     }
     setScreenAnnotationError('')
@@ -1761,20 +1771,20 @@ export function OnlineClassroomPage() {
     const currentAccess = accessRef.current
     if (!currentAccess || !isBoardManager(currentAccess.role)) return
     if (!conferenceJoinedRef.current || connectionStateRef.current !== 'connected') {
-      toast.warning('Hãy vào cuộc gọi trước khi tạo link học viên.')
+      toast.warning(T('Hãy vào cuộc gọi trước khi tạo link học viên.'))
       return
     }
     if (!waitingRoomReady) {
-      toast.warning('Phòng chờ đang được bảo vệ. Vui lòng đợi vài giây rồi thử lại.')
+      toast.warning(T('Phòng chờ đang được bảo vệ. Vui lòng đợi vài giây rồi thử lại.'))
       return
     }
     setIssuingStudentInvite(true)
     try {
       const joinUrl = await issueOnlineClassroomInvite(currentAccess.bookingId)
       await navigator.clipboard.writeText(joinUrl)
-      toast.success('Đã sao chép link học viên. Học viên sẽ chờ gia sư cho phép vào lớp.')
+      toast.success(T('Đã sao chép link học viên. Học viên sẽ chờ gia sư cho phép vào lớp.'))
     } catch (error) {
-      toast.error(onlineClassroomErrorMessage(error))
+      toast.error(localizeClassroomServerMessage(onlineClassroomErrorMessage(error)))
     } finally {
       setIssuingStudentInvite(false)
     }
@@ -1785,21 +1795,21 @@ export function OnlineClassroomPage() {
     try {
       jitsiApiRef.current.executeCommand('answerKnockingParticipant', participantId, approved)
       setKnockingParticipants((current) => current.filter((participant) => participant.id !== participantId))
-      toast.success(approved ? 'Đã cho học viên vào lớp.' : 'Đã từ chối yêu cầu vào lớp.')
+      toast.success(approved ? T('Đã cho học viên vào lớp.') : T('Đã từ chối yêu cầu vào lớp.'))
     } catch {
-      toast.error('Chưa thể xử lý yêu cầu vào lớp. Vui lòng thử lại.')
+      toast.error(T('Chưa thể xử lý yêu cầu vào lớp. Vui lòng thử lại.'))
     }
   }, [])
 
   const handleOpenCameraEffects = useCallback(() => {
     if (!conferenceJoinedRef.current || !jitsiApiRef.current) {
-      toast.warning('Hãy vào cuộc gọi trước khi chọn hiệu ứng camera.')
+      toast.warning(T('Hãy vào cuộc gọi trước khi chọn hiệu ứng camera.'))
       return
     }
     try {
       jitsiApiRef.current.executeCommand('toggleVirtualBackgroundDialog')
     } catch {
-      toast.error('Thiết bị này chưa hỗ trợ làm mờ hoặc hình nền ảo.')
+      toast.error(T('Thiết bị này chưa hỗ trợ làm mờ hoặc hình nền ảo.'))
     }
   }, [])
 
@@ -1820,7 +1830,7 @@ export function OnlineClassroomPage() {
       // iOS/Safari and embedded browsers may reject the native Fullscreen API.
       // Keep the class usable with an in-page fullscreen fallback.
       setIsMeetingPseudoFullscreen(true)
-      toast.info('Đã mở lớp học toàn màn hình trong trình duyệt.')
+      toast.info(T('Đã mở lớp học toàn màn hình trong trình duyệt.'))
     }
   }, [isMeetingPseudoFullscreen])
 
@@ -2016,7 +2026,7 @@ export function OnlineClassroomPage() {
           setSyncWarning('')
         } catch {
           if (isRouteScopeActive(scope)) {
-            setSyncWarning('Chưa tải được bản bảng mới nhất. Hệ thống sẽ tự thử lại.')
+            setSyncWarning(T('Chưa tải được bản bảng mới nhất. Hệ thống sẽ tự thử lại.'))
           }
         }
       } while (pipeline.queued && isRouteScopeActive(scope))
@@ -2218,7 +2228,7 @@ export function OnlineClassroomPage() {
           setFatalAccessError(message)
         } else {
           setRevalidationWarning(
-            `Kết nối kiểm tra quyền đang gián đoạn (lần ${consecutiveRevalidationFailuresRef.current}). Lớp vẫn mở và sẽ tự kiểm tra lại trong một phút.`,
+            tl(`Kết nối kiểm tra quyền đang gián đoạn (lần ${consecutiveRevalidationFailuresRef.current}). Lớp vẫn mở và sẽ tự kiểm tra lại trong một phút.`, `The access check connection is interrupted (attempt ${consecutiveRevalidationFailuresRef.current}). The class stays open and will check again in a minute.`),
           )
         }
       } finally {
@@ -2281,7 +2291,7 @@ export function OnlineClassroomPage() {
         localParticipantIdRef.current,
       ).catch(() => 0)
       if (!isRouteScopeActive(scope)) return
-      toast.success('Đã gửi yêu cầu. Học viên cần bấm đồng ý ngay trên màn hình lớp học.')
+      toast.success(T('Đã gửi yêu cầu. Học viên cần bấm đồng ý ngay trên màn hình lớp học.'))
     } catch (error) {
       if (isRouteScopeActive(scope)) {
         setRecordingConsentError(onlineClassroomRecordingErrorMessage(error))
@@ -2356,7 +2366,7 @@ export function OnlineClassroomPage() {
         localParticipantIdRef.current,
       ).catch(() => 0)
       if (!isRouteScopeActive(scope)) return
-      toast.success(accepted ? 'Bạn đã đồng ý ghi hình buổi học này.' : 'Bạn đã từ chối ghi hình buổi học này.')
+      toast.success(accepted ? T('Bạn đã đồng ý ghi hình buổi học này.') : T('Bạn đã từ chối ghi hình buổi học này.'))
     } catch (error) {
       if (isRouteScopeActive(scope)) {
         setRecordingConsentError(onlineClassroomRecordingErrorMessage(error))
@@ -2388,10 +2398,10 @@ export function OnlineClassroomPage() {
       }
       await navigator.clipboard.writeText(shareUrl)
       if (!isRouteScopeActive(scope)) return
-      toast.success('Đã sao chép link xem lại riêng cho học viên.')
+      toast.success(T('Đã sao chép link xem lại riêng cho học viên.'))
     } catch (error) {
       if (isRouteScopeActive(scope)) {
-        toast.error(onlineClassroomRecordingErrorMessage(error))
+        toast.error(localizeClassroomServerMessage(onlineClassroomRecordingErrorMessage(error)))
       }
     } finally {
       if (readyShareBusyRef.current === scope) readyShareBusyRef.current = null
@@ -2468,7 +2478,7 @@ export function OnlineClassroomPage() {
         }
       }, 750)
     }
-    toast.info('Đã hết thời lượng theo lịch. Phòng học đã đóng và không thể vào lại.')
+    toast.info(T('Đã hết thời lượng theo lịch. Phòng học đã đóng và không thể vào lại.'))
   }, [captureRouteScope, stopRecordingInstance])
 
   useEffect(() => {
@@ -2543,9 +2553,9 @@ export function OnlineClassroomPage() {
         localParticipantIdRef.current,
       ).catch(() => 0)
       setShowExtensionConfirm(false)
-      toast.success('Đã gia hạn buổi học thêm 10 phút. Link hiện tại vẫn dùng được.')
+      toast.success(T('Đã gia hạn buổi học thêm 10 phút. Link hiện tại vẫn dùng được.'))
     } catch (error) {
-      if (isRouteScopeActive(scope)) toast.error(onlineClassroomErrorMessage(error))
+      if (isRouteScopeActive(scope)) toast.error(localizeClassroomServerMessage(onlineClassroomErrorMessage(error)))
     } finally {
       if (isRouteScopeActive(scope)) setExtensionBusy(false)
     }
@@ -2558,12 +2568,12 @@ export function OnlineClassroomPage() {
     if (!recordingSupported || !recordingSetupConfirmed || recordingStartLockRef.current || recordingState !== 'idle') return
     const acceptedConsent = currentAccess.recordingConsent
     if (!acceptedConsent || acceptedConsent.status !== 'accepted') {
-      setRecordingError('Học viên cần bấm đồng ý ghi hình trước khi giáo viên có thể bắt đầu.')
+      setRecordingError(T('Học viên cần bấm đồng ý ghi hình trước khi giáo viên có thể bắt đầu.'))
       return
     }
     const consentRequestId = acceptedConsent.requestId
     if (connectionStateRef.current !== 'connected' || !conferenceJoinedRef.current) {
-      setRecordingError('Hãy vào cuộc gọi và chờ trạng thái “Đã kết nối” trước khi bắt đầu ghi.')
+      setRecordingError(T('Hãy vào cuộc gọi và chờ trạng thái “Đã kết nối” trước khi bắt đầu ghi.'))
       return
     }
     if (fatalAccessErrorRef.current) return
@@ -2712,15 +2722,15 @@ export function OnlineClassroomPage() {
               setExistingRecording({ ...finalized, viewUrl: session!.replayUrl })
               setRecordingHydrationState('ready')
               setRecordingHydrationError('')
-              toast.success('Đã lưu bản ghi riêng tư. Link xem lại có hiệu lực tối đa 3 ngày.')
+              toast.success(T('Đã lưu bản ghi riêng tư. Link xem lại có hiệu lực tối đa 3 ngày.'))
             }
           } catch (error) {
             activeUploader.abort(error)
             await abandonOnlineClassroomRecording(session!.recordingId).catch(() => undefined)
             if (!unmountingRef.current && isRouteScopeActive(scope)) {
               const message = error instanceof Error && error.message === 'RECORDING_TOO_LARGE'
-                ? 'Bản ghi vượt giới hạn 1,25 GB nên đã dừng và xóa phần tải dở.'
-                : `Chưa lưu trọn vẹn bản ghi: ${onlineClassroomRecordingErrorMessage(error)}`
+                ? T('Bản ghi vượt giới hạn 1,25 GB nên đã dừng và xóa phần tải dở.')
+                : `${tl('Chưa lưu trọn vẹn bản ghi', 'The recording was not fully saved')}: ${localizeClassroomServerMessage(onlineClassroomRecordingErrorMessage(error))}`
               setRecordingError(message)
               toast.error(message)
             }
@@ -2773,11 +2783,11 @@ export function OnlineClassroomPage() {
       const rawMessage = error instanceof Error ? error.message : ''
       if (rawMessage === 'RECORDING_CANCELLED') return
       const message = ['NotAllowedError', 'AbortError'].includes(domErrorName)
-        ? 'Bạn chưa chọn tab hoặc đã từ chối quyền chia sẻ/micro. Không có video nào được lưu.'
+        ? T('Bạn chưa chọn tab hoặc đã từ chối quyền chia sẻ/micro. Không có video nào được lưu.')
         : rawMessage === 'TAB_AUDIO_REQUIRED'
-          ? 'Chrome chưa chia sẻ âm thanh lớp. Hãy chọn đúng tab 123English và bật “Chia sẻ âm thanh của thẻ”.'
+          ? T('Chrome chưa chia sẻ âm thanh lớp. Hãy chọn đúng tab 123English và bật “Chia sẻ âm thanh của thẻ”.')
           : rawMessage === 'MICROPHONE_AUDIO_REQUIRED'
-            ? 'Chưa lấy được âm thanh micro. Hãy cho phép micro rồi bắt đầu lại.'
+            ? T('Chưa lấy được âm thanh micro. Hãy cho phép micro rồi bắt đầu lại.')
             : onlineClassroomRecordingErrorMessage(error)
       if (!unmountingRef.current && isRouteScopeActive(scope)) setRecordingError(message)
     } finally {
@@ -2874,7 +2884,7 @@ export function OnlineClassroomPage() {
   if (!loadStateMatchesRoute || loadState === 'loading') return <ClassroomPageSkeleton />
   if (loadState === 'error') return <ClassroomErrorPage message={pageError} onRetry={() => void loadClassroom()} />
   if (!accessMatchesRoute) return <ClassroomPageSkeleton />
-  if (!access) return <ClassroomErrorPage message="Không tìm thấy thông tin lớp học." onRetry={() => void loadClassroom()} />
+  if (!access) return <ClassroomErrorPage message={T('Không tìm thấy thông tin lớp học.')} onRetry={() => void loadClassroom()} />
   if (sessionHardEnded && recordingState === 'idle') return <ClassroomEndedPage />
   if (fatalAccessError && recordingState === 'idle') {
     return <ClassroomErrorPage message={fatalAccessError} onRetry={() => void loadClassroom()} />
@@ -2900,22 +2910,22 @@ export function OnlineClassroomPage() {
             <span className="hidden h-8 w-px bg-slate-200 sm:block" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-base font-black sm:text-lg">{access.subjectName || 'Lớp học trực tuyến'}</h1>
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800">Pilot giới hạn</span>
+                <h1 className="truncate text-base font-black sm:text-lg">{access.subjectName || T('Lớp học trực tuyến')}</h1>
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800">{T('Pilot giới hạn')}</span>
               </div>
               <p className="mt-0.5 truncate text-xs font-bold text-slate-500">
-                {access.teacherName || 'Gia sư'} và {access.studentName || 'học viên'}
+                {access.teacherName || T('Gia sư')} và {access.studentName || T('học viên')}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 font-mono text-xs font-black tabular-nums ${hardEndRemainingSeconds <= 300 ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-900'}`} aria-label={`Thời gian còn lại ${formatClassroomElapsed(hardEndRemainingSeconds)}`}>
+            <span className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 font-mono text-xs font-black tabular-nums ${hardEndRemainingSeconds <= 300 ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-900'}`} aria-label={`${tl('Thời gian còn lại', 'Time left')} ${formatClassroomElapsed(hardEndRemainingSeconds)}`}>
               <CalendarClock className="h-4 w-4" />
-              Còn {formatClassroomElapsed(hardEndRemainingSeconds)}
+              {tl('Còn', 'Left:')} {formatClassroomElapsed(hardEndRemainingSeconds)}
             </span>
             {conferenceJoined && (
-              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" aria-label={`Thời gian trong lớp ${formatClassroomElapsed(classroomElapsedSeconds)}`}>
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-3 font-mono text-xs font-black tabular-nums text-white" aria-label={`${tl('Thời gian trong lớp', 'Time in class')} ${formatClassroomElapsed(classroomElapsedSeconds)}`}>
                 <Clock3 className="h-4 w-4 text-amber-300" />
                 {formatClassroomElapsed(classroomElapsedSeconds)}
               </span>
@@ -2926,7 +2936,7 @@ export function OnlineClassroomPage() {
             </span>
             {connectionHealthy && (
               <span className={`inline-flex min-h-10 items-center rounded-xl px-3 text-xs font-extrabold ${remoteParticipantCount > 0 ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>
-                {remoteParticipantCount > 0 ? `${remoteParticipantCount + 1} người trong lớp` : 'Đang chờ người còn lại'}
+                {remoteParticipantCount > 0 ? `${remoteParticipantCount + 1} ${tl('người trong lớp', 'people in class')}` : T('Đang chờ người còn lại')}
               </span>
             )}
             {manager && (
@@ -2936,11 +2946,11 @@ export function OnlineClassroomPage() {
                 loading={issuingStudentInvite}
                 disabled={!connectionHealthy || !conferenceJoined || !waitingRoomReady}
                 onClick={() => void handleCopyStudentInvite()}
-                title={!waitingRoomReady ? 'Link chỉ mở sau khi phòng chờ đã được bảo vệ' : 'Sao chép link riêng để gửi cho học viên'}
+                title={!waitingRoomReady ? T('Link chỉ mở sau khi phòng chờ đã được bảo vệ') : T('Sao chép link riêng để gửi cho học viên')}
                 className="border-sky-200 bg-sky-50 text-sky-800 focus:ring-sky-300"
               >
                 <Copy className="h-4 w-4" />
-                <span className="hidden sm:inline">Sao chép link học viên</span>
+                <span className="hidden sm:inline">{T('Sao chép link học viên')}</span>
               </Button>
             )}
             {manager && access.extensionAvailable && (
@@ -2950,16 +2960,16 @@ export function OnlineClassroomPage() {
                 loading={extensionBusy}
                 disabled={sessionHardEnded || hardEndRemainingSeconds === 0}
                 onClick={() => setShowExtensionConfirm(true)}
-                title="Mỗi buổi chỉ được gia hạn một lần, tối đa 10 phút"
+                title={T('Mỗi buổi chỉ được gia hạn một lần, tối đa 10 phút')}
                 className="border-amber-300 bg-amber-50 text-amber-900 focus:ring-amber-300"
               >
                 <Clock3 className="h-4 w-4" />
-                Gia hạn +10 phút
+                {T('Gia hạn +10 phút')}
               </Button>
             )}
             {access.extensionMinutes > 0 && (
               <span className="inline-flex min-h-10 items-center rounded-xl bg-amber-100 px-3 text-xs font-black text-amber-900">
-                Đã gia hạn +{access.extensionMinutes} phút
+                {tl('Đã gia hạn', 'Extended')} +{access.extensionMinutes} {tl('phút', 'min')}
               </span>
             )}
             {manager && recordingState === 'idle' && recordingHydrationState === 'ready' && !existingRecording && (
@@ -2973,8 +2983,8 @@ export function OnlineClassroomPage() {
                   || serverRecordingConsent?.status === 'pending'
                   || serverRecordingConsent?.status === 'recording'
                 }
-                aria-label={recordingConsentAccepted ? 'Mở bước chọn tab để ghi hình' : 'Gửi yêu cầu học viên đồng ý ghi hình'}
-                title={!connectionHealthy || !conferenceJoined ? 'Hãy vào cuộc gọi trước khi ghi hình' : undefined}
+                aria-label={recordingConsentAccepted ? T('Mở bước chọn tab để ghi hình') : T('Gửi yêu cầu học viên đồng ý ghi hình')}
+                title={!connectionHealthy || !conferenceJoined ? T('Hãy vào cuộc gọi trước khi ghi hình') : undefined}
                 onClick={() => {
                   setRecordingError('')
                   setRecordingConsentError('')
@@ -2989,43 +2999,43 @@ export function OnlineClassroomPage() {
                 <FileVideo2 className="h-4 w-4" />
                 <span className="hidden sm:inline">
                   {serverRecordingConsent?.status === 'pending'
-                    ? 'Chờ học viên đồng ý'
+                    ? T('Chờ học viên đồng ý')
                     : recordingConsentAccepted
-                      ? 'Ghi và lưu 3 ngày'
+                      ? T('Ghi và lưu 3 ngày')
                       : serverRecordingConsent?.status === 'declined'
-                        ? 'Xin phép ghi hình lại'
-                        : 'Xin phép ghi hình'}
+                        ? T('Xin phép ghi hình lại')
+                        : T('Xin phép ghi hình')}
                 </span>
               </Button>
             )}
             {manager && recordingState === 'idle' && (recordingHydrationState === 'idle' || recordingHydrationState === 'loading') && (
               <Button variant="outline" size="sm" disabled className="border-slate-300 bg-white text-slate-600">
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                <span className="hidden sm:inline">Đang kiểm tra bản ghi</span>
+                <span className="hidden sm:inline">{T('Đang kiểm tra bản ghi')}</span>
               </Button>
             )}
             {manager && recordingState === 'idle' && recordingHydrationState === 'error' && (
               <Button variant="outline" size="sm" onClick={() => void hydrateExistingRecording()} className="border-rose-300 bg-white text-rose-700 focus:ring-rose-300">
                 <RefreshCw className="h-4 w-4" />
-                <span className="hidden sm:inline">Kiểm tra lại bản ghi</span>
+                <span className="hidden sm:inline">{T('Kiểm tra lại bản ghi')}</span>
               </Button>
             )}
             {manager && recordingState === 'idle' && recordingHydrationState === 'ready' && existingRecording && existingRecording.status !== 'ready' && (
               <Button variant="outline" size="sm" disabled className="border-amber-300 bg-amber-50 text-amber-800">
                 <FileVideo2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Bản ghi đang được xử lý</span>
+                <span className="hidden sm:inline">{T('Bản ghi đang được xử lý')}</span>
               </Button>
             )}
             {manager && recordingState === 'recording' && (
               <Button variant="danger" size="sm" onClick={stopRecording}>
                 <CircleStop className="h-4 w-4" />
-                Dừng và lưu video
+                {T('Dừng và lưu video')}
               </Button>
             )}
             {manager && recordingBusy && (
               <Button variant="outline" size="sm" disabled className="border-slate-300 bg-white text-slate-600">
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                {recordingState === 'starting' ? 'Đang chuẩn bị' : 'Đang hoàn tất'}
+                {recordingState === 'starting' ? T('Đang chuẩn bị') : T('Đang hoàn tất')}
               </Button>
             )}
           </div>
@@ -3035,14 +3045,14 @@ export function OnlineClassroomPage() {
       <main className="mx-auto max-w-[1800px] px-3 py-4 sm:px-6 sm:py-5">
         <section className="mb-4 grid gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-[0_18px_55px_-48px_rgba(16,33,58,0.45)] sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] lg:items-center">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">Buổi học đang mở</p>
-            <p className="mt-1 truncate text-sm font-extrabold text-slate-800">{access.subjectName || 'Nội dung theo lịch học'}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">{T('Buổi học đang mở')}</p>
+            <p className="mt-1 truncate text-sm font-extrabold text-slate-800">{access.subjectName || T('Nội dung theo lịch học')}</p>
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
             <CalendarClock className="h-4 w-4 text-amber-700" />
             <span>
-              {formatSessionDate(access.requestedDate)} · {access.requestedStart || '--:--'} đến {formatVietnamClock(access.hardEndsAt)}
-              {access.extensionMinutes > 0 ? ` (+${access.extensionMinutes} phút)` : ''}
+              {formatSessionDate(access.requestedDate)} · {access.requestedStart || '--:--'} {tl('đến', 'to')} {formatVietnamClock(access.hardEndsAt)}{tl('', ' (Vietnam time)')}
+              {access.extensionMinutes > 0 ? ` (+${access.extensionMinutes} ${tl('phút', 'min')})` : ''}
             </span>
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
@@ -3057,7 +3067,7 @@ export function OnlineClassroomPage() {
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300"
             >
               <BookOpenCheck className="h-4 w-4" />
-              Mở giáo trình
+              {T('Mở giáo trình')}
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
@@ -3068,13 +3078,13 @@ export function OnlineClassroomPage() {
             {sessionHardEnded && (
               <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-950" role="status">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>Đã hết giờ. Cuộc gọi đang đóng; nếu có ghi hình, vui lòng chờ hệ thống hoàn tất tải và lưu video.</p>
+                <p>{T('Đã hết giờ. Cuộc gọi đang đóng; nếu có ghi hình, vui lòng chờ hệ thống hoàn tất tải và lưu video.')}</p>
               </div>
             )}
             {access.publicPilotProvider && (
               <div className="flex items-start gap-3 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-semibold leading-5 text-sky-950">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <p><strong>Pilot dùng meet.jit.si:</strong> âm thanh, hình ảnh và tên hiển thị được Jitsi xử lý. Không đưa dữ liệu nhạy cảm lên bảng. Người tạo phòng có thể được Jitsi yêu cầu xác thực.</p>
+                <p><strong>{T('Pilot dùng meet.jit.si:')}</strong> {T('âm thanh, hình ảnh và tên hiển thị được Jitsi xử lý. Không đưa dữ liệu nhạy cảm lên bảng. Người tạo phòng có thể được Jitsi yêu cầu xác thực.')}</p>
               </div>
             )}
             {(revalidationWarning || syncWarning) && (
@@ -3086,15 +3096,15 @@ export function OnlineClassroomPage() {
             {recordingHydrationError && manager && (
               <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="alert">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>Chưa kiểm tra được bản ghi hiện có nên nút bắt đầu đang được khóa để tránh tạo trùng. {recordingHydrationError}</p>
+                <p>{tl('Chưa kiểm tra được bản ghi hiện có nên nút bắt đầu đang được khóa để tránh tạo trùng.', 'Existing recordings could not be checked, so the start button is locked to avoid duplicates.')} {recordingHydrationError}</p>
               </div>
             )}
             {serverRecordingConsent?.status === 'pending' && access.role === 'student' && (
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm font-semibold leading-6 text-amber-950" role="dialog" aria-label="Yêu cầu đồng ý ghi hình">
-                <p className="font-black">{serverRecordingConsent.requestedByRole === 'admin' ? 'Admin' : 'Gia sư'} đề nghị ghi hình và ghi âm buổi học</p>
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm font-semibold leading-6 text-amber-950" role="dialog" aria-label={T('Yêu cầu đồng ý ghi hình')}>
+                <p className="font-black">{serverRecordingConsent.requestedByRole === 'admin' ? 'Admin' : T('Gia sư')} đề nghị ghi hình và ghi âm buổi học</p>
                 <p className="mt-1 text-xs leading-5">
-                  Bản ghi được giữ riêng tư tối đa 3 ngày và có thể xóa sớm sau khi tải xong.
-                  {formatConsentExpiry(serverRecordingConsent.expiresAt) && ` Yêu cầu hết hạn lúc ${formatConsentExpiry(serverRecordingConsent.expiresAt)}.`}
+                  {T('Bản ghi được giữ riêng tư tối đa 3 ngày và có thể xóa sớm sau khi tải xong.')}
+                  {formatConsentExpiry(serverRecordingConsent.expiresAt) && ` ${tl('Yêu cầu hết hạn lúc', 'Request expires at')} ${formatConsentExpiry(serverRecordingConsent.expiresAt)}.`}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
@@ -3103,7 +3113,7 @@ export function OnlineClassroomPage() {
                     onClick={() => void handleRespondRecordingConsent(true)}
                     className="bg-emerald-700 text-white hover:bg-emerald-800 focus:ring-emerald-400"
                   >
-                    Đồng ý ghi hình
+                    {T('Đồng ý ghi hình')}
                   </Button>
                   <Button
                     size="sm"
@@ -3112,7 +3122,7 @@ export function OnlineClassroomPage() {
                     onClick={() => void handleRespondRecordingConsent(false)}
                     className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50 focus:ring-rose-300"
                   >
-                    Từ chối
+                    {T('Từ chối')}
                   </Button>
                 </div>
               </div>
@@ -3120,19 +3130,19 @@ export function OnlineClassroomPage() {
             {serverRecordingConsent?.status === 'pending' && manager && (
               <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs font-semibold leading-5 text-sky-950" role="status">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>Đã gửi yêu cầu ghi hình. Hãy chờ học viên bấm <strong>Đồng ý ghi hình</strong>{formatConsentExpiry(serverRecordingConsent.expiresAt) ? ` trước ${formatConsentExpiry(serverRecordingConsent.expiresAt)}` : ''}.</p>
+                <p>{T('Đã gửi yêu cầu ghi hình. Hãy chờ học viên bấm')} <strong>{T('Đồng ý ghi hình')}</strong>{formatConsentExpiry(serverRecordingConsent.expiresAt) ? ` ${tl('trước', 'before')} ${formatConsentExpiry(serverRecordingConsent.expiresAt)}` : ''}.</p>
               </div>
             )}
             {serverRecordingConsent?.status === 'accepted' && (
               <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-950" role="status">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>{manager ? 'Học viên đã đồng ý. Bạn có thể bấm “Ghi và lưu 3 ngày” để chọn đúng tab lớp học.' : 'Bạn đã đồng ý ghi hình cho yêu cầu này. Gia sư có thể bắt đầu ghi trong thời hạn hiển thị.'}</p>
+                <p>{manager ? T('Học viên đã đồng ý. Bạn có thể bấm “Ghi và lưu 3 ngày” để chọn đúng tab lớp học.') : T('Bạn đã đồng ý ghi hình cho yêu cầu này. Gia sư có thể bắt đầu ghi trong thời hạn hiển thị.')}</p>
               </div>
             )}
             {serverRecordingConsent?.status === 'declined' && (
               <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="status">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>{manager ? 'Học viên đã từ chối ghi hình. Không có thiết bị ghi nào được bật. Chỉ gửi lại yêu cầu sau khi đã trao đổi rõ.' : 'Bạn đã từ chối ghi hình. Buổi học vẫn tiếp tục nhưng hệ thống không cho bắt đầu bản ghi bằng yêu cầu này.'}</p>
+                <p>{manager ? T('Học viên đã từ chối ghi hình. Không có thiết bị ghi nào được bật. Chỉ gửi lại yêu cầu sau khi đã trao đổi rõ.') : T('Bạn đã từ chối ghi hình. Buổi học vẫn tiếp tục nhưng hệ thống không cho bắt đầu bản ghi bằng yêu cầu này.')}</p>
               </div>
             )}
             {recordingConsentError && (
@@ -3146,24 +3156,24 @@ export function OnlineClassroomPage() {
                 <span className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-600" />
                 <p>
                   {recordingState === 'recording'
-                    ? `Đang ghi và tải từng phần lên vùng riêng tư (${formatRecordingBytes(recordingUploadedBytes)} đã tải).`
+                    ? tl(`Đang ghi và tải từng phần lên vùng riêng tư (${formatRecordingBytes(recordingUploadedBytes)} đã tải).`, `Recording and uploading privately in parts (${formatRecordingBytes(recordingUploadedBytes)} uploaded).`)
                     : fatalAccessError
-                      ? 'Quyền truy cập đã thay đổi. Hệ thống đang dừng thiết bị ghi và hủy phần tải dở an toàn.'
-                      : 'Đang chốt tệp và tạo link xem lại. Không đóng trang cho đến khi hoàn tất.'}
+                      ? T('Quyền truy cập đã thay đổi. Hệ thống đang dừng thiết bị ghi và hủy phần tải dở an toàn.')
+                      : T('Đang chốt tệp và tạo link xem lại. Không đóng trang cho đến khi hoàn tất.')}
                 </p>
               </div>
             )}
             {access.recordingNotice?.active && recordingState === 'idle' && (
               <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold leading-5 text-rose-950" role="status" aria-live="polite">
                 <span className="mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rose-600" />
-                <p><strong>Buổi học đang được ghi.</strong> Chỉ tiếp tục khi bạn đã biết và đồng ý việc ghi hình, ghi âm.</p>
+                <p><strong>{T('Buổi học đang được ghi.')}</strong> {T('Chỉ tiếp tục khi bạn đã biết và đồng ý việc ghi hình, ghi âm.')}</p>
               </div>
             )}
             {readyRecording && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-950" role="status">
                 <div>
-                  <p className="font-black">Bản ghi đã sẵn sàng</p>
-                  <p>Tự xóa sau 3 ngày hoặc ngay khi người xem xác nhận đã tải xong.</p>
+                  <p className="font-black">{T('Bản ghi đã sẵn sàng')}</p>
+                  <p>{T('Tự xóa sau 3 ngày hoặc ngay khi người xem xác nhận đã tải xong.')}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <a
@@ -3172,7 +3182,7 @@ export function OnlineClassroomPage() {
                     rel="noreferrer"
                     className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 font-extrabold text-white hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                   >
-                    Xem lại <ExternalLink className="h-3.5 w-3.5" />
+                    {T('Xem lại')} <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                   <button
                     type="button"
@@ -3181,7 +3191,7 @@ export function OnlineClassroomPage() {
                     className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 font-extrabold text-emerald-900 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:cursor-wait disabled:opacity-60"
                   >
                     {creatingReadyShareLink ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                    {creatingReadyShareLink ? 'Đang tạo link' : 'Sao chép link học viên'}
+                    {creatingReadyShareLink ? T('Đang tạo link') : T('Sao chép link học viên')}
                   </button>
                 </div>
               </div>
@@ -3218,21 +3228,21 @@ export function OnlineClassroomPage() {
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${screenShareState.active ? 'animate-pulse bg-emerald-400' : connectionHealthy ? 'bg-sky-400' : 'bg-slate-500'}`} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-black">
-                  {screenShareState.active ? 'Đang trình chiếu bài học' : 'Lớp học trực tiếp 123English'}
+                  {screenShareState.active ? T('Đang trình chiếu bài học') : T('Lớp học trực tiếp 123English')}
                 </p>
                 <p className={`truncate text-[11px] font-semibold text-slate-400 ${meetingControlsCollapsed ? 'hidden' : ''}`}>
                   {screenShareState.active
                     ? screenAnnotationActive
-                      ? 'Gia sư và học viên có thể chú thích đồng bộ trên nội dung chia sẻ'
-                      : 'Đang chuẩn bị công cụ viết trên màn hình chia sẻ'
-                    : `${remoteParticipantCount + 1} người · ${roleLabel(access.role)}`}
+                      ? T('Gia sư và học viên có thể chú thích đồng bộ trên nội dung chia sẻ')
+                      : T('Đang chuẩn bị công cụ viết trên màn hình chia sẻ')
+                    : `${remoteParticipantCount + 1} ${tl('người', 'people')} · ${roleLabel(access.role)}`}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               {conferenceJoined && (
-                <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-2.5 font-mono text-xs font-black tabular-nums text-white" title="Thời gian đã ở trong lớp">
+                <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-2.5 font-mono text-xs font-black tabular-nums text-white" title={T('Thời gian đã ở trong lớp')}>
                   <Clock3 className="h-4 w-4 text-amber-300" />
                   {formatClassroomElapsed(classroomElapsedSeconds)}
                 </span>
@@ -3243,11 +3253,11 @@ export function OnlineClassroomPage() {
                   disabled={!connectionHealthy || !conferenceJoined}
                   onClick={handleToggleScreenShare}
                   className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-45 ${screenShareState.local ? 'bg-rose-500 text-white hover:bg-rose-400' : 'bg-emerald-400 text-slate-950 hover:bg-emerald-300'}`}
-                  title={!connectionHealthy || !conferenceJoined ? 'Hãy vào cuộc gọi trước khi chia sẻ' : undefined}
+                  title={!connectionHealthy || !conferenceJoined ? T('Hãy vào cuộc gọi trước khi chia sẻ') : undefined}
                 >
                   <MonitorUp className="h-4 w-4" />
-                  <span className={meetingControlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>{screenShareState.local ? 'Dừng trình chiếu' : 'Chia sẻ màn hình'}</span>
-                  {!meetingControlsCollapsed && <span className="sm:hidden">{screenShareState.local ? 'Dừng share' : 'Share'}</span>}
+                  <span className={meetingControlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>{screenShareState.local ? T('Dừng trình chiếu') : T('Chia sẻ màn hình')}</span>
+                  {!meetingControlsCollapsed && <span className="sm:hidden">{screenShareState.local ? T('Dừng share') : 'Share'}</span>}
                 </button>
               )}
               {!meetingControlsCollapsed && (
@@ -3256,10 +3266,10 @@ export function OnlineClassroomPage() {
                   disabled={!conferenceJoined}
                   onClick={handleOpenCameraEffects}
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-black text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-45"
-                  title="Làm mờ hoặc chọn hình nền ảo"
+                  title={T('Làm mờ hoặc chọn hình nền ảo')}
                 >
                   <Sparkles className="h-4 w-4 text-fuchsia-300" />
-                  <span className="hidden sm:inline">Hiệu ứng nền</span>
+                  <span className="hidden sm:inline">{T('Hiệu ứng nền')}</span>
                 </button>
               )}
               {!meetingControlsCollapsed && manager && screenShareState.active && (
@@ -3277,7 +3287,7 @@ export function OnlineClassroomPage() {
                   className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-wait disabled:opacity-55 ${screenAnnotationActive ? 'border-amber-300/40 bg-amber-300 text-slate-950 hover:bg-amber-200' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
                 >
                   <PenLine className="h-4 w-4" />
-                  {screenAnnotationBusy ? 'Đang xử lý' : screenAnnotationActive ? 'Tắt chú thích' : 'Bật công cụ viết'}
+                  {screenAnnotationBusy ? T('Đang xử lý') : screenAnnotationActive ? T('Tắt chú thích') : T('Bật công cụ viết')}
                 </button>
               )}
               <button
@@ -3286,15 +3296,15 @@ export function OnlineClassroomPage() {
                 onClick={openWhiteboardWindow}
                 aria-haspopup="dialog"
                 aria-expanded={whiteboardWindowMode !== 'minimized'}
-                aria-label={whiteboardWindowMode === 'minimized' ? 'Mở bảng trắng' : 'Bảng trắng đang mở'}
+                aria-label={whiteboardWindowMode === 'minimized' ? T('Mở bảng trắng') : T('Bảng trắng đang mở')}
                 className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-amber-300 ${whiteboardWindowMode !== 'minimized' ? 'border-amber-300 bg-amber-300 text-slate-950 hover:bg-amber-200' : 'border-white/15 bg-white/10 text-white hover:bg-white/15'}`}
               >
                 <PenLine className="h-4 w-4" />
                 <span className={meetingControlsCollapsed ? 'sr-only' : 'hidden sm:inline'}>
-                  {whiteboardWindowMode === 'minimized' ? 'Mở bảng trắng' : 'Bảng trắng đang mở'}
+                  {whiteboardWindowMode === 'minimized' ? T('Mở bảng trắng') : T('Bảng trắng đang mở')}
                 </span>
                 {pendingBoardOperationCount > 0 && (
-                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] text-amber-200" aria-label={`${pendingBoardOperationCount} nét đang chờ đồng bộ`}>
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] text-amber-200" aria-label={`${pendingBoardOperationCount} ${tl('nét đang chờ đồng bộ', 'strokes waiting to sync')}`}>
                     {pendingBoardOperationCount}
                   </span>
                 )}
@@ -3304,8 +3314,8 @@ export function OnlineClassroomPage() {
                 onClick={() => setMeetingControlsCollapsed((current) => !current)}
                 aria-expanded={!meetingControlsCollapsed}
                 className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300"
-                aria-label={meetingControlsCollapsed ? 'Hiện các điều khiển lớp học' : 'Thu gọn các điều khiển lớp học'}
-                title={meetingControlsCollapsed ? 'Hiện điều khiển' : 'Thu gọn điều khiển'}
+                aria-label={meetingControlsCollapsed ? T('Hiện các điều khiển lớp học') : T('Thu gọn các điều khiển lớp học')}
+                title={meetingControlsCollapsed ? T('Hiện điều khiển') : T('Thu gọn điều khiển')}
               >
                 {meetingControlsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
               </button>
@@ -3313,8 +3323,8 @@ export function OnlineClassroomPage() {
                 type="button"
                 onClick={() => void toggleMeetingFullscreen()}
                 className="inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-amber-300"
-                aria-label={meetingExpanded ? 'Thoát toàn màn hình' : 'Mở toàn màn hình lớp học'}
-                title={meetingExpanded ? 'Thoát toàn màn hình' : 'Mở toàn màn hình'}
+                aria-label={meetingExpanded ? T('Thoát toàn màn hình') : T('Mở toàn màn hình lớp học')}
+                title={meetingExpanded ? T('Thoát toàn màn hình') : T('Mở toàn màn hình')}
               >
                 {meetingExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </button>
@@ -3323,7 +3333,7 @@ export function OnlineClassroomPage() {
 
           {manager && knockingParticipants.length > 0 && (
             <div className="mb-2.5 rounded-2xl border border-sky-300/30 bg-sky-400/10 p-3" role="status" aria-live="polite">
-              <p className="text-xs font-black text-sky-100">Có người đang xin vào lớp</p>
+              <p className="text-xs font-black text-sky-100">{T('Có người đang xin vào lớp')}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {knockingParticipants.map((participant) => (
                   <div key={participant.id} className="flex min-w-0 flex-1 basis-[280px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2">
@@ -3334,14 +3344,14 @@ export function OnlineClassroomPage() {
                         onClick={() => handleAnswerKnockingParticipant(participant.id, false)}
                         className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-rose-300/25 bg-rose-500/15 px-3 text-xs font-black text-rose-100 hover:bg-rose-500/25 focus:outline-none focus:ring-2 focus:ring-rose-300"
                       >
-                        <UserX className="h-4 w-4" />Từ chối
+                        <UserX className="h-4 w-4" />{T('Từ chối')}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleAnswerKnockingParticipant(participant.id, true)}
                         className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-black text-slate-950 hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200"
                       >
-                        <UserCheck className="h-4 w-4" />Cho vào
+                        <UserCheck className="h-4 w-4" />{T('Cho vào')}
                       </button>
                     </div>
                   </div>
@@ -3353,19 +3363,19 @@ export function OnlineClassroomPage() {
           {(screenAnnotationError || (screenShareState.active && access.role === 'student' && !screenAnnotationActive)) && (
             <div className={`mb-2.5 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${screenAnnotationError ? 'border-rose-400/30 bg-rose-500/10 text-rose-100' : 'border-amber-300/25 bg-amber-300/10 text-amber-100'}`} role={screenAnnotationError ? 'alert' : 'status'}>
               {screenAnnotationError ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />}
-              <p>{screenAnnotationError || 'Gia sư đang chia sẻ. Công cụ viết sẽ hiện tự động ngay khi phiên chú thích sẵn sàng.'}</p>
+              <p>{screenAnnotationError || T('Gia sư đang chia sẻ. Công cụ viết sẽ hiện tự động ngay khi phiên chú thích sẵn sàng.')}</p>
             </div>
           )}
 
           {screenAnnotationActive && (
-          <div className="mb-2.5 grid grid-cols-2 rounded-2xl border border-white/10 bg-white/5 p-1 lg:hidden" aria-label="Chọn khu vực lớp học">
+          <div className="mb-2.5 grid grid-cols-2 rounded-2xl border border-white/10 bg-white/5 p-1 lg:hidden" aria-label={T('Chọn khu vực lớp học')}>
             <button
               type="button"
               onClick={() => setActivePanel('video')}
               className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'video' ? 'bg-white text-slate-950' : 'text-slate-300'}`}
             >
               <Video className="h-4 w-4" />
-              Cuộc gọi
+              {T('Cuộc gọi')}
             </button>
             <button
               type="button"
@@ -3373,7 +3383,7 @@ export function OnlineClassroomPage() {
               className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-extrabold focus:outline-none focus:ring-2 focus:ring-amber-300 ${activePanel === 'board' ? 'bg-[#ffc107] text-[#10213a]' : 'text-slate-300'}`}
             >
               <PenLine className="h-4 w-4" />
-              {screenAnnotationActive ? 'Chú thích' : 'Bảng học'}
+              {screenAnnotationActive ? T('Chú thích') : T('Bảng học')}
             </button>
           </div>
           )}
@@ -3507,7 +3517,7 @@ export function OnlineClassroomPage() {
               <button
                 type="button"
                 onClick={minimizeWhiteboardWindow}
-                aria-label="Thu nhỏ bảng trắng và trở lại lớp học"
+                aria-label={T('Thu nhỏ bảng trắng và trở lại lớp học')}
                 tabIndex={-1}
                 className="absolute inset-0 bg-slate-950/55 backdrop-blur-[2px]"
               />
@@ -3516,7 +3526,7 @@ export function OnlineClassroomPage() {
               ref={whiteboardDialogRef}
               role="dialog"
               aria-modal="true"
-              aria-label="Bảng trắng dùng chung"
+              aria-label={T('Bảng trắng dùng chung')}
               tabIndex={-1}
               onKeyDown={handleWhiteboardDialogKeyDown}
               className={`pointer-events-auto absolute z-10 min-h-0 transition-[inset] duration-200 motion-reduce:transition-none ${whiteboardWindowMode === 'maximized' ? 'inset-0' : 'inset-3 sm:inset-6 lg:inset-x-[6%] lg:inset-y-[5%]'}`}
@@ -3539,8 +3549,8 @@ export function OnlineClassroomPage() {
                     <button
                       type="button"
                       onClick={minimizeWhiteboardWindow}
-                      aria-label="Thu nhỏ bảng trắng"
-                      title="Thu nhỏ"
+                      aria-label={T('Thu nhỏ bảng trắng')}
+                      title={T('Thu nhỏ')}
                       className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
                     >
                       <Minus className="h-4 w-4" />
@@ -3548,8 +3558,8 @@ export function OnlineClassroomPage() {
                     <button
                       type="button"
                       onClick={toggleWhiteboardMaximize}
-                      aria-label={whiteboardWindowMode === 'maximized' ? 'Thu gọn cửa sổ bảng trắng' : 'Phóng to bảng trắng'}
-                      title={whiteboardWindowMode === 'maximized' ? 'Thu gọn cửa sổ' : 'Phóng to'}
+                      aria-label={whiteboardWindowMode === 'maximized' ? T('Thu gọn cửa sổ bảng trắng') : T('Phóng to bảng trắng')}
+                      title={whiteboardWindowMode === 'maximized' ? T('Thu gọn cửa sổ') : T('Phóng to')}
                       className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-300"
                     >
                       {whiteboardWindowMode === 'maximized' ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
@@ -3568,7 +3578,7 @@ export function OnlineClassroomPage() {
               aria-haspopup="dialog"
             >
               <PenLine className="h-4 w-4" />
-              Bảng trắng
+              {T('Bảng trắng')}
               {pendingBoardOperationCount > 0 && (
                 <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] text-amber-200">
                   {pendingBoardOperationCount}
@@ -3584,8 +3594,8 @@ export function OnlineClassroomPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] font-semibold leading-5 text-slate-500">
-          <p className="inline-flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Bảng được lưu theo buổi học bởi gia sư hoặc Admin.</p>
-          <p>Hệ thống lưu thời điểm vào/rời để Admin đối soát; không tự động sửa điểm thưởng hoặc khấu trừ lương.</p>
+          <p className="inline-flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />{T('Bảng được lưu theo buổi học bởi gia sư hoặc Admin.')}</p>
+          <p>{T('Hệ thống lưu thời điểm vào/rời để Admin đối soát; không tự động sửa điểm thưởng hoặc khấu trừ lương.')}</p>
         </div>
       </main>
 
@@ -3594,7 +3604,7 @@ export function OnlineClassroomPage() {
         onClose={() => {
           if (!extensionBusy) setShowExtensionConfirm(false)
         }}
-        title="Xác nhận gia hạn buổi học"
+        title={T('Xác nhận gia hạn buổi học')}
         size="sm"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -3603,7 +3613,7 @@ export function OnlineClassroomPage() {
               disabled={extensionBusy}
               onClick={() => setShowExtensionConfirm(false)}
             >
-              Giữ giờ kết thúc cũ
+              {T('Giữ giờ kết thúc cũ')}
             </Button>
             <Button
               loading={extensionBusy}
@@ -3612,19 +3622,19 @@ export function OnlineClassroomPage() {
               className="bg-amber-400 text-slate-950 hover:bg-amber-300 focus:ring-amber-300"
             >
               <Clock3 className="h-4 w-4" />
-              Gia hạn đúng 10 phút
+              {T('Gia hạn đúng 10 phút')}
             </Button>
           </div>
         )}
       >
         <div className="space-y-3 text-sm font-semibold leading-6 text-slate-600">
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-            <p className="font-black">Quyền này chỉ dùng được một lần cho cả buổi học.</p>
+            <p className="font-black">{T('Quyền này chỉ dùng được một lần cho cả buổi học.')}</p>
             <p className="mt-1 text-xs leading-5">
-              Giờ đóng lớp, link học viên, đồng hồ và quyền truy cập của hai bên sẽ cùng được kéo dài thêm 10 phút.
+              {T('Giờ đóng lớp, link học viên, đồng hồ và quyền truy cập của hai bên sẽ cùng được kéo dài thêm 10 phút.')}
             </p>
           </div>
-          <p>Sau khi xác nhận, hệ thống không thể hoàn lại lượt gia hạn cho buổi này.</p>
+          <p>{T('Sau khi xác nhận, hệ thống không thể hoàn lại lượt gia hạn cho buổi này.')}</p>
         </div>
       </Modal>
 
@@ -3637,7 +3647,7 @@ export function OnlineClassroomPage() {
             setRecordingError('')
           }
         }}
-        title="Ghi và lưu buổi học trên hệ thống"
+        title={T('Ghi và lưu buổi học trên hệ thống')}
         size="md"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -3650,7 +3660,7 @@ export function OnlineClassroomPage() {
                 setRecordingError('')
               }}
             >
-              Hủy
+              {T('Hủy')}
             </Button>
             <Button
               onClick={() => void startRecording()}
@@ -3659,22 +3669,22 @@ export function OnlineClassroomPage() {
               className="bg-[#ffc107] text-[#10213a] hover:bg-amber-400 focus:ring-amber-300"
             >
               <MonitorUp className="h-4 w-4" />
-              Chọn tab và bắt đầu ghi
+              {T('Chọn tab và bắt đầu ghi')}
             </Button>
           </div>
         )}
       >
         <div className="space-y-4 text-sm font-semibold leading-6 text-slate-600">
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-            <p className="font-black">Lưu riêng tư tối đa 3 ngày</p>
-            <p className="mt-1 text-xs leading-5">Video được tải từng phần lên hệ thống trong lúc ghi. Người có link xem lại có thể tải về máy; sau khi xác nhận đã tải xong, hệ thống xóa quyền truy cập và tệp ngay.</p>
+            <p className="font-black">{T('Lưu riêng tư tối đa 3 ngày')}</p>
+            <p className="mt-1 text-xs leading-5">{T('Video được tải từng phần lên hệ thống trong lúc ghi. Người có link xem lại có thể tải về máy; sau khi xác nhận đã tải xong, hệ thống xóa quyền truy cập và tệp ngay.')}</p>
           </div>
           <ol className="list-decimal space-y-2 pl-5 text-sm">
-            <li>Hệ thống đã ghi nhận học viên đồng ý cho đúng yêu cầu này.</li>
-            <li>Thông báo lại bằng lời trước khi bắt đầu; nếu học viên đổi ý, hãy hủy và không tiếp tục ghi.</li>
-            <li>Trong cửa sổ Chrome hoặc Edge, chọn <strong>tab lớp học 123English</strong> và bật <strong>Chia sẻ âm thanh của thẻ</strong>.</li>
-            <li>Cho phép micro ở hộp thoại kế tiếp để bản ghi có cả tiếng gia sư và học viên.</li>
-            <li>Dùng nút <strong>Dừng và lưu video</strong>, rồi giữ trang mở đến khi link xem lại xuất hiện.</li>
+            <li>{T('Hệ thống đã ghi nhận học viên đồng ý cho đúng yêu cầu này.')}</li>
+            <li>{T('Thông báo lại bằng lời trước khi bắt đầu; nếu học viên đổi ý, hãy hủy và không tiếp tục ghi.')}</li>
+            <li>{T('Trong cửa sổ Chrome hoặc Edge, chọn')} <strong>{T('tab lớp học 123English')}</strong> {T('và bật')} <strong>{T('Chia sẻ âm thanh của thẻ')}</strong>.</li>
+            <li>{T('Cho phép micro ở hộp thoại kế tiếp để bản ghi có cả tiếng gia sư và học viên.')}</li>
+            <li>{T('Dùng nút')} <strong>{T('Dừng và lưu video')}</strong>{T(', rồi giữ trang mở đến khi link xem lại xuất hiện.')}</li>
           </ol>
           <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-800">
             <input
@@ -3683,12 +3693,12 @@ export function OnlineClassroomPage() {
               onChange={(event) => setRecordingSetupConfirmed(event.target.checked)}
               className="mt-1 h-4 w-4 rounded border-slate-300 accent-amber-500"
             />
-            <span>Học viên đã đồng ý trên hệ thống. Tôi xác nhận sẽ chọn đúng tab lớp học, bật chia sẻ âm thanh và bảo quản link bản ghi.</span>
+            <span>{T('Học viên đã đồng ý trên hệ thống. Tôi xác nhận sẽ chọn đúng tab lớp học, bật chia sẻ âm thanh và bảo quản link bản ghi.')}</span>
           </label>
           {!recordingSupported && (
             <p className="flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              Thiết bị này chưa hỗ trợ. Hãy dùng Chrome hoặc Edge mới nhất trên máy tính.
+              {T('Thiết bị này chưa hỗ trợ. Hãy dùng Chrome hoặc Edge mới nhất trên máy tính.')}
             </p>
           )}
           {recordingError && (
