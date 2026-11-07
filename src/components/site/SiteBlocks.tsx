@@ -11,6 +11,7 @@
  */
 import { ArrowRight } from 'lucide-react'
 import type { SiteBlock } from '@/lib/siteContent'
+import { optimizedImage } from '@/lib/optimizedImages'
 
 /** Khung ngoài dùng chung: luôn nền trắng, khoảng cách dọc đồng nhất. */
 function BlockShell({ children }: { children: React.ReactNode }) {
@@ -48,7 +49,7 @@ function SoftImage({
         }`}
       />
       <img
-        src={src}
+        src={optimizedImage(src)}
         alt={alt}
         loading="lazy"
         style={{ aspectRatio: ratio }}
@@ -176,7 +177,7 @@ function ImageTextBlock({ block }: { block: SiteBlock }) {
           <div className={imageLeft ? 'lg:order-1' : 'lg:order-2'}>
             {block.image ? (
               <img
-                src={block.image}
+                src={optimizedImage(block.image)}
                 alt={block.title || ''}
                 loading="lazy"
                 style={{ aspectRatio: '4 / 3' }}

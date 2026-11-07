@@ -18,7 +18,7 @@ export function Logo({ className = '', clickable = true }: { className?: string;
 
   const imgEl = (
     <img
-      src="/brand-logo.png"
+      src="/brand-logo.webp"
       alt="123English"
       width={720}
       height={182}

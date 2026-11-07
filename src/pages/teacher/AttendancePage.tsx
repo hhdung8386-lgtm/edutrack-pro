@@ -70,6 +70,7 @@ const ATTENDANCE_SUBMISSION_SLOW_MS = 30_000
 export function AttendancePage() {
   const { teacherId } = useAuthStore()
   const { t, lang } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const [code, setCode] = useState('')
   const [student, setStudent] = useState<Student | null>(null)
   const [searching, setSearching] = useState(false)
@@ -171,7 +172,7 @@ export function AttendancePage() {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (images.length + files.length > 20) {
-      toast.warning('Tối đa 20 hình ảnh minh chứng')
+      toast.warning(L('Tối đa 20 hình ảnh minh chứng', 'Up to 20 evidence images'))
       return
     }
 
@@ -298,7 +299,7 @@ export function AttendancePage() {
 
       const selectedPkg = subjects.find(s => s.subjectId === selectedSubjectId)
       if (!selectedPkg) {
-        toast.error('Môn học được chọn không hợp lệ')
+        toast.error(L('Môn học được chọn không hợp lệ', 'The selected subject is not valid'))
         return
       }
 
@@ -312,12 +313,12 @@ export function AttendancePage() {
       // phòng trường hợp quỹ buổi vừa bị dùng hết ở nơi khác trong lúc gia sư
       // đang mở form. Hết buổi -> từ chối mọi hình thức điểm danh.
       if (!freshStudentSnap.exists()) {
-        toast.error('Không tìm thấy hồ sơ học viên')
+        toast.error(L('Không tìm thấy hồ sơ học viên', 'Student record not found'))
         return
       }
       const freshStudent = freshStudentSnap.data() as Student
       if (freshStudent.status === 'reserved') {
-        toast.error('Học viên đang bảo lưu — không thể điểm danh.')
+        toast.error(L('Học viên đang bảo lưu — không thể điểm danh.', 'This student’s course is on hold – attendance cannot be recorded.'))
         return
       }
       const freshSubjects = freshStudent.subjects && freshStudent.subjects.length > 0
@@ -328,7 +329,7 @@ export function AttendancePage() {
         ? (freshPkg.remainingMinutes || 0)
         : (freshStudent.remainingMinutes ?? ((freshStudent.remainingSessions || 0) * (freshStudent.minutesPerSession || 50)))
       if (freshStudent.status === 'expired' || freshRemaining <= 0) {
-        toast.error('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.')
+        toast.error(L('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.', 'This package cannot record this lesson right now. Please contact the academic office to check.'))
         return
       }
 
@@ -337,7 +338,7 @@ export function AttendancePage() {
       const pointsPer25Minutes = getTeacherPointsPer25Minutes(teacher)
       const lessonPoints = calculateLessonPoints(selectedMinutes, pointsPer25Minutes)
       if (freshRemaining < lessonPoints) {
-        toast.error('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.')
+        toast.error(L('Gói học hiện không đủ điều kiện ghi nhận buổi này. Vui lòng liên hệ giáo vụ để được kiểm tra.', 'This package cannot record this lesson right now. Please contact the academic office to check.'))
         return
       }
 
@@ -635,7 +636,7 @@ export function AttendancePage() {
                 onClick={() => { setCode(''); setBlockedStudent(null) }}
                 className="mt-3 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50"
               >
-                Tra mã học viên khác
+                {L('Tra mã học viên khác', 'Look up another student code')}
               </button>
             </div>
           </div>
@@ -700,7 +701,7 @@ export function AttendancePage() {
                   <p className="text-xl font-bold text-slate-900">{student.name}</p>
                   <p className="font-mono text-sm text-[#3BB8EB] mt-0.5">{student.code}</p>
                   <p className="text-sm font-semibold text-slate-700 mt-1">
-                    Gói đang chọn: <span className="text-indigo-600">{selectedPkg?.subjectName || 'Chưa chọn'}</span>
+                    {L('Gói đang chọn:', 'Selected package:')} <span className="text-indigo-600">{selectedPkg?.subjectName || L('Chưa chọn', 'None selected')}</span>
                   </p>
                   <SubjectTeacherNote note={subjectNotes[selectedPkg?.subjectId || '']} className="mt-2" />
                   {student.classroomURL && (
@@ -711,7 +712,7 @@ export function AttendancePage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors"
                       >
-                        Vào phòng học
+                        {L('Vào phòng học', 'Enter classroom')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
@@ -724,7 +725,7 @@ export function AttendancePage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 text-xs font-bold rounded-lg transition-colors"
                       >
-                        Mở giáo trình học
+                        {L('Mở giáo trình học', 'Open the course materials')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
@@ -744,7 +745,7 @@ export function AttendancePage() {
                   ))}
                   {selectedPkg?.timetableNote && (
                     <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200/50 rounded-xl">
-                      <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Note timetable học viên:</span>
+                      <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">{L('Note timetable học viên:', 'Student timetable note:')}</span>
                       <p className="text-xs text-slate-700 font-medium mt-1 whitespace-pre-wrap">{selectedPkg.timetableNote}</p>
                     </div>
                   )}
@@ -754,7 +755,7 @@ export function AttendancePage() {
               {/* Subject Package Dropdown inside Card */}
               {subjects.length > 0 && (
                 <div className="space-y-1.5 mt-4 pt-3 border-t border-slate-100">
-                  <label className="block text-xs font-bold text-slate-500">CHỌN GÓI MÔN HỌC ĐIỂM DANH *</label>
+                  <label className="block text-xs font-bold text-slate-500">{L('CHỌN GÓI MÔN HỌC ĐIỂM DANH *', 'CHOOSE THE SUBJECT PACKAGE *')}</label>
                   <select
                     value={selectedSubjectId}
                     onChange={(e) => setSelectedSubjectId(e.target.value)}
@@ -774,14 +775,13 @@ export function AttendancePage() {
               <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-5 flex items-start gap-3">
                 <AlertTriangle className="w-6 h-6 text-rose-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-rose-700">Gói học hiện không thể điểm danh</p>
+                  <p className="font-bold text-rose-700">{L('Gói học hiện không thể điểm danh', 'Attendance cannot be recorded for this package')}</p>
                   <p className="text-xs text-rose-600 mt-1 leading-normal font-semibold">
-                    Hệ thống chưa cho phép ghi nhận buổi dạy dưới bất kỳ hình thức nào
-                    (có mặt, vắng có phép hay vắng không phép). Vui lòng liên hệ giáo vụ để kiểm tra trạng thái gói học.
+                    {L('Hệ thống chưa cho phép ghi nhận buổi dạy dưới bất kỳ hình thức nào (có mặt, vắng có phép hay vắng không phép). Vui lòng liên hệ giáo vụ để kiểm tra trạng thái gói học.', 'The system cannot record this lesson in any form (present, excused or unexcused absence). Please contact the academic office to check the package status.')}
                   </p>
                   {subjects.length > 1 && (
                     <p className="text-xs text-rose-700 mt-2 font-bold">
-                      Bạn có thể chọn môn học khác phía trên nếu buổi dạy thuộc một gói khác.
+                      {L('Bạn có thể chọn môn học khác phía trên nếu buổi dạy thuộc một gói khác.', 'You can choose another subject above if this lesson belongs to a different package.')}
                     </p>
                   )}
                 </div>
@@ -920,8 +920,8 @@ export function AttendancePage() {
 
               {attendanceSubmissionDelayed && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                  <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
-                  <p className="mt-1 text-xs leading-5">Đừng gửi lại vì giao dịch cũ có thể đã được ghi. Khi có kết quả, trang sẽ tự cập nhật; nếu cần rời trang, hãy kiểm tra trạng thái trước khi thao tác lại.</p>
+                  <p className="font-bold">{L('Điểm danh vẫn đang được xác nhận', 'Attendance is still being confirmed')}</p>
+                  <p className="mt-1 text-xs leading-5">{L('Đừng gửi lại vì giao dịch cũ có thể đã được ghi. Khi có kết quả, trang sẽ tự cập nhật; nếu cần rời trang, hãy kiểm tra trạng thái trước khi thao tác lại.', 'Don’t submit again – the previous submission may already be saved. The page updates automatically when there is a result; if you leave, check the status before trying again.')}</p>
                 </div>
               )}
               <Button
@@ -971,7 +971,7 @@ export function AttendancePage() {
           <div className="space-y-3">
             {attendanceSubmissionDelayed && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                Điểm danh vẫn đang được xác nhận. Không gửi lại để tránh tạo buổi trùng.
+                {L('Điểm danh vẫn đang được xác nhận. Không gửi lại để tránh tạo buổi trùng.', 'Attendance is still being confirmed. Don’t submit again to avoid a duplicate lesson.')}
               </div>
             )}
             <p className="text-sm text-slate-600">

@@ -396,7 +396,7 @@ export function ChuongTrinhCaNhanHoaPage() {
               </div>
               <div className="relative min-h-80 overflow-hidden rounded-[2rem]">
                 <img
-                  src="/home-learning-companion-2026.png"
+                  src="/home-learning-companion-2026.webp"
                   alt="Học viên học trực tuyến cùng gia sư 123English"
                   width={1536}
                   height={1152}
@@ -594,7 +594,7 @@ export function ChuongTrinhCaNhanHoaPage() {
               </div>
               <div className="min-h-80 overflow-hidden rounded-[2rem]">
                 <img
-                  src="/home-teacher-student-2026.png"
+                  src="/home-teacher-student-2026.webp"
                   alt="Gia sư 123English hướng dẫn học viên trong buổi học trực tuyến"
                   width={1588}
                   height={988}
@@ -657,7 +657,7 @@ export function ChuongTrinhCaNhanHoaPage() {
                   body="Thay vì một khóa Business English chung, chương trình phân tích những tình huống học viên thực sự gặp."
                 />
                 <img
-                  src="/adult_meeting.png"
+                  src="/adult_meeting.webp"
                   alt="Học viên thực hành thuyết trình bằng tiếng Anh trong môi trường công việc"
                   width={1024}
                   height={1024}

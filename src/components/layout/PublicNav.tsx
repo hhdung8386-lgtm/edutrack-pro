@@ -3,13 +3,14 @@ import { Link, useLocation } from 'react-router-dom'
 import { Globe, Menu, Phone, X } from 'lucide-react'
 import { Logo } from '@/components/shared/Logo'
 import { COMPANY_INFO } from '@/components/layout/PublicFooter'
+import { pick, useLanguageStore } from '@/stores/languageStore'
 
 const NAV_ITEMS = [
-  { to: '/login', label: 'Trang chủ', match: ['/login', '/'] },
-  { to: '/chuong-trinh-hoc', label: 'Tài liệu', match: ['/chuong-trinh-hoc'] },
-  { to: '/giao-vien', label: 'Gia sư', match: ['/giao-vien'] },
-  { to: '/bai-viet', label: 'Bài viết', match: ['/bai-viet'] },
-  { to: '/lien-he', label: 'Liên hệ', match: ['/lien-he'] },
+  { to: '/login', label: { vi: 'Trang chủ', en: 'Home' }, match: ['/login', '/'] },
+  { to: '/chuong-trinh-hoc', label: { vi: 'Tài liệu', en: 'Materials' }, match: ['/chuong-trinh-hoc'] },
+  { to: '/giao-vien', label: { vi: 'Gia sư', en: 'Tutors' }, match: ['/giao-vien'] },
+  { to: '/bai-viet', label: { vi: 'Bài viết', en: 'Articles' }, match: ['/bai-viet'] },
+  { to: '/lien-he', label: { vi: 'Liên hệ', en: 'Contact' }, match: ['/lien-he'] },
 ]
 
 function isNavItemActive(pathname: string, match: string[]) {
@@ -18,6 +19,9 @@ function isNavItemActive(pathname: string, match: string[]) {
 
 export function PublicNav() {
   const location = useLocation()
+  const lang = useLanguageStore((state) => state.lang)
+  const setLang = useLanguageStore((state) => state.setLang)
+  const nextLang = lang === 'en' ? 'vi' : 'en'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -50,7 +54,7 @@ export function PublicNav() {
                     : 'border-transparent hover:border-[#FFC107]/50 hover:text-slate-950'
                 }`}
               >
-                {item.label}
+                {pick(item.label, lang)}
               </Link>
             )
           })}
@@ -66,17 +70,19 @@ export function PublicNav() {
           </a>
           <button
             type="button"
+            onClick={() => setLang(nextLang)}
             className="flex h-10 items-center gap-1.5 rounded-xl px-2 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
-            aria-label="Chuyển ngôn ngữ"
+            aria-label={lang === 'en' ? 'Chuyển sang Tiếng Việt' : 'Switch to English'}
+            title={lang === 'en' ? 'Chuyển sang Tiếng Việt' : 'Switch to English'}
           >
             <Globe className="h-4 w-4" />
-            EN
+            {nextLang.toUpperCase()}
           </button>
           <button
             type="button"
             onClick={() => setMobileMenuOpen((open) => !open)}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:border-[#FFC107] hover:bg-amber-50 xl:hidden"
-            aria-label={mobileMenuOpen ? 'Đóng menu' : 'Mở menu'}
+            aria-label={mobileMenuOpen ? (lang === 'en' ? 'Close menu' : 'Đóng menu') : (lang === 'en' ? 'Open menu' : 'Mở menu')}
             aria-expanded={mobileMenuOpen}
             aria-controls="public-mobile-menu"
           >
@@ -107,7 +113,7 @@ export function PublicNav() {
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
                 }`}
               >
-                {item.label}
+                {pick(item.label, lang)}
                 {active && <span className="h-2 w-2 rounded-full bg-[#FFC107]" aria-hidden="true" />}
               </Link>
             )

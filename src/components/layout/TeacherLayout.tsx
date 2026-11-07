@@ -11,6 +11,7 @@ import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
 import { Logo } from '@/components/shared/Logo'
 import { Teacher } from '@/types'
+import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { NotificationDrawer } from '../shared/NotificationDrawer'
 import { WaveDivider } from '@/components/shared/WaveDivider'
 import { Modal } from '@/components/ui/Modal'
@@ -160,7 +161,7 @@ export function TeacherLayout() {
     const unsub = onSnapshot(doc(db, 'teachers', teacherId), (snap) => {
       if (snap.exists()) {
         const teacherData = snap.data()
-        const offset = typeof teacherData.timezoneOffset === 'number' ? teacherData.timezoneOffset : 7
+        const offset = resolveTeacherTimezoneOffset(teacherData as Teacher)
         setTimezoneOffset(offset)
         const missingPhoto = !teacherData.photoURL
         const missingFields = missingTeacherFields(teacherData as Teacher)
@@ -241,13 +242,18 @@ export function TeacherLayout() {
           if (booking.createdAt && booking.createdAt.seconds > sessionStart.seconds) {
             // Trigger browser native notification
             if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification('Lịch mới chờ xác nhận', {
-                body: `${booking.studentName} đặt lịch lúc ${booking.requestedStart} ngày ${booking.requestedDate}. Vui lòng xác nhận trong 3 giờ.`,
+              const isEn = useLanguageStore.getState().lang === 'en'
+              new Notification(isEn ? 'New booking awaiting confirmation' : 'Lịch mới chờ xác nhận', {
+                body: isEn
+                  ? `${booking.studentName} booked ${booking.requestedStart} on ${booking.requestedDate} (Vietnam time). Please confirm within 3 hours.`
+                  : `${booking.studentName} đặt lịch lúc ${booking.requestedStart} ngày ${booking.requestedDate}. Vui lòng xác nhận trong 3 giờ.`,
                 icon: '/favicon.ico'
               })
             }
             // Trigger in-app toast
-            toast.warning(`Lịch chờ xác nhận: ${booking.studentName} - ${booking.requestedStart} ngày ${booking.requestedDate}`)
+            toast.warning(useLanguageStore.getState().lang === 'en'
+              ? `Booking awaiting confirmation: ${booking.studentName} – ${booking.requestedStart} on ${booking.requestedDate} (Vietnam time)`
+              : `Lịch chờ xác nhận: ${booking.studentName} - ${booking.requestedStart} ngày ${booking.requestedDate}`)
           }
         }
       })
@@ -275,7 +281,7 @@ export function TeacherLayout() {
             {!isSidebarCollapsed && (
               <span
                 className="mt-3 inline-flex items-center whitespace-nowrap rounded-lg border border-white/70 bg-white/60 px-2 py-1 text-[11px] font-mono font-bold tabular-nums text-brand-900/80"
-                title={formatTime()}
+                title={`${lang === 'vi' ? 'Giờ địa phương của bạn' : 'Your local time'}: ${formatTime()}`}
               >
                 {formatTime().replace(/^\d{4}-\d{2}-\d{2} /, '').replace('(UTC', '· UTC').replace(')', '')}
               </span>
@@ -284,11 +290,11 @@ export function TeacherLayout() {
               type="button"
               onClick={() => setIsSidebarCollapsed((current) => !current)}
               className={`mt-3 inline-flex items-center justify-center rounded-lg bg-white/60 p-2 text-brand-900/75 transition hover:bg-white hover:text-brand-900 ${isSidebarCollapsed ? '' : 'w-full gap-2'}`}
-              title={isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
-              aria-label={isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+              title={isSidebarCollapsed ? (lang === 'vi' ? 'Mở rộng menu' : 'Expand menu') : (lang === 'vi' ? 'Thu gọn menu' : 'Collapse menu')}
+              aria-label={isSidebarCollapsed ? (lang === 'vi' ? 'Mở rộng menu' : 'Expand menu') : (lang === 'vi' ? 'Thu gọn menu' : 'Collapse menu')}
             >
               {isSidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              {!isSidebarCollapsed && <span className="text-[11px] font-bold">Thu gọn menu</span>}
+              {!isSidebarCollapsed && <span className="text-[11px] font-bold">{lang === 'vi' ? 'Thu gọn menu' : 'Collapse menu'}</span>}
             </button>
           </div>
 
@@ -402,9 +408,11 @@ export function TeacherLayout() {
             <div className="mx-auto mb-4 max-w-4xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm font-bold">Cập nhật hồ sơ để được ưu tiên hiển thị</p>
+                  <p className="text-sm font-bold">{lang === 'vi' ? 'Cập nhật hồ sơ để được ưu tiên hiển thị' : 'Update your profile to be shown first'}</p>
                   <p className="mt-1 text-xs leading-5 text-amber-800">
-                    Trang Đội ngũ gia sư mới sẽ ưu tiên hồ sơ có ảnh rõ ràng. Lịch rảnh hiện do Admin quản lý để đảm bảo xếp lịch thống nhất.
+                    {lang === 'vi'
+                      ? 'Trang Đội ngũ gia sư mới sẽ ưu tiên hồ sơ có ảnh rõ ràng. Lịch rảnh hiện do Admin quản lý để đảm bảo xếp lịch thống nhất.'
+                      : 'The tutor team page shows profiles with a clear photo first. Availability is currently managed by the Admin to keep scheduling consistent.'}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -414,7 +422,7 @@ export function TeacherLayout() {
                       onClick={() => navigate('/teacher/profile')}
                       className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-amber-900 ring-1 ring-amber-200 transition hover:bg-amber-100"
                     >
-                      Cập nhật ảnh
+                      {lang === 'vi' ? 'Cập nhật ảnh' : 'Update photo'}
                     </button>
                   )}
                 </div>

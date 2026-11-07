@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { User, Lock, Eye, EyeOff, Search, ShieldCheck, Info, GraduationCap, Settings, Phone, Globe, ChevronRight, Award, BookOpen, MessageSquare, Users } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, Search, ShieldCheck, Info, GraduationCap, Settings, ChevronRight } from 'lucide-react'
 import { signIn, signInTeacher, signOut } from '@/lib/auth'
 import { waitForAuthProfile } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -15,27 +15,25 @@ import { PublicFaq } from '@/components/landing/PublicFaq'
 import { LatestNewsSection } from '@/components/landing/LatestNewsSection'
 import { PressCoverage } from '@/components/landing/PressCoverage'
 
-const loginSchema = z.object({
-  username: z.string().min(3, 'Tài khoản tối thiểu 3 ký tự'),
-  password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
-  remember: z.boolean().optional()
-})
+function buildLoginSchema(lang: 'vi' | 'en') {
+  return z.object({
+    username: z.string().min(3, lang === 'en' ? 'Username must be at least 3 characters' : 'Tài khoản tối thiểu 3 ký tự'),
+    password: z.string().min(6, lang === 'en' ? 'Password must be at least 6 characters' : 'Mật khẩu tối thiểu 6 ký tự'),
+    remember: z.boolean().optional()
+  })
+}
 
-type LoginData = z.infer<typeof loginSchema>
-
-type SectionKey = 'gioi-thieu' | 'chuong-trinh' | 'tin-tuc' | 'lien-he' | null
+type LoginData = z.infer<ReturnType<typeof buildLoginSchema>>
 
 export function LoginPage() {
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   
   // Login modal state
   const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
-
-  // Section modal state
-  const [activeSection, setActiveSection] = useState<SectionKey>(null)
 
   // Parent search state
   const [studentCode, setStudentCode] = useState('')
@@ -45,7 +43,7 @@ export function LoginPage() {
     handleSubmit: handleLoginSubmit,
     formState: { errors: loginErrors, isSubmitting: isLoginSubmitting },
     reset: resetLoginForm
-  } = useForm<LoginData>({ resolver: zodResolver(loginSchema) })
+  } = useForm<LoginData>({ resolver: zodResolver(buildLoginSchema(lang)) })
 
   const formatEmail = (username: string) => {
     if (!username.includes('@')) return `${username}@edutrackpro.app`
@@ -82,18 +80,18 @@ export function LoginPage() {
       else if (role === 'teacher_manager') navigate('/admin/teachers/online', { replace: true })
       else if (role === 'teacher') navigate('/teacher/ranking', { replace: true })
       else if (role === 'guest') navigate('/waiting', { replace: true })
-      else setErrorMsg('Tài khoản không có quyền truy cập')
+      else setErrorMsg(L('Tài khoản không có quyền truy cập', 'This account does not have access'))
     } catch (err: unknown) {
       const msg = (err as Error).message || ''
       const code = (err as { code?: string }).code || ''
       if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found') || msg.includes('invalid-email') || msg.includes('Mật khẩu không đúng') || msg.includes('Mã gia sư không tồn tại')) {
-        setErrorMsg('Mã gia sư hoặc mật khẩu không đúng')
+        setErrorMsg(L('Mã gia sư hoặc mật khẩu không đúng', 'Incorrect tutor code or password'))
       } else if (msg.includes('too-many-requests')) {
-        setErrorMsg('Quá nhiều lần thử. Vui lòng thử lại sau.')
+        setErrorMsg(L('Quá nhiều lần thử. Vui lòng thử lại sau.', 'Too many attempts. Please try again later.'))
       } else if (code.includes('unavailable') || code.includes('network-request-failed') || msg.includes('network-request-failed')) {
-        setErrorMsg('Kết nối tới máy chủ đang gián đoạn. Vui lòng kiểm tra mạng và thử lại; dữ liệu của bạn không bị thay đổi.')
+        setErrorMsg(L('Kết nối tới máy chủ đang gián đoạn. Vui lòng kiểm tra mạng và thử lại; dữ liệu của bạn không bị thay đổi.', 'The connection to the server was interrupted. Please check your network and try again – your data has not been changed.'))
       } else if (msg.includes('không có quyền') || msg.includes('does not have access')) {
-        setErrorMsg('Tài khoản không có quyền truy cập')
+        setErrorMsg(L('Tài khoản không có quyền truy cập', 'This account does not have access'))
       } else if (
         msg.includes('chưa được kích hoạt') ||
         msg.includes('chưa được khởi tạo') ||
@@ -112,9 +110,9 @@ export function LoginPage() {
         msg.includes('đã nghỉ dạy') ||
         msg.includes('đã bị khóa')
       ) {
-        setErrorMsg(msg)
+        setErrorMsg(lang === 'en' ? `${msg} (Please contact the 123English academic office if you need help.)` : msg)
       } else {
-        setErrorMsg('Đăng nhập thất bại. Vui lòng thử lại.')
+        setErrorMsg(L('Đăng nhập thất bại. Vui lòng thử lại.', 'Sign-in failed. Please try again.'))
       }
     }
   }
@@ -130,104 +128,6 @@ export function LoginPage() {
     resetLoginForm()
   }
 
-  // Section modal content
-  const sectionContent: Record<Exclude<SectionKey, null>, { title: string; content: React.ReactNode }> = {
-    'gioi-thieu': {
-      title: 'Giới thiệu chung',
-      content: (
-        <div className="space-y-4 text-slate-600 leading-relaxed">
-          <p><strong className="text-slate-900">123English</strong> cung cấp dịch vụ dạy thêm tiếng Anh trực tuyến theo hình thức gia sư 1 kèm 1, hoạt động dưới hình thức hộ kinh doanh. Gia sư lựa chọn nội dung phù hợp với kiến thức cần củng cố và nhu cầu học thêm của từng học viên.</p>
-          <p>Hình ảnh từ tư liệu cho thấy thương hiệu này từng xuất hiện trên các kênh truyền hình lớn như HTV9 để khẳng định chất lượng và sự tin cậy đối với người học.</p>
-        </div>
-      )
-    },
-    'chuong-trinh': {
-      title: 'Lộ trình tiêu chuẩn',
-      content: (
-        <div className="space-y-6">
-          <p className="text-slate-600">Dựa trên cấu trúc trang web và các hoạt động trên mạng xã hội, chương trình học tại đây khá đa dạng:</p>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-              <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-3">
-                <Users className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Đội ngũ gia sư</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">Gồm các thầy cô Việt Nam và gia sư nước ngoài đến từ Anh, Mỹ, sở hữu trình độ chuyên môn cao.</p>
-            </div>
-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-              <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-3">
-                <Globe className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Hình thức học</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">Tập trung mạnh vào mảng trực tuyến (Online), cho phép người học tiếp cận linh hoạt.</p>
-            </div>
-            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-              <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mb-3">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-1.5 text-sm">Nội dung</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">Nội dung học thêm gồm củng cố kiến thức tiếng Anh, luyện giao tiếp và thực hành theo nhu cầu của từng học viên.</p>
-            </div>
-          </div>
-        </div>
-      )
-    },
-    'tin-tuc': {
-      title: 'Tin tức & Sự kiện',
-      content: (
-        <div className="grid sm:grid-cols-2 gap-6">
-          <div className="flex gap-4">
-            <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
-              <Award className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 mb-1.5">Giải thưởng</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">Đạt các danh hiệu về thương hiệu giáo dục uy tín trong năm 2024.</p>
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-              <MessageSquare className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 mb-1.5">Truyền thông</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">Thường xuyên cập nhật các video bài giảng, giới thiệu gia sư mới và các chương trình ưu đãi học phí.</p>
-            </div>
-          </div>
-        </div>
-      )
-    },
-    'lien-he': {
-      title: 'Liên hệ',
-      content: (
-        <div className="space-y-4">
-          <p className="text-slate-600">Để tìm hiểu chi tiết hơn hoặc đăng ký tư vấn, bạn có thể liên hệ qua các kênh sau:</p>
-          <div className="space-y-3">
-            <a href="https://facebook.com/123englishinvietnam" target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 bg-slate-50 hover:bg-slate-100 transition-colors p-4 rounded-xl">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center font-bold text-lg text-white">f</div>
-              <div>
-                <div className="text-xs text-slate-500 font-medium">Facebook</div>
-                <div className="font-bold text-slate-900 text-sm">facebook.com/123englishinvietnam</div>
-              </div>
-            </a>
-            <a href="tel:0906966691" className="flex items-center gap-4 bg-slate-50 hover:bg-slate-100 transition-colors p-4 rounded-xl">
-              <div className="w-10 h-10 bg-[#FFC107] rounded-full flex items-center justify-center text-slate-900">
-                <Phone className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 font-medium">Hotline</div>
-                <div className="font-bold text-slate-900 text-sm">090.696.6691</div>
-              </div>
-            </a>
-          </div>
-          <p className="text-xs text-slate-400 mt-4">
-            Để trao đổi về nhu cầu học thêm và lựa chọn gia sư phù hợp, bạn có thể liên hệ trực tiếp với 123English qua fanpage.
-          </p>
-        </div>
-      )
-    }
-  }
-
   return (
     <div className="min-h-screen flex flex-col overflow-x-hidden font-sans bg-white">
       <PublicNav />
@@ -235,8 +135,13 @@ export function LoginPage() {
       <main className="w-full">
         <section className="home-banner-hero">
           <img
-            src="/home-hero-banner-123english.png"
-            alt="Gia sư 123English giảng dạy trực tuyến cùng mascot"
+            src="/home-hero-banner-123english.webp"
+            srcSet="/home-hero-banner-123english-1200.webp 1200w, /home-hero-banner-123english.webp 2160w"
+            sizes="100vw"
+            width={2160}
+            height={1013}
+            decoding="async"
+            alt={L('Gia sư 123English giảng dạy trực tuyến cùng mascot', 'A 123English tutor teaching online with the mascot')}
             className="home-banner-hero-image"
             fetchPriority="high"
           />
@@ -340,23 +245,11 @@ export function LoginPage() {
       <PublicFaq />
       <PublicFooter />
 
-      {/* Section Modal */}
-      {activeSection && (
-        <Modal
-          open={activeSection !== null}
-          onClose={() => setActiveSection(null)}
-          title={sectionContent[activeSection].title}
-          size="md"
-        >
-          {sectionContent[activeSection].content}
-        </Modal>
-      )}
-
       {/* Login Modal */}
       <Modal
         open={loginRole !== null}
         onClose={() => setLoginRole(null)}
-        title={loginRole === 'teacher' ? 'Đăng nhập Gia sư' : 'Đăng nhập Quản trị viên'}
+        title={loginRole === 'teacher' ? L('Đăng nhập Gia sư', 'Tutor sign-in') : L('Đăng nhập Quản trị viên', 'Administrator sign-in')}
         size="sm"
       >
         <form onSubmit={handleLoginSubmit(onLogin)} className="space-y-4">
@@ -368,13 +261,13 @@ export function LoginPage() {
 
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">
-              {loginRole === 'teacher' ? 'Mã gia sư' : 'Tài khoản'}
+              {loginRole === 'teacher' ? L('Mã gia sư', 'Tutor code') : L('Tài khoản', 'Username')}
             </label>
             <div className="relative">
               <User className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder={loginRole === 'teacher' ? 'Ví dụ: GVMLLNBR' : 'Nhập tên đăng nhập'}
+                placeholder={loginRole === 'teacher' ? L('Ví dụ: GVMLLNBR', 'e.g. GVMLLNBR') : L('Nhập tên đăng nhập', 'Enter your username')}
                 autoComplete="username"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2196F3] focus:bg-white transition-all text-sm font-medium"
                 {...registerLogin('username')}
@@ -384,12 +277,12 @@ export function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Mật khẩu</label>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">{L('Mật khẩu', 'Password')}</label>
             <div className="relative">
               <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder={loginRole === 'teacher' ? 'Nhập mật khẩu gia sư' : 'Nhập mật khẩu'}
+                placeholder={loginRole === 'teacher' ? L('Nhập mật khẩu gia sư', 'Enter your tutor password') : L('Nhập mật khẩu', 'Enter your password')}
                 autoComplete="current-password"
                 className="w-full pl-11 pr-12 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2196F3] focus:bg-white transition-all text-sm font-medium"
                 {...registerLogin('password')}
@@ -397,6 +290,7 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? L('Ẩn mật khẩu', 'Hide password') : L('Hiện mật khẩu', 'Show password')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -407,7 +301,7 @@ export function LoginPage() {
 
           {loginRole === 'teacher' && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-600 font-medium">
-               Đăng nhập với mã gia sư (vd: GVMLLNBR)
+               {L('Đăng nhập với mã gia sư (vd: GVMLLNBR)', 'Sign in with your tutor code (e.g. GVMLLNBR)')}
             </div>
           )}
 
@@ -419,7 +313,7 @@ export function LoginPage() {
             {isLoginSubmitting ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
-              'Đăng nhập ngay'
+              L('Đăng nhập ngay', 'Sign in')
             )}
           </button>
         </form>

@@ -5,6 +5,7 @@ import { ReactNode, useEffect, useState } from 'react'
 import { collection, query, where, getDocsFromServer, doc, getDocFromServer, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { signOut } from '@/lib/auth'
+import { useL } from '@/stores/languageStore'
 
 interface ProtectedRouteProps {
   children: ReactNode
@@ -14,6 +15,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, requiredRole, requireContractAccepted = false }: ProtectedRouteProps) {
   const { user, role, accessScope, loading, initialized, teacherId, profileStatus } = useAuthStore()
+  const L = useL()
   const location = useLocation()
   const [hasAcceptedContract, setHasAcceptedContract] = useState(false)
   const [hasRegisteredAvailability, setHasRegisteredAvailability] = useState(false)
@@ -105,17 +107,17 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
           <h1 className="text-lg font-bold text-slate-900">
-            {missingProfile ? 'Tài khoản chưa được khởi tạo đầy đủ' : 'Chưa xác nhận được quyền truy cập'}
+            {missingProfile ? L('Tài khoản chưa được khởi tạo đầy đủ', 'This account has not been fully set up') : L('Chưa xác nhận được quyền truy cập', 'Your access could not be confirmed')}
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
             {missingProfile
-              ? 'Vui lòng liên hệ Admin và chọn “Khôi phục đăng nhập” cho tài khoản gia sư này.'
-              : 'Kết nối tới máy chủ đang gián đoạn. Vui lòng thử tải lại; dữ liệu của bạn không bị thay đổi.'}
+              ? L('Vui lòng liên hệ Admin và chọn “Khôi phục đăng nhập” cho tài khoản gia sư này.', 'Please contact the Admin and ask them to choose “Restore sign-in” for this tutor account.')
+              : L('Kết nối tới máy chủ đang gián đoạn. Vui lòng thử tải lại; dữ liệu của bạn không bị thay đổi.', 'The connection to the server was interrupted. Please try reloading – your data has not been changed.')}
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {!missingProfile && (
               <button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
-                Thử tải lại
+                {L('Thử tải lại', 'Try again')}
               </button>
             )}
             <button
@@ -123,7 +125,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
               onClick={() => { void signOut().finally(() => window.location.assign('/login')) }}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
             >
-              Về trang đăng nhập
+              {L('Về trang đăng nhập', 'Back to sign-in')}
             </button>
           </div>
         </div>
@@ -135,10 +137,10 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-lg font-bold text-slate-900">Chưa kiểm tra được quyền truy cập</h1>
-          <p className="mt-2 text-sm text-slate-500">Kết nối đang gián đoạn. Vui lòng tải lại trang để kiểm tra hợp đồng và lịch rảnh.</p>
+          <h1 className="text-lg font-bold text-slate-900">{L('Chưa kiểm tra được quyền truy cập', 'Could not check your access')}</h1>
+          <p className="mt-2 text-sm text-slate-500">{L('Kết nối đang gián đoạn. Vui lòng tải lại trang để kiểm tra hợp đồng và lịch rảnh.', 'The connection was interrupted. Please reload the page to check your contract and availability.')}</p>
           <button type="button" onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
-            Tải lại trang
+            {L('Tải lại trang', 'Reload page')}
           </button>
         </div>
       </div>
@@ -161,7 +163,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-rose-500 mb-2">403</h1>
-          <p className="text-slate-500">Bạn không có quyền truy cập trang này</p>
+          <p className="text-slate-500">{L('Bạn không có quyền truy cập trang này', 'You do not have access to this page')}</p>
         </div>
       </div>
     )
@@ -180,12 +182,12 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-lg font-bold text-slate-900">Tài khoản chưa đồng bộ hồ sơ gia sư</h1>
+          <h1 className="text-lg font-bold text-slate-900">{L('Tài khoản chưa đồng bộ hồ sơ gia sư', 'Your account is not linked to a tutor profile yet')}</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Vui lòng quay lại trang đăng nhập và đăng nhập lại một lần để hệ thống tự khôi phục liên kết hồ sơ. Nếu vẫn còn lỗi, hãy liên hệ Admin.
+            {L('Vui lòng quay lại trang đăng nhập và đăng nhập lại một lần để hệ thống tự khôi phục liên kết hồ sơ. Nếu vẫn còn lỗi, hãy liên hệ Admin.', 'Please go back to the sign-in page and sign in again once so the system can restore the link to your profile. If the problem continues, contact the Admin.')}
           </p>
           <a href="/login" className="mt-4 inline-flex rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">
-            Về trang đăng nhập
+            {L('Về trang đăng nhập', 'Back to sign-in')}
           </a>
         </div>
       </div>
@@ -199,7 +201,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         <div className="min-h-screen bg-slate-50 flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-rose-500 mb-2">403</h1>
-            <p className="text-slate-500">Bạn không có quyền truy cập trang này</p>
+            <p className="text-slate-500">{L('Bạn không có quyền truy cập trang này', 'You do not have access to this page')}</p>
           </div>
         </div>
       )
@@ -212,7 +214,7 @@ export function ProtectedRoute({ children, requiredRole, requireContractAccepted
         <div className="min-h-screen bg-slate-50 flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-rose-500 mb-2">403</h1>
-            <p className="text-slate-500">Bạn không có quyền truy cập trang này</p>
+            <p className="text-slate-500">{L('Bạn không có quyền truy cập trang này', 'You do not have access to this page')}</p>
           </div>
         </div>
       )

@@ -14,15 +14,21 @@ import { PublicNav } from '@/components/layout/PublicNav'
 import { SiteBlocks } from '@/components/site/SiteBlocks'
 import { useSiteContent } from '@/lib/siteContent'
 import {
-  CURRICULUM_GROUPS,
+  localizeCurriculumGroups,
   type CurriculumAudience,
   type CurriculumItem,
 } from '@/data/curriculumCatalog'
+import { useL, useLang } from '@/stores/languageStore'
+
+function useCurriculumGroups() {
+  return localizeCurriculumGroups(useLang())
+}
 
 const GROUP_STYLES: Record<
   CurriculumAudience,
   {
     label: string
+    labelEn: string
     border: string
     background: string
     accent: string
@@ -32,6 +38,7 @@ const GROUP_STYLES: Record<
 > = {
   children: {
     label: 'Khởi đầu tự nhiên',
+    labelEn: 'A natural start',
     border: 'border-emerald-200',
     background: 'bg-emerald-50/70',
     accent: 'text-emerald-700',
@@ -40,6 +47,7 @@ const GROUP_STYLES: Record<
   },
   teens: {
     label: 'Phát triển học thuật',
+    labelEn: 'Academic growth',
     border: 'border-sky-200',
     background: 'bg-sky-50/70',
     accent: 'text-sky-700',
@@ -48,6 +56,7 @@ const GROUP_STYLES: Record<
   },
   adults: {
     label: 'Ứng dụng thực tế',
+    labelEn: 'Real-world use',
     border: 'border-amber-200',
     background: 'bg-amber-50/70',
     accent: 'text-amber-700',
@@ -65,6 +74,8 @@ const LEVEL_STAGES = [
     levels: '1',
     title: 'Nền tảng',
     note: 'Từ vựng, mẫu câu cơ bản.',
+    titleEn: 'Foundation',
+    noteEn: 'Basic vocabulary and sentence patterns.',
     span: 1,
     surface: 'bg-[#FFF6CF]',
     text: 'text-[#8A5800]',
@@ -73,6 +84,8 @@ const LEVEL_STAGES = [
     levels: '2-5',
     title: 'Thực chiến',
     note: 'Phát triển kỹ năng giao tiếp, học thuật và ứng dụng tiếng Anh vào các tình huống thực tế.',
+    titleEn: 'Practical',
+    noteEn: 'Developing communication and academic skills and applying English to real-life situations.',
     span: 4,
     surface: 'bg-[#EAF8FD]',
     text: 'text-[#087AA1]',
@@ -81,6 +94,8 @@ const LEVEL_STAGES = [
     levels: '6-9',
     title: 'Chuyên sâu',
     note: 'Nâng cao khả năng diễn đạt, tư duy ngôn ngữ và sử dụng tiếng Anh một cách tự chủ, linh hoạt.',
+    titleEn: 'Advanced',
+    noteEn: 'Improving expression and language thinking, and using English independently and flexibly.',
     span: 4,
     surface: 'bg-[#EAF8F2]',
     text: 'text-[#08795A]',
@@ -116,10 +131,11 @@ function LevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudie
 
 function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: CurriculumAudience }) {
   const style = GROUP_STYLES[tone]
+  const L = useL()
 
   return (
     <div>
-      <div className="grid grid-cols-9 gap-1.5" aria-label={`Chọn cuốn của ${item.name}`}>
+      <div className="grid grid-cols-9 gap-1.5" aria-label={L(`Chọn cuốn của ${item.name}`, `Choose a book of ${item.name}`)}>
         {Array.from({ length: 9 }, (_, index) => {
           const level = index + 1
           const active = level >= item.startLevel && level <= item.endLevel
@@ -133,7 +149,7 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
               key={level}
               to={`/chuong-trinh-hoc/${item.id}/level/${level}`}
               className={className}
-              aria-label={`Xem lộ trình ${item.name}, Cuốn ${level}`}
+              aria-label={L(`Xem lộ trình ${item.name}, Cuốn ${level}`, `View the plan for ${item.name}, Book ${level}`)}
             >
               {level}
             </Link>
@@ -143,19 +159,21 @@ function StudyPlanLevelRail({ item, tone }: { item: CurriculumItem; tone: Curric
         })}
       </div>
       <p className="mt-2 text-xs font-semibold text-slate-500">
-        Chọn Cuốn 1–{item.studyPlanEndLevel} để xem đầy đủ nội dung từng buổi học.
+        {L(`Chọn Cuốn 1–${item.studyPlanEndLevel} để xem đầy đủ nội dung từng buổi học.`, `Choose Book 1–${item.studyPlanEndLevel} to see the full content of every lesson.`)}
       </p>
     </div>
   )
 }
 
 function DesktopMatrix() {
+  const L = useL()
+  const groups = useCurriculumGroups()
   return (
     <div className="hidden overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_22px_64px_rgba(35,55,80,0.08)] md:block">
       {/* Hàng ba chặng năng lực — tỷ lệ 1 / 4 / 4 bám đúng C1..C9 */}
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-200 bg-[#FFFBEB]">
         <div className="flex items-center px-6 py-3 text-xs font-black uppercase tracking-[0.12em] text-[#A76500]">
-          Các cuốn tài liệu tham khảo
+          {L('Các cuốn tài liệu tham khảo', 'Reference books')}
         </div>
         <div className="grid grid-cols-9 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
@@ -164,34 +182,34 @@ function DesktopMatrix() {
               className={`flex flex-col items-center justify-center px-3 py-3 text-center ${stage.surface}`}
               style={{ gridColumn: `span ${stage.span}` }}
             >
-              <p className={`mt-0.5 text-xs font-black ${stage.text}`}>{stage.title}</p>
-              <p className="mt-1 hidden max-w-[34rem] text-[11px] font-semibold leading-4 text-slate-500 lg:block">{stage.note}</p>
+              <p className={`mt-0.5 text-xs font-black ${stage.text}`}>{L(stage.title, stage.titleEn)}</p>
+              <p className="mt-1 hidden max-w-[34rem] text-[11px] font-semibold leading-4 text-slate-500 lg:block">{L(stage.note, stage.noteEn)}</p>
             </div>
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-amber-300 bg-[#FFC107] text-[#10213A]">
-        <div className="flex items-center px-6 py-4 text-sm font-extrabold">Danh mục tài liệu</div>
+        <div className="flex items-center px-6 py-4 text-sm font-extrabold">{L('Danh mục tài liệu', 'Materials')}</div>
         <div className="grid grid-cols-9">
           {Array.from({ length: 9 }, (_, index) => (
             <div
               key={index}
               className="flex min-h-16 items-center justify-center border-l border-[#10213A]/10 text-sm font-black"
             >
-              C{index + 1}
+              {L('C', 'B')}{index + 1}
             </div>
           ))}
         </div>
       </div>
 
-      {CURRICULUM_GROUPS.map((group) => {
+      {groups.map((group) => {
         const style = GROUP_STYLES[group.id]
         return (
           <section key={group.id} className={`border-b border-slate-200 last:border-b-0 ${style.background}`}>
             <div className="grid grid-cols-[250px_minmax(0,1fr)]">
               <div className={`px-6 py-5 ${style.accent}`}>
-                <p className="text-xs font-black uppercase tracking-[0.12em]">{style.label}</p>
+                <p className="text-xs font-black uppercase tracking-[0.12em]">{L(style.label, style.labelEn)}</p>
                 <h3 className="mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
                 <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{group.summary}</p>
               </div>
@@ -202,7 +220,7 @@ function DesktopMatrix() {
                     type="button"
                     onClick={() => scrollToCurriculum(item.id)}
                     className="grid w-full grid-cols-9 items-center gap-1.5 text-left"
-                    aria-label={`Xem ${item.name}`}
+                    aria-label={L(`Xem ${item.name}`, `View ${item.name}`)}
                   >
                     <span
                       className={`group relative flex min-h-12 items-center justify-between gap-3 rounded-xl px-4 text-sm font-extrabold text-white shadow-sm transition-transform hover:-translate-y-0.5 active:translate-y-px ${style.rail}`}
@@ -212,7 +230,7 @@ function DesktopMatrix() {
                         } as CSSProperties
                       }
                     >
-                      <span className="truncate">{item.name.replace('Giáo trình ', '')}</span>
+                      <span className="truncate">{item.name.replace('Giáo trình ', '').replace(/ course$/, '')}</span>
                       <ArrowDown className="h-4 w-4 shrink-0 opacity-80 transition-transform group-hover:translate-y-0.5" />
                     </span>
                   </button>
@@ -227,31 +245,33 @@ function DesktopMatrix() {
 }
 
 function MobileMatrix() {
+  const L = useL()
+  const groups = useCurriculumGroups()
   return (
     <div className="space-y-5 md:hidden">
       {/* Ba chặng năng lực — bản rút gọn cho điện thoại */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <p className="bg-[#FFC107] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#10213A]">
-          Các cuốn tài liệu tham khảo
+          {L('Các cuốn tài liệu tham khảo', 'Reference books')}
         </p>
         <div className="grid grid-cols-3 gap-px bg-amber-200/60">
           {LEVEL_STAGES.map((stage) => (
             <div key={stage.title} className={`px-2 py-2.5 text-center ${stage.surface}`}>
-              <p className={`text-xs font-black leading-4 ${stage.text}`}>{stage.title}</p>
-              <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">{stage.note}</p>
+              <p className={`text-xs font-black leading-4 ${stage.text}`}>{L(stage.title, stage.titleEn)}</p>
+              <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-500">{L(stage.note, stage.noteEn)}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {CURRICULUM_GROUPS.map((group) => {
+      {groups.map((group) => {
         const style = GROUP_STYLES[group.id]
         return (
           <section
             key={group.id}
             className={`rounded-[1.5rem] border p-4 ${style.border} ${style.background}`}
           >
-            <p className={`text-[11px] font-black uppercase tracking-[0.1em] ${style.accent}`}>{style.label}</p>
+            <p className={`text-[11px] font-black uppercase tracking-[0.1em] ${style.accent}`}>{L(style.label, style.labelEn)}</p>
             <h3 className="mt-1 text-xl font-black text-[#10213A]">{group.label}</h3>
             <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{group.summary}</p>
 
@@ -287,6 +307,8 @@ export function ChuongTrinhHocPage() {
   // Khối nội dung do admin cấu hình trong trang "Nội dung trang web"
   const { content } = useSiteContent('curriculum')
   const extraBlocks = content.blocks.filter((block) => block.type !== 'hero')
+  const L = useL()
+  const groups = useCurriculumGroups()
 
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-white font-[var(--font-quicksand)] text-[#10213A]">
@@ -298,15 +320,15 @@ export function ChuongTrinhHocPage() {
         <section id="ban-do-giao-trinh" className="program-scroll-reveal scroll-mt-20 px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="w-full">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">TÀI LIỆU HỖ TRỢ DẠY THÊM</h2>
+              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">{L('TÀI LIỆU HỖ TRỢ DẠY THÊM', 'TEACHING MATERIALS')}</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
-                123English chuẩn bị nhiều bộ tài liệu để gia sư tham khảo và lựa chọn trong quá trình dạy thêm 1 kèm 1.
+                {L('123English chuẩn bị nhiều bộ tài liệu để gia sư tham khảo và lựa chọn trong quá trình dạy thêm 1 kèm 1.', '123English prepares a range of material sets that tutors can refer to and choose from when teaching 1-on-1.')}
               </p>
               <p className="mt-3 text-base font-medium leading-7 text-slate-600">
-                Mỗi bộ tài liệu được chia thành nhiều cuốn. Học viên không bắt buộc phải học lần lượt hoặc hoàn thành toàn bộ các cuốn.
+                {L('Mỗi bộ tài liệu được chia thành nhiều cuốn. Học viên không bắt buộc phải học lần lượt hoặc hoàn thành toàn bộ các cuốn.', 'Each set is divided into several books. Learners do not have to study them in order or complete every book.')}
               </p>
               <p className="mt-3 text-base font-medium leading-7 text-slate-600">
-                Gia sư lựa chọn cuốn và nội dung phù hợp dựa trên kiến thức hiện tại, độ tuổi và nhu cầu học thêm của từng học viên.
+                {L('Gia sư lựa chọn cuốn và nội dung phù hợp dựa trên kiến thức hiện tại, độ tuổi và nhu cầu học thêm của từng học viên.', 'The tutor picks the right book and content based on each learner’s current knowledge, age and learning needs.')}
               </p>
             </div>
 
@@ -320,14 +342,14 @@ export function ChuongTrinhHocPage() {
         <section className="program-scroll-reveal bg-white px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">Chi tiết từng bộ tài liệu</h2>
+              <h2 className="text-3xl font-black tracking-[-0.035em] sm:text-4xl">{L('Chi tiết từng bộ tài liệu', 'About each material set')}</h2>
               <p className="mt-4 text-base font-medium leading-7 text-slate-600">
-                Nội dung giúp gia sư, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.
+                {L('Nội dung giúp gia sư, học viên và phụ huynh cùng hiểu mục tiêu trước khi lựa chọn.', 'This helps tutors, learners and parents understand the goals before choosing.')}
               </p>
             </div>
 
             <div className="mt-12 space-y-16">
-              {CURRICULUM_GROUPS.map((group) => {
+              {groups.map((group) => {
                 const style = GROUP_STYLES[group.id]
                 const GroupIcon =
                   group.id === 'children' ? Headphones : group.id === 'teens' ? GraduationCap : MessageCircleMore
@@ -385,9 +407,9 @@ export function ChuongTrinhHocPage() {
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-2xl font-black">Chưa chắc lộ trình nào phù hợp?</h2>
+                <h2 className="text-2xl font-black">{L('Chưa chắc lộ trình nào phù hợp?', 'Not sure which path is right?')}</h2>
                 <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-300">
-                  Tra cứu tiến độ hiện tại hoặc liên hệ 123English để được tư vấn theo độ tuổi và mục tiêu học tập.
+                  {L('Tra cứu tiến độ hiện tại hoặc liên hệ 123English để được tư vấn theo độ tuổi và mục tiêu học tập.', 'Check current progress or contact 123English for advice based on age and learning goals.')}
                 </p>
               </div>
             </div>
@@ -396,13 +418,13 @@ export function ChuongTrinhHocPage() {
                 to="/login#tra-cuu"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#FFC107] px-5 text-sm font-black text-[#10213A] transition-transform hover:-translate-y-0.5 active:translate-y-px"
               >
-                Tra cứu tiến độ
+                {L('Tra cứu tiến độ', 'Check progress')}
               </Link>
               <Link
                 to="/lien-he"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/25 px-5 text-sm font-black text-white transition-colors hover:bg-white/10"
               >
-                Nhận tư vấn
+                {L('Nhận tư vấn', 'Get advice')}
               </Link>
             </div>
           </div>

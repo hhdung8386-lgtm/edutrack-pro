@@ -36,7 +36,7 @@ import { HOMEWORK_TYPE_LABELS_EN, HOMEWORK_TYPE_LABELS_VI, parseLegacyLessonRepo
 import { bookingIntervalsOverlap } from '@/lib/bookingConflicts'
 import { uploadErrorMessage, uploadStudentPhoto } from '@/lib/imageUploader'
 import { formatUtcOffset, getDateISOAtOffset } from '@/lib/timezoneUtils'
-import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
+import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { getCompletedLearningMinutes } from '@/lib/lessonAttendance'
 import { canStudentManageBooking, normalizeGroupClassIds } from '@/lib/groupClasses'
 import { ImageLightbox } from '@/components/shared/ImageLightbox'
@@ -664,7 +664,7 @@ function TeacherProfileContent({ teacher, availability, availabilityLoading, boo
                     <span className="ml-1.5 font-semibold text-slate-500">- {selectedDate ? formatProfileDate(selectedDate.date) : ''}</span>
                   </p>
                   <p className="mt-1 text-[9px] font-semibold text-sky-700">
-                    {lang === 'vi' ? 'Giờ Việt Nam (UTC+07:00)' : 'Vietnam time (UTC+07:00)'} · {lang === 'vi' ? 'Múi giờ gia sư' : 'Teacher timezone'} {formatUtcOffset(teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country))}
+                    {lang === 'vi' ? 'Giờ Việt Nam (UTC+07:00)' : 'Vietnam time (UTC+07:00)'} · {lang === 'vi' ? 'Múi giờ gia sư' : 'Teacher timezone'} {formatUtcOffset(resolveTeacherTimezoneOffset(teacher))}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-[9px] font-bold text-slate-500">

@@ -17,7 +17,7 @@ import { getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import { getCountryRate } from '@/lib/countryPricing'
 import { convertVnDateTimeToTeacher, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
-import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
+import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { buildTeacherScheduleBookingIndex, teacherScheduleCellKey } from '@/lib/teacherScheduleGrid'
 import { uploadLessonImage, uploadErrorMessage } from '@/lib/imageUploader'
 import { classroomRoute, onlineClassroomJoinWindow } from '@/lib/onlineClassroom'
@@ -284,6 +284,7 @@ export function BookingSchedulesPage() {
   const navigate = useNavigate()
   const { teacherId } = useAuthStore()
   const { lang, t } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [slots, setSlots] = useState<Record<DayOfWeek, DayAvailability>>(emptySlots())
   const [weekStartOverride, setWeekStartOverride] = useState<Date | null>(null)
@@ -327,7 +328,8 @@ export function BookingSchedulesPage() {
   const [submittingCancelRequest, setSubmittingCancelRequest] = useState(false)
   const [withdrawingCancelRequest, setWithdrawingCancelRequest] = useState(false)
 
-  const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
+  // Múi giờ thật của gia sư tại tuần đang xem (có tính giờ mùa hè/DST).
+  const teacherOffset = resolveTeacherTimezoneOffset(teacher, weekStartOverride ?? new Date())
   const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
   const weekStart = weekStartOverride || defaultWeekStart
   const setWeekStart = setWeekStartOverride
@@ -730,7 +732,7 @@ export function BookingSchedulesPage() {
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (images.length + files.length > 20) {
-      toast.warning('Tối đa 20 hình ảnh minh chứng')
+      toast.warning(L('Tối đa 20 hình ảnh minh chứng', 'Up to 20 evidence images'))
       return
     }
 
@@ -782,7 +784,7 @@ export function BookingSchedulesPage() {
     const bookTitle = isPresent ? book.trim() : 'Học viên vắng'
 
     if (isPresent && !bookTitle) {
-      toast.warning('Vui lòng nhập sách học/tài liệu buổi dạy')
+      toast.warning(L('Vui lòng nhập sách học/tài liệu buổi dạy', 'Please enter the book/material used in the lesson'))
       return
     }
 
@@ -790,7 +792,7 @@ export function BookingSchedulesPage() {
     if (isPresent) {
       const words = bookTitle.split(/\s+/).filter(Boolean).length
       if (words > 20) {
-        toast.warning('Tên sách học không được vượt quá 20 từ!')
+        toast.warning(L('Tên sách học không được vượt quá 20 từ!', 'The book name must not exceed 20 words!'))
         return
       }
       // Báo cáo chi tiết bắt buộc khi học viên có mặt
@@ -1128,10 +1130,10 @@ export function BookingSchedulesPage() {
       if (attendanceSubmissionAttemptRef.current !== submissionAttempt) return
 
       toast.success(followUpBookings.length > 0
-        ? `Đã ghi vắng cho ca này và ${followUpBookings.length} ca còn lại trong ngày — chỉ tính tiền 1 lần 25 phút.`
+        ? L(`Đã ghi vắng cho ca này và ${followUpBookings.length} ca còn lại trong ngày — chỉ tính tiền 1 lần 25 phút.`, `Absence recorded for this slot and the ${followUpBookings.length} remaining slot(s) today – charged only once (25 minutes).`)
         : attendanceBookings.length > 1
-          ? `Đã gửi một báo cáo điểm danh gộp ${minutes} phút cho ${attendanceBookings.length} ca.`
-          : 'Gửi báo cáo điểm danh thành công!')
+          ? L(`Đã gửi một báo cáo điểm danh gộp ${minutes} phút cho ${attendanceBookings.length} ca.`, `One combined ${minutes}-minute attendance report sent for ${attendanceBookings.length} slots.`)
+          : L('Gửi báo cáo điểm danh thành công!', 'Attendance report sent!'))
       setShowAttendanceModal(false)
       setShowDetailModal(false)
       setSelectedBooking(null)
@@ -1578,7 +1580,7 @@ export function BookingSchedulesPage() {
                           onClick={() => handleJoinClassClick(selectedBooking.id)}
                           className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
+                          {roomLink.startsWith('/lop-hoc/') ? L('Vào lớp 123English', 'Enter 123English classroom') : t('sched.open_class')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -1609,7 +1611,7 @@ export function BookingSchedulesPage() {
                     {subjectPkg?.supplementaryCurriculumLink && (
                       <div className="mt-2 pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
                         <div className="min-w-0 flex-1">
-                          <span className="text-xs text-slate-500 font-semibold block">Giáo trình bổ trợ</span>
+                          <span className="text-xs text-slate-500 font-semibold block">{L('Giáo trình bổ trợ', 'Supplementary materials')}</span>
                           <p className="text-[11px] text-slate-400 truncate">{subjectPkg.supplementaryCurriculumLink}</p>
                         </div>
                         <a
@@ -1618,7 +1620,7 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          Mở GT bổ trợ
+                          {L('Mở GT bổ trợ', 'Open supplementary materials')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -1635,14 +1637,14 @@ export function BookingSchedulesPage() {
                           rel="noopener noreferrer"
                           className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                         >
-                          Mở giáo trình
+                          {L('Mở giáo trình', 'Open course materials')}
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
                     ))}
                     {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
                       <div className="mt-2 pt-3 border-t border-slate-100">
-                        <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
+                        <span className="text-xs text-rose-500 font-bold block mb-1">{L('📢 Yêu cầu từ học viên:', '📢 Student’s request:')}</span>
                         <div className="flex flex-wrap gap-1.5">
                           {subjectPkg.studentRequests.map((req, idx) => (
                             <span key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-2.5 py-1 rounded-lg font-bold">
@@ -1919,8 +1921,8 @@ export function BookingSchedulesPage() {
             )}
             {attendanceSubmissionDelayed && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                <p className="font-bold">Điểm danh vẫn đang được xác nhận</p>
-                <p className="mt-1 text-xs leading-5">Bạn có thể kiểm tra hoặc gửi lại an toàn. Hệ thống khóa theo từng ca học nên chỉ một báo cáo được tạo; nếu ca đã được ghi từ lần trước, lịch sẽ yêu cầu tải lại thay vì tạo trùng.</p>
+                <p className="font-bold">{L('Điểm danh vẫn đang được xác nhận', 'Attendance is still being confirmed')}</p>
+                <p className="mt-1 text-xs leading-5">{L('Bạn có thể kiểm tra hoặc gửi lại an toàn. Hệ thống khóa theo từng ca học nên chỉ một báo cáo được tạo; nếu ca đã được ghi từ lần trước, lịch sẽ yêu cầu tải lại thay vì tạo trùng.', 'You can check or resend safely. Each slot is locked so only one report is created; if it was already recorded, the schedule will ask you to reload instead of creating a duplicate.')}</p>
               </div>
             )}
             {/* Student Code and Class Details */}
@@ -2005,7 +2007,7 @@ export function BookingSchedulesPage() {
 
               return (
                 <div className="space-y-3 border border-slate-150 rounded-xl p-4 bg-white shadow-sm">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tài liệu & Lớp học / Links & Materials</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{L('Tài liệu & Lớp học / Links & Materials', 'Links & Materials')}</p>
                   {roomLink && (
                     <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
                       <div className="min-w-0 flex-1">
@@ -2019,7 +2021,7 @@ export function BookingSchedulesPage() {
                         onClick={() => handleJoinClassClick(selectedBooking.id)}
                         className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
-                        {roomLink.startsWith('/lop-hoc/') ? 'Vào lớp 123English' : t('sched.open_class')}
+                        {roomLink.startsWith('/lop-hoc/') ? L('Vào lớp 123English', 'Enter 123English classroom') : t('sched.open_class')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
@@ -2050,7 +2052,7 @@ export function BookingSchedulesPage() {
                   {subjectPkg?.supplementaryCurriculumLink && (
                     <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0">
                       <div className="min-w-0 flex-1">
-                        <span className="text-xs text-slate-500 font-semibold block">Giáo trình bổ trợ</span>
+                        <span className="text-xs text-slate-500 font-semibold block">{L('Giáo trình bổ trợ', 'Supplementary materials')}</span>
                         <p className="text-[11px] text-slate-400 truncate">{subjectPkg.supplementaryCurriculumLink}</p>
                       </div>
                       <a
@@ -2059,7 +2061,7 @@ export function BookingSchedulesPage() {
                         rel="noopener noreferrer"
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
-                        Mở GT bổ trợ
+                        {L('Mở GT bổ trợ', 'Open supplementary materials')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
@@ -2076,14 +2078,14 @@ export function BookingSchedulesPage() {
                         rel="noopener noreferrer"
                         className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
                       >
-                        Mở giáo trình
+                        {L('Mở giáo trình', 'Open course materials')}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
                   ))}
                   {subjectPkg?.studentRequests && subjectPkg.studentRequests.length > 0 && (
                     <div className="py-2 border-t border-slate-100 last:border-0">
-                      <span className="text-xs text-rose-500 font-bold block mb-1">📢 Yêu cầu từ học viên:</span>
+                      <span className="text-xs text-rose-500 font-bold block mb-1">{L('📢 Yêu cầu từ học viên:', '📢 Student’s request:')}</span>
                       <div className="flex flex-wrap gap-1.5">
                         {subjectPkg.studentRequests.map((req, idx) => (
                           <span key={idx} className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-2.5 py-1 rounded-lg font-bold">

@@ -66,6 +66,7 @@ const STRENGTH_OPTIONS: BilingualOption[] = [
 export function ProfilePage() {
   const { teacherId } = useAuthStore()
   const { t, lang } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const setupRequired = searchParams.get('setupRequired') === 'true'
@@ -312,10 +313,10 @@ export function ProfilePage() {
         youtubeLink: youtubeLink.trim()
       })
       setTeacher(prev => prev ? { ...prev, youtubeLink: youtubeLink.trim() } : null)
-      toast.success('Đã cập nhật link giới thiệu Youtube!')
+      toast.success(L('Đã cập nhật link giới thiệu Youtube!', 'YouTube introduction link updated!'))
     } catch (err) {
       console.error(err)
-      toast.error('Không thể cập nhật link Youtube')
+      toast.error(L('Không thể cập nhật link Youtube', 'Could not update the YouTube link'))
     } finally {
       setSavingYoutube(false)
     }
@@ -335,10 +336,10 @@ export function ProfilePage() {
         certificates
       })
       setTeacher(prev => prev ? { ...prev, certificates } : null)
-      toast.success('Đã lưu danh sách bằng cấp/chứng chỉ thành công!')
+      toast.success(L('Đã lưu danh sách bằng cấp/chứng chỉ thành công!', 'Degrees and certificates saved!'))
     } catch (err) {
       console.error(err)
-      toast.error('Không thể lưu bằng cấp/chứng chỉ')
+      toast.error(L('Không thể lưu bằng cấp/chứng chỉ', 'Could not save degrees and certificates'))
     } finally {
       setSavingCerts(false)
     }
@@ -448,10 +449,10 @@ export function ProfilePage() {
       })
       
       setTeacher(prev => prev ? { ...prev, country: normalizedCountry, timezoneOffset: offset } : null)
-      toast.success('Đã cập nhật quốc gia & múi giờ thành công!')
+      toast.success(L('Đã cập nhật quốc gia & múi giờ thành công!', 'Country and timezone updated!'))
     } catch (err) {
       console.error(err)
-      toast.error('Có lỗi xảy ra khi cập nhật múi giờ')
+      toast.error(L('Có lỗi xảy ra khi cập nhật múi giờ', 'Something went wrong while updating the timezone'))
     } finally {
       setUpdatingTimezone(false)
     }
@@ -905,10 +906,10 @@ export function ProfilePage() {
         <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
             <Globe className="w-4 h-4 text-[#3BB8EB]" />
-            Quốc gia & Múi giờ (Country & Timezone)
+            {L('Quốc gia & Múi giờ (Country & Timezone)', 'Country & Timezone')}
           </h3>
           <div className="space-y-3">
-            <label className="block text-xs font-semibold text-slate-500 uppercase">Chọn quốc gia của bạn / Select your country</label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase">{L('Chọn quốc gia của bạn / Select your country', 'Select your country')}</label>
             <select
               value={normalizeTeacherCountryCode(teacher.country || 'VN')}
               onChange={handleTimezoneChange}
@@ -941,7 +942,7 @@ export function ProfilePage() {
         <Card className="p-5 border-0 shadow-md shadow-slate-200/50">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 mb-4">
             <Play className="w-4 h-4 text-red-500 fill-red-500" />
-            Link giới thiệu Youtube (YouTube Link)
+            {L('Link giới thiệu Youtube (YouTube Link)', 'YouTube introduction link')}
           </h3>
           <div className="space-y-4">
             <div>
@@ -950,7 +951,7 @@ export function ProfilePage() {
                 type="text"
                 value={youtubeLink}
                 onChange={e => setYoutubeLink(e.target.value)}
-                placeholder="Ví dụ: https://www.youtube.com/watch?v=..."
+                placeholder={L('Ví dụ: https://www.youtube.com/watch?v=...', 'e.g. https://www.youtube.com/watch?v=...')}
                 className="w-full rounded-xl bg-slate-50 border border-slate-200 text-slate-900 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[44px]"
               />
             </div>
@@ -960,7 +961,7 @@ export function ProfilePage() {
               onClick={handleSaveYoutube}
               className="w-full rounded-xl bg-[#2196F3] hover:bg-[#1976D2] text-white font-bold py-2.5 shadow-md shadow-sky-200/50"
             >
-              Lưu link Youtube
+              {L('Lưu link Youtube', 'Save YouTube link')}
             </Button>
           </div>
         </Card>
@@ -970,9 +971,9 @@ export function ProfilePage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
               <GraduationCap className="w-4 h-4 text-indigo-600" />
-              Bằng cấp & Chứng chỉ (Certificates)
+              {L('Bằng cấp & Chứng chỉ (Certificates)', 'Degrees & Certificates')}
             </h3>
-            <span className="text-xs text-slate-500 font-medium">Tổng số: {certificates.length}</span>
+            <span className="text-xs text-slate-500 font-medium">{L('Tổng số:', 'Total:')} {certificates.length}</span>
           </div>
 
           <div className={`mb-4 rounded-xl border p-3 ${certificateCompliance.isCertificateComplete ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
@@ -1040,7 +1041,7 @@ export function ProfilePage() {
                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('profile.cert_score')}</label>
                     <input
                       type="text"
-                      placeholder="VD: 8.0 / Giỏi"
+                      placeholder={L('VD: 8.0 / Giỏi', 'e.g. 8.0 / Distinction')}
                       value={cert.score}
                       onChange={e => setCertificates(prev => prev.map((c, i) => i === index ? { ...c, score: e.target.value } : c))}
                       className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
@@ -1099,7 +1100,7 @@ export function ProfilePage() {
               onClick={() => setCertificates(prev => [...prev, { category: 'foreign_language', title: '', score: '', fileURL: '', status: 'pending' }])}
               className="w-full py-2 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-bold text-indigo-650 hover:text-indigo-800 transition-colors"
             >
-              + Thêm bằng cấp/chứng chỉ
+              {L('+ Thêm bằng cấp/chứng chỉ', '+ Add a degree/certificate')}
             </button>
 
             <Button
@@ -1108,7 +1109,7 @@ export function ProfilePage() {
               onClick={handleSaveCerts}
               className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 shadow-md shadow-indigo-200/50"
             >
-              Lưu danh sách bằng cấp
+              {L('Lưu danh sách bằng cấp', 'Save degrees & certificates')}
             </Button>
           </div>
         </Card>
@@ -1124,7 +1125,7 @@ export function ProfilePage() {
         </div>
         </fieldset>
       </div>
-      {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt="Ảnh chứng chỉ" />}
+      {certImageView && <ImageLightbox src={certImageView} onClose={() => setCertImageView(null)} alt={L('Ảnh chứng chỉ', 'Certificate image')} />}
     </div>
   )
 }

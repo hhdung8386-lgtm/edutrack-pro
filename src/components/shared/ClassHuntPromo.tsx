@@ -13,24 +13,25 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { useL } from '@/stores/languageStore'
 import { classHuntPromoPointsPer25Minutes } from '@/lib/classHunting'
 
 /** "Quyền lợi dành cho giáo viên": the short list behind the info button on a promo offer. */
-const TEACHER_BENEFITS: Array<{ icon: typeof Heart; className: string; text: string }> = [
-  { icon: UserRound, className: 'text-rose-500', text: 'Được ưu tiên hiển thị với học viên có nhu cầu gấp nhờ gắn nhãn lớp ưu đãi' },
-  { icon: CalendarDays, className: 'text-rose-500', text: 'Tăng cơ hội nhận lớp, đặc biệt trong khung giờ cao điểm' },
-  { icon: Trophy, className: 'text-amber-500', text: 'Vẫn đảm bảo mức thu nhập tốt theo đúng chính sách của nền tảng' },
-  { icon: BarChart3, className: 'text-violet-500', text: 'Góp phần giúp học viên tiếp cận việc học dễ dàng hơn' },
-  { icon: Gift, className: 'text-amber-500', text: 'Đồng hành phát triển cùng cộng đồng giáo dục chất lượng cao' },
+const TEACHER_BENEFITS: Array<{ icon: typeof Heart; className: string; text: string; textEn: string }> = [
+  { icon: UserRound, className: 'text-rose-500', text: 'Được ưu tiên hiển thị với học viên có nhu cầu gấp nhờ gắn nhãn lớp ưu đãi', textEn: 'Shown first to students with urgent needs thanks to the promo label' },
+  { icon: CalendarDays, className: 'text-rose-500', text: 'Tăng cơ hội nhận lớp, đặc biệt trong khung giờ cao điểm', textEn: 'More chances to get classes, especially at peak times' },
+  { icon: Trophy, className: 'text-amber-500', text: 'Vẫn đảm bảo mức thu nhập tốt theo đúng chính sách của nền tảng', textEn: 'Still a good income under the platform’s policy' },
+  { icon: BarChart3, className: 'text-violet-500', text: 'Góp phần giúp học viên tiếp cận việc học dễ dàng hơn', textEn: 'Helps more students access learning' },
+  { icon: Gift, className: 'text-amber-500', text: 'Đồng hành phát triển cùng cộng đồng giáo dục chất lượng cao', textEn: 'Grow with a high-quality education community' },
 ]
 
 /** "Đặc quyền dành cho gia sư lớp ưu đãi": the detailed perks behind "Xem đặc quyền gia sư". */
-const TUTOR_PERKS: Array<{ icon: typeof Heart; tone: string; title: string; text: string }> = [
-  { icon: GraduationCap, tone: 'bg-rose-50 text-rose-600', title: 'Gia sư mới', text: 'Tăng cơ hội nhận lớp, tích lũy kinh nghiệm và tự tin đứng lớp.' },
-  { icon: BarChart3, tone: 'bg-amber-50 text-amber-500', title: 'Gia sư hiện tại', text: 'Nhận thêm lớp, mở rộng nguồn thu nhập.' },
-  { icon: FileCheck2, tone: 'bg-blue-50 text-blue-600', title: 'Hỗ trợ thực tập', text: 'Ký xác nhận, đóng dấu mộc theo quy định.' },
-  { icon: Trophy, tone: 'bg-violet-50 text-violet-600', title: 'Ghi nhận thành tích', text: 'Trao bằng khen cho gia sư tích cực.' },
-  { icon: Gift, tone: 'bg-rose-50 text-rose-600', title: 'Quà tặng tri ân', text: 'Gửi quà tận nhà cho gia sư đủ điều kiện.' },
+const TUTOR_PERKS: Array<{ icon: typeof Heart; tone: string; title: string; text: string; titleEn: string; textEn: string }> = [
+  { icon: GraduationCap, tone: 'bg-rose-50 text-rose-600', title: 'Gia sư mới', text: 'Tăng cơ hội nhận lớp, tích lũy kinh nghiệm và tự tin đứng lớp.', titleEn: 'New tutors', textEn: 'More chances to get classes, build experience and gain confidence.' },
+  { icon: BarChart3, tone: 'bg-amber-50 text-amber-500', title: 'Gia sư hiện tại', text: 'Nhận thêm lớp, mở rộng nguồn thu nhập.', titleEn: 'Current tutors', textEn: 'Take on more classes and increase your income.' },
+  { icon: FileCheck2, tone: 'bg-blue-50 text-blue-600', title: 'Hỗ trợ thực tập', text: 'Ký xác nhận, đóng dấu mộc theo quy định.', titleEn: 'Internship support', textEn: 'Signed and stamped confirmation as required.' },
+  { icon: Trophy, tone: 'bg-violet-50 text-violet-600', title: 'Ghi nhận thành tích', text: 'Trao bằng khen cho gia sư tích cực.', titleEn: 'Recognition', textEn: 'Certificates of merit for active tutors.' },
+  { icon: Gift, tone: 'bg-rose-50 text-rose-600', title: 'Quà tặng tri ân', text: 'Gửi quà tận nhà cho gia sư đủ điều kiện.', titleEn: 'Thank-you gifts', textEn: 'Gifts delivered to eligible tutors.' },
 ]
 
 /** Click-to-toggle popover that closes on outside click or Escape (works on touch, unlike hover). */
@@ -94,16 +95,17 @@ function Popover({
 }
 
 function TeacherBenefitsList() {
+  const L = useL()
   return (
     <>
       <span className="flex items-center gap-2 text-sm font-extrabold text-slate-950">
-        <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />Quyền lợi dành cho giáo viên
+        <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />{L('Quyền lợi dành cho giáo viên', 'Benefits for tutors')}
       </span>
       <ul className="mt-2 space-y-1.5">
-        {TEACHER_BENEFITS.map(({ icon: Icon, className, text }) => (
+        {TEACHER_BENEFITS.map(({ icon: Icon, className, text, textEn }) => (
           <li key={text} className="flex items-start gap-2 text-xs leading-5 text-slate-700">
             <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${className}`} />
-            <span>{text}</span>
+            <span>{L(text, textEn)}</span>
           </li>
         ))}
       </ul>
@@ -113,20 +115,21 @@ function TeacherBenefitsList() {
 
 /** "Lớp ưu đãi" chip with a SALE sticker; the (i) opens "Quyền lợi dành cho giáo viên". */
 export function PromoSaleChip() {
+  const L = useL()
   return (
     <span className="relative inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 py-1 pl-2.5 pr-1 text-xs font-extrabold text-orange-600">
       <Gift className="h-3.5 w-3.5" aria-hidden="true" />
-      Lớp ưu đãi
+      {L('Lớp ưu đãi', 'Promo class')}
       <span className="-mt-3 -rotate-12 rounded bg-rose-600 px-1 text-[9px] font-black uppercase leading-4 text-white shadow-sm" aria-hidden="true">Sale</span>
       <Popover
-        label="Quyền lợi dành cho giáo viên"
+        label={L('Quyền lợi dành cho giáo viên', 'Benefits for tutors')}
         trigger={({ open, toggle, controls }) => (
           <button
             type="button"
             onClick={toggle}
             aria-expanded={open}
             aria-controls={controls}
-            aria-label="Xem quyền lợi dành cho giáo viên"
+            aria-label={L('Xem quyền lợi dành cho giáo viên', 'View benefits for tutors')}
             className="flex h-6 w-6 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-100"
           >
             <Info className="h-4 w-4" />
@@ -141,18 +144,20 @@ export function PromoSaleChip() {
 
 /** Red "Giảm giá ưu đãi X%" pill shown under "Đơn giá lớp". */
 export function PromoDiscountPill({ percent, className = '' }: { percent: number; className?: string }) {
+  const L = useL()
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-extrabold text-rose-600 ${className}`}>
-      <BadgePercent className="h-3.5 w-3.5" aria-hidden="true" />Giảm giá ưu đãi {percent}%
+      <BadgePercent className="h-3.5 w-3.5" aria-hidden="true" />{L('Giảm giá ưu đãi', 'Promo discount')} {percent}%
     </span>
   )
 }
 
 /** "Xem đặc quyền gia sư" link with the "Đặc quyền dành cho gia sư lớp ưu đãi" panel. */
 export function PromoPerksButton({ align = 'left' }: { align?: 'left' | 'right' }) {
+  const L = useL()
   return (
     <Popover
-      label="Đặc quyền dành cho gia sư lớp ưu đãi"
+      label={L('Đặc quyền dành cho gia sư lớp ưu đãi', 'Perks for promo-class tutors')}
       align={align}
       trigger={({ open, toggle, controls }) => (
         <button
@@ -162,7 +167,7 @@ export function PromoPerksButton({ align = 'left' }: { align?: 'left' | 'right' 
           aria-controls={controls}
           className="inline-flex min-h-7 items-center gap-1 rounded-md px-1 text-xs font-bold text-blue-700 transition hover:bg-blue-50"
         >
-          <Info className="h-3.5 w-3.5" />Xem đặc quyền gia sư
+          <Info className="h-3.5 w-3.5" />{L('Xem đặc quyền gia sư', 'View tutor perks')}
         </button>
       )}
     >
@@ -170,19 +175,19 @@ export function PromoPerksButton({ align = 'left' }: { align?: 'left' | 'right' 
         <>
           <span className="flex items-start justify-between gap-3">
             <span className="flex items-center gap-2 text-sm font-extrabold text-rose-600">
-              <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />Đặc quyền dành cho gia sư lớp ưu đãi
+              <Heart className="h-4 w-4 fill-rose-500 text-rose-500" />{L('Đặc quyền dành cho gia sư lớp ưu đãi', 'Perks for promo-class tutors')}
             </span>
-            <button type="button" onClick={close} aria-label="Đóng" className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+            <button type="button" onClick={close} aria-label={L('Đóng', 'Close')} className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
               <X className="h-4 w-4" />
             </button>
           </span>
           <ul className="mt-3 space-y-3">
-            {TUTOR_PERKS.map(({ icon: Icon, tone, title, text }) => (
+            {TUTOR_PERKS.map(({ icon: Icon, tone, title, text, titleEn, textEn }) => (
               <li key={title} className="flex items-start gap-3">
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="h-4.5 w-4.5" /></span>
                 <span className="min-w-0">
-                  <span className="block text-sm font-extrabold text-slate-900">{title}</span>
-                  <span className="block text-xs leading-5 text-slate-600">{text}</span>
+                  <span className="block text-sm font-extrabold text-slate-900">{L(title, titleEn)}</span>
+                  <span className="block text-xs leading-5 text-slate-600">{L(text, textEn)}</span>
                 </span>
               </li>
             ))}
@@ -195,10 +200,11 @@ export function PromoPerksButton({ align = 'left' }: { align?: 'left' | 'right' 
 
 /** Chip row: "Lớp ưu đãi" · "SALE X%" · "Xem đặc quyền gia sư". */
 export function PromoTagRow({ percent, className = '' }: { percent: number; className?: string }) {
+  const L = useL()
   return (
     <span className={`flex flex-wrap items-center gap-2 ${className}`}>
       <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-600 ring-1 ring-inset ring-orange-200">
-        <Gift className="h-3.5 w-3.5" aria-hidden="true" />Lớp ưu đãi
+        <Gift className="h-3.5 w-3.5" aria-hidden="true" />{L('Lớp ưu đãi', 'Promo class')}
       </span>
       <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-extrabold uppercase text-rose-600 ring-1 ring-inset ring-rose-200">Sale {percent}%</span>
       <PromoPerksButton />

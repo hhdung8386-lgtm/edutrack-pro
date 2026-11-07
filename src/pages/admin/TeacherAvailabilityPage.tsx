@@ -8,7 +8,7 @@ import { BookingRequest, DayAvailability, DayOfWeek, Teacher, TeacherAvailabilit
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/stores/toastStore'
 import { formatUtcOffset, getMondayAtOffset, translateVnSlotsToTeacher } from '@/lib/timezoneUtils'
-import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
+import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS_EN: Record<DayOfWeek, string> = {
@@ -201,7 +201,7 @@ export function TeacherAvailabilityPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
-  const teacherLocalOffset = selectedTeacher?.timezoneOffset ?? getTeacherTimezoneOffset(selectedTeacher?.country)
+  const teacherLocalOffset = resolveTeacherTimezoneOffset(selectedTeacher, weekStart)
   const teacherLocalPreviewSlots = useMemo(() => translateVnSlotsToTeacher(slots, teacherLocalOffset), [slots, teacherLocalOffset])
   const teacherLocalPreviewSummary = useMemo(() => summarizeSlots(teacherLocalPreviewSlots), [teacherLocalPreviewSlots])
 

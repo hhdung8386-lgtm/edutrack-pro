@@ -2,6 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { initLanguageFromUrl } from './stores/languageStore'
+
+initLanguageFromUrl()
 
 // Handle dynamic import chunk load failures (due to new Vercel deployments changing asset hashes)
 window.addEventListener('error', (e) => {

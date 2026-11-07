@@ -15,13 +15,22 @@ import {
   Trophy,
 } from 'lucide-react'
 import { Mascot123 } from '@/components/landing/Mascot123'
-import { COMPANY_INFO } from '@/components/layout/PublicFooter'
+import { useCompanyInfo } from '@/components/layout/PublicFooter'
 import { normalizeVietnamPhone, submitCustomerLead } from '@/lib/customerLeads'
+import { useL, useLanguageStore } from '@/stores/languageStore'
 
 const HOTLINE = { label: '0933.964.683', href: 'tel:0933964683' }
 const IMG = '/hoc-thu'
 
+// Giá trị lưu vào Firestore luôn là tiếng Việt (trang admin đọc thống nhất); nhãn tiếng Anh chỉ để hiển thị.
 const AGE_GROUPS = ['Bé 4–6 tuổi', 'Bé 6–9 tuổi', 'Bé 9–13 tuổi', 'Teen 13–18 tuổi', 'Người đi làm']
+const AGE_GROUP_EN: Record<string, string> = {
+  'Bé 4–6 tuổi': 'Child 4–6',
+  'Bé 6–9 tuổi': 'Child 6–9',
+  'Bé 9–13 tuổi': 'Child 9–13',
+  'Teen 13–18 tuổi': 'Teen 13–18',
+  'Người đi làm': 'Working adult',
+}
 
 const LEVELS = [
   { label: 'Pre-A1', h: 22 },
@@ -37,6 +46,9 @@ const FEATURES = [
     icon: MonitorPlay,
     title: 'Buổi học tương tác 1 kèm 1',
     text: 'Bài giảng sinh động với trò chơi, hình ảnh, phát âm — con được nói tiếng Anh gần như suốt buổi học.',
+    titleEn: 'Interactive 1-on-1 lessons',
+    textEn: 'Lively lessons with games, pictures and pronunciation practice – your child speaks English for almost the whole lesson.',
+    altEn: 'An online 1-on-1 lesson at 123English',
     image: `${IMG}/online-class.webp`,
     alt: 'Buổi học trực tuyến 1 kèm 1 của 123English',
   },
@@ -44,6 +56,9 @@ const FEATURES = [
     icon: ClipboardCheck,
     title: 'Báo cáo sau mỗi buổi + xem lại video',
     text: 'Phụ huynh nhận nhận xét chi tiết từng buổi và có thể xem lại buổi học bất cứ lúc nào.',
+    titleEn: 'A report after every lesson + video replay',
+    textEn: 'Parents receive detailed feedback after each lesson and can watch the lesson again at any time.',
+    altEn: 'A learner studying online with a tutor',
     image: `${IMG}/companion.webp`,
     alt: 'Học viên học trực tuyến cùng gia sư',
   },
@@ -51,62 +66,78 @@ const FEATURES = [
     icon: BadgeCheck,
     title: 'Gia sư được tuyển chọn, trình độ B2+',
     text: 'Mỗi gia sư trải qua hơn 60 giờ đào tạo nội bộ và được theo dõi chất lượng sau từng buổi dạy.',
+    titleEn: 'Selected tutors with B2+ English',
+    textEn: 'Every tutor completes more than 60 hours of in-house training, and quality is monitored after every lesson.',
+    altEn: 'A 123English tutor preparing a lesson',
     image: `${IMG}/tutor.webp`,
     alt: 'Gia sư 123English chuẩn bị bài giảng',
   },
 ]
 
 const PROGRAMS = [
-  { title: 'Tiếng Anh Trẻ em', age: '4 – 12 tuổi', image: `${IMG}/kids.webp`, tag: 'Phản xạ tự nhiên' },
-  { title: 'Tiếng Anh Thiếu niên', age: '13 – 18 tuổi', image: `${IMG}/teens.webp`, tag: 'IELTS · Cambridge' },
-  { title: 'Tiếng Anh Người lớn', age: 'Giao tiếp', image: `${IMG}/adults.webp`, tag: 'Tự tin nói' },
-  { title: 'Tiếng Anh Doanh nghiệp', age: 'Công việc', image: `${IMG}/business.webp`, tag: 'Business English' },
+  { title: 'Tiếng Anh Trẻ em', age: '4 – 12 tuổi', image: `${IMG}/kids.webp`, tag: 'Phản xạ tự nhiên', titleEn: 'English for Kids', ageEn: 'Ages 4 – 12', tagEn: 'Natural responses' },
+  { title: 'Tiếng Anh Thiếu niên', age: '13 – 18 tuổi', image: `${IMG}/teens.webp`, tag: 'IELTS · Cambridge', titleEn: 'English for Teens', ageEn: 'Ages 13 – 18', tagEn: 'IELTS · Cambridge' },
+  { title: 'Tiếng Anh Người lớn', age: 'Giao tiếp', image: `${IMG}/adults.webp`, tag: 'Tự tin nói', titleEn: 'English for Adults', ageEn: 'Conversation', tagEn: 'Speak with confidence' },
+  { title: 'Tiếng Anh Doanh nghiệp', age: 'Công việc', image: `${IMG}/business.webp`, tag: 'Business English', titleEn: 'Business English', ageEn: 'Work', tagEn: 'Business English' },
 ]
 
 const STEPS = [
-  { icon: CalendarCheck2, title: 'Đăng ký', text: 'Để lại số điện thoại, tư vấn viên sẽ liên hệ lại.' },
-  { icon: ClipboardCheck, title: 'Kiểm tra trình độ', text: 'Đánh giá theo khung CEFR, xác định điểm xuất phát.' },
-  { icon: PlayCircle, title: 'Học thử 1 kèm 1', text: 'Trải nghiệm buổi học thật cùng gia sư và nhận lộ trình riêng.' },
+  { icon: CalendarCheck2, title: 'Đăng ký', text: 'Để lại số điện thoại, tư vấn viên sẽ liên hệ lại.', titleEn: 'Sign up', textEn: 'Leave your phone number and an advisor will call you back.' },
+  { icon: ClipboardCheck, title: 'Kiểm tra trình độ', text: 'Đánh giá theo khung CEFR, xác định điểm xuất phát.', titleEn: 'Level check', textEn: 'An assessment based on the CEFR to find the starting point.' },
+  { icon: PlayCircle, title: 'Học thử 1 kèm 1', text: 'Trải nghiệm buổi học thật cùng gia sư và nhận lộ trình riêng.', titleEn: '1-on-1 trial lesson', textEn: 'Try a real lesson with a tutor and get a personal learning path.' },
 ]
 
 const FAQS = [
   {
     q: 'Buổi học thử có mất phí không?',
     a: 'Hoàn toàn miễn phí. Bạn chỉ cần đăng ký, 123English sẽ sắp xếp gia sư và giờ học phù hợp.',
+    qEn: 'Is the trial lesson free?',
+    aEn: 'Yes, completely free. Just sign up and 123English will arrange a suitable tutor and time.',
   },
   {
     q: 'Con học online trên thiết bị nào?',
     a: 'Máy tính, laptop hoặc máy tính bảng có camera và micro. Buổi học mở trực tiếp trên trình duyệt, không cần cài phần mềm.',
+    qEn: 'What device does my child need?',
+    aEn: 'A computer, laptop or tablet with a camera and microphone. Lessons open directly in the browser – no software to install.',
   },
   {
     q: 'Sau buổi học thử có bắt buộc đăng ký khoá học?',
     a: 'Không. Bạn nhận kết quả kiểm tra trình độ và lộ trình gợi ý, sau đó tự quyết định.',
+    qEn: 'Do I have to enrol after the trial?',
+    aEn: 'No. You receive the level-check result and a suggested learning path, then decide for yourself.',
   },
   {
     q: 'Lịch học có linh hoạt không?',
     a: 'Có. Bạn có thể chọn lịch cố định hằng tuần hoặc tự đặt lịch theo khung giờ trống của gia đình.',
+    qEn: 'Is the schedule flexible?',
+    aEn: 'Yes. You can choose a fixed weekly schedule or book lessons yourself whenever your family is free.',
   },
 ]
 
 function usePageMeta() {
+  const lang = useLanguageStore((state) => state.lang)
   useEffect(() => {
     const previousTitle = document.title
     const existing = document.querySelector<HTMLMetaElement>('meta[name="description"]')
     const previousDescription = existing?.content
     const description = existing ?? document.createElement('meta')
 
-    document.title = 'Học thử miễn phí 1 kèm 1 | 123English'
+    document.title = lang === 'en' ? 'Free 1-on-1 trial lesson | 123English' : 'Học thử miễn phí 1 kèm 1 | 123English'
     description.name = 'description'
-    description.content =
-      'Đăng ký học thử tiếng Anh 1 kèm 1 miễn phí cùng gia sư đạt chuẩn B2+, kiểm tra trình độ theo CEFR và nhận lộ trình học riêng tại 123English.'
+    description.content = lang === 'en'
+      ? 'Book a free 1-on-1 English trial lesson with a B2+ tutor, get a CEFR level check and a personal learning path at 123English.'
+      : 'Đăng ký học thử tiếng Anh 1 kèm 1 miễn phí cùng gia sư đạt chuẩn B2+, kiểm tra trình độ theo CEFR và nhận lộ trình học riêng tại 123English.'
     if (!existing) document.head.appendChild(description)
-    window.scrollTo({ top: 0, behavior: 'auto' })
 
     return () => {
       document.title = previousTitle
       if (existing && previousDescription !== undefined) existing.content = previousDescription
       else description.remove()
     }
+  }, [lang])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [])
 }
 
@@ -125,6 +156,7 @@ function SectionTitle({ eyebrow, title, light = false }: { eyebrow: string; titl
 }
 
 function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | null> }) {
+  const L = useL()
   const [form, setForm] = useState({ name: '', phone: '', age: AGE_GROUPS[1] })
   const [agreed, setAgreed] = useState(true)
   const [error, setError] = useState('')
@@ -135,16 +167,16 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
     event.preventDefault()
     if (submitting) return
     const phone = normalizeVietnamPhone(form.phone)
-    if (!form.name.trim()) return setError('Vui lòng nhập họ tên phụ huynh / học viên.')
-    if (!phone) return setError('Số điện thoại chưa đúng, ví dụ: 0912 345 678.')
-    if (!agreed) return setError('Vui lòng đồng ý để 123English liên hệ tư vấn.')
+    if (!form.name.trim()) return setError(L('Vui lòng nhập họ tên phụ huynh / học viên.', 'Please enter the parent’s or learner’s name.'))
+    if (!phone) return setError(L('Số điện thoại chưa đúng, ví dụ: 0912 345 678.', 'Please enter a valid Vietnamese mobile number, e.g. 0912 345 678.'))
+    if (!agreed) return setError(L('Vui lòng đồng ý để 123English liên hệ tư vấn.', 'Please agree to be contacted by 123English.'))
     setError('')
 
     // Thông tin về trang admin "Form khách đăng ký"; nhân viên tự liên hệ lại khách.
     setSubmitting(true)
     const saved = await submitCustomerLead({ source: 'hoc-thu-mien-phi', name: form.name, phone, ageGroup: form.age })
     setSubmitting(false)
-    if (!saved) return setError(`Chưa gửi được thông tin. Vui lòng thử lại hoặc gọi ${HOTLINE.label}.`)
+    if (!saved) return setError(L(`Chưa gửi được thông tin. Vui lòng thử lại hoặc gọi ${HOTLINE.label}.`, `We couldn’t send your details. Please try again or call ${HOTLINE.label}.`))
     setSent(true)
   }
 
@@ -152,9 +184,9 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
     return (
       <div className="rounded-[28px] bg-white p-6 text-center shadow-[0_18px_50px_-20px_rgba(16,33,58,0.35)]">
         <Mascot123 pose="cheer" className="mx-auto h-32 w-32" />
-        <h3 className="mt-2 text-xl font-black text-[#10213A]">Đăng ký thành công!</h3>
+        <h3 className="mt-2 text-xl font-black text-[#10213A]">{L('Đăng ký thành công!', 'You’re signed up!')}</h3>
         <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-          123English đã nhận thông tin của bạn. Tư vấn viên sẽ liên hệ số <b>{normalizeVietnamPhone(form.phone)}</b> để xếp lịch học thử trong giờ làm việc.
+          {L('123English đã nhận thông tin của bạn. Tư vấn viên sẽ liên hệ số', '123English has received your details. An advisor will call')} <b>{normalizeVietnamPhone(form.phone)}</b> {L('để xếp lịch học thử trong giờ làm việc.', 'during working hours to schedule your trial lesson.')}
         </p>
         <div className="mt-5 grid gap-3">
           <a
@@ -162,7 +194,7 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
             className="flex h-12 items-center justify-center gap-2 rounded-full border-2 border-[#10213A] text-base font-black text-[#10213A]"
           >
             <Phone className="h-5 w-5" aria-hidden />
-            Cần gấp? Gọi {HOTLINE.label}
+            {L('Cần gấp? Gọi', 'In a hurry? Call')} {HOTLINE.label}
           </a>
         </div>
       </div>
@@ -179,16 +211,16 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
       <div className="flex items-center gap-2 rounded-2xl bg-[#FFF4C7] px-4 py-3">
         <Gift className="h-6 w-6 shrink-0 text-[#E53935]" aria-hidden />
         <p className="text-sm font-black leading-5 text-[#10213A]">
-          Nhận miễn phí: <span className="text-[#E53935]">1 buổi học thử 1 kèm 1</span> + kiểm tra trình độ CEFR
+          {L('Nhận miễn phí:', 'Free:')} <span className="text-[#E53935]">{L('1 buổi học thử 1 kèm 1', 'one 1-on-1 trial lesson')}</span> {L('+ kiểm tra trình độ CEFR', '+ a CEFR level check')}
         </p>
       </div>
 
       <label className="mt-4 block">
-        <span className="sr-only">Họ tên</span>
+        <span className="sr-only">{L('Họ tên', 'Name')}</span>
         <input
           value={form.name}
           onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-          placeholder="Họ tên phụ huynh / học viên"
+          placeholder={L('Họ tên phụ huynh / học viên', 'Parent’s / learner’s name')}
           autoComplete="name"
           className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-semibold outline-none focus:border-[#2E9BE6] focus:bg-white"
         />
@@ -196,11 +228,11 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
 
       <label className="mt-3 flex h-12 items-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 focus-within:border-[#2E9BE6] focus-within:bg-white">
         <span className="flex h-full items-center border-r border-slate-200 px-3 text-sm font-black text-slate-500">+84</span>
-        <span className="sr-only">Số điện thoại</span>
+        <span className="sr-only">{L('Số điện thoại', 'Phone number')}</span>
         <input
           value={form.phone}
           onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-          placeholder="Số điện thoại"
+          placeholder={L('Số điện thoại', 'Vietnamese phone number')}
           inputMode="tel"
           autoComplete="tel"
           className="h-full min-w-0 flex-1 bg-transparent px-3 text-base font-semibold outline-none"
@@ -208,7 +240,7 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
       </label>
 
       <fieldset className="mt-3">
-        <legend className="mb-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">Đăng ký cho</legend>
+        <legend className="mb-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">{L('Đăng ký cho', 'Signing up for')}</legend>
         <div className="flex flex-wrap gap-2">
           {AGE_GROUPS.map((group) => (
             <button
@@ -221,7 +253,7 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
                   : 'border-slate-200 bg-white text-slate-600'
               }`}
             >
-              {group}
+              {L(group, AGE_GROUP_EN[group] || group)}
             </button>
           ))}
         </div>
@@ -234,7 +266,7 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
           onChange={(event) => setAgreed(event.target.checked)}
           className="mt-0.5 h-4 w-4 accent-[#2E9BE6]"
         />
-        Tôi đồng ý để 123English liên hệ tư vấn và sắp xếp buổi học thử.
+        {L('Tôi đồng ý để 123English liên hệ tư vấn và sắp xếp buổi học thử.', 'I agree that 123English may contact me to give advice and arrange the trial lesson.')}
       </label>
 
       {error && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{error}</p>}
@@ -244,10 +276,10 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
         disabled={submitting}
         className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FF7A1A] to-[#E53935] text-lg font-black text-white shadow-[0_10px_24px_-10px_rgba(229,57,53,0.8)] active:scale-[0.98] disabled:opacity-70"
       >
-        {submitting ? 'Đang gửi...' : 'Đăng ký học thử ngay'}
+        {submitting ? L('Đang gửi...', 'Sending...') : L('Đăng ký học thử ngay', 'Book my free trial')}
       </button>
       <p className="mt-3 text-center text-xs font-semibold text-slate-500">
-        Tư vấn viên sẽ gọi lại trong giờ làm việc · Không spam
+        {L('Tư vấn viên sẽ gọi lại trong giờ làm việc · Không spam', 'An advisor will call back during working hours · No spam')}
       </p>
     </form>
   )
@@ -255,6 +287,10 @@ function SignupForm({ formRef }: { formRef: React.RefObject<HTMLFormElement | nu
 
 export function HocThuMienPhiPage() {
   usePageMeta()
+  const L = useL()
+  const COMPANY_INFO = useCompanyInfo()
+  const lang = useLanguageStore((state) => state.lang)
+  const setLang = useLanguageStore((state) => state.setLang)
   const formRef = useRef<HTMLFormElement | null>(null)
   const [formVisible, setFormVisible] = useState(true)
   const [openFaq, setOpenFaq] = useState(0)
@@ -277,9 +313,18 @@ export function HocThuMienPhiPage() {
       <div className="relative mx-auto w-full max-w-[480px] bg-white pb-28 shadow-[0_0_60px_-20px_rgba(16,33,58,0.25)]">
         {/* Header */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[#FFE27A] bg-white/95 px-4 backdrop-blur">
-          <a href="/" className="flex items-center" aria-label="Trang chủ 123English">
-            <img src="/brand-logo.png" alt="123English" className="h-8 w-auto" />
+          <a href="/" className="flex items-center" aria-label={L('Trang chủ 123English', '123English home')}>
+            <img src="/brand-logo.webp" alt="123English" className="h-8 w-auto" />
           </a>
+          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLang(lang === 'en' ? 'vi' : 'en')}
+            className="rounded-full border border-slate-200 px-2.5 py-1.5 text-xs font-black text-slate-600"
+            aria-label={lang === 'en' ? 'Chuyển sang Tiếng Việt' : 'Switch to English'}
+          >
+            {lang === 'en' ? 'VI' : 'EN'}
+          </button>
           <a
             href={HOTLINE.href}
             className="flex items-center gap-1.5 rounded-full bg-[#10213A] px-3 py-1.5 text-xs font-black text-white"
@@ -287,6 +332,7 @@ export function HocThuMienPhiPage() {
             <Phone className="h-3.5 w-3.5" aria-hidden />
             {HOTLINE.label}
           </a>
+          </div>
         </header>
 
         {/* Hero */}
@@ -295,23 +341,23 @@ export function HocThuMienPhiPage() {
           <div className="pointer-events-none absolute -left-10 top-40 h-24 w-24 rounded-full bg-[#2E9BE6]/15" aria-hidden />
 
           <p className="relative mx-auto w-fit rounded-full bg-[#E53935] px-3 py-1 text-xs font-black uppercase tracking-[0.08em] text-white">
-            🎁 Ưu đãi đăng ký hôm nay
+            {L('🎁 Ưu đãi đăng ký hôm nay', '🎁 Sign up today')}
           </p>
           <h1 className="relative mt-3 text-center text-[1.35rem] font-black leading-tight">
-            Học thử MIỄN PHÍ 1 kèm 1 cùng
+            {L('Học thử MIỄN PHÍ 1 kèm 1 cùng', 'A FREE 1-on-1 trial lesson with')}
           </h1>
           <p className="relative text-center text-[2.6rem] font-black leading-none tracking-[-0.03em] text-[#1667B8]">
-            Gia sư chuẩn B2+
+            {L('Gia sư chuẩn B2+', 'B2+ tutors')}
           </p>
           <p className="relative mt-2 text-center text-sm font-bold text-[#5C3D00]">
-            Kiểm tra trình độ CEFR · Lộ trình cá nhân hoá · Học online tại nhà
+            {L('Kiểm tra trình độ CEFR · Lộ trình cá nhân hoá · Học online tại nhà', 'CEFR level check · Personal learning path · Learn online at home')}
           </p>
 
           <div className="relative mt-5">
             <div className="overflow-hidden rounded-[26px] border-4 border-white shadow-lg">
               <img
                 src={`${IMG}/team.webp`}
-                alt="Đội ngũ gia sư quốc tế của 123English"
+                alt={L('Đội ngũ gia sư quốc tế của 123English', 'The 123English international tutor team')}
                 className="aspect-[16/10] w-full object-cover object-[70%_center]"
                 fetchPriority="high"
               />
@@ -330,9 +376,9 @@ export function HocThuMienPhiPage() {
 
           <div className="relative mt-8 grid grid-cols-3 gap-2 text-center">
             {[
-              ['1.000+', 'học viên tin chọn'],
-              ['10+', 'quốc gia kết nối'],
-              ['60+ giờ', 'đào tạo gia sư'],
+              ['1.000+', L('học viên tin chọn', 'learners trust us')],
+              ['10+', L('quốc gia kết nối', 'countries connected')],
+              [L('60+ giờ', '60+ hours'), L('đào tạo gia sư', 'of tutor training')],
             ].map(([value, label]) => (
               <div key={label} className="rounded-2xl bg-white/80 px-1 py-2.5">
                 <p className="text-lg font-black text-[#1667B8]">{value}</p>
@@ -349,7 +395,7 @@ export function HocThuMienPhiPage() {
 
         {/* CEFR */}
         <section className="px-4 py-10">
-          <SectionTitle eyebrow="Kiểm tra trình độ" title="Đánh giá theo khung CEFR & lộ trình riêng cho bạn" />
+          <SectionTitle eyebrow={L('Kiểm tra trình độ', 'Level check')} title={L('Đánh giá theo khung CEFR & lộ trình riêng cho bạn', 'A CEFR-based assessment & a learning path just for you')} />
           <div className="relative mt-6 overflow-hidden rounded-[28px] bg-gradient-to-br from-[#EAF6FF] to-[#FFF7D6] p-5">
             <div className="absolute left-4 top-4 flex h-16 w-16 flex-col items-center justify-center rounded-full bg-[#10213A] text-white shadow-lg">
               <span className="text-sm font-black leading-none">CEFR</span>
@@ -370,9 +416,9 @@ export function HocThuMienPhiPage() {
           </div>
           <ul className="mt-5 grid gap-3">
             {[
-              ['9 cấp độ rõ ràng', 'Nền tảng → Thực chiến → Bứt phá, biết chính xác con đang ở đâu.'],
-              ['Chấm 4 kỹ năng', 'Nghe, nói, đọc, viết — kèm nhận xét phát âm và phản xạ.'],
-              ['Lộ trình cá nhân hoá', 'Gợi ý giáo trình và tần suất học phù hợp mục tiêu của gia đình.'],
+              [L('9 cấp độ rõ ràng', '9 clear levels'), L('Nền tảng → Thực chiến → Bứt phá, biết chính xác con đang ở đâu.', 'Foundation → Practical → Breakthrough – know exactly where your child is.')],
+              [L('Chấm 4 kỹ năng', 'All 4 skills assessed'), L('Nghe, nói, đọc, viết — kèm nhận xét phát âm và phản xạ.', 'Listening, speaking, reading and writing – with feedback on pronunciation and responses.')],
+              [L('Lộ trình cá nhân hoá', 'Personal learning path'), L('Gợi ý giáo trình và tần suất học phù hợp mục tiêu của gia đình.', 'Suggested materials and lesson frequency to suit your family’s goals.')],
             ].map(([title, text]) => (
               <li key={title} className="flex gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#2E9BE6]" aria-hidden />
@@ -388,13 +434,13 @@ export function HocThuMienPhiPage() {
         {/* Features */}
         <section className="relative overflow-hidden rounded-t-[36px] bg-gradient-to-b from-[#1E8BE0] to-[#1463B4] px-4 pb-12 pt-10">
           <div className="pointer-events-none absolute -right-12 top-10 h-40 w-40 rounded-full bg-white/10" aria-hidden />
-          <SectionTitle light eyebrow="Vì sao chọn 123English" title="Dạy thật. Học thật. Tick xanh thật." />
+          <SectionTitle light eyebrow={L('Vì sao chọn 123English', 'Why 123English')} title={L('Dạy thật. Học thật. Tick xanh thật.', 'Real teaching. Real learning. Real results.')} />
           <div className="mt-7 grid gap-5">
-            {FEATURES.map(({ icon: Icon, title, text, image, alt }, index) => (
+            {FEATURES.map(({ icon: Icon, title, text, image, alt, titleEn, textEn, altEn }, index) => (
               <article key={title} className="overflow-hidden rounded-[26px] bg-white shadow-xl">
                 <img
                   src={image}
-                  alt={alt}
+                  alt={L(alt, altEn)}
                   loading="lazy"
                   className={`aspect-[16/9] w-full object-cover ${index === 2 ? 'object-[center_35%]' : ''}`}
                 />
@@ -403,8 +449,8 @@ export function HocThuMienPhiPage() {
                     <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <div>
-                    <h3 className="font-black leading-snug">{title}</h3>
-                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{text}</p>
+                    <h3 className="font-black leading-snug">{L(title, titleEn)}</h3>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{L(text, textEn)}</p>
                   </div>
                 </div>
               </article>
@@ -413,22 +459,22 @@ export function HocThuMienPhiPage() {
           <div className="mt-6 flex items-center gap-3 rounded-[22px] bg-white/10 p-4 text-white ring-1 ring-white/20">
             <Globe2 className="h-8 w-8 shrink-0 text-[#FFE27A]" aria-hidden />
             <p className="text-sm font-bold leading-6">
-              Cộng đồng học viên được kết nối với gia sư và cơ hội học tập tại <b className="text-[#FFE27A]">hơn 10 quốc gia</b>.
+              {L('Cộng đồng học viên được kết nối với gia sư và cơ hội học tập tại', 'Our learner community is connected with tutors and learning opportunities in')} <b className="text-[#FFE27A]">{L('hơn 10 quốc gia', 'more than 10 countries')}</b>.
             </p>
           </div>
         </section>
 
         {/* Programs */}
         <section className="px-4 py-10">
-          <SectionTitle eyebrow="Chương trình học" title="Phù hợp cho cả gia đình" />
+          <SectionTitle eyebrow={L('Chương trình học', 'Programmes')} title={L('Phù hợp cho cả gia đình', 'Something for the whole family')} />
           <div className="mt-6 grid grid-cols-2 gap-3">
             {PROGRAMS.map((program) => (
               <article key={program.title} className="overflow-hidden rounded-[22px] border border-slate-100 bg-white shadow-sm">
-                <img src={program.image} alt={program.title} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                <img src={program.image} alt={L(program.title, program.titleEn)} loading="lazy" className="aspect-[4/3] w-full object-cover" />
                 <div className="p-3">
-                  <span className="rounded-full bg-[#FFF4C7] px-2 py-0.5 text-[10px] font-black text-[#B37400]">{program.tag}</span>
-                  <h3 className="mt-1.5 text-sm font-black leading-snug">{program.title}</h3>
-                  <p className="text-xs font-bold text-slate-500">{program.age}</p>
+                  <span className="rounded-full bg-[#FFF4C7] px-2 py-0.5 text-[10px] font-black text-[#B37400]">{L(program.tag, program.tagEn)}</span>
+                  <h3 className="mt-1.5 text-sm font-black leading-snug">{L(program.title, program.titleEn)}</h3>
+                  <p className="text-xs font-bold text-slate-500">{L(program.age, program.ageEn)}</p>
                 </div>
               </article>
             ))}
@@ -439,55 +485,55 @@ export function HocThuMienPhiPage() {
         <section className="relative overflow-hidden bg-gradient-to-b from-[#FFD02E] to-[#FFE88A] px-4 pb-12 pt-10">
           <div className="text-center">
             <Trophy className="mx-auto h-9 w-9 text-[#E53935]" aria-hidden />
-            <p className="mt-2 text-sm font-black text-[#5C3D00]">Tự hào được vinh danh</p>
-            <h2 className="mt-1 text-[1.7rem] font-black leading-tight text-[#1667B8]">Thương hiệu mạnh quốc gia 2026</h2>
-            <p className="text-sm font-bold text-[#5C3D00]">Viet Nam Top Brand Awards · Dinh Độc Lập</p>
+            <p className="mt-2 text-sm font-black text-[#5C3D00]">{L('Tự hào được vinh danh', 'Proud to be honoured')}</p>
+            <h2 className="mt-1 text-[1.7rem] font-black leading-tight text-[#1667B8]">{L('Thương hiệu mạnh quốc gia 2026', 'National Strong Brand 2026')}</h2>
+            <p className="text-sm font-bold text-[#5C3D00]">{L('Viet Nam Top Brand Awards · Dinh Độc Lập', 'Viet Nam Top Brand Awards · Independence Palace')}</p>
           </div>
           <div className="relative mt-6 rounded-[26px] bg-[#1463B4] p-2.5 shadow-xl">
             <img
               src={`${IMG}/award-main.webp`}
-              alt="123English nhận giải Thương hiệu mạnh quốc gia 2026"
+              alt={L('123English nhận giải Thương hiệu mạnh quốc gia 2026', '123English receiving the 2026 National Strong Brand award')}
               loading="lazy"
               className="aspect-[3/2] w-full rounded-[20px] object-cover"
             />
             <div className="mt-2.5 grid grid-cols-2 gap-2.5">
               <img
                 src={`${IMG}/award-recipient.webp`}
-                alt="Đại diện 123English tại lễ vinh danh"
+                alt={L('Đại diện 123English tại lễ vinh danh', 'A 123English representative at the award ceremony')}
                 loading="lazy"
                 className="aspect-[4/3] w-full rounded-[16px] object-cover"
               />
               <img
                 src={`${IMG}/award-stage.webp`}
-                alt="Sân khấu lễ công bố Thương hiệu mạnh quốc gia"
+                alt={L('Sân khấu lễ công bố Thương hiệu mạnh quốc gia', 'The stage of the National Strong Brand ceremony')}
                 loading="lazy"
                 className="aspect-[4/3] w-full rounded-[16px] object-cover"
               />
             </div>
             <Mascot123 pose="cheer" className="absolute -bottom-10 -right-3 h-28 w-28 drop-shadow-lg" />
           </div>
-          <div className="mt-8 flex items-center justify-center gap-1 text-[#E53935]" aria-label="Đánh giá 5 sao">
+          <div className="mt-8 flex items-center justify-center gap-1 text-[#E53935]" aria-label={L('Đánh giá 5 sao', '5-star rating')}>
             {Array.from({ length: 5 }).map((_, index) => (
               <Star key={index} className="h-5 w-5 fill-current" aria-hidden />
             ))}
           </div>
-          <p className="mt-1 text-center text-sm font-bold text-[#5C3D00]">Được cộng đồng hơn 1.000 gia đình tin tưởng</p>
+          <p className="mt-1 text-center text-sm font-bold text-[#5C3D00]">{L('Được cộng đồng hơn 1.000 gia đình tin tưởng', 'Trusted by more than 1,000 families')}</p>
         </section>
 
         {/* Steps */}
         <section className="px-4 py-10">
-          <SectionTitle eyebrow="Chỉ 3 bước" title="Bắt đầu học thử thật đơn giản" />
+          <SectionTitle eyebrow={L('Chỉ 3 bước', 'Just 3 steps')} title={L('Bắt đầu học thử thật đơn giản', 'Starting a trial is easy')} />
           <ol className="relative mt-6 grid gap-4">
             <span className="absolute bottom-8 left-[27px] top-8 w-0.5 bg-[#FFD02E]" aria-hidden />
-            {STEPS.map(({ icon: Icon, title, text }, index) => (
+            {STEPS.map(({ icon: Icon, title, text, titleEn, textEn }, index) => (
               <li key={title} className="relative flex gap-4">
                 <span className="relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#FFD02E] text-[#10213A] ring-4 ring-white">
                   <Icon className="h-6 w-6" aria-hidden />
                 </span>
                 <div className="flex-1 rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-black text-[#2E9BE6]">BƯỚC {index + 1}</p>
-                  <p className="font-black">{title}</p>
-                  <p className="mt-0.5 text-sm font-semibold leading-6 text-slate-600">{text}</p>
+                  <p className="text-xs font-black text-[#2E9BE6]">{L('BƯỚC', 'STEP')} {index + 1}</p>
+                  <p className="font-black">{L(title, titleEn)}</p>
+                  <p className="mt-0.5 text-sm font-semibold leading-6 text-slate-600">{L(text, textEn)}</p>
                 </div>
               </li>
             ))}
@@ -496,7 +542,7 @@ export function HocThuMienPhiPage() {
 
         {/* FAQ */}
         <section className="px-4 pb-10">
-          <SectionTitle eyebrow="Hỏi đáp" title="Phụ huynh thường hỏi" />
+          <SectionTitle eyebrow={L('Hỏi đáp', 'FAQ')} title={L('Phụ huynh thường hỏi', 'Questions parents often ask')} />
           <div className="mt-6 grid gap-3">
             {FAQS.map((faq, index) => {
               const open = openFaq === index
@@ -508,10 +554,10 @@ export function HocThuMienPhiPage() {
                     aria-expanded={open}
                     className="flex w-full items-center justify-between gap-3 p-4 text-left font-black"
                   >
-                    {faq.q}
+                    {L(faq.q, faq.qEn)}
                     <ChevronDown className={`h-5 w-5 shrink-0 text-[#2E9BE6] transition ${open ? 'rotate-180' : ''}`} aria-hidden />
                   </button>
-                  {open && <p className="px-4 pb-4 text-sm font-semibold leading-6 text-slate-600">{faq.a}</p>}
+                  {open && <p className="px-4 pb-4 text-sm font-semibold leading-6 text-slate-600">{L(faq.a, faq.aEn)}</p>}
                 </div>
               )
             })}
@@ -521,29 +567,29 @@ export function HocThuMienPhiPage() {
         {/* Final CTA */}
         <section className="mx-4 overflow-hidden rounded-[30px] bg-gradient-to-br from-[#1E8BE0] to-[#1463B4] p-6 text-center text-white">
           <Mascot123 pose="wave" className="mx-auto h-32 w-32" />
-          <h2 className="mt-1 text-2xl font-black leading-tight">Sẵn sàng cho buổi học đầu tiên?</h2>
-          <p className="mt-2 text-sm font-semibold text-white/85">Đăng ký hôm nay để giữ suất học thử miễn phí.</p>
+          <h2 className="mt-1 text-2xl font-black leading-tight">{L('Sẵn sàng cho buổi học đầu tiên?', 'Ready for your first lesson?')}</h2>
+          <p className="mt-2 text-sm font-semibold text-white/85">{L('Đăng ký hôm nay để giữ suất học thử miễn phí.', 'Sign up today to secure your free trial lesson.')}</p>
           <button
             type="button"
             onClick={scrollToForm}
             className="mt-5 h-13 w-full rounded-full bg-[#FFD02E] py-3.5 text-lg font-black text-[#10213A]"
           >
-            Nhận suất học thử
+            {L('Nhận suất học thử', 'Get my free trial')}
           </button>
         </section>
 
         {/* Footer */}
         <footer className="mt-10 bg-[#10213A] px-4 py-8 text-sm font-semibold text-white/75">
-          <img src="/brand-logo.png" alt="123English" className="h-8 w-auto rounded bg-white px-2 py-1" />
+          <img src="/brand-logo.webp" alt="123English" className="h-8 w-auto rounded bg-white px-2 py-1" />
           <p className="mt-4 font-black text-white">{COMPANY_INFO.brandLine}</p>
-          <p className="mt-2">Đơn vị chủ quản: <span className="font-black text-white">{COMPANY_INFO.owner}</span></p>
-          <p className="mt-1">Mã số hộ kinh doanh: <span className="font-black text-white">{COMPANY_INFO.businessCode}</span></p>
-          <p className="mt-1">Người tiếp nhận: <span className="font-black text-white">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</span></p>
+          <p className="mt-2">{L('Đơn vị chủ quản:', 'Managing entity:')} <span className="font-black text-white">{COMPANY_INFO.owner}</span></p>
+          <p className="mt-1">{L('Mã số hộ kinh doanh:', 'Household business registration no.:')} <span className="font-black text-white">{COMPANY_INFO.businessCode}</span></p>
+          <p className="mt-1">{L('Người tiếp nhận:', 'Contact person:')} <span className="font-black text-white">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</span></p>
           <p className="mt-2">Hotline: <a href={HOTLINE.href} className="font-black text-[#FFD02E]">{HOTLINE.label}</a></p>
           <p className="mt-1">Email: <a href={`mailto:${COMPANY_INFO.representative.email}`} className="break-all font-black text-[#FFD02E]">{COMPANY_INFO.representative.email}</a></p>
-          <p className="mt-4 font-black text-white">Trụ sở đăng ký</p>
+          <p className="mt-4 font-black text-white">{L('Trụ sở đăng ký', 'Registered office')}</p>
           <p className="mt-1">{COMPANY_INFO.registeredOffice}</p>
-          <p className="mt-4 font-black text-white">Văn phòng đại diện</p>
+          <p className="mt-4 font-black text-white">{L('Văn phòng đại diện', 'Representative offices')}</p>
           {COMPANY_INFO.offices.map((office) => (
             <p key={office.name} className="mt-2"><span className="font-black text-white">{office.name}:</span> {office.address}</p>
           ))}
@@ -559,15 +605,15 @@ export function HocThuMienPhiPage() {
           <div className="relative flex items-center gap-2 rounded-full bg-white p-1.5 pl-[86px] shadow-[0_10px_30px_-8px_rgba(16,33,58,0.45)] ring-1 ring-[#FFE27A]">
             <Mascot123 pose="wave" className="absolute bottom-0.5 left-1 z-10 h-[96px] w-[82px] drop-shadow-md" />
             <p className="flex-1 text-[13px] font-black leading-tight">
-              Học thử miễn phí
-              <span className="block text-[11px] font-bold text-slate-500">Kèm kiểm tra trình độ</span>
+              {L('Học thử miễn phí', 'Free trial lesson')}
+              <span className="block text-[11px] font-bold text-slate-500">{L('Kèm kiểm tra trình độ', 'Includes a level check')}</span>
             </p>
             <button
               type="button"
               onClick={scrollToForm}
               className="rounded-full bg-gradient-to-r from-[#FF7A1A] to-[#E53935] px-5 py-3 text-sm font-black text-white"
             >
-              Nhận ngay!
+              {L('Nhận ngay!', 'Book now!')}
             </button>
           </div>
         </div>

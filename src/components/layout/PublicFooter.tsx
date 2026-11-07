@@ -1,4 +1,5 @@
 import { Mail, MapPin, Phone } from 'lucide-react'
+import { useL, useLang } from '@/stores/languageStore'
 
 // Shared by public contact forms that must display the same company details.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -20,6 +21,34 @@ export const COMPANY_INFO = {
     phone: { label: '0933.964.683', href: 'tel:0933964683' },
     email: 'vietcuong20022001@gmail.com',
   },
+}
+
+// Bản tiếng Anh của các trường chữ trong COMPANY_INFO (số điện thoại, mã số giữ nguyên).
+// eslint-disable-next-line react-refresh/only-export-components
+export const COMPANY_INFO_EN = {
+  brandLine: '123English – Online 1-on-1 English tutoring platform',
+  owner: 'Gia Sư Toàn Năng',
+  registeredOffice: '78/20 Hoàng Văn Hợp Street, An Lạc A Ward, Bình Tân District, Ho Chi Minh City, Vietnam.',
+  offices: [
+    { name: 'Bình Tân Office', address: '104A Street 32B, Bình Trị Đông B Ward, Bình Tân District, Ho Chi Minh City.' },
+    { name: 'District 2 Office', address: '12 Street No. 5, Sala Urban Area, An Khánh Ward, Ho Chi Minh City.' },
+  ],
+  representativeTitle: 'Director',
+}
+
+/** COMPANY_INFO theo ngôn ngữ đang chọn. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useCompanyInfo() {
+  const lang = useLang()
+  if (lang !== 'en') return COMPANY_INFO
+  return {
+    ...COMPANY_INFO,
+    brandLine: COMPANY_INFO_EN.brandLine,
+    owner: COMPANY_INFO_EN.owner,
+    registeredOffice: COMPANY_INFO_EN.registeredOffice,
+    offices: COMPANY_INFO_EN.offices,
+    representative: { ...COMPANY_INFO.representative, title: COMPANY_INFO_EN.representativeTitle },
+  }
 }
 
 const SOCIAL_LINKS = [
@@ -44,44 +73,46 @@ const SOCIAL_LINKS = [
 ] as const
 
 export function PublicFooter() {
+  const L = useL()
+  const info = useCompanyInfo()
   return (
     <footer className="w-full border-t border-slate-200/70 bg-white px-[clamp(1.25rem,3vw,3rem)] font-[var(--font-quicksand)] text-[#10213A]">
       <div className="mx-auto grid w-full max-w-7xl gap-8 py-10 sm:grid-cols-2 sm:gap-x-10 sm:py-12 lg:grid-cols-[1.05fr_1.25fr_0.8fr] lg:gap-x-12 lg:py-14">
         <section aria-labelledby="footer-company-title" className="min-w-0">
-          <h2 id="footer-company-title" className="text-sm font-bold leading-6 text-[#10213A]">Thông tin đơn vị</h2>
-          <img src="/brand-logo.png" alt="123English" className="mt-5 h-10 w-auto" width={156} height={40} loading="lazy" />
-          <p className="mt-4 max-w-md text-balance text-[15px] font-bold leading-6">{COMPANY_INFO.brandLine}</p>
+          <h2 id="footer-company-title" className="text-sm font-bold leading-6 text-[#10213A]">{L('Thông tin đơn vị', 'About the company')}</h2>
+          <img src="/brand-logo.webp" alt="123English" className="mt-5 h-10 w-auto" width={156} height={40} loading="lazy" />
+          <p className="mt-4 max-w-md text-balance text-[15px] font-bold leading-6">{info.brandLine}</p>
           <dl className="mt-5 space-y-3 text-sm leading-6">
             <div>
-              <dt className="font-medium text-slate-500">Đơn vị chủ quản</dt>
-              <dd className="font-bold">{COMPANY_INFO.owner}</dd>
+              <dt className="font-medium text-slate-500">{L('Đơn vị chủ quản', 'Managing entity')}</dt>
+              <dd className="font-bold">{info.owner}</dd>
             </div>
             <div>
-              <dt className="font-medium text-slate-500">Mã số hộ kinh doanh</dt>
-              <dd className="font-semibold tabular-nums">{COMPANY_INFO.businessCode}</dd>
+              <dt className="font-medium text-slate-500">{L('Mã số hộ kinh doanh', 'Household business registration no.')}</dt>
+              <dd className="font-semibold tabular-nums">{info.businessCode}</dd>
             </div>
             <div>
-              <dt className="font-medium text-slate-500">Người tiếp nhận</dt>
-              <dd className="font-bold">{COMPANY_INFO.representative.name} – {COMPANY_INFO.representative.title}</dd>
+              <dt className="font-medium text-slate-500">{L('Người tiếp nhận', 'Contact person')}</dt>
+              <dd className="font-bold">{info.representative.name} – {info.representative.title}</dd>
             </div>
           </dl>
         </section>
 
         <section aria-labelledby="footer-address-title" className="min-w-0 border-t border-slate-200/70 pt-7 sm:row-span-2 sm:border-0 sm:pt-0 lg:row-span-1">
-          <h2 id="footer-address-title" className="text-sm font-bold leading-6">Địa chỉ</h2>
+          <h2 id="footer-address-title" className="text-sm font-bold leading-6">{L('Địa chỉ', 'Addresses')}</h2>
           <div className="mt-5 space-y-5 text-sm">
             <div className="flex gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <div>
-                <h3 className="font-bold leading-6">Trụ sở đăng ký</h3>
-                <p className="mt-1 font-medium leading-6 text-slate-600">{COMPANY_INFO.registeredOffice}</p>
+                <h3 className="font-bold leading-6">{L('Trụ sở đăng ký', 'Registered office')}</h3>
+                <p className="mt-1 font-medium leading-6 text-slate-600">{info.registeredOffice}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <div className="space-y-3">
-                <h3 className="font-bold leading-6">Văn phòng đại diện</h3>
-                {COMPANY_INFO.offices.map((office) => (
+                <h3 className="font-bold leading-6">{L('Văn phòng đại diện', 'Representative offices')}</h3>
+                {info.offices.map((office) => (
                   <div key={office.name}>
                     <p className="font-semibold leading-6">{office.name}</p>
                     <p className="mt-0.5 font-medium leading-6 text-slate-600">{office.address}</p>
@@ -93,33 +124,33 @@ export function PublicFooter() {
         </section>
 
         <section aria-labelledby="footer-contact-title" className="min-w-0 border-t border-slate-200/70 pt-7 text-sm sm:col-start-1 sm:row-start-2 sm:border-0 sm:pt-0 lg:col-start-auto lg:row-start-auto">
-          <h2 id="footer-contact-title" className="text-sm font-bold leading-6">Liên hệ</h2>
+          <h2 id="footer-contact-title" className="text-sm font-bold leading-6">{L('Liên hệ', 'Contact')}</h2>
           <div className="mt-5 space-y-4">
-            <a href={COMPANY_INFO.academicPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+            <a href={info.academicPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
               <Phone className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <span className="leading-6">
-                <span className="block font-medium text-slate-500">Giáo vụ</span>
-                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.academicPhone.label}</span>
+                <span className="block font-medium text-slate-500">{L('Giáo vụ', 'Academic office')}</span>
+                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{info.academicPhone.label}</span>
               </span>
             </a>
-            <a href={COMPANY_INFO.consultingPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+            <a href={info.consultingPhone.href} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
               <Phone className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <span className="leading-6">
-                <span className="block font-medium text-slate-500">Tư vấn học thêm</span>
-                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.consultingPhone.label}</span>
+                <span className="block font-medium text-slate-500">{L('Tư vấn học thêm', 'Enrolment advice')}</span>
+                <span className="block text-base font-bold tabular-nums transition-colors group-hover:text-[#0D8FC7]">{info.consultingPhone.label}</span>
               </span>
             </a>
-            <a href={`mailto:${COMPANY_INFO.representative.email}`} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
+            <a href={`mailto:${info.representative.email}`} className="group flex min-h-12 items-start gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0D8FC7]">
               <Mail className="mt-1 h-5 w-5 shrink-0 text-[#0D8FC7]" />
               <span className="min-w-0 leading-6">
                 <span className="block font-medium text-slate-500">Email</span>
-                <span className="block break-all font-bold transition-colors group-hover:text-[#0D8FC7]">{COMPANY_INFO.representative.email}</span>
+                <span className="block break-all font-bold transition-colors group-hover:text-[#0D8FC7]">{info.representative.email}</span>
               </span>
             </a>
           </div>
 
-          <nav aria-label="Mạng xã hội 123English" className="mt-7">
-            <h3 className="font-bold leading-6">Theo dõi 123English</h3>
+          <nav aria-label={L('Mạng xã hội 123English', '123English on social media')} className="mt-7">
+            <h3 className="font-bold leading-6">{L('Theo dõi 123English', 'Follow 123English')}</h3>
             <div className="mt-3 flex items-center gap-3">
               {SOCIAL_LINKS.map((social) => (
                 <a
@@ -127,7 +158,7 @@ export function PublicFooter() {
                   href={social.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`123English trên ${social.label}`}
+                  aria-label={L(`123English trên ${social.label}`, `123English on ${social.label}`)}
                   title={social.label}
                   className={`inline-flex h-11 w-11 items-center justify-center rounded-[10px] text-white transition-colors duration-200 focus-visible:outline-none focus-visible:ring-4 ${social.className}`}
                 >

@@ -12,7 +12,7 @@ import { Calendar, Clock, Save, ChevronLeft, ChevronRight, AlertTriangle, CheckC
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { Modal } from '@/components/ui/Modal'
 import { convertVnDateTimeToTeacher, formatUtcOffset, getDayOfWeekFromDateISO, getMondayAtOffset, translateVnSlotsToTeacher, translateTeacherSlotsToVn } from '@/lib/timezoneUtils'
-import { getTeacherTimezoneOffset } from '@/lib/teacherCountries'
+import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
 
@@ -197,7 +197,8 @@ export function AvailabilityPage() {
   const [duration, setDuration] = useState<25 | 50>(25)
 
   const [weekStartOverride, setWeekStartOverride] = useState<Date | null>(null)
-  const teacherOffset = teacher?.timezoneOffset ?? getTeacherTimezoneOffset(teacher?.country)
+  // Múi giờ thật của gia sư tại tuần đang xem (có tính giờ mùa hè/DST).
+  const teacherOffset = resolveTeacherTimezoneOffset(teacher, weekStartOverride ?? new Date())
   const defaultWeekStart = useMemo(() => getMondayAtOffset(new Date(), teacherOffset), [teacherOffset])
   const weekStart = weekStartOverride || defaultWeekStart
   const setWeekStart = setWeekStartOverride
@@ -247,7 +248,7 @@ export function AvailabilityPage() {
           const weekOverride = data.weekOverrides?.[weekStartISO]
           const loadedSlots = weekOverride?.slots || data.slots
           if (loadedSlots) {
-            const offsetVal = resolvedTeacher?.timezoneOffset ?? getTeacherTimezoneOffset(resolvedTeacher?.country)
+            const offsetVal = resolveTeacherTimezoneOffset(resolvedTeacher, weekStartOverride ?? new Date())
             const translated = translateVnSlotsToTeacher(loadedSlots, offsetVal)
             setSlots(translated)
           } else {

@@ -4,6 +4,8 @@ import { collection, getDocs, query, where } from 'firebase/firestore'
 import { ArrowRight } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import type { SitePost } from '@/lib/siteContent'
+import { useL } from '@/stores/languageStore'
+import { POST_COPY_EN } from '@/lib/postCopyEn'
 
 interface NewsItem {
   id: string
@@ -82,6 +84,7 @@ function writeNewsCache(items: NewsItem[]) {
 }
 
 export function LatestNewsSection() {
+  const L = useL()
   const [items, setItems] = useState<NewsItem[]>(() => readNewsCache() || FALLBACK_NEWS)
 
   useEffect(() => {
@@ -123,13 +126,13 @@ export function LatestNewsSection() {
       <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-20">
         <div className="lg:pt-1">
           <h2 id="latest-news-title" className="landing-section-title">
-            Tin tức mới nhất
+            {L('Tin tức mới nhất', 'Latest news')}
           </h2>
           <Link
             to="/bai-viet"
             className="mt-7 inline-flex min-h-12 items-center gap-2 rounded-full bg-[#FFC107] px-6 text-sm font-extrabold text-[#10213A] transition hover:bg-[#FFB300] active:translate-y-px focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-200"
           >
-            Đọc thêm
+            {L('Đọc thêm', 'Read more')}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -145,7 +148,7 @@ export function LatestNewsSection() {
                 {formatNewsDate(item.createdAt)}
               </time>
               <span className="flex items-center justify-between gap-4 text-base font-bold leading-6 text-[#10213A] transition-colors group-hover:text-[#0E7EBA]">
-                <span>{item.title}</span>
+                <span>{L(item.title, POST_COPY_EN[item.slug]?.title || item.title)}</span>
                 <ArrowRight className="h-4 w-4 flex-none translate-x-0 opacity-0 transition group-hover:translate-x-1 group-hover:opacity-100" />
               </span>
             </Link>

@@ -8,6 +8,7 @@ import {
   ShieldAlert, Clock, MessageSquare
 } from 'lucide-react'
 import { toast } from '@/stores/toastStore'
+import { useL } from '@/stores/languageStore'
 
 interface NotificationDrawerProps {
   targetType: 'teachers' | 'students' | 'managers'
@@ -32,6 +33,7 @@ const ICONS = {
 }
 
 export function NotificationDrawer({ targetType, targetId }: NotificationDrawerProps) {
+  const L = useL()
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<SystemNotification[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,10 +101,10 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
           )
         )
       }
-      toast.success('Đã đánh dấu đọc tất cả thông báo')
+      toast.success(L('Đã đánh dấu đọc tất cả thông báo', 'All notifications marked as read'))
     } catch (err) {
       console.error(err)
-      toast.error('Lỗi khi đánh dấu đọc')
+      toast.error(L('Lỗi khi đánh dấu đọc', 'Could not mark as read'))
     }
   }
 
@@ -112,7 +114,7 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
       <button
         onClick={() => setIsOpen(true)}
         className="relative p-2 text-slate-500 hover:text-slate-700 bg-white hover:bg-slate-50 rounded-full border border-slate-200 shadow-sm transition-all focus:outline-none shrink-0"
-        aria-label="Xem thông báo"
+        aria-label={L('Xem thông báo', 'View notifications')}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -139,10 +141,10 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-slate-800">Thông báo</h2>
+            <h2 className="text-base font-bold text-slate-800">{L('Thông báo', 'Notifications')}</h2>
             {unreadCount > 0 && (
               <span className="bg-rose-100 text-rose-700 text-[10px] font-black px-2 py-0.5 rounded-full">
-                {unreadCount} mới
+                {unreadCount} {L('mới', 'new')}
               </span>
             )}
           </div>
@@ -151,16 +153,16 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
               <button
                 onClick={handleMarkAllAsRead}
                 className="p-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 hover:bg-indigo-50 rounded-lg transition-colors"
-                title="Đọc tất cả"
+                title={L('Đọc tất cả', 'Mark all read')}
               >
                 <CheckCheck className="w-4 h-4" />
-                Đọc tất cả
+                {L('Đọc tất cả', 'Mark all read')}
               </button>
             )}
             <button
               onClick={() => setIsOpen(false)}
               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              aria-label="Đóng"
+              aria-label={L('Đóng', 'Close')}
             >
               <X className="w-5 h-5" />
             </button>
@@ -176,7 +178,7 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
           ) : notifications.length === 0 ? (
             <div className="text-center py-16">
               <Bell className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-slate-500 text-xs font-semibold">Chưa có thông báo nào dành cho bạn.</p>
+              <p className="text-slate-500 text-xs font-semibold">{L('Chưa có thông báo nào dành cho bạn.', 'You have no notifications yet.')}</p>
             </div>
           ) : (
             notifications.map((notify) => {
@@ -209,7 +211,7 @@ export function NotificationDrawer({ targetType, targetId }: NotificationDrawerP
                     <p className="text-[9px] text-slate-400 font-semibold mt-1.5 flex items-center gap-1.5">
                       <span>{notify.senderName}</span>
                       <span>•</span>
-                      <span>{notify.createdAt?.toDate().toLocaleDateString('vi-VN')}</span>
+                      <span>{notify.createdAt?.toDate().toLocaleDateString(L('vi-VN', 'en-GB'))}</span>
                     </p>
                   </div>
                 </div>

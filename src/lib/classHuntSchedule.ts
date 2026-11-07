@@ -58,13 +58,27 @@ export function defaultClassHuntTeacherRequirements(): ClassHuntTeacherRequireme
 }
 
 /** Short Vietnamese summary; empty when the offer has no requirement. */
-export function describeClassHuntTeacherRequirements(requirements: ClassHuntTeacherRequirements | undefined): string {
+const CLASS_HUNT_TEACHER_TYPE_LABELS_EN: Record<ClassHuntTeacherType, string> = {
+  vn: 'Vietnamese tutor',
+  ph: 'Filipino tutor',
+  native: 'Native-speaker tutor',
+}
+
+const CLASS_HUNT_GENDER_LABELS_EN: Record<ClassHuntTeacherGender, string> = {
+  any: 'No requirement',
+  female: 'Female tutor',
+  male: 'Male tutor',
+}
+
+export function describeClassHuntTeacherRequirements(requirements: ClassHuntTeacherRequirements | undefined, lang: 'vi' | 'en' = 'vi'): string {
   if (!requirements) return ''
+  const typeLabels = lang === 'en' ? CLASS_HUNT_TEACHER_TYPE_LABELS_EN : CLASS_HUNT_TEACHER_TYPE_LABELS
+  const genderLabels = lang === 'en' ? CLASS_HUNT_GENDER_LABELS_EN : CLASS_HUNT_GENDER_LABELS
   const parts: string[] = []
   if (requirements.teacherTypes.length > 0 && requirements.teacherTypes.length < CLASS_HUNT_TEACHER_TYPES.length) {
-    parts.push(requirements.teacherTypes.map((type) => CLASS_HUNT_TEACHER_TYPE_LABELS[type]).join(' / '))
+    parts.push(requirements.teacherTypes.map((type) => typeLabels[type]).join(' / '))
   }
-  if (requirements.gender !== 'any') parts.push(CLASS_HUNT_GENDER_LABELS[requirements.gender])
+  if (requirements.gender !== 'any') parts.push(genderLabels[requirements.gender])
   return parts.join(' · ')
 }
 

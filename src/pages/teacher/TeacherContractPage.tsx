@@ -473,7 +473,8 @@ Telephone: 090.696.6691 – 039.399.8733`;
 
 export function TeacherContractPage() {
   const { teacherId } = useAuthStore()
-  const { t } = useLanguageStore()
+  const { t, lang } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const [submitting, setSubmitting] = useState(false)
   const [contracts, setContracts] = useState<any[]>([])
   const [contractsLoading, setContractsLoading] = useState(true)
@@ -552,7 +553,7 @@ export function TeacherContractPage() {
 
   const onSubmit = async () => {
     if (!isAgreed) {
-      toast.error('Vui lòng đồng ý với các điều khoản')
+      toast.error(L('Vui lòng đồng ý với các điều khoản', 'Please agree to the terms'))
       return
     }
     
@@ -592,10 +593,10 @@ export function TeacherContractPage() {
         termsVersion: "2026-05-03",
       })
       
-      toast.success('Xác nhận điều khoản thành công!')
+      toast.success(L('Xác nhận điều khoản thành công!', 'Terms accepted successfully!'))
       // Reset form not needed since hasAgreedBefore will hide the UI
     } catch (e: any) {
-      toast.error('Có lỗi xảy ra: ' + e.message)
+      toast.error(L('Có lỗi xảy ra: ', 'Something went wrong: ') + e.message)
     } finally {
       setSubmitting(false)
     }
@@ -609,9 +610,9 @@ export function TeacherContractPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <Card>
-          <h1 className="text-lg font-bold text-slate-900">Chưa tải được trạng thái hợp đồng</h1>
+          <h1 className="text-lg font-bold text-slate-900">{L('Chưa tải được trạng thái hợp đồng', 'Could not load your contract status')}</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Kết nối dữ liệu đang gián đoạn. Hệ thống chưa thay đổi hợp đồng của bạn; vui lòng thử tải lại.
+            {L('Kết nối dữ liệu đang gián đoạn. Hệ thống chưa thay đổi hợp đồng của bạn; vui lòng thử tải lại.', 'The data connection was interrupted. Your contract has not been changed – please try reloading.')}
           </p>
           <Button
             className="mt-4"
@@ -621,7 +622,7 @@ export function TeacherContractPage() {
               setContractsLoadAttempt((attempt) => attempt + 1)
             }}
           >
-            Thử tải lại
+            {L('Thử tải lại', 'Try again')}
           </Button>
         </Card>
       </div>
@@ -646,11 +647,11 @@ export function TeacherContractPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
                 <FileText className="w-5 h-5 text-[#3BB8EB]" />
-                Nội dung Điều khoản & Chính sách
+                {L('Nội dung Điều khoản & Chính sách', 'Terms & Policies')}
               </div>
               <Button variant="outline" size="sm" onClick={handleDownloadToS} className="text-xs bg-white shrink-0">
                 <Download className="w-4 h-4 mr-2" />
-                Tải về bản sao (.TXT)
+                {L('Tải về bản sao (.TXT)', 'Download a copy (.TXT)')}
               </Button>
             </div>
 
@@ -674,7 +675,7 @@ export function TeacherContractPage() {
 
             {!hasScrolledToBottom && (
               <div className="text-center p-2.5 bg-amber-50 text-amber-700 rounded-lg text-sm border border-amber-200 animate-pulse font-medium">
-                Vui lòng lướt đọc xuống cuối văn bản để có thể đánh dấu xác nhận.
+                {L('Vui lòng lướt đọc xuống cuối văn bản để có thể đánh dấu xác nhận.', 'Please scroll to the end of the document before you can tick the confirmation.')}
               </div>
             )}
 
@@ -690,7 +691,7 @@ export function TeacherContractPage() {
                   />
                 </div>
                 <span className="text-sm font-medium text-slate-800 select-none">
-                  Tôi xác nhận đã đọc, hiểu và đồng ý với Điều khoản sử dụng và Chính sách bảo mật, đồng thời chịu trách nhiệm với mọi hoạt động phát sinh từ tài khoản.
+                  {L('Tôi xác nhận đã đọc, hiểu và đồng ý với Điều khoản sử dụng và Chính sách bảo mật, đồng thời chịu trách nhiệm với mọi hoạt động phát sinh từ tài khoản.', 'I confirm that I have read, understood and agree to the Terms of Use and Privacy Policy, and I am responsible for all activity on my account.')}
                 </span>
               </label>
             </div>
@@ -704,7 +705,7 @@ export function TeacherContractPage() {
               className="mt-4 shadow-lg hover:shadow-indigo-500/25 transition-all duration-300 h-12"
             >
               <ShieldCheck className="w-5 h-5 mr-2" />
-              Đồng ý và Xác nhận
+              {L('Đồng ý và Xác nhận', 'Agree and confirm')}
             </Button>
           </div>
         </Card>
@@ -712,7 +713,7 @@ export function TeacherContractPage() {
 
       {contracts.length > 0 && (
         <div>
-          <h2 className="text-lg font-bold text-slate-900 mb-3">Lịch sử hồ sơ</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-3">{L('Lịch sử hồ sơ', 'Record history')}</h2>
           <div className="space-y-3">
             {contracts.map(c => (
               <Card key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300 border-emerald-200 bg-emerald-50/30">
@@ -722,12 +723,12 @@ export function TeacherContractPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-emerald-900">
-                      Đã xác nhận Điều khoản dịch vụ
+                      {L('Đã xác nhận Điều khoản dịch vụ', 'Terms of Service accepted')}
                     </p>
                     <div className="mt-2 space-y-1.5">
                       <p className="text-xs text-slate-600 flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        {c.agreedAt ? c.agreedAt.toDate().toLocaleString('vi-VN') : (c.createdAt ? c.createdAt.toDate().toLocaleString('vi-VN') : 'Đang xử lý...')}
+                        {c.agreedAt ? c.agreedAt.toDate().toLocaleString(L('vi-VN', 'en-GB')) : (c.createdAt ? c.createdAt.toDate().toLocaleString(L('vi-VN', 'en-GB')) : L('Đang xử lý...', 'Processing...'))}
                       </p>
                       {c.ipAddress && (
                         <p className="text-xs text-slate-600 flex items-center gap-1.5">

@@ -48,6 +48,7 @@ function formatPayrollTaxSummaryAmounts(
 export function LessonHistoryPage() {
   const { teacherId } = useAuthStore()
   const { t, lang } = useLanguageStore()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const [searchParams, setSearchParams] = useSearchParams()
   const studentIdFilter = searchParams.get('studentId') || ''
   const studentNameFilter = searchParams.get('studentName') || ''
@@ -368,21 +369,21 @@ export function LessonHistoryPage() {
 
       {monthlyPayrollTaxSummaries.length > 0 && (
         <Card className="space-y-2 border-emerald-100 bg-emerald-50/40">
-          <p className="text-sm font-bold text-slate-700">Chi tiết lương thực nhận tháng này</p>
+          <p className="text-sm font-bold text-slate-700">{L('Chi tiết lương thực nhận tháng này', 'This month’s take-home pay')}</p>
           {monthlyPayrollTaxSummaries.map((summary) => (
             <div key={summary.currency} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
               <span className="font-semibold text-slate-600">{summary.currency}</span>
               <span className="text-slate-500">Gross {formatMoney(summary.grossAmount, summary.currency)}</span>
-              <span className={summary.taxAmount !== 0 ? 'font-semibold text-rose-500' : 'text-slate-400'}>Thuế {summary.taxAmount !== 0 ? `-${formatMoney(summary.taxAmount, summary.currency)}` : formatMoney(0, summary.currency)}</span>
+              <span className={summary.taxAmount !== 0 ? 'font-semibold text-rose-500' : 'text-slate-400'}>{L('Thuế', 'Tax')} {summary.taxAmount !== 0 ? `-${formatMoney(summary.taxAmount, summary.currency)}` : formatMoney(0, summary.currency)}</span>
               <span className="font-bold text-emerald-600">Net {formatMoney(summary.netAmount, summary.currency)}</span>
             </div>
           ))}
-          {monthlyPayrollHasMixedSettlement && <p className="text-[11px] leading-5 text-slate-500">Khoản đã thanh toán dùng số đã chốt; khoản chưa thanh toán là ước tính theo cấu hình hiện tại.</p>}
-          {!monthlyPayrollHasMixedSettlement && monthlyPayrollTaxSummaries.every((summary) => summary.hasPaidLines) && <p className="text-[11px] leading-5 text-slate-500">Khoản đã thanh toán hiển thị theo snapshot đã chốt.</p>}
-          {!monthlyPayrollHasMixedSettlement && monthlyPayrollTaxSummaries.some((summary) => summary.hasUnpaidLines) && <p className="text-[11px] leading-5 text-slate-500">Khoản chưa thanh toán là ước tính; số chốt được lưu khi giáo vụ xác nhận thanh toán.</p>}
-          {monthlyPayrollHasLegacyPaidLine && <p className="text-[11px] leading-5 text-amber-700">Khoản đã trả trước khi có snapshot được giữ nguyên Gross = Net; hệ thống không tự suy đoán lại số đã chuyển.</p>}
-          {monthlyPayrollTaxSummaries.some((summary) => summary.hasPaidSettlementMonthMismatch) && <p className="text-[11px] leading-5 text-amber-700">Có khoản đã chốt được ghi sang tháng báo cáo khác; giáo vụ sẽ đối soát riêng, hệ thống không tự chuyển thuế giữa các tháng.</p>}
-          {monthlyPayrollTaxSummaries.some((summary) => summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0) && <p className="text-[11px] leading-5 text-amber-700">Có khoản thuế cần kế toán kiểm tra thủ công; hệ thống không tự hoàn hoặc trừ bù.</p>}
+          {monthlyPayrollHasMixedSettlement && <p className="text-[11px] leading-5 text-slate-500">{L('Khoản đã thanh toán dùng số đã chốt; khoản chưa thanh toán là ước tính theo cấu hình hiện tại.', 'Paid items use the confirmed amounts; unpaid items are estimates based on the current settings.')}</p>}
+          {!monthlyPayrollHasMixedSettlement && monthlyPayrollTaxSummaries.every((summary) => summary.hasPaidLines) && <p className="text-[11px] leading-5 text-slate-500">{L('Khoản đã thanh toán hiển thị theo snapshot đã chốt.', 'Paid items are shown as confirmed.')}</p>}
+          {!monthlyPayrollHasMixedSettlement && monthlyPayrollTaxSummaries.some((summary) => summary.hasUnpaidLines) && <p className="text-[11px] leading-5 text-slate-500">{L('Khoản chưa thanh toán là ước tính; số chốt được lưu khi giáo vụ xác nhận thanh toán.', 'Unpaid items are estimates; final amounts are saved when the academic office confirms payment.')}</p>}
+          {monthlyPayrollHasLegacyPaidLine && <p className="text-[11px] leading-5 text-amber-700">{L('Khoản đã trả trước khi có snapshot được giữ nguyên Gross = Net; hệ thống không tự suy đoán lại số đã chuyển.', 'Items paid before confirmations existed are kept as Gross = Net; the system does not recalculate amounts already transferred.')}</p>}
+          {monthlyPayrollTaxSummaries.some((summary) => summary.hasPaidSettlementMonthMismatch) && <p className="text-[11px] leading-5 text-amber-700">{L('Có khoản đã chốt được ghi sang tháng báo cáo khác; giáo vụ sẽ đối soát riêng, hệ thống không tự chuyển thuế giữa các tháng.', 'Some confirmed items were recorded in a different reporting month; the academic office will reconcile them – tax is not moved between months automatically.')}</p>}
+          {monthlyPayrollTaxSummaries.some((summary) => summary.unallocatedTaxAmount > 0 || summary.overwithheldTaxAmount > 0) && <p className="text-[11px] leading-5 text-amber-700">{L('Có khoản thuế cần kế toán kiểm tra thủ công; hệ thống không tự hoàn hoặc trừ bù.', 'Some tax items need a manual check by accounting; nothing is refunded or deducted automatically.')}</p>}
         </Card>
       )}
 

@@ -1,7 +1,11 @@
+import { useCallback } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-type Lang = 'vi' | 'en'
+export type Lang = 'vi' | 'en'
+
+/** Một đoạn chữ có hai bản: tiếng Việt và tiếng Anh. */
+export type Bilingual = { vi: string; en: string }
 
 interface LangState {
   lang: Lang
@@ -383,16 +387,16 @@ const translations: Record<string, Record<Lang, string>> = {
   'landing.feat3_title': { vi: 'Kết nối dễ dàng', en: 'Easy connection' },
   'landing.feat3_desc': { vi: 'Thông tin minh bạch, gắn kết gia đình và gia sư.', en: 'Transparent info connecting families and teachers.' },
   'landing.search_title': { vi: 'Tra cứu tiến độ học tập', en: 'Check learning progress' },
-  'landing.search_subtitle': { vi: 'Dành cho phụ huynh / học sinh', en: 'For parents / students' },
+  'landing.search_subtitle': { vi: 'Dành cho phụ huynh / học sinh', en: 'For parents and students' },
   'landing.search_placeholder': { vi: 'Nhập mã học sinh', en: 'Enter student code' },
-  'landing.search_hint': { vi: 'Mã học sinh được gia sư cung cấp', en: 'Student code is provided by the teacher' },
+  'landing.search_hint': { vi: 'Mã học sinh được gia sư cung cấp', en: 'Your tutor provides the student code' },
   'landing.search_btn': { vi: 'Xem tiến độ', en: 'View progress' },
   'landing.search_safe': { vi: 'Không cần đăng nhập. Bảo mật & an toàn thông tin.', en: 'No login required. Secure & private.' },
   'landing.login_title': { vi: 'Đăng nhập hệ thống', en: 'System login' },
-  'landing.login_subtitle': { vi: 'Dành cho gia sư & admin', en: 'For teachers & admin' },
-  'landing.login_teacher': { vi: 'Gia sư', en: 'Teacher' },
+  'landing.login_subtitle': { vi: 'Dành cho gia sư & admin', en: 'For tutors and administrators' },
+  'landing.login_teacher': { vi: 'Gia sư', en: 'Tutor' },
   'landing.login_admin': { vi: 'Admin', en: 'Admin' },
-  'landing.login_note': { vi: 'Chỉ dành cho gia sư và quản trị hệ thống.', en: 'For teachers and system administrators only.' },
+  'landing.login_note': { vi: 'Chỉ dành cho gia sư và quản trị hệ thống.', en: 'For tutors and system administrators only.' },
   'landing.nav_home': { vi: 'Trang chủ', en: 'Home' },
   'landing.nav_about': { vi: 'Giới thiệu', en: 'About' },
   'landing.nav_programs': { vi: 'Lộ trình tiêu chuẩn', en: 'Standard Program' },
@@ -414,3 +418,44 @@ export const useLanguageStore = create<LangState>()(
     { name: '123english-lang' }
   )
 )
+
+/** Ngôn ngữ đang chọn. */
+export function useLang(): Lang {
+  return useLanguageStore((state) => state.lang)
+}
+
+/**
+ * Trả về hàm chọn chữ theo ngôn ngữ: `L('Xin chào', 'Hello')`.
+ * Dùng cho các trang nhiều chữ viết thẳng trong JSX.
+ */
+export function useL() {
+  const lang = useLang()
+  return useCallback(<T,>(vi: T, en: T): T => (lang === 'en' ? en : vi), [lang])
+}
+
+export function pick(text: Bilingual, lang: Lang): string {
+  return text[lang] || text.vi
+}
+
+function syncDocumentLang(lang: Lang) {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = lang
+}
+
+/**
+ * Cho phép mở link `?lang=en` / `?lang=vi` (gửi cho gia sư nước ngoài) và
+ * giữ thuộc tính <html lang> khớp với ngôn ngữ để trình duyệt/Google đọc đúng.
+ */
+export function initLanguageFromUrl() {
+  if (typeof window === 'undefined') return
+  try {
+    const requested = new URLSearchParams(window.location.search).get('lang')
+    if (requested === 'en' || requested === 'vi') {
+      useLanguageStore.getState().setLang(requested)
+    }
+  } catch {
+    // URL lạ thì giữ ngôn ngữ đã lưu.
+  }
+  syncDocumentLang(useLanguageStore.getState().lang)
+  useLanguageStore.subscribe((state) => syncDocumentLang(state.lang))
+}

@@ -10,6 +10,9 @@ import { PublicNav } from '@/components/layout/PublicNav'
 import { PublicFooter } from '@/components/layout/PublicFooter'
 import type { SitePost } from '@/lib/siteContent'
 import { ArrowLeft, ArrowRight, CalendarDays, Newspaper, Sparkles } from 'lucide-react'
+import { useLang } from '@/stores/languageStore'
+import { optimizedImage } from '@/lib/optimizedImages'
+import { localizePost } from '@/lib/postCopyEn'
 
 const timestamp = (date: string) => ({ toMillis: () => new Date(`${date}T08:00:00+07:00`).getTime() })
 const MILESTONE_2024_SLUG = '2024-cot-moc-1000-hoc-vien'
@@ -152,14 +155,17 @@ function usePublishedPosts() {
   return { posts, loading }
 }
 
-function formatDate(value: unknown) {
+function formatDate(value: unknown, lang: 'vi' | 'en' = 'vi') {
   const millis = (value as { toMillis?: () => number } | undefined)?.toMillis?.()
   if (!millis) return ''
-  return new Date(millis).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return new Date(millis).toLocaleDateString(lang === 'en' ? 'en-GB' : 'vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 export function BaiVietPage() {
-  const { posts, loading } = usePublishedPosts()
+  const lang = useLang()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
+  const { posts: rawPosts, loading } = usePublishedPosts()
+  const posts = useMemo(() => rawPosts.map((post) => localizePost(post, lang)), [rawPosts, lang])
   const [featured, ...rest] = posts
 
   return (
@@ -172,15 +178,15 @@ export function BaiVietPage() {
             <div>
               <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#A76500]">
                 <Sparkles className="h-4 w-4" />
-                Góc chia sẻ 123English
+                {L('Góc chia sẻ 123English', '123English stories')}
               </p>
               <h1 className="mt-4 max-w-3xl text-[clamp(2.7rem,5.4vw,5.2rem)] font-black leading-[0.98] tracking-[-0.055em] text-[#10213A]">
-                Một hành trình.<br />
-                Nhiều câu chuyện đáng nhớ.
+                {L('Một hành trình.', 'One journey.')}<br />
+                {L('Nhiều câu chuyện đáng nhớ.', 'Many stories worth remembering.')}
               </h1>
             </div>
             <p className="max-w-xl border-l-4 border-[#FFC107] pl-5 text-base font-semibold leading-8 text-slate-600">
-              Từ khởi nguồn, phương pháp đến những cột mốc phát triển, mỗi bài viết lưu lại một phần hành trình của 123English và cộng đồng người học.
+              {L('Từ khởi nguồn, phương pháp đến những cột mốc phát triển, mỗi bài viết lưu lại một phần hành trình của 123English và cộng đồng người học.', 'From our beginnings and teaching method to key milestones, each article captures part of the journey of 123English and its learners. Some articles are only available in Vietnamese.')}
             </p>
           </div>
         </section>
@@ -197,9 +203,9 @@ export function BaiVietPage() {
           <section className="px-5 pb-20 sm:px-8 lg:px-12">
             <div className="mx-auto w-full max-w-7xl rounded-[2rem] border-2 border-dashed border-slate-200 py-20 text-center">
               <Newspaper className="mx-auto h-10 w-10 text-slate-300" />
-              <p className="mt-3 text-base font-bold text-slate-700">Chưa có bài viết nào</p>
+              <p className="mt-3 text-base font-bold text-slate-700">{L('Chưa có bài viết nào', 'No articles yet')}</p>
               <p className="mt-1 text-sm font-medium text-slate-500">
-                Nội dung đang được chuẩn bị, mời bạn quay lại sau.
+                {L('Nội dung đang được chuẩn bị, mời bạn quay lại sau.', 'Content is being prepared – please check back later.')}
               </p>
             </div>
           </section>
@@ -226,21 +232,21 @@ export function BaiVietPage() {
                     )}
                     <div className="mt-5 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500">
                       {featured.author && <span>{featured.author}</span>}
-                      {formatDate(featured.createdAt) && (
+                      {formatDate(featured.createdAt, lang) && (
                         <span className="inline-flex items-center gap-1.5">
                           <CalendarDays className="h-3.5 w-3.5" />
-                          {formatDate(featured.createdAt)}
+                          {formatDate(featured.createdAt, lang)}
                         </span>
                       )}
                     </div>
                     <span className="mt-6 inline-flex items-center gap-2 text-sm font-extrabold text-[#0E7EBA]">
-                      Đọc bài viết
+                      {L('Đọc bài viết', 'Read article')}
                       <ArrowRight className="h-4 w-4" />
                     </span>
                   </div>
                   {featured.coverImage && (
                     <img
-                      src={featured.coverImage}
+                      src={optimizedImage(featured.coverImage)}
                       alt={featured.title}
                       loading="lazy"
                       style={{ aspectRatio: '4 / 3' }}
@@ -263,7 +269,7 @@ export function BaiVietPage() {
                     >
                       {post.coverImage ? (
                         <img
-                          src={post.coverImage}
+                          src={optimizedImage(post.coverImage)}
                           alt={post.title}
                           loading="lazy"
                           style={{ aspectRatio: '16 / 10' }}
@@ -287,7 +293,7 @@ export function BaiVietPage() {
                           <p className="mt-2 line-clamp-3 text-sm font-medium leading-6 text-slate-500">{post.excerpt}</p>
                         )}
                         <div className="mt-auto pt-4 text-xs font-semibold text-slate-400">
-                          {formatDate(post.createdAt)}
+                          {formatDate(post.createdAt, lang)}
                         </div>
                       </div>
                     </Link>
@@ -307,8 +313,11 @@ export function BaiVietPage() {
 /** Chi tiết một bài viết. */
 export function BaiVietChiTietPage() {
   const { slug } = useParams<{ slug: string }>()
+  const lang = useLang()
+  const L = (vi: string, en: string) => (lang === 'en' ? en : vi)
   const { posts, loading } = usePublishedPosts()
-  const post = useMemo(() => posts.find((p) => p.slug === slug || p.id === slug), [posts, slug])
+  const rawPost = useMemo(() => posts.find((p) => p.slug === slug || p.id === slug), [posts, slug])
+  const post = useMemo(() => (rawPost ? localizePost(rawPost, lang) : rawPost), [rawPost, lang])
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-sans">
@@ -321,7 +330,7 @@ export function BaiVietChiTietPage() {
             className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 transition-colors hover:text-[#0E7EBA]"
           >
             <ArrowLeft className="h-4 w-4" />
-            Tất cả bài viết
+            {L('Tất cả bài viết', 'All articles')}
           </Link>
 
           {loading ? (
@@ -332,8 +341,8 @@ export function BaiVietChiTietPage() {
           ) : !post ? (
             <div className="mt-10 rounded-[2rem] border-2 border-dashed border-slate-200 py-20 text-center">
               <Newspaper className="mx-auto h-10 w-10 text-slate-300" />
-              <p className="mt-3 text-base font-bold text-slate-700">Không tìm thấy bài viết</p>
-              <p className="mt-1 text-sm font-medium text-slate-500">Bài viết có thể đã được gỡ hoặc đổi đường dẫn.</p>
+              <p className="mt-3 text-base font-bold text-slate-700">{L('Không tìm thấy bài viết', 'Article not found')}</p>
+              <p className="mt-1 text-sm font-medium text-slate-500">{L('Bài viết có thể đã được gỡ hoặc đổi đường dẫn.', 'The article may have been removed or its link changed.')}</p>
             </div>
           ) : (
             <article className="mt-7">
@@ -347,17 +356,17 @@ export function BaiVietChiTietPage() {
               </h1>
               <div className="mt-4 flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500">
                 {post.author && <span>{post.author}</span>}
-                {formatDate(post.createdAt) && (
+                {formatDate(post.createdAt, lang) && (
                   <span className="inline-flex items-center gap-1.5">
                     <CalendarDays className="h-3.5 w-3.5" />
-                    {formatDate(post.createdAt)}
+                    {formatDate(post.createdAt, lang)}
                   </span>
                 )}
               </div>
 
               {post.coverImage && (
                 <img
-                  src={post.coverImage}
+                  src={optimizedImage(post.coverImage)}
                   alt={post.title}
                   style={{ aspectRatio: '16 / 9' }}
                   className="mt-7 w-full rounded-[1.75rem] object-cover"
