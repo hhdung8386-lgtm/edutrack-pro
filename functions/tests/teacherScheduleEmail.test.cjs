@@ -6,6 +6,7 @@ const {
   isActiveTeachingBooking,
   isTeacherReminderEmail,
   splitTeachingBlocks,
+  teacherOffsetAt,
 } = require('../lib/teacherScheduleEmail.js')
 
 const base = { status: 'confirmed', teacherId: 't1', studentCode: 'HS001', subjectName: 'IELTS', requestedDate: '2026-09-22' }
@@ -50,4 +51,24 @@ test('email hiển thị ca, giờ địa phương và escape HTML', () => {
   assert.match(email.text, /your time: 20:00/)
   assert.ok(!email.html.includes('<script>'))
   assert.throws(() => buildTeacherScheduleEmail({}, [], 'manual'))
+})
+
+test('giờ địa phương gia sư tính cả giờ mùa hè, giữ offset admin tự đặt', () => {
+  const july = new Date('2026-07-10T12:00:00Z')
+  const november = new Date('2026-11-10T12:00:00Z')
+  assert.equal(teacherOffsetAt({ country: 'GB', timezoneOffset: 0 }, july), 1)
+  assert.equal(teacherOffsetAt({ country: 'GB', timezoneOffset: 0 }, november), 0)
+  assert.equal(teacherOffsetAt({ country: 'AU', timezoneOffset: 10 }, november), 11)
+  assert.equal(teacherOffsetAt({ country: 'US', timezoneOffset: -5 }, july), -4)
+  assert.equal(teacherOffsetAt({ country: 'US', timezoneOffset: -8 }, july), -8)
+  assert.equal(teacherOffsetAt({ country: 'PH', timezoneOffset: 8 }, july), 8)
+  assert.equal(teacherOffsetAt({ timezoneOffset: 9 }, july), 9)
+  assert.equal(teacherOffsetAt({}, july), 7)
+
+  const email = buildTeacherScheduleEmail(
+    { code: 'Amy', country: 'AU', timezoneOffset: 10 },
+    [{ date: '2026-11-12', bookings: [{ ...base, id: 'b1', requestedDate: '2026-11-12', requestedStart: '19:00', requestedEnd: '19:25' }] }],
+    'digest',
+  )
+  assert.match(email.text, /your time: 23:00/)
 })

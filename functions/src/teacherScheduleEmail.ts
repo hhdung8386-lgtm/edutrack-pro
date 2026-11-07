@@ -23,6 +23,7 @@ export type TeacherScheduleTeacher = {
   email?: string
   status?: string
   timezoneOffset?: number
+  country?: string
 }
 
 export type TeacherScheduleEmailKind = 'digest' | 'upcoming' | 'manual'
@@ -127,9 +128,62 @@ function slotTime(booking: TeacherScheduleBooking): string {
   return end ? `${booking.requestedStart}–${end}` : booking.requestedStart || ''
 }
 
-function teacherOffset(teacher: TeacherScheduleTeacher): number {
-  const offset = Number(teacher.timezoneOffset)
-  return Number.isFinite(offset) && offset >= -12 && offset <= 14 ? offset : VIETNAM_OFFSET_HOURS
+// Múi giờ chuẩn (không DST) mà hồ sơ gia sư lưu theo quốc gia, và vùng giờ IANA tương ứng.
+// Giữ khớp với src/lib/teacherCountries.ts ở frontend.
+const COUNTRY_STANDARD_OFFSETS: Record<string, number> = {
+  VN: 7, PH: 8, GB: 0, US: -5, CA: -5, ZA: 2, AU: 10, NZ: 12, IE: 0,
+  KE: 3, NG: 1, GH: 0, UG: 3, IN: 5.5, PK: 5, BD: 6, LK: 5.5,
+  MM: 6.5, MY: 8, ID: 7, JP: 9, KR: 9, SG: 8, TH: 7,
+  UK: 0, US_EST: -5, US_PST: -8,
+}
+const COUNTRY_TIMEZONES: Record<string, string> = {
+  GB: 'Europe/London', UK: 'Europe/London', IE: 'Europe/Dublin',
+  US: 'America/New_York', US_EST: 'America/New_York', US_PST: 'America/Los_Angeles',
+  CA: 'America/Toronto', AU: 'Australia/Sydney', NZ: 'Pacific/Auckland',
+}
+
+/** UTC offset (giờ) thật của vùng giờ tại một thời điểm — có tính giờ mùa hè. */
+export function zoneOffsetHours(timeZone: string, at: Date): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(at)
+    const value = (type: string) => Number(parts.find((part) => part.type === type)?.value)
+    const asUtc = Date.UTC(value('year'), value('month') - 1, value('day'), value('hour') % 24, value('minute'), value('second'))
+    const offset = Math.round(((asUtc - Math.floor(at.getTime() / 1000) * 1000) / 3_600_000) * 4) / 4
+    return Number.isFinite(offset) ? offset : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Offset của gia sư tại thời điểm `at`. Hồ sơ chỉ lưu giờ chuẩn của quốc gia nên lệch
+ * 1 giờ khi có giờ mùa hè (Anh/Mỹ/Canada mùa hè, Úc/NZ tháng 10–4). Nếu giá trị lưu
+ * đúng bằng giờ chuẩn của quốc gia thì dùng giờ thật có DST; giá trị admin tự đặt
+ * khác đi thì giữ nguyên.
+ */
+export function teacherOffsetAt(teacher: TeacherScheduleTeacher, at: Date): number {
+  const raw = Number(teacher.timezoneOffset)
+  const stored = Number.isFinite(raw) && raw >= -12 && raw <= 14 && teacher.timezoneOffset !== undefined && teacher.timezoneOffset !== null
+    ? raw
+    : undefined
+  const code = String(teacher.country || '').trim().toUpperCase()
+  const standard = code ? COUNTRY_STANDARD_OFFSETS[code] : undefined
+  const zone = code ? COUNTRY_TIMEZONES[code] : undefined
+  if (zone && (stored === undefined || stored === standard)) {
+    const live = zoneOffsetHours(zone, at)
+    if (live !== null) return live
+  }
+  return stored ?? standard ?? VIETNAM_OFFSET_HOURS
+}
+
+/** Thời điểm thật (UTC) của một giờ học tính theo giờ Việt Nam. */
+function vietnamInstant(dateISO: string, time?: string): Date {
+  const minutes = timeToMinutes(time) ?? 0
+  const [year, month, day] = dateISO.split('-').map(Number)
+  return new Date(Date.UTC(year, (month || 1) - 1, day || 1, 0, minutes) - VIETNAM_OFFSET_HOURS * 3_600_000)
 }
 
 export function buildTeacherScheduleEmail(
@@ -140,8 +194,8 @@ export function buildTeacherScheduleEmail(
   const nonEmptyDays = days.filter((day) => day.bookings.length > 0)
   if (nonEmptyDays.length === 0) throw new Error('Cannot build a teacher schedule email without classes')
 
-  const offset = teacherOffset(teacher)
-  const showLocal = offset !== VIETNAM_OFFSET_HOURS
+  const offsetFor = (date: string, time?: string) => teacherOffsetAt(teacher, vietnamInstant(date, time))
+  const showLocal = nonEmptyDays.some((day) => day.bookings.some((booking) => offsetFor(day.date, booking.requestedStart) !== VIETNAM_OFFSET_HOURS))
   const teacherLabel = teacher.code?.trim() || teacher.name?.trim() || 'Teacher'
   const totalClasses = nonEmptyDays.reduce((sum, day) => sum + day.bookings.length, 0)
   const firstDay = nonEmptyDays[0]
@@ -160,7 +214,7 @@ export function buildTeacherScheduleEmail(
 
   const textDays = nonEmptyDays.map((day) => {
     const rows = sortBookings(day.bookings).map((booking, index) => {
-      const local = showLocal ? ` (giờ của bạn/your time: ${localTimeNote(booking.requestedStart, offset)})` : ''
+      const local = showLocal ? ` (giờ của bạn/your time: ${localTimeNote(booking.requestedStart, offsetFor(day.date, booking.requestedStart))})` : ''
       return `  ${index + 1}. ${slotTime(booking)}${local} · HV ${booking.studentCode?.trim() || '—'} · ${booking.subjectName?.trim() || '—'}`
     }).join('\n')
     return `Ngày ${formatDate(day.date)}:\n${rows}`
@@ -185,7 +239,7 @@ Trân trọng,
   const htmlDays = nonEmptyDays.map((day) => {
     const rows = sortBookings(day.bookings).map((booking, index) => {
       const local = showLocal
-        ? `<br><span style="color:#637689;font-size:12px;font-weight:400">Giờ của bạn: ${escapeHtml(localTimeNote(booking.requestedStart, offset))}</span>`
+        ? `<br><span style="color:#637689;font-size:12px;font-weight:400">Giờ của bạn: ${escapeHtml(localTimeNote(booking.requestedStart, offsetFor(day.date, booking.requestedStart)))}</span>`
         : ''
       return `<tr>
         <td style="padding:11px 14px;border-top:${index === 0 ? '0' : '1px solid #e4edf3'};color:#14213d;font-size:14px;font-weight:700;white-space:nowrap;vertical-align:top">${escapeHtml(slotTime(booking))}${local}</td>
