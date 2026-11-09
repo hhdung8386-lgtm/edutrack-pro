@@ -690,6 +690,86 @@ export const deleteStudentSafely = onCall({
   return { backupId: backupRef.id, ...result }
 })
 
+/**
+ * Xóa gia sư có bảo vệ: dùng chung mật khẩu bảo vệ với xóa học viên
+ * (secret STUDENT_DELETE_PASSWORD, chỉ quản lý nắm). Sao lưu toàn bộ hồ sơ
+ * gia sư + hồ sơ công khai trước khi xóa, ghi adminLogs. Lịch sử buổi học,
+ * lương và booking không bị động tới (giống hành vi xóa cũ).
+ */
+export const deleteTeacherSafely = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+  secrets: [studentDeletePassword],
+}, async (request) => {
+  const actorUid = await requireSystemAdmin(request.auth?.uid)
+  const teacherId = typeof request.data?.teacherId === 'string' ? request.data.teacherId.trim() : ''
+  const expectedName = typeof request.data?.expectedName === 'string' ? request.data.expectedName.trim() : ''
+  const password = typeof request.data?.password === 'string' ? request.data.password : ''
+
+  if (!teacherId || teacherId.includes('/') || teacherId.length > 160 || !password) {
+    throw new HttpsError('invalid-argument', 'Thiếu thông tin xác nhận xóa gia sư.')
+  }
+
+  const configuredPassword = studentDeletePassword.value()
+  if (!configuredPassword) {
+    throw new HttpsError('failed-precondition', 'Mật khẩu bảo vệ chưa được cấu hình trên máy chủ.')
+  }
+  if (!matchesProtectedPassword(password, configuredPassword)) {
+    logger.warn('Protected teacher deletion rejected', { actorUid, teacherId })
+    throw new HttpsError('permission-denied', 'Mật khẩu bảo vệ không đúng.')
+  }
+
+  const teacherRef = db.collection('teachers').doc(teacherId)
+  const publicProfileRef = db.collection('publicTeacherProfiles').doc(teacherId)
+  const backupRef = db.collection('teacherDeletionBackups').doc()
+  const logRef = db.collection('adminLogs').doc()
+
+  await db.runTransaction(async (transaction) => {
+    const [teacherSnapshot, publicProfileSnapshot] = await Promise.all([
+      transaction.get(teacherRef),
+      transaction.get(publicProfileRef),
+    ])
+    if (!teacherSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ gia sư cần xóa.')
+
+    const teacherData = teacherSnapshot.data() || {}
+    const currentName = typeof teacherData.name === 'string' ? teacherData.name.trim() : ''
+    if (expectedName && currentName !== expectedName) {
+      throw new HttpsError('failed-precondition', 'Hồ sơ gia sư vừa thay đổi. Hãy tải lại danh sách rồi thử lại.')
+    }
+    const teacherCode = typeof teacherData.code === 'string' ? teacherData.code : ''
+
+    transaction.create(backupRef, {
+      originalTeacherId: teacherId,
+      teacherCode,
+      teacherName: currentName,
+      teacherData,
+      publicProfileData: publicProfileSnapshot.exists ? publicProfileSnapshot.data() || {} : null,
+      deletedAt: FieldValue.serverTimestamp(),
+      deletedBy: actorUid,
+      deletedByEmail: request.auth?.token.email || '',
+      recoveryStatus: 'available',
+      source: 'deleteTeacherSafely-v1',
+    })
+    transaction.create(logRef, {
+      action: 'DELETE_TEACHER_PROTECTED',
+      actorUid,
+      actorEmail: request.auth?.token.email || '',
+      targetType: 'teacher',
+      targetId: teacherId,
+      targetCode: teacherCode,
+      targetName: currentName,
+      backupId: backupRef.id,
+      createdAt: FieldValue.serverTimestamp(),
+    })
+    transaction.delete(teacherRef)
+    if (publicProfileSnapshot.exists) transaction.delete(publicProfileRef)
+  })
+
+  logger.info('Teacher deleted with protected backup', { actorUid, teacherId, backupId: backupRef.id })
+  return { backupId: backupRef.id }
+})
+
 export const listStaffAccounts = onCall({
   region: 'asia-southeast1',
   timeoutSeconds: 60,

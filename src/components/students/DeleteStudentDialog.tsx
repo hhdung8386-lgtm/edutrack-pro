@@ -51,7 +51,7 @@ export function DeleteStudentDialog({ student, loading, onClose, onConfirm }: De
         </div>
         <Input
           autoFocus
-          label="Mật khẩu xóa học viên *"
+          label="Mật khẩu bảo vệ của quản lý *"
           type="password"
           autoComplete="off"
           value={password}

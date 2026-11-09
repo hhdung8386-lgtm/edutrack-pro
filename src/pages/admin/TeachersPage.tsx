@@ -11,6 +11,8 @@ import { TeacherFormModal } from '@/components/teachers/TeacherFormModal'
 import { TeacherIntroductionAudioCell } from '@/components/teachers/TeacherIntroductionAudioCell'
 import { useTeacherIntroductionAudios } from '@/lib/useTeacherIntroductionAudios'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DeleteTeacherDialog } from '@/components/teachers/DeleteTeacherDialog'
+import { deleteTeacherSafely } from '@/lib/studentDeletion'
 import { toast } from '@/stores/toastStore'
 import { ArrowDown, ArrowUp, ArrowUpDown, BadgeCheck, BookOpenCheck, FileWarning, GraduationCap, Mail, Plus, Send, Search, Eye, Trash2, ChevronDown, MonitorUp, MapPin, TestTube2, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -501,18 +503,25 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     }
   }
 
-  const handleDelete = async () => {
+  const handleDelete = async (password: string) => {
     if (!deleteTeacher) return
     setDeleting(true)
     try {
-      const batch = writeBatch(db)
-      batch.delete(doc(db, 'teachers', deleteTeacher.id))
-      batch.delete(doc(db, 'publicTeacherProfiles', deleteTeacher.id))
-      await batch.commit()
-      toast.success('Xóa gia sư thành công')
+      await deleteTeacherSafely({
+        teacherId: deleteTeacher.id,
+        expectedName: deleteTeacher.name?.trim() || '',
+        password,
+      })
+      toast.success('Đã sao lưu và xóa gia sư')
       setDeleteTeacher(null)
-    } catch (err: any) {
-      toast.error('Lỗi khi xóa gia sư: ' + err.message)
+    } catch (err) {
+      console.error('Error deleting teacher:', err)
+      const code = typeof err === 'object' && err && 'code' in err ? String((err as { code: unknown }).code) : ''
+      toast.error(code.includes('permission-denied')
+        ? 'Mật khẩu bảo vệ không đúng hoặc tài khoản không có quyền xóa'
+        : code.includes('failed-precondition')
+          ? 'Hồ sơ gia sư vừa thay đổi. Hãy tải lại trang rồi thử lại.'
+          : 'Không thể xóa gia sư an toàn. Vui lòng thử lại.')
     } finally {
       setDeleting(false)
     }
@@ -870,7 +879,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                 <thead className="border-b border-slate-200">
                   <tr>
                     <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Chọn tất cả gia sư đang hiển thị" checked={visibleTeachers.length > 0 && visibleTeachers.every((item) => selectedTeacherIds.includes(item.id))} onChange={(event) => setSelectedTeacherIds(event.target.checked ? visibleTeachers.map((item) => item.id) : [])} /></th>
-                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Email', 'Ghi âm giới thiệu', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
+                    {['Mã', 'Tên gia sư', 'Ngày tạo', 'Level', 'Kim cương / 25 phút', 'Hồ sơ chứng chỉ', 'Ghi âm giới thiệu', 'Quốc gia', 'Tổng phút', 'Trạng thái', 'Hành động'].map((h) => h === 'Tổng phút' ? (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500"
@@ -910,10 +919,17 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                               {teacher.name[0]}
                             </div>
                           )}
-                          <span className="font-medium text-slate-700">{teacher.name}</span>
-                          {teacher.isTester && (
-                            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
-                          )}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-slate-700">{teacher.name}</span>
+                              {teacher.isTester && (
+                                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
+                              )}
+                            </div>
+                            <div className="mt-0.5" onClick={(event) => event.stopPropagation()}>
+                              <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
+                            </div>
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-500">
@@ -942,9 +958,6 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       </td>
                       <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                         <CertificateComplianceCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
-                      </td>
-                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                        <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
                       </td>
                       <td className="px-4 py-3">
                         <TeacherIntroductionAudioCell teacherId={teacher.id} teacherName={teacher.name} state={audios.states[teacher.id]} onUpload={audios.upload} onRetry={audios.reload} />
@@ -1114,17 +1127,14 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
           )}
         </div>
       </ConfirmDialog>
-      <ConfirmDialog
-        open={!!deleteTeacher}
-        onClose={() => setDeleteTeacher(null)}
-        onConfirm={handleDelete}
-        title="Xóa gia sư"
-        description={`Bạn có chắc chắn muốn xóa gia sư ${deleteTeacher?.name}?`}
-        consequence="Hành động này không thể hoàn tác. Tất cả dữ liệu liên quan sẽ bị xóa."
-        confirmLabel="Xóa"
-        confirmVariant="danger"
-        loading={deleting}
-      />
+      {deleteTeacher && (
+        <DeleteTeacherDialog
+          teacher={deleteTeacher}
+          loading={deleting}
+          onClose={() => !deleting && setDeleteTeacher(null)}
+          onConfirm={handleDelete}
+        />
+      )}
       <ConfirmDialog
         open={!!retiringTeacher}
         onClose={() => !retiring && setRetiringTeacher(null)}

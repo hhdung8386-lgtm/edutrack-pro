@@ -22,3 +22,18 @@ export async function deleteStudentSafely(payload: DeleteStudentSafelyRequest) {
   const result = await callable(payload)
   return result.data
 }
+
+interface DeleteTeacherSafelyRequest {
+  teacherId: string
+  expectedName: string
+  password: string
+}
+
+export async function deleteTeacherSafely(payload: DeleteTeacherSafelyRequest) {
+  const callable = httpsCallable<DeleteTeacherSafelyRequest, { backupId: string }>(
+    functions,
+    'deleteTeacherSafely',
+  )
+  const result = await callable(payload)
+  return result.data
+}
