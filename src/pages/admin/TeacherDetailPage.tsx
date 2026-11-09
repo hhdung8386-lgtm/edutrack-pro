@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, deleteField, setDoc, writeBatch } from 'firebase/firestore'
+import { MultilineText } from '@/components/shared/MultilineText'
 import { db, calculateSalary } from '@/lib/firebase'
 import { BookingRequest, Teacher, Lesson, Student, StudentSubject, TeacherAvailability, DayOfWeek, Payroll, Subject, PaymentSettings } from '@/types'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -1680,8 +1681,8 @@ export function TeacherDetailPage() {
                 )}
                 {teacher.academicAwards && (
                   <div className="md:col-span-3">
-                    <span className="text-slate-500 font-medium">Thành tích học tập nổi bật: </span>
-                    <span className="text-slate-700">{teacher.academicAwards}</span>
+                    <span className="block text-slate-500 font-medium">Thành tích học tập nổi bật:</span>
+                    <MultilineText text={teacher.academicAwards} className="text-slate-700" />
                   </div>
                 )}
                 {teacher.trainedAt123English !== false && (
@@ -1766,8 +1767,8 @@ export function TeacherDetailPage() {
                 )}
                 {teacher.studentResults && (
                   <div className="md:col-span-3">
-                    <span className="text-slate-500 font-medium">Thành tích học viên đạt được: </span>
-                    <span className="text-slate-700">{teacher.studentResults}</span>
+                    <span className="block text-slate-500 font-medium">Thành tích học viên đạt được:</span>
+                    <MultilineText text={teacher.studentResults} className="text-slate-700" />
                   </div>
                 )}
                 {teacher.strengths && teacher.strengths.length > 0 && (

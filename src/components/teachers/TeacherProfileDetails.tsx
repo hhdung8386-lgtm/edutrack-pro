@@ -16,6 +16,7 @@ import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { offlineTeachingAreaLabels } from '@/lib/offlineTeachingAreas'
 import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 import { useL } from '@/stores/languageStore'
+import { MultilineText } from '@/components/shared/MultilineText'
 
 const STRENGTH_LABELS_EN: Record<string, string> = {
   pronunciation: 'Clear pronunciation',
@@ -37,6 +38,16 @@ const STRENGTH_LABELS: Record<string, string> = {
 
 function countryLabel(country?: string) {
   return teacherCountryLabel(country)
+}
+
+function MultilineDetailItem({ label, value }: { label: string; value?: string | null }) {
+  if (!value || !String(value).trim()) return null
+  return (
+    <div>
+      <span className="block text-xs font-semibold text-slate-500">{label}:</span>
+      <MultilineText text={value} className="text-sm font-semibold leading-6 text-slate-800" />
+    </div>
+  )
 }
 
 function DetailItem({ label, value }: { label: string; value?: string | number | null }) {
@@ -161,8 +172,8 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           <DetailItem label={L('Chuyên ngành', 'Major')} value={teacher.major} />
           <DetailItem label={L('Năm tốt nghiệp', 'Graduation year')} value={teacher.gradYear} />
           <DetailItem label="GPA" value={teacher.gpa} />
-          {teacher.academicAwards && <div className="sm:col-span-2 lg:col-span-3"><DetailItem label={L('Thành tích học tập nổi bật', 'Academic achievements')} value={teacher.academicAwards} /></div>}
-          {teacher.scholarship && <div className="sm:col-span-2 lg:col-span-3"><DetailItem label={L('Học bổng', 'Scholarships')} value={teacher.scholarship} /></div>}
+          {teacher.academicAwards && <div className="sm:col-span-2 lg:col-span-3"><MultilineDetailItem label={L('Thành tích học tập nổi bật', 'Academic achievements')} value={teacher.academicAwards} /></div>}
+          {teacher.scholarship && <div className="sm:col-span-2 lg:col-span-3"><MultilineDetailItem label={L('Học bổng', 'Scholarships')} value={teacher.scholarship} /></div>}
         </div>
         {(publicView ? teacher.trainedAt123English === true : teacher.trainedAt123English !== false) && (
           <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
@@ -233,7 +244,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
           <DetailItem label={L('Số học viên đã dạy', 'Learners taught')} value={teacher.studentsTaughtCount !== undefined && teacher.studentsTaughtCount !== null ? `${teacher.studentsTaughtCount} ${L('học viên', 'learners')}` : null} />
           <DetailItem label={L('Độ tuổi HS từng dạy', 'Ages taught')} value={teacher.studentAgesTaught} />
           <DetailItem label={L('Hình thức dạy chính', 'Main teaching format')} value={teacher.teachingFormats?.map((format) => format === 'online' ? 'Online' : format === 'offline' ? 'Offline' : format).join(', ')} />
-          {teacher.studentResults && <div className="sm:col-span-2 lg:col-span-3"><DetailItem label={L('Thành tích học viên đạt được', 'Learner achievements')} value={teacher.studentResults} /></div>}
+          {teacher.studentResults && <div className="sm:col-span-2 lg:col-span-3"><MultilineDetailItem label={L('Thành tích học viên đạt được', 'Learner achievements')} value={teacher.studentResults} /></div>}
         </div>
         {teacher.strengths && teacher.strengths.length > 0 && (
           <div className="mt-4">

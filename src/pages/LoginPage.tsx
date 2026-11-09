@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -32,8 +32,12 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   
-  // Login modal state
-  const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(null)
+  // Login modal state. ?role=teacher|admin (link từ website đối tác dùng chung LMS, vd Top Teacher) mở sẵn popup đăng nhập.
+  const [searchParams] = useSearchParams()
+  const [loginRole, setLoginRole] = useState<'teacher' | 'admin' | null>(() => {
+    const role = searchParams.get('role')
+    return role === 'teacher' || role === 'admin' ? role : null
+  })
 
   // Parent search state
   const [studentCode, setStudentCode] = useState('')

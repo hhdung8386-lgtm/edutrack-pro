@@ -1265,10 +1265,10 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học tập nổi bật</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học tập nổi bật <span className="font-normal text-slate-400">(nhấn Enter để xuống dòng — mỗi ý một dòng)</span></label>
               <textarea
                 placeholder="Nhập thành tích học tập nổi bật..."
-                rows={2}
+                rows={5}
                 value={academicAwards}
                 onChange={e => setAcademicAwards(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1543,10 +1543,10 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học viên đạt được</label>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Thành tích học viên đạt được <span className="font-normal text-slate-400">(nhấn Enter để xuống dòng — mỗi ý một dòng)</span></label>
               <textarea
                 placeholder="Ví dụ: Học viên đỗ chuyên Anh, tăng band điểm IELTS..."
-                rows={2}
+                rows={5}
                 value={studentResults}
                 onChange={e => setStudentResults(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
