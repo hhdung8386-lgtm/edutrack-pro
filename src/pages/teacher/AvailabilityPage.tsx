@@ -15,6 +15,8 @@ import { convertVnDateTimeToTeacher, formatUtcOffset, getDayOfWeekFromDateISO, g
 import { resolveTeacherTimezoneOffset } from '@/lib/teacherCountries'
 import { retainWeekOverridesBefore } from '@/lib/availabilityOverrides'
 import { bookingIntervalsOverlap } from '@/lib/bookingTime'
+import { getVietnamDateISO } from '@/lib/constants'
+import { liveWindowStartISO } from '@/lib/liveDataWindow'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 type SaveMode = 'week' | 'future'
@@ -204,6 +206,7 @@ export function AvailabilityPage() {
   const setWeekStart = setWeekStartOverride
   const weekStartISO = formatDateISO(weekStart)
   const availabilityKey = teacherId ? `${teacherId}:${weekStartISO}` : null
+  const reservedFromISO = useMemo(() => liveWindowStartISO(getVietnamDateISO(), weekStartISO, 7), [weekStartISO])
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const vietnamPreviewSlots = useMemo(() => translateTeacherSlotsToVn(slots, teacherOffset), [slots, teacherOffset])
@@ -285,8 +288,7 @@ export function AvailabilityPage() {
       return
     }
 
-    setBookingRequests([])
-    setBookingsLoading(true)
+    // Đổi tuần không xoá lịch đang hiện (tránh nháy cả trang); chỉ lần tải đầu mới chờ.
     setBookingsError(false)
 
     let listenerActive = true
@@ -298,8 +300,15 @@ export function AvailabilityPage() {
       setBookingsLoading(false)
     }, 12_000)
 
+    // Chỉ ca còn giữ chỗ (Đã xếp/Chờ) từ mốc gần đây trở đi — đủ để khoá ô đã có lớp,
+    // không đọc toàn bộ lịch sử của gia sư.
     unsubscribe = onSnapshot(
-      query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)),
+      query(
+        collection(db, 'bookingRequests'),
+        where('status', 'in', ['confirmed', 'pending']),
+        where('teacherId', '==', teacherId),
+        where('requestedDate', '>=', reservedFromISO),
+      ),
       { includeMetadataChanges: true },
       (snap) => {
         if (!listenerActive) return
@@ -326,7 +335,7 @@ export function AvailabilityPage() {
       clearTimeout(loadTimeout)
       unsubscribe()
     }
-  }, [teacherId, bookingsLoadAttempt])
+  }, [teacherId, bookingsLoadAttempt, reservedFromISO])
 
   const localBookings = useMemo(() => {
     const offset = teacherOffset

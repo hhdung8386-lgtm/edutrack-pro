@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react'
-import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch, getAggregateFromServer, sum } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher, TeacherDirectoryCategory } from '@/types'
 import { Button } from '@/components/ui/Button'
@@ -350,23 +350,25 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     }
   }, [])
 
+  // Chỉ tính lại khi DANH SÁCH gia sư đổi (thêm/xoá), không phải mỗi lần một hồ sơ cập nhật.
+  const teacherIdsKey = useMemo(() => teachers.map((t) => t.id).sort().join('|'), [teachers])
+
   useEffect(() => {
-    if (teachers.length === 0) return
+    if (!teacherIdsKey) return
     let active = true
 
-    const teacherIds = teachers.map(t => t.id)
+    // Máy chủ cộng tổng phút (aggregation ~1 lượt đọc/1.000 buổi) thay vì tải từng buổi đã duyệt.
+    const teacherIds = teacherIdsKey.split('|')
     Promise.all(
-      teacherIds.map(tid => 
-        getDocs(
+      teacherIds.map(tid =>
+        getAggregateFromServer(
           query(
             collection(db, 'lessons'),
+            where('status', '==', 'approved'),
             where('teacherId', '==', tid),
-            where('status', '==', 'approved')
-          )
-        ).then(snap => {
-          const totalMins = snap.docs.reduce((sum, d) => sum + (Number(d.data().minutes) || 0), 0)
-          return [tid, totalMins] as const
-        })
+          ),
+          { totalMinutes: sum('minutes') },
+        ).then(snap => [tid, Number(snap.data().totalMinutes) || 0] as const)
       )
     ).then(results => {
       if (!active) return
@@ -380,7 +382,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     })
 
     return () => { active = false }
-  }, [teachers])
+  }, [teacherIdsKey])
 
   useEffect(() => {
     getDocs(query(collection(db, 'branches'), where('status', '==', 'active')))

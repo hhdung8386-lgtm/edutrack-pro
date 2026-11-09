@@ -375,9 +375,11 @@ export function ProfilePage() {
       })
 
     const month = getCurrentMonth()
+    // Chỉ buổi từ đầu tháng này (thẻ thu nhập tháng) — không đọc cả lịch sử dạy.
     const q = query(
       collection(db, 'lessons'),
-      where('teacherId', '==', teacherId)
+      where('teacherId', '==', teacherId),
+      where('date', '>=', `${month}-01`),
     )
     let lessonsListenerActive = true
     let unsubscribe = () => {}

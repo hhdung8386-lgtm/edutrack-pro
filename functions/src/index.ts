@@ -94,6 +94,8 @@ const PROCESSING_LEASE_MS = 10 * 60 * 1000
 const resendApiKey = defineSecret('RESEND_API_KEY')
 const studentDeletePassword = defineSecret('STUDENT_DELETE_PASSWORD')
 const TEACHER_RANKING_CACHE_MS = 5 * 60 * 1000
+// Server-only cache (no client rule matches it, so browsers cannot read or write it).
+const TEACHER_RANKING_CACHE_COLLECTION = 'teacherRankingCache'
 const teacherRankingCache = new Map<string, { expiresAt: number; rows: TeacherRankingRow[] }>()
 const TEACHER_FIXED_PASSWORD = '1234560'
 
@@ -275,15 +277,41 @@ async function sendWithResend(candidate: ReminderCandidate, student: Student, ap
   return result.id
 }
 
+function reminderWindowDates(now: Date): string[] {
+  const dates = new Set<string>()
+  for (const reminder of REMINDER_SPECS) {
+    dates.add(vietnamDateISO(new Date(now.getTime() + reminder.offsetMs - reminder.earlyWindowMs)))
+    dates.add(vietnamDateISO(new Date(now.getTime() + reminder.offsetMs + reminder.lateWindowMs)))
+  }
+  return [...dates].sort()
+}
+
+function startsInsideReminderWindow(booking: Booking, now: Date): boolean {
+  const startsAt = parseVietnamSchedule(booking.requestedDate, booking.requestedStart)
+  if (!startsAt) return false
+  const diff = startsAt.getTime() - now.getTime()
+  return REMINDER_SPECS.some((reminder) => diff >= reminder.offsetMs - reminder.earlyWindowMs
+    && diff <= reminder.offsetMs + reminder.lateWindowMs)
+}
+
 async function collectCandidates(now: Date): Promise<Array<{ candidate: ReminderCandidate; student: Student }>> {
+  // Chỉ đọc những ngày mà cửa sổ nhắc (12 giờ / 30 phút) chạm tới; trước 12h trưa chỉ là hôm nay.
   const bookingsSnapshot = await db.collection('bookingRequests')
     .where('status', '==', 'confirmed')
-    .where('requestedDate', 'in', [vietnamDateISO(now), tomorrowISO(now)])
+    .where('requestedDate', 'in', reminderWindowDates(now))
     .get()
 
-  const activeBookings = bookingsSnapshot.docs
+  const confirmedBookings = bookingsSnapshot.docs
     .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as Booking))
     .filter((booking) => !booking.lessonId && booking.studentId)
+  // Mỗi nhóm nhắc thuộc về một học viên/ngày và bắt đầu đúng giờ của một ca trong nhóm.
+  // Học viên không có ca nào bắt đầu trong cửa sổ nhắc thì không thể có nhắc đến hạn,
+  // nên bỏ qua trước khi đọc quyền phòng học (trước đây đọc cho mọi học viên mỗi 5 phút).
+  const dueStudentIds = new Set(confirmedBookings
+    .filter((booking) => startsInsideReminderWindow(booking, now))
+    .map((booking) => booking.studentId!))
+  if (dueStudentIds.size === 0) return []
+  const activeBookings = confirmedBookings.filter((booking) => dueStudentIds.has(booking.studentId!))
 
   // The scheduled backend reads the private allowlist directly. Public mirror
   // fields remain UI hints only and can never decide whether a legacy link is
@@ -538,6 +566,22 @@ export const getTeacherRanking = onCall({
   if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
     return { rows: cached.rows, cached: true }
   }
+  // Instance mới khởi động không có cache trong bộ nhớ: đọc 1 tài liệu cache chung
+  // thay vì đọc lại hàng nghìn buổi dạy của cả tháng.
+  const sharedCacheRef = db.collection(TEACHER_RANKING_CACHE_COLLECTION).doc(month)
+  if (!forceRefresh) {
+    try {
+      const shared = (await sharedCacheRef.get()).data()
+      const expiresAt = Number(shared?.expiresAt || 0)
+      if (shared && Array.isArray(shared.rows) && expiresAt > Date.now()) {
+        const rows = shared.rows as TeacherRankingRow[]
+        teacherRankingCache.set(month, { expiresAt, rows })
+        return { rows, cached: true }
+      }
+    } catch (cacheError) {
+      logger.warn('Teacher ranking shared cache read failed', { month, error: String(cacheError) })
+    }
+  }
 
   const lessonsSnapshot = await db.collection('publicLessons')
     .where('date', '>=', `${month}-01`)
@@ -554,7 +598,11 @@ export const getTeacherRanking = onCall({
   ]))
   const rows = aggregateTeacherRanking(lessons, month, profiles)
 
-  teacherRankingCache.set(month, { expiresAt: Date.now() + TEACHER_RANKING_CACHE_MS, rows })
+  const expiresAt = Date.now() + TEACHER_RANKING_CACHE_MS
+  teacherRankingCache.set(month, { expiresAt, rows })
+  // JSON round-trip drops optional fields left undefined (Firestore rejects undefined).
+  await sharedCacheRef.set({ month, rows: JSON.parse(JSON.stringify(rows)) as TeacherRankingRow[], expiresAt, updatedAt: FieldValue.serverTimestamp() })
+    .catch((cacheError) => logger.warn('Teacher ranking shared cache write failed', { month, error: String(cacheError) }))
   logger.info('Teacher ranking loaded', {
     month,
     lessonReads: lessonsSnapshot.size,

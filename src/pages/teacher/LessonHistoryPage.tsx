@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteField, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteField, serverTimestamp, orderBy, limit, getDocs, getCountFromServer } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Lesson, Payroll, PaymentSettings } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -53,9 +53,10 @@ export function LessonHistoryPage() {
   const studentIdFilter = searchParams.get('studentId') || ''
   const studentNameFilter = searchParams.get('studentName') || ''
   const [month, setMonth] = useState(getCurrentMonth())
-  // Giữ TOÀN BỘ buổi dạy của gia sư: truy vấn vốn đã lấy hết theo teacherId,
-  // nên lọc theo tháng ở phía client và không cần đăng ký lại mỗi lần đổi tháng.
+  // Chỉ tải buổi dạy của THÁNG đang xem (hoặc toàn bộ buổi với 1 học viên khi lọc theo
+  // học viên). Trước đây trang đọc cả lịch sử của gia sư mỗi lần mở → chi phí tăng mãi.
   const [allLessons, setAllLessons] = useState<Lesson[]>([])
+  const [historySummary, setHistorySummary] = useState<{ total: number; latestDate: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [retryVersion, setRetryVersion] = useState(0)
@@ -97,10 +98,14 @@ export function LessonHistoryPage() {
   useEffect(() => {
     if (!teacherId) return
     setLoading(true)
-    const q = query(
-      collection(db, 'lessons'),
-      where('teacherId', '==', teacherId)
-    )
+    const q = studentIdFilter
+      ? query(collection(db, 'lessons'), where('teacherId', '==', teacherId), where('studentId', '==', studentIdFilter))
+      : query(
+        collection(db, 'lessons'),
+        where('teacherId', '==', teacherId),
+        where('date', '>=', `${month}-01`),
+        where('date', '<=', `${month}-31`),
+      )
     return onSnapshot(q, (snap) => {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Lesson))
       docs.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
@@ -113,13 +118,32 @@ export function LessonHistoryPage() {
       setLoadError(true)
       setLoading(false)
     })
-  }, [teacherId, retryVersion])
+  }, [teacherId, retryVersion, studentIdFilter, month])
 
-  // Thưởng/khấu trừ của gia sư. Truy vấn 1 điều kiện rồi lọc phía client để KHÔNG
-  // phát sinh composite index mới; firestore.rules đã cho gia sư đọc payroll của mình.
+  // Tổng số buổi + ngày dạy gần nhất: 1 phép đếm + 1 tài liệu, không đọc cả lịch sử.
+  useEffect(() => {
+    if (!teacherId || studentIdFilter) return
+    let active = true
+    Promise.all([
+      getCountFromServer(query(collection(db, 'lessons'), where('teacherId', '==', teacherId))),
+      getDocs(query(collection(db, 'lessons'), where('teacherId', '==', teacherId), orderBy('date', 'desc'), limit(1))),
+    ]).then(([countSnap, latestSnap]) => {
+      if (!active) return
+      setHistorySummary({
+        total: countSnap.data().count,
+        latestDate: String(latestSnap.docs[0]?.data().date || ''),
+      })
+    }).catch((error) => {
+      // Chỉ là dòng tóm tắt; không chặn trang.
+      console.error('[lesson-history:summary]', error)
+    })
+    return () => { active = false }
+  }, [teacherId, studentIdFilter, retryVersion])
+
+  // Thưởng/khấu trừ + dòng lương của tháng đang xem (firestore.rules cho gia sư đọc payroll của mình).
   useEffect(() => {
     if (!teacherId) return
-    const q = query(collection(db, 'payroll'), where('teacherId', '==', teacherId))
+    const q = query(collection(db, 'payroll'), where('teacherId', '==', teacherId), where('month', '==', month))
     return onSnapshot(q, (snap) => {
       const entries = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Payroll))
@@ -132,7 +156,7 @@ export function LessonHistoryPage() {
       // Không chặn trang lịch sử: chỉ mất phần hiển thị thưởng
       console.error('[lesson-history:adjustments]', err)
     })
-  }, [teacherId, retryVersion])
+  }, [teacherId, retryVersion, month])
 
   useEffect(() => onSnapshot(doc(db, 'paymentSettings', 'main'), (snapshot) => {
     setPaymentSettings(snapshot.exists() ? snapshot.data() as PaymentSettings : null)
@@ -147,23 +171,26 @@ export function LessonHistoryPage() {
     [allLessons, studentIdFilter],
   )
 
-  // Danh sách tháng CÓ dữ liệu, mới nhất trước — dùng cho ô chọn nhanh
-  const monthOptions = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const lesson of scopedLessons) {
-      const m = monthOf(lesson)
-      if (!m) continue
-      counts.set(m, (counts.get(m) || 0) + 1)
-    }
-    // Tháng chỉ có thưởng mà không có buổi dạy vẫn phải chọn được, nếu không
-    // gia sư sẽ không có cách nào mở tới đúng tháng chứa khoản thưởng.
-    if (!studentIdFilter) {
-      for (const item of adjustments) {
-        if (item.month && !counts.has(item.month)) counts.set(item.month, 0)
+  // Ô chọn nhanh tháng. Lọc theo học viên: các tháng có buổi (kèm số buổi).
+  // Không lọc: 24 tháng gần nhất — không cần đọc cả lịch sử chỉ để đếm từng tháng.
+  const monthOptions = useMemo<Array<[string, number | null]>>(() => {
+    if (studentIdFilter) {
+      const counts = new Map<string, number>()
+      for (const lesson of scopedLessons) {
+        const m = monthOf(lesson)
+        if (!m) continue
+        counts.set(m, (counts.get(m) || 0) + 1)
       }
+      return Array.from(counts.entries()).sort(([a], [b]) => b.localeCompare(a))
     }
-    return Array.from(counts.entries()).sort(([a], [b]) => b.localeCompare(a))
-  }, [scopedLessons, adjustments, studentIdFilter])
+    const options: Array<[string, number | null]> = []
+    const cursor = new Date(`${getCurrentMonth()}-01T00:00:00`)
+    for (let index = 0; index < 24; index += 1) {
+      options.push([format(subMonths(cursor, index), 'yyyy-MM'), null])
+    }
+    if (!options.some(([value]) => value === month)) options.push([month, null])
+    return options.sort(([a], [b]) => b.localeCompare(a))
+  }, [scopedLessons, studentIdFilter, month])
 
   // Đổi bộ lọc học viên = tập dữ liệu khác -> cho phép tự chọn lại tháng một lần nữa
   useEffect(() => {
@@ -174,14 +201,24 @@ export function LessonHistoryPage() {
   // Gia sư từng tưởng "mất lịch sử" chỉ vì tháng đang xem chưa có buổi nào.
   // Lần tải đầu: nếu tháng hiện tại trống mà vẫn còn lịch sử -> nhảy tới tháng gần nhất có dữ liệu.
   useEffect(() => {
-    if (loading || autoJumpDone.current || monthOptions.length === 0) return
-    autoJumpDone.current = true
-    const hasCurrent = monthOptions.some(([m]) => m === month)
-    if (!hasCurrent) {
-      setAutoJumpedFrom(month)
-      setMonth(monthOptions[0][0])
+    if (loading || autoJumpDone.current) return
+    if (studentIdFilter) {
+      if (monthOptions.length === 0) return
+      autoJumpDone.current = true
+      if (!monthOptions.some(([m]) => m === month)) {
+        setAutoJumpedFrom(month)
+        setMonth(monthOptions[0][0])
+      }
+      return
     }
-  }, [loading, monthOptions, month])
+    if (!historySummary) return
+    autoJumpDone.current = true
+    const latestMonth = historySummary.latestDate.slice(0, 7)
+    if (scopedLessons.length === 0 && adjustments.length === 0 && latestMonth && latestMonth < month) {
+      setAutoJumpedFrom(month)
+      setMonth(latestMonth)
+    }
+  }, [loading, monthOptions, month, studentIdFilter, historySummary, scopedLessons.length, adjustments.length])
 
   const lessons = useMemo(
     () => scopedLessons.filter((l) => l.date >= `${month}-01` && l.date <= `${month}-31`),
@@ -214,7 +251,8 @@ export function LessonHistoryPage() {
   const monthlyPayrollHasMixedSettlement = monthlyPayrollTaxSummaries.some((summary) => summary.source === 'mixed')
   const monthlyPayrollHasLegacyPaidLine = monthlyPayrollTaxSummaries.some((summary) => summary.hasLegacyPaidLines)
   const groups = groupByDate(lessons)
-  const latestLessonDate = scopedLessons[0]?.date || ''
+  const historyTotal = studentIdFilter ? scopedLessons.length : (historySummary?.total ?? 0)
+  const latestLessonDate = studentIdFilter ? (scopedLessons[0]?.date || '') : (historySummary?.latestDate || '')
 
   const handleCancelLesson = async () => {
     if (!cancelTarget || !teacherId) return
@@ -293,11 +331,11 @@ export function LessonHistoryPage() {
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10" />
         <h1 className="text-2xl font-bold relative z-10">{studentIdFilter ? (lang === 'vi' ? 'Lịch sử học của học viên' : 'Student learning history') : t('history.title')}</h1>
         {studentIdFilter && <p className="relative z-10 mt-1 text-sm font-semibold text-white/90">{studentNameFilter || studentIdFilter}</p>}
-        {!loading && scopedLessons.length > 0 && (
+        {!loading && historyTotal > 0 && (
           <p className="relative z-10 mt-2 text-xs font-semibold text-white/90">
             {lang === 'vi'
-              ? `Tổng ${scopedLessons.length} buổi trong lịch sử · gần nhất ${latestLessonDate}`
-              : `${scopedLessons.length} lessons in total · latest ${latestLessonDate}`}
+              ? `Tổng ${historyTotal} buổi trong lịch sử · gần nhất ${latestLessonDate}`
+              : `${historyTotal} lessons in total · latest ${latestLessonDate}`}
           </p>
         )}
       </div>
@@ -336,10 +374,10 @@ export function LessonHistoryPage() {
             aria-label={lang === 'vi' ? 'Chọn tháng có buổi dạy' : 'Pick a month with lessons'}
             className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm outline-none focus:border-[#3BB8EB]"
           >
-            <option value="">{lang === 'vi' ? 'Tháng có buổi dạy…' : 'Months with lessons…'}</option>
+            <option value="">{studentIdFilter ? (lang === 'vi' ? 'Tháng có buổi dạy…' : 'Months with lessons…') : (lang === 'vi' ? 'Chọn tháng…' : 'Pick a month…')}</option>
             {monthOptions.map(([value, count]) => (
               <option key={value} value={value}>
-                {labelOfMonth(value)} ({count})
+                {labelOfMonth(value)}{count === null ? '' : ` (${count})`}
               </option>
             ))}
           </select>

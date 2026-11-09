@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { collection, doc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot } from 'firebase/firestore'
+import { collection, doc, getDocs, getDocFromServer, getDocsFromServer, query, runTransaction, serverTimestamp, where, onSnapshot, getAggregateFromServer, sum } from 'firebase/firestore'
+import { getVietnamDateISO } from '@/lib/constants'
+import { liveWindowStartISO } from '@/lib/liveDataWindow'
 import {
   AlertTriangle,
   BookOpen,
@@ -292,6 +294,7 @@ export function BookingSchedulesPage() {
   const [cancellingBatch, setCancellingBatch] = useState(false)
 
   const weekStartISO = formatDateISO(weekStart)
+  const bookingWindowFromISO = useMemo(() => liveWindowStartISO(getVietnamDateISO(), weekStartISO), [weekStartISO])
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
@@ -323,19 +326,21 @@ export function BookingSchedulesPage() {
           items.map((teacher) => [teacher.id, Math.max(0, Number(teacher.totalApprovedMinutes) || 0)]),
         ) as Record<string, number>
         const legacyTeachers = items.filter((teacher) => teacher.totalApprovedMinutes === undefined)
-        const legacyLessonSnapshots = await Promise.all(legacyTeachers.map((teacher) => (
-          getDocs(query(collection(db, 'lessons'), where('teacherId', '==', teacher.id)))
+        // Máy chủ cộng tổng phút (aggregation) thay vì tải toàn bộ buổi dạy của gia sư.
+        const legacyLessonTotals = await Promise.all(legacyTeachers.map((teacher) => (
+          getAggregateFromServer(
+            query(collection(db, 'lessons'), where('status', '==', 'approved'), where('teacherId', '==', teacher.id)),
+            { totalMinutes: sum('minutes') },
+          )
+            .then((snapshot) => Number(snapshot.data().totalMinutes) || 0)
             .catch((error) => {
               console.error(`Error loading legacy approved minutes for teacher ${teacher.id}:`, error)
               return null
             })
         )))
-        legacyLessonSnapshots.forEach((snapshot, index) => {
-          if (!snapshot) return
-          approvedMinutes[legacyTeachers[index].id] = snapshot.docs.reduce((total, lessonDocument) => {
-            const lesson = lessonDocument.data()
-            return lesson.status === 'approved' ? total + (Number(lesson.minutes) || 0) : total
-          }, 0)
+        legacyLessonTotals.forEach((total, index) => {
+          if (total === null) return
+          approvedMinutes[legacyTeachers[index].id] = total
         })
         setApprovedMinutesByTeacher(approvedMinutes)
       } catch (error) {
@@ -471,13 +476,13 @@ export function BookingSchedulesPage() {
       return
     }
 
-    // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) vì một số booking cũ có
-    // requestedWeekStart sai lệch với requestedDate → nếu lọc theo weekStart sẽ bị bỏ sót,
-    // ca đã đặt không hiện trong bảng lịch dù vẫn nằm trong "Lịch đã đặt". findBookingForCell
-    // đối chiếu theo requestedDate nên vẫn hiển thị đúng ô/ngày.
+    // Lọc theo requestedDate (KHÔNG theo requestedWeekStart — trường cũ có thể sai lệch).
+    // Chỉ nghe từ 14 ngày trước (hoặc đầu tháng của tuần cũ đang xem) trở đi, không đọc
+    // toàn bộ lịch sử của gia sư mỗi lần mở trang. findBookingForCell đối chiếu theo requestedDate.
     const q = query(
       collection(db, 'bookingRequests'),
-      where('teacherId', '==', selectedTeacherId)
+      where('teacherId', '==', selectedTeacherId),
+      where('requestedDate', '>=', bookingWindowFromISO),
     )
 
     const unsub = onSnapshot(q, (snap) => {
@@ -496,7 +501,7 @@ export function BookingSchedulesPage() {
     })
 
     return unsub
-  }, [selectedTeacherId])
+  }, [selectedTeacherId, bookingWindowFromISO])
 
   // Fetch selected student's active booking requests for subject-specific available minutes calculation
   useEffect(() => {

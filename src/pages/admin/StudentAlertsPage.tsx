@@ -24,10 +24,14 @@ export function StudentAlertsPage() {
   const [absenceFilter, setAbsenceFilter] = useState<'all' | 'unexcused'>('all')
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
 
+  // Chỉ tải buổi vắng của tháng đang xem (trước đây tải mọi buổi vắng từ trước tới nay).
   useEffect(() => {
+    setLoading(true)
     const absenceQuery = query(
       collection(db, 'lessons'),
       where('attendanceStatus', 'in', ['with_permission', 'without_permission']),
+      where('date', '>=', `${selectedMonth}-01`),
+      where('date', '<=', `${selectedMonth}-31`),
     )
     return onSnapshot(
       absenceQuery,
@@ -42,7 +46,7 @@ export function StudentAlertsPage() {
         setLoading(false)
       },
     )
-  }, [])
+  }, [selectedMonth])
 
   const monthLessons = useMemo(
     () => lessons.filter((lesson) => lesson.date?.startsWith(`${selectedMonth}-`)),

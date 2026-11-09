@@ -85,6 +85,13 @@ function numberFormat(value: number) {
 
 export function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>('funds')
+  // Số liệu buổi dạy/lương (hàng nghìn buổi) chỉ tải khi mở tab Tháng/Gia sư lần đầu,
+  // không tải sẵn mỗi lần vào trang (tab mặc định là Quỹ học viên).
+  const lessonStatsRequested = tab !== 'funds'
+  const [lessonStatsEnabled, setLessonStatsEnabled] = useState(false)
+  useEffect(() => {
+    if (lessonStatsRequested) setLessonStatsEnabled(true)
+  }, [lessonStatsRequested])
   const [month, setMonth] = useState(getCurrentMonth())
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -103,6 +110,7 @@ export function ReportsPage() {
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    if (!lessonStatsEnabled) return
     let active = true
     const fetchLessons = async () => {
       try {
@@ -125,9 +133,10 @@ export function ReportsPage() {
     }
     fetchLessons()
     return () => { active = false }
-  }, [month])
+  }, [month, lessonStatsEnabled])
 
   useEffect(() => {
+    if (!lessonStatsEnabled) return
     let active = true
     getDocs(collection(db, 'teachers')).then((snap) => {
       if (active) setTeachers(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Teacher)))
@@ -162,7 +171,7 @@ export function ReportsPage() {
     }).catch((error) => console.error('[reports-chart]', error))
 
     return () => { active = false }
-  }, [])
+  }, [lessonStatsEnabled])
 
   useEffect(() => {
     setFundsLoading(true)

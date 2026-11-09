@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
-import { CalendarClock, CheckCircle2, Clock3, Search, UserRoundCheck, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Clock3, History, Search, UserRoundCheck, XCircle } from 'lucide-react'
 import { db } from '@/lib/firebase'
 import { BookingRequest, DayOfWeek } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -13,6 +13,11 @@ import { TableSkeleton } from '@/components/shared/LoadingSpinner'
 import { respondToBookingRequest } from '@/lib/teacherBookingActions'
 import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
+import { getVietnamDateISO } from '@/lib/constants'
+import { mergeById, shiftDateISO } from '@/lib/liveDataWindow'
+
+const REQUEST_HISTORY_DAYS = 30
+const OLDER_HISTORY_STEP_DAYS = 90
 
 type TeacherResponseFilter = 'pending' | 'accepted' | 'declined' | 'all'
 
@@ -45,6 +50,11 @@ export function TeacherBookingRequestsPage() {
   const [search, setSearch] = useState('')
   const [actioningId, setActioningId] = useState<string | null>(null)
 
+  // Mặc định chỉ nghe 30 ngày gần đây + mọi yêu cầu còn chờ. Lịch sử cũ hơn chỉ tải
+  // khi gia sư bấm "Xem thêm", vì ca cũ hiếm khi cần xem lại mà mỗi tài liệu đều tính phí.
+  const [historyFromISO, setHistoryFromISO] = useState(() => shiftDateISO(getVietnamDateISO(), -REQUEST_HISTORY_DAYS))
+  const [loadingOlder, setLoadingOlder] = useState(false)
+
   useEffect(() => {
     if (!teacherId) {
       setRequests([])
@@ -52,24 +62,46 @@ export function TeacherBookingRequestsPage() {
       return
     }
 
-    setLoading(true)
-    const unsubscribe = onSnapshot(
-      query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId)),
-      (snapshot) => {
-        const items = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as BookingRequest))
-        items.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-        setRequests(items)
-        setLoading(false)
-      },
-      (error) => {
-        console.error('Error loading teacher booking requests:', error)
-        toast.error(lang === 'vi' ? 'Không tải được yêu cầu lớp học' : 'Could not load class requests')
-        setLoading(false)
-      },
+    let recent: BookingRequest[] | null = null
+    let pending: BookingRequest[] | null = null
+    const publish = () => {
+      if (!recent || !pending) return
+      const items = mergeById(pending, recent)
+      items.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      setRequests(items)
+      setLoading(false)
+      setLoadingOlder(false)
+    }
+    const onError = (error: unknown) => {
+      console.error('Error loading teacher booking requests:', error)
+      toast.error(lang === 'vi' ? 'Không tải được yêu cầu lớp học' : 'Could not load class requests')
+      setLoading(false)
+      setLoadingOlder(false)
+    }
+    const toItems = (docs: Array<{ id: string; data: () => unknown }>) => docs
+      .map((item) => ({ id: item.id, ...(item.data() as object) } as BookingRequest))
+
+    const stopRecent = onSnapshot(
+      query(collection(db, 'bookingRequests'), where('teacherId', '==', teacherId), where('requestedDate', '>=', historyFromISO)),
+      (snapshot) => { recent = toItems(snapshot.docs); publish() },
+      onError,
+    )
+    const stopPending = onSnapshot(
+      query(collection(db, 'bookingRequests'), where('status', '==', 'pending'), where('teacherId', '==', teacherId)),
+      (snapshot) => { pending = toItems(snapshot.docs); publish() },
+      onError,
     )
 
-    return unsubscribe
-  }, [teacherId, lang])
+    return () => {
+      stopRecent()
+      stopPending()
+    }
+  }, [teacherId, lang, historyFromISO])
+
+  const loadOlderHistory = () => {
+    setLoadingOlder(true)
+    setHistoryFromISO((current) => shiftDateISO(current, -OLDER_HISTORY_STEP_DAYS))
+  }
 
   const counts = useMemo(() => ({
     pending: requests.filter((item) => item.status === 'pending' && responseOf(item) === 'pending').length,
@@ -189,6 +221,24 @@ export function TeacherBookingRequestsPage() {
           })}
         </div>
       )}
+
+      {!loading && (
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-4 text-center">
+          <p className="text-xs font-semibold text-slate-500">
+            {lang === 'vi'
+              ? `Đang hiển thị lớp từ ngày ${formatShortDate(historyFromISO)} và mọi yêu cầu còn chờ xác nhận.`
+              : `Showing classes from ${formatShortDate(historyFromISO)} plus every request still awaiting a reply.`}
+          </p>
+          <Button size="sm" variant="outline" onClick={loadOlderHistory} loading={loadingOlder}>
+            <History className="h-4 w-4" />{lang === 'vi' ? 'Xem thêm lịch sử cũ hơn' : 'Show older history'}
+          </Button>
+        </div>
+      )}
     </div>
   )
+}
+
+function formatShortDate(dateISO: string) {
+  const [year, month, day] = dateISO.split('-')
+  return `${day}/${month}/${year}`
 }

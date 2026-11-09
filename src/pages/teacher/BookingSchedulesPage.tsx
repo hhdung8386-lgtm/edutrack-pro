@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
 import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { getVietnamDateISO } from '@/lib/constants'
+import { liveWindowStartISO, mergeById } from '@/lib/liveDataWindow'
 import { getBookingPoints, getTeacherPointsPer25Minutes } from '@/lib/points'
 import { resolveStudentSubjectFund } from '@/lib/studentQuotaCore'
 import { getCountryRate } from '@/lib/countryPricing'
@@ -492,73 +493,116 @@ export function BookingSchedulesPage() {
     [confirmedBookings, selectedBatchBookingIds],
   )
 
-  // Buổi đã huỷ của gia sư. Dùng truy vấn 1 điều kiện (giống trang Lịch sử buổi dạy)
-  // rồi lọc phía client để KHÔNG phát sinh composite index mới trên Firestore.
+  // Buổi đã huỷ của gia sư (chỉ đọc đúng các buổi `cancelled`, không đọc cả lịch sử).
   useEffect(() => {
     if (!teacherId) {
       setCancelledLessons([])
       return
     }
-    const q = query(collection(db, 'lessons'), where('teacherId', '==', teacherId))
+    const q = query(
+      collection(db, 'lessons'),
+      where('teacherId', '==', teacherId),
+      where('status', '==', 'cancelled'),
+    )
     return onSnapshot(q, (snap) => {
-      setCancelledLessons(
-        snap.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Lesson))
-          .filter((lesson) => lesson.status === 'cancelled'),
-      )
+      setCancelledLessons(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Lesson)))
     }, (error) => {
       // Không chặn màn hình: chỉ mất khả năng tự mở lại ca đã huỷ
       console.error('Error loading cancelled lessons:', error)
     })
   }, [teacherId])
 
-  // Một listener duy nhất cấp dữ liệu cho cả lịch đã đặt và danh sách chờ điểm danh.
+  // Chỉ nghe ca từ 14 ngày trước trở đi (hoặc từ đầu tháng của tuần cũ đang xem).
+  // Ca "Đã xếp" cũ hơn mốc này vẫn được nghe riêng để không lọt khỏi danh sách chờ điểm danh.
+  const liveFromISO = useMemo(
+    () => liveWindowStartISO(getVietnamDateISO(), weekStartISO),
+    [weekStartISO],
+  )
+  const [recentBookings, setRecentBookings] = useState<BookingRequest[] | null>(null)
+  const [olderConfirmedBookings, setOlderConfirmedBookings] = useState<BookingRequest[] | null>(null)
+
   useEffect(() => {
     if (!teacherId) {
-      setConfirmedBookings([])
+      setRecentBookings(null)
+      setOlderConfirmedBookings(null)
       setBookingLoadError(false)
       return
     }
 
-    // Nạp theo teacherId (KHÔNG lọc theo requestedWeekStart) — một số booking cũ có
-    // requestedWeekStart lệch với requestedDate nên nếu lọc theo weekStart sẽ bị mất khỏi
-    // bảng lịch dù đã đặt. Chỉ mục bookingByCell/localBookings đối chiếu theo requestedDate.
-    const q = query(
-      collection(db, 'bookingRequests'),
-      where('teacherId', '==', teacherId)
-    )
-
-    const unsub = onSnapshot(q, (snap) => {
-      setBookingLoadError(false)
-      const list = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as BookingRequest))
-      setBookingRequests(list)
-      setConfirmedBookings(list.filter((booking) => booking.status === 'confirmed'))
-
-      // Fetch student details if needed
-      const studentIdsToFetch = Array.from(new Set(list.map(b => b.studentId))).filter(id => !students[id])
-      if (studentIdsToFetch.length > 0) {
-        Promise.all(studentIdsToFetch.map(id => getDoc(doc(db, 'students', id)))).then(snaps => {
-          setStudents(prev => {
-            const next = { ...prev }
-            snaps.forEach(s => {
-              if (s.exists()) {
-                next[s.id] = { id: s.id, ...s.data() } as Student
-              }
-            })
-            return next
-          })
-        })
-      }
-    }, (error) => {
+    // Lọc theo requestedDate (không theo requestedWeekStart — trường cũ có thể lệch).
+    // bookingByCell/localBookings vẫn đối chiếu theo requestedDate.
+    const onError = (error: unknown) => {
       console.error('Error loading booking requests:', error)
       // Never leave a teacher looking at an empty/stale timetable with no
       // explanation. A listener failure is retriable and must not be treated
       // as proof that there are no classes to attend.
       setBookingLoadError(true)
-    })
+    }
+    const toBookings = (docs: Array<{ id: string; data: () => unknown }>) => docs
+      .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as object) } as BookingRequest))
 
-    return unsub
-  }, [bookingListenerRetry, teacherId])
+    const stopRecent = onSnapshot(query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', teacherId),
+      where('requestedDate', '>=', liveFromISO),
+    ), (snap) => {
+      setBookingLoadError(false)
+      setRecentBookings(toBookings(snap.docs))
+    }, onError)
+
+    const stopOlderConfirmed = onSnapshot(query(
+      collection(db, 'bookingRequests'),
+      where('status', '==', 'confirmed'),
+      where('teacherId', '==', teacherId),
+      where('requestedDate', '<', liveFromISO),
+    ), (snap) => {
+      setOlderConfirmedBookings(toBookings(snap.docs))
+    }, onError)
+
+    return () => {
+      stopRecent()
+      stopOlderConfirmed()
+    }
+  }, [bookingListenerRetry, teacherId, liveFromISO])
+
+  // Một nguồn dữ liệu chung cho cả lịch đã đặt và danh sách chờ điểm danh.
+  useEffect(() => {
+    if (!recentBookings || !olderConfirmedBookings) {
+      if (!teacherId) {
+        setBookingRequests([])
+        setConfirmedBookings([])
+      }
+      return
+    }
+    const list = mergeById(olderConfirmedBookings, recentBookings)
+    setBookingRequests(list)
+    setConfirmedBookings(list.filter((booking) => booking.status === 'confirmed'))
+  }, [olderConfirmedBookings, recentBookings, teacherId])
+
+  // Hồ sơ học viên của các ca đang hiển thị (chỉ đọc những học viên chưa có).
+  const studentIdsKey = useMemo(
+    () => Array.from(new Set(bookingRequests.map((booking) => booking.studentId).filter(Boolean))).sort().join('|'),
+    [bookingRequests],
+  )
+  const requestedStudentIdsRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (!studentIdsKey) return
+    const studentIdsToFetch = studentIdsKey.split('|').filter((id) => !requestedStudentIdsRef.current.has(id))
+    if (studentIdsToFetch.length === 0) return
+    studentIdsToFetch.forEach((id) => requestedStudentIdsRef.current.add(id))
+    Promise.all(studentIdsToFetch.map((id) => getDoc(doc(db, 'students', id)))).then((snaps) => {
+      setStudents((prev) => {
+        const next = { ...prev }
+        snaps.forEach((s) => {
+          if (s.exists()) next[s.id] = { id: s.id, ...s.data() } as Student
+        })
+        return next
+      })
+    }).catch((error) => {
+      studentIdsToFetch.forEach((id) => requestedStudentIdsRef.current.delete(id))
+      console.error('Error loading students for bookings:', error)
+    })
+  }, [studentIdsKey])
 
   const handleCellClick = (booking: BookingRequest) => {
     const displayBooking = localBookings.find((item) => item.id === booking.id) || booking

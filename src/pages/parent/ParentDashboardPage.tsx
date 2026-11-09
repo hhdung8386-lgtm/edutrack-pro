@@ -150,7 +150,13 @@ export function ParentDashboardPage() {
     }
     const refreshOnFocus = () => { void refreshBookings() }
     window.addEventListener('focus', refreshOnFocus)
-    const bookingRefreshInterval = window.setInterval(refreshBookings, 30_000)
+    // Tab bị ẩn (phụ huynh để máy/tab nền cả ngày) thì không gọi máy chủ; khi quay lại
+    // tab, sự kiện focus/visibilitychange sẽ làm mới ngay.
+    const bookingRefreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshBookings()
+    }, 30_000)
+    const refreshOnVisible = () => { if (document.visibilityState === 'visible') void refreshBookings() }
+    document.addEventListener('visibilitychange', refreshOnVisible)
     const unsubscribeLessons = recordIds.map((recordId) => onSnapshot(query(
       collection(db, 'publicLessons'),
       where('studentId', '==', recordId),
@@ -166,6 +172,7 @@ export function ParentDashboardPage() {
       unsubscribeLessons.forEach((unsubscribe) => unsubscribe())
       window.removeEventListener('focus', refreshOnFocus)
       window.clearInterval(bookingRefreshInterval)
+      document.removeEventListener('visibilitychange', refreshOnVisible)
     }
   }, [liveStudentId, liveStudentCode, liveGroupClassIdsKey])
 
