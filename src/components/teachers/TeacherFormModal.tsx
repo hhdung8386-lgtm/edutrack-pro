@@ -29,6 +29,7 @@ import { getTeacherPointsPer25Minutes, normalizePointsPer25Minutes } from '@/lib
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
 import { getTeacherCertificateCompliance, isValidTeacherContactEmail } from '@/lib/teacherProfile'
 import { downloadImage } from '@/lib/downloadImage'
+import { recoverTeacherLoginAccount, syncTeacherCodeReferences } from '@/lib/teacherLoginRecovery'
 import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
@@ -513,19 +514,59 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
             }
           }
 
+          // Khi không tự xác nhận được tài khoản Auth (mật khẩu cũ đã đổi) hoặc
+          // nickname còn bị tài khoản của một gia sư ĐÃ XOÁ giữ, chuyển cho máy chủ
+          // (recoverTeacherLogin) xử lý: nó chỉ thu hồi tài khoản mồ côi, không bao
+          // giờ lấy tài khoản của gia sư còn tồn tại, và đặt lại mật khẩu mặc định.
+          let useServerRecovery = !finalUid
           if (finalUid) {
-            const finalUserRef = doc(db, 'users', finalUid)
-            const finalUserSnap = await getDocFromServer(finalUserRef)
+            const finalUserSnap = await getDocFromServer(doc(db, 'users', finalUid))
             const finalUserData = finalUserSnap.exists() ? finalUserSnap.data() : null
-            const belongsToAnotherTeacher = finalUserData?.teacherId
-              && finalUserData.teacherId !== teacher.id
             const isUnrelatedRole = finalUserData
               && finalUserData.role !== 'teacher'
               && finalUserData.role !== 'inactive_teacher'
-            if (belongsToAnotherTeacher || isUnrelatedRole) {
-              toast.error('Nickname này đang liên kết với một tài khoản khác; đã dừng cập nhật để bảo vệ dữ liệu.')
+            if (isUnrelatedRole) {
+              toast.error('Nickname này đang là tài khoản quản trị/học viên; đã dừng cập nhật để bảo vệ dữ liệu.')
               return
             }
+            const ownerTeacherId = typeof finalUserData?.teacherId === 'string' ? finalUserData.teacherId : ''
+            if (ownerTeacherId && ownerTeacherId !== teacher.id) {
+              const ownerSnap = await getDocFromServer(doc(db, 'teachers', ownerTeacherId))
+              if (ownerSnap.exists()) {
+                toast.error(`Nickname "${newUsername}" đang là tài khoản đăng nhập của gia sư ${ownerSnap.data().name || 'khác'}; hãy chọn tên khác.`)
+                return
+              }
+              useServerRecovery = true
+            }
+          }
+
+          if (useServerRecovery) {
+            await runTransaction(db, async transaction => {
+              const currentTeacherSnap = await transaction.get(teacherRef)
+              if (!currentTeacherSnap.exists() || currentTeacherSnap.data().code !== teacher.code) {
+                throw new Error('Hồ sơ gia sư đã được thay đổi ở nơi khác. Vui lòng tải lại trước khi đổi nickname.')
+              }
+              transaction.update(teacherRef, teacherUpdateData)
+            })
+            try {
+              await recoverTeacherLoginAccount(teacher.id)
+            } catch (recoveryError) {
+              console.error('Teacher nickname change via server recovery failed:', recoveryError)
+              // Trả nickname/trạng thái cũ để gia sư vẫn đăng nhập được như trước.
+              await updateDoc(teacherRef, {
+                code: teacher.code || '',
+                ...(teacher.status ? { status: teacher.status } : {}),
+                updatedAt: serverTimestamp(),
+              }).catch((revertError) => console.error('Revert teacher nickname failed:', revertError))
+              const message = recoveryError instanceof Error ? recoveryError.message : ''
+              toast.error(`Không đổi được tài khoản đăng nhập sang "${newUsername}". ${message} Nickname vẫn giữ như cũ.`)
+              return
+            }
+            teacherUpdatedWithAccount = true
+          } else if (finalUid) {
+            const finalUserRef = doc(db, 'users', finalUid)
+            const finalUserSnap = await getDocFromServer(finalUserRef)
+            const finalUserData = finalUserSnap.exists() ? finalUserSnap.data() : null
 
             // Transaction khóa cả UID Auth và hồ sơ gia sư. Hai Admin cùng chọn
             // một nickname sẽ không thể ghi đè liên kết của nhau theo kiểu last-write-wins.
@@ -615,14 +656,23 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
               })
             })
             teacherUpdatedWithAccount = true
-          } else {
-            toast.error('Không thể tạo hoặc xác nhận tài khoản đăng nhập mới. Dữ liệu gia sư chưa bị thay đổi.')
-            return
           }
         }
 
         if (!teacherUpdatedWithAccount) {
           await updateDoc(teacherRef, teacherUpdateData)
+        }
+        const nicknameChanged = teacherUpdatedWithAccount && !!teacher.code && newUsername !== teacher.code
+        if (nicknameChanged) {
+          try {
+            const sync = await syncTeacherCodeReferences(teacher.id)
+            const total = Object.values(sync.updated).reduce((sum, count) => sum + count, 0)
+            if (total > 0) toast.success(`Đã đổi mã trên ${total.toLocaleString('vi-VN')} lịch/buổi học cũ sang "${sync.teacherCode}"`)
+            if (sync.failed > 0) toast.error(`${sync.failed} bản ghi chưa đổi được mã cũ sang mã mới (dữ liệu vẫn còn nguyên).`)
+          } catch (syncError) {
+            console.error('Sync teacher code references failed:', syncError)
+            toast.error('Đã đổi nickname; mã trên lịch/buổi học cũ chưa cập nhật được (dữ liệu vẫn còn nguyên, buổi học vẫn gắn đúng gia sư).')
+          }
         }
         toast.success(isReactivation ? 'Đã kích hoạt lại gia sư và đồng bộ tài khoản đăng nhập' : 'Đã cập nhật gia sư')
       } else {

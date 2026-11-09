@@ -726,9 +726,10 @@ export const deleteTeacherSafely = onCall({
   const logRef = db.collection('adminLogs').doc()
 
   await db.runTransaction(async (transaction) => {
-    const [teacherSnapshot, publicProfileSnapshot] = await Promise.all([
+    const [teacherSnapshot, publicProfileSnapshot, linkedUsersSnapshot] = await Promise.all([
       transaction.get(teacherRef),
       transaction.get(publicProfileRef),
+      transaction.get(db.collection('users').where('teacherId', '==', teacherId)),
     ])
     if (!teacherSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ gia sư cần xóa.')
 
@@ -762,12 +763,85 @@ export const deleteTeacherSafely = onCall({
       backupId: backupRef.id,
       createdAt: FieldValue.serverTimestamp(),
     })
+    // Khoá tài khoản đăng nhập của gia sư bị xoá; nickname được giải phóng
+    // để cấp lại (đổi tên/tạo mới sẽ thu hồi tài khoản mồ côi này an toàn).
+    linkedUsersSnapshot.docs.forEach((userSnapshot) => {
+      const role = userSnapshot.data().role
+      if (role !== 'teacher' && role !== 'inactive_teacher') return
+      transaction.set(userSnapshot.ref, {
+        role: 'inactive_teacher',
+        loginDisabledAt: FieldValue.serverTimestamp(),
+        loginDisabledReason: 'teacher_deleted',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    })
     transaction.delete(teacherRef)
     if (publicProfileSnapshot.exists) transaction.delete(publicProfileRef)
   })
 
   logger.info('Teacher deleted with protected backup', { actorUid, teacherId, backupId: backupRef.id })
   return { backupId: backupRef.id }
+})
+
+/**
+ * Sau khi đổi mã (nickname) gia sư: cập nhật trường teacherCode đã lưu sẵn
+ * trong lịch đặt, buổi học và buổi học công khai của đúng gia sư đó, để mọi
+ * màn hình cũ hiển thị mã mới. Chỉ ghi đè teacherCode, không đụng field khác.
+ */
+const TEACHER_CODE_REFERENCE_COLLECTIONS = ['bookingRequests', 'lessons', 'publicLessons'] as const
+
+export const syncTeacherCodeReferences = onCall({
+  region: 'asia-southeast1',
+  timeoutSeconds: 300,
+  memory: '512MiB',
+}, async (request) => {
+  const actorUid = request.auth?.uid
+  if (!actorUid) throw new HttpsError('unauthenticated', 'Vui lòng đăng nhập lại.')
+  const actorRole = (await db.collection('users').doc(actorUid).get()).data()?.role
+  if (actorRole !== 'admin' && actorRole !== 'teacher_manager') {
+    throw new HttpsError('permission-denied', 'Tài khoản không có quyền cập nhật mã gia sư.')
+  }
+  const teacherId = typeof request.data?.teacherId === 'string' ? request.data.teacherId.trim() : ''
+  if (!teacherId || teacherId.includes('/') || teacherId.length > 160) {
+    throw new HttpsError('invalid-argument', 'Hồ sơ gia sư không hợp lệ.')
+  }
+  const teacherSnapshot = await db.collection('teachers').doc(teacherId).get()
+  if (!teacherSnapshot.exists) throw new HttpsError('not-found', 'Không tìm thấy hồ sơ gia sư.')
+  const teacherCode = typeof teacherSnapshot.data()?.code === 'string' ? teacherSnapshot.data()!.code.trim() : ''
+  if (!teacherCode) throw new HttpsError('failed-precondition', 'Hồ sơ gia sư chưa có mã.')
+
+  const writer = db.bulkWriter()
+  let failed = 0
+  writer.onWriteError(() => {
+    failed += 1
+    return false
+  })
+  const updated: Record<string, number> = {}
+  for (const collectionName of TEACHER_CODE_REFERENCE_COLLECTIONS) {
+    const snapshot = await db.collection(collectionName).where('teacherId', '==', teacherId).get()
+    let count = 0
+    snapshot.docs.forEach((document) => {
+      if (document.data().teacherCode === teacherCode) return
+      void writer.update(document.ref, { teacherCode }).catch(() => undefined)
+      count += 1
+    })
+    updated[collectionName] = count
+  }
+  await writer.close()
+
+  await db.collection('adminLogs').add({
+    action: 'SYNC_TEACHER_CODE_REFERENCES',
+    actorUid,
+    actorEmail: request.auth?.token.email || '',
+    targetType: 'teacher',
+    targetId: teacherId,
+    teacherCode,
+    updated,
+    failed,
+    createdAt: FieldValue.serverTimestamp(),
+  })
+  logger.info('Teacher code references synced', { actorUid, teacherId, teacherCode, updated, failed })
+  return { teacherCode, updated, failed }
 })
 
 export const listStaffAccounts = onCall({
