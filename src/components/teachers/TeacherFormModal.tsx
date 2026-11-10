@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { TEACHER_LIVING_REGIONS, normalizeTeacherLivingRegion, type TeacherLivingRegion } from '@/lib/teacherLivingRegion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -106,6 +107,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
   // Interview profile states
   const [yob, setYob] = useState<string>(teacher?.yob ? String(teacher.yob) : '')
   const [livingArea, setLivingArea] = useState(teacher?.livingArea || '')
+  const [livingRegion, setLivingRegion] = useState<TeacherLivingRegion | ''>(normalizeTeacherLivingRegion(teacher?.livingRegion))
   const [contactEmail, setContactEmail] = useState(teacher?.email || '')
   const [degreeType, setDegreeType] = useState(teacher?.degreeType || 'Đại học')
   const [university, setUniversity] = useState(teacher?.university || '')
@@ -394,6 +396,7 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       const interviewData = {
         yob: yob ? Number(yob) : null,
         livingArea: livingArea || '',
+        livingRegion: livingRegion || '',
         email: normalizedContactEmail,
         trainedAt123English: !!trainedAt123English,
         degreeType: degreeType || '',
@@ -1250,6 +1253,31 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
                   onChange={e => setMajor(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
+              </div>
+
+              <div className="sm:col-span-2">
+                <span className="block text-xs font-semibold text-slate-500 mb-1">Khu vực sinh sống</span>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Khu vực sinh sống">
+                  {TEACHER_LIVING_REGIONS.map((region) => {
+                    const active = livingRegion === region.value
+                    return (
+                      <button
+                        key={region.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setLivingRegion(active ? '' : region.value)}
+                        className={`min-h-[40px] rounded-lg border px-2 text-sm font-semibold transition-colors ${
+                          active
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                            : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {region.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
               <div className="sm:col-span-2">

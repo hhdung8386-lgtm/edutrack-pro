@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { teacherLivingRegionLabel } from '@/lib/teacherLivingRegion'
 import {
   BookOpen,
   BriefcaseBusiness,
@@ -166,6 +167,7 @@ export function TeacherProfileDetails({ teacher, subjects, totalApprovedMinutes,
         </h4>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {!publicView && <DetailItem label={L('Năm sinh', 'Year of birth')} value={teacher.yob} />}
+          {!publicView && <DetailItem label={L('Khu vực sinh sống', 'Region')} value={teacherLivingRegionLabel(teacher.livingRegion, L('vi', 'en') as 'vi' | 'en')} />}
           <DetailItem label={L('Tỉnh/Thành phố sinh sống', 'City / province')} value={teacher.livingArea} />
           <DetailItem label={L('Học vị / Học hàm', 'Degree')} value={teacher.degreeType} />
           <DetailItem label={L('Trường ĐH/CĐ', 'University / college')} value={teacher.university} />

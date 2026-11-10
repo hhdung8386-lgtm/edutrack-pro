@@ -151,6 +151,8 @@ export interface Teacher {
   // Interview fields
   yob?: number
   livingArea?: string
+  /** Khu vực sinh sống (Miền Bắc/Trung/Nam) — admin chọn; thiếu field = chưa cập nhật. */
+  livingRegion?: 'north' | 'central' | 'south' | ''
   /** Email liên hệ của gia sư (khác email đăng nhập nội bộ), dùng để gửi nhắc lịch dạy. */
   email?: string
   /** Đã hoàn thành Chương trình Đào tạo Gia sư tại 123English (60 giờ) — admin xác nhận */

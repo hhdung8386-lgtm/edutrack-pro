@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
+import { teacherLivingRegionLabel } from '@/lib/teacherLivingRegion'
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, deleteField, setDoc, writeBatch } from 'firebase/firestore'
 import { MultilineText } from '@/components/shared/MultilineText'
 import { db, calculateSalary } from '@/lib/firebase'
@@ -1639,7 +1640,7 @@ export function TeacherDetailPage() {
       </Card>
 
       {/* Interview Profile Card */}
-      {teacher && (teacher.yob || teacher.livingArea || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (
+      {teacher && (teacher.yob || teacher.livingArea || teacherLivingRegionLabel(teacher.livingRegion) || teacher.university || teacher.ielts || teacher.teachingYears || (teacher.strengths && teacher.strengths.length > 0)) && (
         <Card>
           <div className="border-b border-slate-100 pb-4 mb-4">
             <h3 className="text-base font-semibold text-slate-900">Hồ sơ năng lực & Thông tin phỏng vấn</h3>
@@ -1653,6 +1654,12 @@ export function TeacherDetailPage() {
                   <div>
                     <span className="text-slate-500 font-medium">Năm sinh: </span>
                     <span className="text-slate-800">{teacher.yob}</span>
+                  </div>
+                )}
+                {teacherLivingRegionLabel(teacher.livingRegion) && (
+                  <div>
+                    <span className="text-slate-500 font-medium">Khu vực sinh sống: </span>
+                    <span className="text-slate-800">{teacherLivingRegionLabel(teacher.livingRegion)}</span>
                   </div>
                 )}
                 {teacher.livingArea && (

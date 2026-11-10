@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { TEACHER_LIVING_REGIONS, teacherLivingRegionLabel, teacherLivingRegionOf } from '@/lib/teacherLivingRegion'
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot, serverTimestamp, writeBatch, getAggregateFromServer, sum } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Teacher, TeacherDirectoryCategory } from '@/types'
@@ -223,6 +224,16 @@ function CertificateComplianceCell({ teacher, onEdit, compact = false }: { teach
   )
 }
 
+function TeacherRegionBadge({ teacher }: { teacher: Teacher }) {
+  const label = teacherLivingRegionLabel(teacher.livingRegion)
+  if (!label) return null
+  return (
+    <span className="whitespace-nowrap rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700">
+      {label}
+    </span>
+  )
+}
+
 function TeacherEmailCell({ teacher, onEdit }: { teacher: Teacher; onEdit: () => void }) {
   const email = teacher.email?.trim()
   if (email) {
@@ -260,6 +271,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   const [minutesMap, setMinutesMap] = useState<Record<string, number>>({})
   const [search, setSearch] = useState(() => sessionStorage.getItem('teachers_search') || '')
   const [countryFilter, setCountryFilter] = useState<string>(() => sessionStorage.getItem('teachers_countryFilter') || 'all')
+  const [regionFilter, setRegionFilter] = useState<string>(() => sessionStorage.getItem('teachers_regionFilter') || 'all')
   const [statusFilter, setStatusFilter] = useState<string>(() => sessionStorage.getItem('teachers_statusFilter') || 'all')
   const [branchFilter, setBranchFilter] = useState<string>(() => sessionStorage.getItem('teachers_branchFilter') || 'all')
   const [profileFilter, setProfileFilter] = useState<ProfileFilter>(() => (sessionStorage.getItem('teachers_profileFilter') as ProfileFilter) || 'all')
@@ -296,12 +308,13 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
   useEffect(() => {
     sessionStorage.setItem('teachers_search', search)
     sessionStorage.setItem('teachers_countryFilter', countryFilter)
+    sessionStorage.setItem('teachers_regionFilter', regionFilter)
     sessionStorage.setItem('teachers_statusFilter', statusFilter)
     sessionStorage.setItem('teachers_branchFilter', branchFilter)
     sessionStorage.setItem('teachers_profileFilter', profileFilter)
     sessionStorage.setItem('teachers_sortBy', sortBy)
     sessionStorage.setItem('teachers_limitVal', String(limitVal))
-  }, [search, countryFilter, statusFilter, branchFilter, profileFilter, sortBy, limitVal])
+  }, [search, countryFilter, regionFilter, statusFilter, branchFilter, profileFilter, sortBy, limitVal])
 
   // Sync scroll position to sessionStorage
   useEffect(() => {
@@ -422,6 +435,8 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
     const matchCountry = countryFilter === 'all' || teacherCountry === countryFilter
     const matchStatus = category === 'resigned' || statusFilter === 'all' || t.status === statusFilter
     const matchBranch = branchFilter === 'all' || t.branchId === branchFilter
+    const teacherRegion = teacherLivingRegionOf(t) || 'missing'
+    const matchRegion = regionFilter === 'all' || teacherRegion === regionFilter
     const certificates = getTeacherCertificateCompliance(t)
     const matchProfile = profileFilter === 'all'
       || (profileFilter === 'certificate_complete' && certificates.isCertificateComplete)
@@ -430,7 +445,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
       || (profileFilter === 'missing_pedagogical' && !certificates.hasPedagogicalImage)
       || (profileFilter === 'missing_both' && !certificates.hasForeignLanguageImage && !certificates.hasPedagogicalImage)
       || (profileFilter === 'missing_basic_profile' && missingTeacherFields(t).length > 0)
-    return matchSearch && matchCountry && matchStatus && matchBranch && matchProfile
+    return matchSearch && matchCountry && matchRegion && matchStatus && matchBranch && matchProfile
   })
 
   const getApprovedMinutes = (teacher: Teacher) => (
@@ -794,6 +809,19 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
             ))}
           </select>
 
+          <select
+            value={regionFilter}
+            onChange={(event) => setRegionFilter(event.target.value)}
+            className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-400"
+            aria-label="Lọc gia sư theo khu vực sinh sống"
+          >
+            <option value="all">Tất cả khu vực</option>
+            {TEACHER_LIVING_REGIONS.map((region) => (
+              <option key={region.value} value={region.value}>{region.label}</option>
+            ))}
+            <option value="missing">Chưa cập nhật khu vực</option>
+          </select>
+
           {branches.length > 0 && (
             <select
               value={branchFilter}
@@ -927,6 +955,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                               {teacher.isTester && (
                                 <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
                               )}
+                              <TeacherRegionBadge teacher={teacher} />
                             </div>
                             <div className="mt-0.5" onClick={(event) => event.stopPropagation()}>
                               <TeacherEmailCell teacher={teacher} onEdit={() => setEditTeacher(teacher)} />
@@ -1037,6 +1066,7 @@ export function TeachersPage({ category = 'online' }: { category?: TeacherDirect
                       {teacher.isTester && (
                         <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Tester</span>
                       )}
+                      <TeacherRegionBadge teacher={teacher} />
                     </div>
                     <p className="font-semibold text-slate-900">{teacher.name}</p>
                     <div className="mt-1"><CountryCell country={teacher.country} /></div>
