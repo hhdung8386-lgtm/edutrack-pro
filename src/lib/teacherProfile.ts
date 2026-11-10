@@ -6,7 +6,7 @@ export const REQUIRED_TEACHER_FIELDS: { key: keyof Teacher; label: string; label
   { key: 'photoURL', label: 'Ảnh đại diện', labelEn: 'Profile photo' },
   { key: 'gender', label: 'Giới tính', labelEn: 'Gender' },
   { key: 'yob', label: 'Năm sinh', labelEn: 'Year of birth' },
-  { key: 'livingArea', label: 'Khu vực sinh sống', labelEn: 'Living area' },
+  { key: 'livingArea', label: 'Tỉnh/Thành phố sinh sống', labelEn: 'City / province' },
   { key: 'degreeType', label: 'Học vị / Học hàm', labelEn: 'Degree' },
   { key: 'university', label: 'Trường ĐH/CĐ', labelEn: 'University' },
   { key: 'major', label: 'Chuyên ngành', labelEn: 'Major' },

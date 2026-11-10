@@ -351,11 +351,13 @@ service cloud.firestore {
     match /teachers/{teacherId} {
       function isTeacherSelfProfileUpdate() {
         return isTeacherFor(teacherId)
+          && request.resource.data.get('livingRegion', '') in ['', 'north', 'central', 'south']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name',
             'gender',
             'yob',
             'livingArea',
+            'livingRegion',
             'degreeType',
             'university',
             'major',

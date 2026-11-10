@@ -16,6 +16,7 @@ import { ImageLightbox } from '@/components/shared/ImageLightbox'
 import { Copy, CalendarDays, Wallet, HeadphonesIcon, GraduationCap, Globe, Upload, Trash2, Play, Camera, AlertTriangle, CheckCircle2, Eye } from 'lucide-react'
 import { TeacherCertificate } from '@/types'
 import { visibleTeacherSubjectNames } from '@/lib/teacherSubjects'
+import { TEACHER_LIVING_REGIONS, normalizeTeacherLivingRegion, type TeacherLivingRegion } from '@/lib/teacherLivingRegion'
 import { getTeacherTimezoneOffset, normalizeTeacherCountryCode, TEACHER_COUNTRY_SELECT_OPTIONS } from '@/lib/teacherCountries'
 
 type BilingualOption = {
@@ -87,6 +88,7 @@ export function ProfilePage() {
   const [gender, setGender] = useState('')
   const [yob, setYob] = useState('')
   const [livingArea, setLivingArea] = useState('')
+  const [livingRegion, setLivingRegion] = useState<TeacherLivingRegion | ''>('')
   const [degreeType, setDegreeType] = useState('')
   const [university, setUniversity] = useState('')
   const [major, setMajor] = useState('')
@@ -123,6 +125,7 @@ export function ProfilePage() {
       setGender(teacher.gender || '')
       setYob(teacher.yob ? String(teacher.yob) : '')
       setLivingArea(teacher.livingArea || '')
+      setLivingRegion(normalizeTeacherLivingRegion(teacher.livingRegion))
       setDegreeType(teacher.degreeType || '')
       setUniversity(teacher.university || '')
       setMajor(teacher.major || '')
@@ -261,8 +264,11 @@ export function ProfilePage() {
       return
     }
     setSavingProfile(true)
+    // Chỉ gửi livingRegion khi gia sư đổi khu vực, để các lần lưu khác không phụ thuộc field mới.
+    const livingRegionChanged = livingRegion !== normalizeTeacherLivingRegion(teacher?.livingRegion)
     try {
       await updateDoc(doc(db, 'teachers', teacherId), {
+        ...(livingRegionChanged ? { livingRegion } : {}),
         name: fullName.trim(),
         gender,
         yob: Number(yob),
@@ -284,7 +290,7 @@ export function ProfilePage() {
         bankAccountName: bankAccountName.toUpperCase(),
       })
       setTeacher(prev => prev ? {
-        ...prev, name: fullName.trim(), gender: gender as Teacher['gender'], yob: Number(yob), livingArea, degreeType, university, major,
+        ...prev, name: fullName.trim(), gender: gender as Teacher['gender'], yob: Number(yob), livingArea, livingRegion, degreeType, university, major,
         teachingYears: Number(teachingYears), studentsTaughtCount: Number(studentsTaughtCount), studentAgesTaught,
         teachingFormats, studentResults, strengths, otherStrengths, languagesTaught, academicSubjectsTaught,
         bankName, bankAccountNo, bankAccountName,
@@ -654,7 +660,29 @@ export function ProfilePage() {
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('yob')}`} />
             </div>
             <div className="col-span-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Khu vực sinh sống *' : 'Living area *'}</label>
+              <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Khu vực sinh sống' : 'Region'}</span>
+              <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={lang === 'vi' ? 'Khu vực sinh sống' : 'Region'}>
+                {TEACHER_LIVING_REGIONS.map((region) => {
+                  const active = livingRegion === region.value
+                  return (
+                    <button
+                      key={region.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setLivingRegion(active ? '' : region.value)}
+                      className={`min-h-[42px] rounded-xl border px-2 text-sm font-semibold transition-colors ${
+                        active ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {lang === 'vi' ? region.label : region.labelEn}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{lang === 'vi' ? 'Tỉnh / Thành phố sinh sống *' : 'City / province *'}</label>
               <input type="text" value={livingArea} onChange={(e) => setLivingArea(e.target.value)} placeholder="Province/City of residence"
                 className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-200 min-h-[42px] ${errCls('livingArea')}`} />
             </div>
