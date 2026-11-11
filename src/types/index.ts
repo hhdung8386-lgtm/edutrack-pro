@@ -509,6 +509,8 @@ export interface BookingRequest {
   classHuntId?: string
   /** Immutable rate assigned by the Class Hunt publisher; never edited by the parent. */
   classHuntCompensation?: ClassHuntCompensation
+  /** Lớp ưu đãi (Sale): % giảm lương GV + kim cương HV, server ghi lúc gia sư nhận lớp. */
+  classHuntPromoDiscountPercent?: number
   /** Local audit-only sentinel for malformed compensation; never persisted. */
   classHuntCompensationInvalid?: boolean
   /** Parent portal marker: this Class Hunt booking must be changed through admin support. */

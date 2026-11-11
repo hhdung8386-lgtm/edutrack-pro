@@ -142,6 +142,43 @@ export function PromoSaleChip() {
   )
 }
 
+/** % giảm của lớp ưu đãi trên một ca/buổi; undefined = lớp thông thường. */
+export function promoDiscountPercentOf(value: { classHuntPromoDiscountPercent?: unknown } | null | undefined): number | undefined {
+  const percent = Number(value?.classHuntPromoDiscountPercent)
+  return Number.isFinite(percent) && percent > 0 ? Math.round(percent) : undefined
+}
+
+/**
+ * Nhãn "Lớp ưu đãi · SALE" chỉ để nhận biết (không có nút bấm bên trong), dùng ở
+ * Lịch sử buổi dạy và Lịch dạy của tôi. `compact` = sticker SALE nhỏ cho ô lưới lịch.
+ */
+export function PromoSaleTag({ percent, compact = false, className = '' }: { percent?: number; compact?: boolean; className?: string }) {
+  const L = useL()
+  const title = percent
+    ? L(`Lớp ưu đãi Sale – giảm ${percent}%`, `Promo (sale) class – ${percent}% off`)
+    : L('Lớp ưu đãi Sale', 'Promo (sale) class')
+  if (compact) {
+    return (
+      <span
+        title={title}
+        aria-label={title}
+        className={`pointer-events-none inline-flex -rotate-12 items-center rounded bg-rose-600 px-1 text-[8px] font-black uppercase leading-[14px] tracking-wide text-white shadow-sm ${className}`}
+      >
+        Sale
+      </span>
+    )
+  }
+  return (
+    <span title={title} className={`inline-flex shrink-0 items-center gap-1 rounded-md border border-orange-200 bg-orange-50 py-0.5 pl-1.5 pr-1 text-[11px] font-extrabold leading-4 text-orange-600 ${className}`}>
+      <Gift className="h-3 w-3" aria-hidden="true" />
+      {L('Lớp ưu đãi', 'Promo class')}
+      <span className="rounded bg-rose-600 px-1 text-[9px] font-black uppercase leading-4 text-white">
+        Sale{percent ? ` -${percent}%` : ''}
+      </span>
+    </span>
+  )
+}
+
 /** Red "Giảm giá ưu đãi X%" pill shown under "Đơn giá lớp". */
 export function PromoDiscountPill({ percent, className = '' }: { percent: number; className?: string }) {
   const L = useL()

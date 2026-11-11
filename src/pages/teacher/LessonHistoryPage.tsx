@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteField, serverTimestamp, orderBy, limit, getDocs, getCountFromServer } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Lesson, Payroll, PaymentSettings } from '@/types'
+import { BookingRequest, Lesson, Payroll, PaymentSettings } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { useLanguageStore } from '@/stores/languageStore'
 import { toast } from '@/stores/toastStore'
@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { PromoSaleTag, promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { formatMoney, formatVND, formatVietnameseDate, getCurrentMonth } from '@/lib/constants'
@@ -70,6 +71,9 @@ export function LessonHistoryPage() {
   const [adjustments, setAdjustments] = useState<Payroll[]>([])
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Lesson | null>(null)
+  // Ca của lớp ưu đãi (Sale) mà gia sư đã nhận: chỉ đọc đúng các ca có % giảm
+  // (thường vài chục ca), không đọc cả lịch sử đặt lịch.
+  const [promoBookings, setPromoBookings] = useState<BookingRequest[]>([])
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
 
@@ -165,6 +169,42 @@ export function LessonHistoryPage() {
     // paid amount is recalculated or changed on the teacher page.
     console.error('[lesson-history:payroll-tax]', error)
   }), [])
+
+  useEffect(() => {
+    if (!teacherId) return
+    const q = query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', teacherId),
+      where('classHuntPromoDiscountPercent', '>', 0),
+    )
+    return onSnapshot(q, (snap) => {
+      setPromoBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest)))
+    }, (err) => {
+      // Chỉ mất nhãn "Lớp ưu đãi", không ảnh hưởng lịch sử/lương.
+      console.error('[lesson-history:promo]', err)
+    })
+  }, [teacherId, retryVersion])
+
+  // Buổi dạy -> % giảm: nối qua bookingRequestId(s) trên buổi hoặc lessonId trên ca.
+  const promoPercentByLessonId = useMemo(() => {
+    const byBookingId = new Map<string, number>()
+    const byLessonId = new Map<string, number>()
+    for (const booking of promoBookings) {
+      const percent = promoDiscountPercentOf(booking)
+      if (percent === undefined) continue
+      byBookingId.set(booking.id, percent)
+      if (booking.lessonId) byLessonId.set(booking.lessonId, percent)
+    }
+    const result = new Map<string, number>()
+    for (const lesson of allLessons) {
+      const linked = [...(lesson.bookingRequestIds || []), lesson.bookingRequestId || '']
+        .map((id) => byBookingId.get(id))
+        .find((percent) => percent !== undefined)
+      const percent = linked ?? byLessonId.get(lesson.id)
+      if (percent !== undefined) result.set(lesson.id, percent)
+    }
+    return result
+  }, [promoBookings, allLessons])
 
   const scopedLessons = useMemo(
     () => (studentIdFilter ? allLessons.filter((l) => l.studentId === studentIdFilter) : allLessons),
@@ -496,6 +536,7 @@ export function LessonHistoryPage() {
                           <StatusBadge status={lesson.status} />
                           <span className="text-sm font-medium text-slate-700">{lesson.studentName}</span>
                           <span className="text-xs text-slate-500">{lesson.studentCode}</span>
+                          {promoPercentByLessonId.has(lesson.id) && <PromoSaleTag percent={promoPercentByLessonId.get(lesson.id)} />}
                         </div>
                         <p className="text-xs text-slate-500 mt-1">{lesson.subjectName} · {lesson.minutes} {t('attendance.minutes')}</p>
                       </div>

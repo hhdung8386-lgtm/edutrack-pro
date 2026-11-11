@@ -11,6 +11,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/ui/Modal'
 import { SubjectTeacherNote } from '@/components/shared/SubjectTeacherNote'
+import { PromoSaleTag, promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
 import { useSubjectTeacherNotes } from '@/hooks/useSubjectTeacherNotes'
 import { getVietnamDateISO } from '@/lib/constants'
 import { liveWindowStartISO, mergeById } from '@/lib/liveDataWindow'
@@ -1360,7 +1361,7 @@ export function BookingSchedulesPage() {
                           <button
                             type="button"
                             onClick={() => handleCellClick(booking)}
-                            className={`w-full py-1.5 px-0.5 rounded-xl text-center block transition shadow-sm ${
+                            className={`relative w-full py-1.5 px-0.5 rounded-xl text-center block transition shadow-sm ${
                               !isAwaitingAttendance(booking)
                                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/50'
                                 : teacherCancellationStatusOf(booking) === 'pending'
@@ -1375,6 +1376,9 @@ export function BookingSchedulesPage() {
                               {!isAwaitingAttendance(booking) && <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
                               <span>{booking.studentCode}</span>
                             </div>
+                            {promoDiscountPercentOf(booking) !== undefined && (
+                              <PromoSaleTag compact percent={promoDiscountPercentOf(booking)} className="absolute -right-1 -top-1.5" />
+                            )}
                             <div className={`text-[9px] font-bold truncate leading-tight mt-0.5 max-w-full px-1 block ${
                               !isAwaitingAttendance(booking) ? 'text-emerald-700/80' : 'text-amber-800/80'
                             }`} title={booking.studentName}>
@@ -1581,7 +1585,10 @@ export function BookingSchedulesPage() {
               </p>
               <div>
                 <h3 className="font-bold text-slate-900 text-base">{selectedBooking.studentName}</h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedBooking.studentCode}</p>
+                <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span className="font-mono">{selectedBooking.studentCode}</span>
+                  {promoDiscountPercentOf(selectedBooking) !== undefined && <PromoSaleTag percent={promoDiscountPercentOf(selectedBooking)} />}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-xs mt-2 border-t border-slate-100 pt-3">
