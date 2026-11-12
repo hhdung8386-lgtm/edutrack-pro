@@ -173,7 +173,12 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
     }
   }
 
-  const { register, formState: { isSubmitting } } = useForm<FormData>({
+  // Tự quản lý trạng thái đang lưu: nút Lưu gọi onSubmit trực tiếp (không qua
+  // handleSubmit của react-hook-form) nên isSubmitting không bao giờ bật → nút
+  // không khoá, admin bấm 5–6 lần chồng nhau. savingRef chặn bấm đúp tức thì.
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const { register } = useForm<FormData>({
     // @ts-ignore
     resolver: zodResolver(schema),
     defaultValues: teacher ? {
@@ -463,14 +468,15 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
 
         // If nickname changed, verify uniqueness
         if (newUsername && (newUsername !== teacher.code || isReactivation)) {
-          const checkQuery = query(collection(db, 'teachers'), where('code', '==', newUsername))
-          const checkSnap = await getDocsFromServer(checkQuery)
+          // Hai kiểm tra trùng tên độc lập → chạy song song cho nhanh.
+          const [checkSnap, studentCheckSnap] = await Promise.all([
+            getDocsFromServer(query(collection(db, 'teachers'), where('code', '==', newUsername))),
+            getDocsFromServer(query(collection(db, 'students'), where('code', '==', newUsername))),
+          ])
           if (checkSnap.docs.some((teacherDocument) => teacherDocument.id !== teacher.id)) {
             toast.error(`Tên tài khoản "${newUsername}" đã được sử dụng bởi gia sư khác!`)
             return
           }
-          const studentCheckQuery = query(collection(db, 'students'), where('code', '==', newUsername))
-          const studentCheckSnap = await getDocsFromServer(studentCheckQuery)
           if (!studentCheckSnap.empty) {
             toast.error(`Tên tài khoản "${newUsername}" đã được học viên sử dụng!`)
             return
@@ -666,18 +672,25 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
           await updateDoc(teacherRef, teacherUpdateData)
         }
         const nicknameChanged = teacherUpdatedWithAccount && !!teacher.code && newUsername !== teacher.code
-        if (nicknameChanged) {
-          try {
-            const sync = await syncTeacherCodeReferences(teacher.id)
-            const total = Object.values(sync.updated).reduce((sum, count) => sum + count, 0)
-            if (total > 0) toast.success(`Đã đổi mã trên ${total.toLocaleString('vi-VN')} lịch/buổi học cũ sang "${sync.teacherCode}"`)
-            if (sync.failed > 0) toast.error(`${sync.failed} bản ghi chưa đổi được mã cũ sang mã mới (dữ liệu vẫn còn nguyên).`)
-          } catch (syncError) {
-            console.error('Sync teacher code references failed:', syncError)
-            toast.error('Đã đổi nickname; mã trên lịch/buổi học cũ chưa cập nhật được (dữ liệu vẫn còn nguyên, buổi học vẫn gắn đúng gia sư).')
-          }
-        }
         toast.success(isReactivation ? 'Đã kích hoạt lại gia sư và đồng bộ tài khoản đăng nhập' : 'Đã cập nhật gia sư')
+        if (nicknameChanged) {
+          // Đổi mã trên lịch/buổi học cũ có thể chạm hàng nghìn bản ghi nên chạy NỀN:
+          // hồ sơ + tài khoản đăng nhập đã lưu xong ở trên, không bắt admin chờ
+          // (trước đây phải chờ cả phút nên admin tưởng lỗi và bấm Lưu nhiều lần).
+          // Máy chủ vẫn chạy hết kể cả khi đóng form; chạy lại cũng an toàn (chỉ ghi bản ghi còn mã cũ).
+          const teacherIdForSync = teacher.id
+          toast.info(`Đang cập nhật mã "${newUsername}" trên lịch/buổi học cũ ở chế độ nền...`)
+          void syncTeacherCodeReferences(teacherIdForSync)
+            .then((sync) => {
+              const total = Object.values(sync.updated).reduce((sum, count) => sum + count, 0)
+              if (total > 0) toast.success(`Đã đổi mã trên ${total.toLocaleString('vi-VN')} lịch/buổi học cũ sang "${sync.teacherCode}"`)
+              if (sync.failed > 0) toast.error(`${sync.failed} bản ghi chưa đổi được mã cũ sang mã mới (dữ liệu vẫn còn nguyên).`)
+            })
+            .catch((syncError) => {
+              console.error('Sync teacher code references failed:', syncError)
+              toast.error('Đã đổi nickname; mã trên lịch/buổi học cũ chưa cập nhật được (dữ liệu vẫn còn nguyên, buổi học vẫn gắn đúng gia sư).')
+            })
+        }
       } else {
         // CREATE mode - Admin creates account for teacher
         if (!newUsername) {
@@ -825,11 +838,12 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
       title={isReactivation ? 'Kích hoạt lại gia sư' : isEdit ? 'Chỉnh sửa gia sư' : 'Thêm gia sư mới'}
       footer={
         <div className="flex gap-3 justify-end">
-          <Button variant="ghost" onClick={onClose}>Hủy</Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Hủy</Button>
           <Button
             type="button"
-            loading={isSubmitting}
+            loading={saving}
             onClick={async () => {
+              if (savingRef.current) return
               if (!validateForm()) return
               const formEl = document.getElementById('teacher-form') as HTMLFormElement
               const nameInput = formEl?.querySelector<HTMLInputElement>('input[name="name"]')
@@ -842,10 +856,17 @@ export function TeacherFormModal({ teacher, onClose, defaultCategory = 'online' 
               const bioVal = bioInput?.value || ''
               const countryVal = countrySelect?.value || 'VN'
               
-              await onSubmit({ name: nameVal, level: levelVal, bio: bioVal, country: countryVal })
+              savingRef.current = true
+              setSaving(true)
+              try {
+                await onSubmit({ name: nameVal, level: levelVal, bio: bioVal, country: countryVal })
+              } finally {
+                savingRef.current = false
+                setSaving(false)
+              }
             }}
           >
-            {isReactivation ? 'Kích hoạt lại' : isEdit ? 'Lưu thay đổi' : 'Tạo gia sư'}
+            {saving ? 'Đang lưu...' : isReactivation ? 'Kích hoạt lại' : isEdit ? 'Lưu thay đổi' : 'Tạo gia sư'}
           </Button>
         </div>
       }
