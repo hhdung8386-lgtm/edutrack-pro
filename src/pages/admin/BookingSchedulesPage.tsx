@@ -48,6 +48,14 @@ import { teacherCountryLabel } from '@/lib/teacherCountries'
 import { isBookingAttended, isBookingCancellable, isBookingHoldingStudentFund } from '@/lib/bookingLogic'
 import { settleBookingsByApprovedLessons } from '@/lib/linkedLessonSettlement'
 import { sortSubjectsByName } from '@/lib/subjectSorting'
+import {
+  MANUAL_PROMO_BATCH_PREFIX,
+  MANUAL_PROMO_DISCOUNT_OPTIONS,
+  manualPromoCompensation,
+  manualPromoPointsPer25Minutes,
+  manualRegularPayPerMinute,
+  normalizeManualPromoDiscount,
+} from '@/lib/manualPromoDiscount'
 import { LinkedBookingHoldsPanel } from '@/components/bookings/LinkedBookingHoldsPanel'
 import { getGroupClassDeliveryMode, isGroupClass, teacherSupportsGroupClassDeliveryMode } from '@/lib/groupClasses'
 import {
@@ -282,6 +290,8 @@ export function BookingSchedulesPage() {
   const [isRecurring, setIsRecurring] = useState(false)
   const [recurringMode, setRecurringMode] = useState<RecurringScheduleMode>('all')
   const [recurringSessionCount, setRecurringSessionCount] = useState(1)
+  // Giảm giá (Lớp ưu đãi) cho ca xếp tay: 0 = không giảm.
+  const [promoDiscountPercent, setPromoDiscountPercent] = useState(0)
   const [scheduling, setScheduling] = useState(false)
   const [scheduleConflictMessage, setScheduleConflictMessage] = useState('')
   const [selectedStudentBookings, setSelectedStudentBookings] = useState<BookingRequest[]>([])
@@ -299,6 +309,13 @@ export function BookingSchedulesPage() {
   const visibleStarts = useMemo(() => getVisibleStarts(timeWindow), [timeWindow])
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const selectedIsGroupClass = isGroupClass(selectedStudent)
+  // Lớp nhóm không áp giảm giá (lương/kim cương chia theo nhiều học viên).
+  const effectivePromoPercent = selectedIsGroupClass ? 0 : normalizeManualPromoDiscount(promoDiscountPercent)
+  // Kim cương/25' dùng cho mọi phép tính trong hộp xếp lớp: giá gia sư, giảm theo % nếu có.
+  const schedulePointsPer25 = manualPromoPointsPer25Minutes(
+    getTeacherPointsPer25Minutes(selectedTeacher),
+    effectivePromoPercent,
+  )
   const selectedSlotsArePast = selectedSlots.length > 0 && selectedSlots.every((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const selectedSlotsContainPast = selectedSlots.some((slot) => isPastScheduleSlot(slot.dateISO, slot.time))
   const availabilityFilterActive = filterDays.length > 0
@@ -841,6 +858,7 @@ export function BookingSchedulesPage() {
       setIsRecurring(false)
       setRecurringMode('all')
       setRecurringSessionCount(1)
+      setPromoDiscountPercent(0)
       setSelectedStudent(null)
       setStudentSearch('')
       setSelectedSubjectId('')
@@ -898,8 +916,22 @@ export function BookingSchedulesPage() {
       return
     }
 
-    const pointsPer25Minutes = getTeacherPointsPer25Minutes(selectedTeacher)
+    const pointsPer25Minutes = schedulePointsPer25
     const pointsPerLesson = calculateLessonPoints(duration, pointsPer25Minutes)
+    // Ca giảm giá: chốt lương gia sư đã giảm % thành snapshot (cùng định dạng Lớp
+    // ưu đãi) và gắn một mã lô làm classHuntId để duyệt/lương đọc đúng snapshot.
+    const promoCompensation = effectivePromoPercent > 0
+      ? manualPromoCompensation(sub, selectedTeacher.level, effectivePromoPercent)
+      : null
+    if (effectivePromoPercent > 0 && !promoCompensation) {
+      toast.error('Gói môn này chưa có đơn giá VND nên chưa tính được lương gia sư khi giảm giá. Hãy chọn "Không giảm" hoặc cập nhật giá gói.')
+      return
+    }
+    const promoBookingFields: Record<string, unknown> = promoCompensation ? {
+      classHuntId: `${MANUAL_PROMO_BATCH_PREFIX}${doc(collection(db, 'bookingRequests')).id}`,
+      classHuntCompensation: { ...promoCompensation },
+      classHuntPromoDiscountPercent: effectivePromoPercent,
+    } : {}
     const totalRequiredPoints = selectedSlots.length * pointsPerLesson
     const bookedPointsForSubject = selectedStudentBookings
       .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
@@ -1143,6 +1175,7 @@ export function BookingSchedulesPage() {
               requestedMinutes: duration,
               requestedPoints: pointsPerLesson,
               pointsPer25Minutes,
+              ...promoBookingFields,
               adminNote: scheduleMode === 'makeup'
                 ? 'Xếp lớp học bù trong quá khứ từ bảng admin'
                 : 'Xếp lịch trực tiếp từ bảng admin',
@@ -1199,6 +1232,7 @@ export function BookingSchedulesPage() {
               requestedMinutes: duration,
               requestedPoints: pointsPerLesson,
               pointsPer25Minutes,
+              ...promoBookingFields,
               adminNote: 'Xếp lịch định kỳ từ bảng admin',
               classroomURL: currentStudent.classroomURL || '',
               createdAt: serverTimestamp(),
@@ -1268,6 +1302,9 @@ export function BookingSchedulesPage() {
             requestedRecurringSessions: isRecurring && recurringMode === 'custom' ? recurringSessionCount : null,
             scheduleMode,
             groupClassMemberIds: selectedIsGroupClass ? groupClassMemberIds : null,
+            promoDiscountPercent: effectivePromoPercent || null,
+            pointsPer25Minutes,
+            promoRatePerMinute: promoCompensation?.ratePerMinute ?? null,
           },
           createdAt: serverTimestamp(),
         })
@@ -1283,6 +1320,7 @@ export function BookingSchedulesPage() {
       setIsRecurring(false)
       setRecurringMode('all')
       setRecurringSessionCount(1)
+      setPromoDiscountPercent(0)
     } catch (error: unknown) {
       console.error('Direct scheduling failed:', error)
       const errorMessage = error instanceof Error ? error.message : ''
@@ -1602,6 +1640,7 @@ export function BookingSchedulesPage() {
     setIsRecurring(mode === 'regular' && hasPast)
     setRecurringMode('all')
     setRecurringSessionCount(1)
+    setPromoDiscountPercent(0)
     setSelectedStudent(null)
     setStudentSearch('')
     setSelectedSubjectId('')
@@ -2515,7 +2554,7 @@ export function BookingSchedulesPage() {
 
                   // Kim cương phải tính theo đơn giá của chính gia sư đang xếp lịch
                   // (gia sư khác nhau có thể tốn số kim cương khác nhau cho cùng 1 buổi).
-                  const selectedRate = getTeacherPointsPer25Minutes(selectedTeacher)
+                  const selectedRate = schedulePointsPer25
                   const pointsForOneLesson = calculateLessonPoints(duration, selectedRate)
                   const requiredPoints = selectedSlots.length * pointsForOneLesson
                   const totalDurationMinutes = selectedSlots.length * duration
@@ -2558,7 +2597,10 @@ export function BookingSchedulesPage() {
                           <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600">
                             <DiamondPointsIcon className="h-3 w-3" />{availableForSubject} kim cương
                           </p>
-                          <p className="text-[11px] font-semibold text-slate-500">Giá gia sư: {selectedRate} kim cương / 25 phút</p>
+                          <p className="text-[11px] font-semibold text-slate-500">
+                            Giá gia sư: {selectedRate} kim cương / 25 phút
+                            {effectivePromoPercent > 0 && <span className="text-rose-600"> (đã giảm {effectivePromoPercent}%)</span>}
+                          </p>
                         </div>
                         <div className="rounded-lg bg-slate-50 p-2">
                           <p className="text-[10px] font-bold uppercase text-slate-400">Yêu cầu</p>
@@ -2651,7 +2693,7 @@ export function BookingSchedulesPage() {
                           .filter((booking) => booking.subjectId === sub.subjectId && isBookingHoldingStudentFund(booking))
                           .reduce((sum, b) => sum + getBookingPoints(b), 0)
                         const availablePoints = Math.max(0, sub.remainingMinutes - bookedPointsForSub)
-                        const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
+                        const pointsForOneLesson = calculateLessonPoints(duration, schedulePointsPer25)
                         const availSessions = pointsForOneLesson > 0 ? Math.floor(availablePoints / pointsForOneLesson) : 0
                         const bookedSessions = selectedStudentBookings.filter(
                           (booking) => booking.subjectId === sub.subjectId && isBookingHoldingStudentFund(booking),
@@ -2665,6 +2707,42 @@ export function BookingSchedulesPage() {
                     </select>
                   )}
                 </div>
+
+                {/* Giảm giá (Lớp ưu đãi): kim cương HV + lương GV cùng giảm %, phút giữ nguyên */}
+                {!selectedIsGroupClass && selectedSubjectId && (() => {
+                  const pkg = selectedStudent.subjects?.find((subject) => subject.subjectId === selectedSubjectId)
+                  const regularPay = manualRegularPayPerMinute(pkg, selectedTeacher?.level)
+                  const promoPay = effectivePromoPercent > 0
+                    ? manualPromoCompensation(pkg, selectedTeacher?.level, effectivePromoPercent)
+                    : null
+                  const baseRate = getTeacherPointsPer25Minutes(selectedTeacher)
+                  return (
+                    <div className="space-y-1.5">
+                      <label htmlFor="schedule-promo-discount" className="block text-xs font-bold text-slate-600">Giảm giá</label>
+                      <select
+                        id="schedule-promo-discount"
+                        value={effectivePromoPercent}
+                        onChange={(e) => setPromoDiscountPercent(normalizeManualPromoDiscount(e.target.value))}
+                        className={`w-full rounded-lg border bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500 ${effectivePromoPercent > 0 ? 'border-rose-300 font-bold text-rose-700' : 'border-slate-300'}`}
+                      >
+                        <option value={0}>Không giảm (lớp thông thường)</option>
+                        {MANUAL_PROMO_DISCOUNT_OPTIONS.map((percent) => (
+                          <option key={percent} value={percent}>Lớp ưu đãi SALE -{percent}%</option>
+                        ))}
+                      </select>
+                      {effectivePromoPercent > 0 && (
+                        <div className="rounded-lg border border-rose-100 bg-rose-50 px-2.5 py-2 text-[11px] font-semibold leading-5 text-rose-700">
+                          <p>Học viên: {baseRate} → {schedulePointsPer25} kim cương / 25 phút (số phút học giữ nguyên).</p>
+                          {promoPay ? (
+                            <p>Lương gia sư: {Math.round(regularPay?.price || 0).toLocaleString('vi-VN')}đ → {promoPay.ratePerMinute.toLocaleString('vi-VN')}đ / phút.</p>
+                          ) : (
+                            <p className="font-bold">Gói môn này chưa có đơn giá VND nên chưa áp giảm giá được.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
@@ -2705,7 +2783,7 @@ export function BookingSchedulesPage() {
                     .filter((booking) => booking.subjectId === selectedSubjectId && isBookingHoldingStudentFund(booking))
                     .reduce((sum, booking) => sum + getBookingPoints(booking), 0)
                   const availableForSubject = pkg ? Math.max(0, (pkg.remainingMinutes || 0) - bookedForSubject) : 0
-                  const pointsForOneLesson = calculateLessonPoints(duration, getTeacherPointsPer25Minutes(selectedTeacher))
+                  const pointsForOneLesson = calculateLessonPoints(duration, schedulePointsPer25)
                   const maxSessions = pointsForOneLesson > 0 ? Math.floor(availableForSubject / pointsForOneLesson) : 0
                   const targetSessions = recurringSessionTarget(recurringMode, recurringSessionCount, maxSessions)
                   const weeks = estimateRecurringWeeks(targetSessions, selectedSlots.length)
