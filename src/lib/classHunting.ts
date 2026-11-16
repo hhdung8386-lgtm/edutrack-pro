@@ -273,6 +273,8 @@ const updateCallable = httpsCallable<{
   note: string
   teacherRequirements: ClassHuntTeacherRequirements
   studentAudience: ClassHuntStudentAudience
+  /** Number = lớp ưu đãi %, null = lớp thông thường. */
+  promoDiscountPercent: number | null
 }, unknown>(functions, 'updateClassHunt')
 const claimCallable = httpsCallable<{ huntId: string; clientRequestId: string }, unknown>(functions, 'claimClassHunt')
 const markTeacherNotificationsReadCallable = httpsCallable<{ notificationIds: string[] }, unknown>(
@@ -660,16 +662,25 @@ export async function archiveClassHunt(huntId: string): Promise<ClassHunt> {
   return huntFrom(root.hunt ?? result.data)
 }
 
-/** Edit an open offer's note, teacher requirement and learner group; schedule and pay stay locked. */
+/**
+ * Edit an open offer's note, teacher requirement, learner group and promo %.
+ * Schedule and session count stay locked; pay/diamonds are frozen at claim.
+ */
 export async function updateClassHunt(
   huntId: string,
-  changes: { note: string; teacherRequirements: ClassHuntTeacherRequirements; studentAudience: ClassHuntStudentAudience },
+  changes: {
+    note: string
+    teacherRequirements: ClassHuntTeacherRequirements
+    studentAudience: ClassHuntStudentAudience
+    promoDiscountPercent: number | null
+  },
 ): Promise<ClassHunt> {
   const result = await updateCallable({
     huntId,
     note: changes.note,
     teacherRequirements: changes.teacherRequirements,
     studentAudience: changes.studentAudience,
+    promoDiscountPercent: changes.promoDiscountPercent,
   })
   const root = asRecord(result.data)
   return huntFrom(root.hunt ?? result.data)

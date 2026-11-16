@@ -1489,9 +1489,68 @@ export const archiveClassHunt = onCall({
 })
 
 /**
- * Edit an open offer's note and teacher requirement. Schedule, session count
- * and pay are immutable once published: a tutor may be confirming them right
- * now, so changing those means cancel + publish again.
+ * A promo % change on an open offer must keep it claimable: a promo needs a
+ * VND package price, a custom-rate offer can't become a promo, and a smaller
+ * discount (dearer diamonds) must still fit the student's spendable fund at the
+ * same standard rate the offer was sized with.
+ */
+async function assertPromoChangeAllowed(
+  transaction: Transaction,
+  hunt: StoredClassHunt,
+  nextPromo: number | undefined,
+): Promise<void> {
+  if (nextPromo !== undefined && hunt.classHuntCompensation) {
+    throw error('failed-precondition', 'CLASS_HUNT_PROMO_WITH_CUSTOM_RATE', 'Lớp này đang dùng đơn giá riêng nên không chuyển thành lớp ưu đãi được. Hãy Huỷ rồi Đăng lại.')
+  }
+  const studentSnapshot = await transaction.get(db.collection('students').doc(hunt.studentId))
+  if (!studentSnapshot.exists) throw error('not-found', 'CLASS_HUNT_STUDENT_NOT_FOUND', 'Học viên của lớp không còn tồn tại.')
+  const student = studentSnapshot.data() as ClassHuntStudentLike
+  if (nextPromo !== undefined) {
+    const rate = classHuntSubjectRate(student, hunt.subjectId)
+    try {
+      classHuntPromoCompensation({
+        pricePerMinute: rate?.pricePerMinute ?? 0,
+        currency: rate?.currency ?? '',
+        teacherLevel: 1,
+        discountPercent: nextPromo,
+      })
+    } catch (cause) {
+      if (cause instanceof ClassHuntValidationError) throw error('failed-precondition', cause.reason, cause.message)
+      throw cause
+    }
+  }
+  const previousRate = classHuntPromoPointsPer25Minutes(CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES, hunt.promoDiscountPercent)
+  const nextRate = classHuntPromoPointsPer25Minutes(CLASS_HUNT_STANDARD_POINTS_PER_25_MINUTES, nextPromo)
+  if (nextRate <= previousRate) return
+  const bookingsSnapshot = await transaction.get(
+    db.collection('bookingRequests')
+      .where('studentId', '==', hunt.studentId)
+      .limit(CLASS_HUNT_BOOKING_READ_LIMIT + 1),
+  )
+  if (bookingsSnapshot.size > CLASS_HUNT_BOOKING_READ_LIMIT) {
+    throw error('failed-precondition', 'CLASS_HUNT_BOOKING_SCAN_LIMIT', 'Lịch học viên đang quá lớn để đối soát an toàn. Vui lòng liên hệ quản trị viên.')
+  }
+  const bookings = await settleBookingsForFunds(
+    bookingsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() } as ClassHuntBookingLike)),
+    transaction,
+  )
+  const availability = classHuntSubjectAvailability({ student, subjectId: hunt.subjectId, bookings })
+  if (!availability) return
+  const affordable = affordableClassHuntSessionCount(availability.availablePoints, hunt.requestedMinutes, nextRate)
+  if (affordable < hunt.sessions.length) {
+    throw error(
+      'failed-precondition',
+      'CLASS_HUNT_PROMO_CHANGE_NOT_AFFORDABLE',
+      `${classHuntFundSummary(availability, hunt.requestedMinutes, nextRate)} Mức giảm mới chỉ đủ ${affordable}/${hunt.sessions.length} buổi. Hãy giữ mức giảm cao hơn hoặc Huỷ rồi Đăng lại với ít buổi hơn.`,
+    )
+  }
+}
+
+/**
+ * Edit an open offer's note, teacher requirement, learner audience and promo
+ * discount. Schedule and session count are immutable once published. The
+ * promo % may change while the offer is still open: pay and diamonds are only
+ * frozen onto bookings at claim, and the claim transaction re-reads the hunt.
  */
 export const updateClassHunt = onCall({
   region: 'asia-southeast1',
@@ -1507,10 +1566,15 @@ export const updateClassHunt = onCall({
   // Optional so an older cached client (note + requirements only) keeps the
   // stored audience untouched; a supplied value is strict.
   let studentAudience: ClassHuntStudentAudience | undefined
+  // Older cached clients omit the key and keep the stored promo untouched;
+  // null / '' turns the offer back into a regular class.
+  const promoSupplied = Object.prototype.hasOwnProperty.call(data, 'promoDiscountPercent')
+  let promoDiscountPercent: number | undefined
   try {
     note = normalizeClassHuntNote(data.note)
     teacherRequirements = normalizeClassHuntTeacherRequirements(data.teacherRequirements)
     studentAudience = normalizeClassHuntStudentAudience(data.studentAudience)
+    promoDiscountPercent = promoSupplied ? normalizeClassHuntPromoDiscount(data.promoDiscountPercent) : undefined
   } catch (cause) {
     if (cause instanceof ClassHuntValidationError) throw error('invalid-argument', cause.reason, cause.message)
     throw cause
@@ -1526,10 +1590,18 @@ export const updateClassHunt = onCall({
     if (current.archivedAtMs !== undefined || effectiveClassHuntStatus(current, Date.now()) !== 'open') {
       throw error('failed-precondition', 'CLASS_HUNT_NOT_OPEN', 'Lớp không còn mở (đã có gia sư nhận, đã hủy hoặc hết hạn) nên không sửa được.')
     }
+    const nextPromo = promoSupplied ? promoDiscountPercent : current.promoDiscountPercent
+    const promoChanged = nextPromo !== current.promoDiscountPercent
+    if (promoChanged) {
+      await assertPromoChangeAllowed(transaction, current, nextPromo)
+    }
     transaction.update(huntRef, {
       note: note ? note : FieldValue.delete(),
       teacherRequirements,
       ...(studentAudience ? { studentAudience } : {}),
+      ...(promoChanged
+        ? { promoDiscountPercent: nextPromo !== undefined ? nextPromo : FieldValue.delete() }
+        : {}),
       eligibleTeacherCount: matchingTeacherCount,
       activeTeacherCount,
       updatedAt: FieldValue.serverTimestamp(),
@@ -1546,20 +1618,24 @@ export const updateClassHunt = onCall({
           note: current.note || null,
           teacherRequirements: current.teacherRequirements,
           studentAudience: current.studentAudience || null,
+          promoDiscountPercent: current.promoDiscountPercent ?? null,
         },
         after: {
           note: note || null,
           teacherRequirements,
           studentAudience: studentAudience || current.studentAudience || null,
+          promoDiscountPercent: nextPromo ?? null,
         },
       },
       createdAt: FieldValue.serverTimestamp(),
     })
-    const { note: _previousNote, ...rest } = current
+    const { note: _previousNote, promoDiscountPercent: _previousPromo, ...rest } = current
     void _previousNote
+    void _previousPromo
     return {
       ...rest,
       ...(note ? { note } : {}),
+      ...(nextPromo !== undefined ? { promoDiscountPercent: nextPromo } : {}),
       teacherRequirements,
       ...(studentAudience ? { studentAudience } : {}),
       eligibleTeacherCount: matchingTeacherCount,

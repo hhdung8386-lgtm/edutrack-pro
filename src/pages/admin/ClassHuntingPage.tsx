@@ -203,11 +203,14 @@ function ClassOfferTypePicker({
   onChange,
   discount,
   onDiscountChange,
+  name = 'class-hunt-offer-type',
 }: {
   value: ClassOfferType | ''
   onChange: (type: ClassOfferType) => void
   discount: string
   onDiscountChange: (value: string) => void
+  /** Radio group name; the edit modal needs its own so it doesn't share the publish form's group. */
+  name?: string
 }) {
   const discountPercent = Number(discount)
   const discountValid = Number.isInteger(discountPercent)
@@ -219,7 +222,7 @@ function ClassOfferTypePicker({
       <legend className="sr-only">Loại lớp</legend>
       <div className="grid gap-3 md:grid-cols-2">
         <label className={`${card} ${value === 'promo' ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' : 'border-amber-200 bg-amber-50/50 hover:border-amber-300'}`}>
-          <input type="radio" name="class-hunt-offer-type" checked={value === 'promo'} onChange={() => onChange('promo')} className="h-5 w-5 shrink-0 accent-amber-500" />
+          <input type="radio" name={name} checked={value === 'promo'} onChange={() => onChange('promo')} className="h-5 w-5 shrink-0 accent-amber-500" />
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-white shadow-sm">
             <Tag className="h-5 w-5" />
           </span>
@@ -236,7 +239,7 @@ function ClassOfferTypePicker({
           </span>
         </label>
         <label className={`${card} ${value === 'standard' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-slate-50/60 hover:border-blue-200'}`}>
-          <input type="radio" name="class-hunt-offer-type" checked={value === 'standard'} onChange={() => onChange('standard')} className="h-5 w-5 shrink-0 accent-blue-700" />
+          <input type="radio" name={name} checked={value === 'standard'} onChange={() => onChange('standard')} className="h-5 w-5 shrink-0 accent-blue-700" />
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white shadow-sm">
             <GraduationCap className="h-5 w-5" />
           </span>
@@ -326,6 +329,8 @@ export function ClassHuntingPage() {
   const [editTypes, setEditTypes] = useState<ClassHuntTeacherType[]>([...CLASS_HUNT_TEACHER_TYPES])
   const [editGender, setEditGender] = useState<ClassHuntTeacherGender>('any')
   const [editAudience, setEditAudience] = useState<ClassHuntStudentAudience | ''>('')
+  const [editOfferType, setEditOfferType] = useState<ClassOfferType>('standard')
+  const [editPromoDiscount, setEditPromoDiscount] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   const lookupRequestRef = useRef(0)
@@ -596,6 +601,8 @@ export function ClassHuntingPage() {
     setEditTypes(hunt.teacherRequirements?.teacherTypes?.length ? [...hunt.teacherRequirements.teacherTypes] : [...CLASS_HUNT_TEACHER_TYPES])
     setEditGender(hunt.teacherRequirements?.gender || 'any')
     setEditAudience(hunt.studentAudience || '')
+    setEditOfferType(hunt.promoDiscountPercent ? 'promo' : 'standard')
+    setEditPromoDiscount(hunt.promoDiscountPercent ? String(hunt.promoDiscountPercent) : '')
   }
 
   const handleSaveEdit = async () => {
@@ -612,6 +619,13 @@ export function ClassHuntingPage() {
       toast.error(`Ghi chú cho gia sư tối đa ${CLASS_HUNT_NOTE_MAX_LENGTH} ký tự.`)
       return
     }
+    const editPromoPercent = Number(editPromoDiscount)
+    if (editOfferType === 'promo' && !(Number.isInteger(editPromoPercent)
+      && editPromoPercent >= CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT
+      && editPromoPercent <= CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT)) {
+      toast.error(`Mức giảm của lớp ưu đãi phải là số nguyên từ ${CLASS_HUNT_PROMO_DISCOUNT_MIN_PERCENT}% đến ${CLASS_HUNT_PROMO_DISCOUNT_MAX_PERCENT}%.`)
+      return
+    }
     setSavingEdit(true)
     try {
       await updateClassHunt(editTarget.id, {
@@ -621,8 +635,9 @@ export function ClassHuntingPage() {
           gender: editGender,
         },
         studentAudience: editAudience,
+        promoDiscountPercent: editOfferType === 'promo' ? editPromoPercent : null,
       })
-      toast.success('Đã lưu đối tượng, ghi chú và yêu cầu giáo viên. Gia sư thấy nội dung mới khi danh sách làm mới.')
+      toast.success('Đã lưu thay đổi. Gia sư thấy nội dung mới (kể cả mức ưu đãi) khi danh sách làm mới.')
       setEditTarget(null)
       await loadHunts()
     } catch (error) {
@@ -1235,8 +1250,24 @@ export function ClassHuntingPage() {
               <strong className="text-slate-950">{editTarget.student?.name || 'Học viên'}</strong> · {editTarget.subject.name} · {editTarget.sessionCount} buổi
             </p>
             <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-              Lớp đang mở chỉ sửa được đối tượng học viên, ghi chú và yêu cầu giáo viên. Muốn đổi lịch học hoặc số buổi: bấm Hủy yêu cầu, sau đó bấm Đăng lại.
+              Lớp đang mở sửa được chương trình khuyến mãi, đối tượng học viên, ghi chú và yêu cầu giáo viên. Muốn đổi lịch học hoặc số buổi: bấm Hủy yêu cầu, sau đó bấm Đăng lại.
             </p>
+            {editTarget.classHuntCompensation ? (
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                Lớp này dùng đơn giá riêng nên không đổi sang lớp ưu đãi được. Muốn áp ưu đãi: Hủy yêu cầu rồi Đăng lại.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-700">Chương trình khuyến mãi</p>
+                <ClassOfferTypePicker
+                  name="class-hunt-edit-offer-type"
+                  value={editOfferType}
+                  onChange={setEditOfferType}
+                  discount={editPromoDiscount}
+                  onDiscountChange={setEditPromoDiscount}
+                />
+              </div>
+            )}
             <StudentAudiencePicker
               name="class-hunt-edit-student-audience"
               value={editAudience}
