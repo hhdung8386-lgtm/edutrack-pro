@@ -1,5 +1,20 @@
 import type { Student, StudentSubject, TopUpBatch } from '../types'
 
+/** Firestore map key order is not a change; array order and every value are. */
+export function areCoursePackagesUnchanged(current: StudentSubject[], baseline: StudentSubject[]): boolean {
+  const ordered = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(ordered)
+    if (value && typeof value === 'object') {
+      return Object.keys(value).sort().reduce<Record<string, unknown>>((result, key) => {
+        result[key] = ordered((value as Record<string, unknown>)[key])
+        return result
+      }, {})
+    }
+    return value
+  }
+  return JSON.stringify(ordered(current)) === JSON.stringify(ordered(baseline))
+}
+
 /** Ghi thêm lịch sử theo kiểu append; không giới hạn số đợt và không ghi đè dữ liệu cũ. */
 export function appendCourseBatch(existing: TopUpBatch[] | undefined, batch: TopUpBatch): TopUpBatch[] {
   return [...(existing || []).map((item) => ({ ...item })), { ...batch }]

@@ -2184,7 +2184,9 @@ export function StudentDetailPage() {
       )}
       {showSubjectPkg && (
         <SubjectPackageModal
-          student={reconciledStudent}
+          // Editing must compare the persisted snapshot, not the rounded
+          // lesson-derived projection used by the course overview.
+          student={student}
           editingSubjectId={editingSubjectId}
           onClose={() => {
             setShowSubjectPkg(false)

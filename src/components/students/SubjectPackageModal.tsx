@@ -1,4 +1,4 @@
-import { getStudentSubjects } from '@/lib/studentCourseLedger'
+import { areCoursePackagesUnchanged, getStudentSubjects } from '@/lib/studentCourseLedger'
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isGroupClass } from '@/lib/groupClasses'
 import { createCourseSubjectId, getCatalogSubjectId } from '@/lib/courseIdentity'
@@ -212,7 +212,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
         if (!studentSnapshot.exists()) throw new Error('Hồ sơ học viên không còn tồn tại')
         const freshStudent = studentSnapshot.data() as Student
         if (isEdit && !editingPkg) throw new Error('Khóa học không còn tồn tại; hãy mở lại hồ sơ')
-        if (JSON.stringify(getStudentSubjects(freshStudent)) !== JSON.stringify(currentSubjects)) {
+        if (!areCoursePackagesUnchanged(getStudentSubjects(freshStudent), currentSubjects)) {
           throw new Error('Khóa học vừa thay đổi. Vui lòng đóng và mở lại form để lưu trên dữ liệu mới nhất.')
         }
         const catalogSnapshot = await transaction.get(doc(db, 'subjects', data.subjectId))
@@ -448,7 +448,17 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
 
 
 
-        // Recalculate aggregates
+        // Metadata/default SALE edits have no financial transition. Preserve
+        // all stored aggregate counters, status and hold fields verbatim.
+        if (isEdit && data.subjectId === getCatalogSubjectId(editingSubjectId!)) {
+          transaction.update(studentRef, {
+            subjects: updatedSubjects,
+            updatedAt: serverTimestamp(),
+          })
+          return
+        }
+
+        // Recalculate aggregates only when adding/transferring course funds.
         const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
         const aggUsedSessions = updatedSubjects.reduce((sum, s) => sum + s.usedSessions, 0)
         const aggRemainingSessions = updatedSubjects.reduce((sum, s) => sum + s.remainingSessions, 0)

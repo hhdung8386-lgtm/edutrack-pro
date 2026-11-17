@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Student } from '../src/types/index.ts'
 import {
+  areCoursePackagesUnchanged,
   appendCourseBatch,
   deleteCourseEntry,
   editCourseEntry,
@@ -9,6 +10,44 @@ import {
   getRemainingAfterFundChange,
   getStatusAfterCourseRightsAdded,
 } from '../src/lib/studentCourseLedger.ts'
+
+test('snapshot comparison accepts reordered Firestore map fields, including nested payment maps', () => {
+  const subjects = studentFixture().subjects!
+  const reorder = (value: unknown): unknown => Array.isArray(value) ? value.map(reorder)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reorder(item)]))
+      : value
+  assert.equal(areCoursePackagesUnchanged(reorder(subjects) as typeof subjects, subjects), true)
+})
+
+test('rounded overview counters are not a valid persisted form baseline', () => {
+  const subjects = studentFixture().subjects!
+  subjects[0] = { ...subjects[0], totalMinutes: 1200, usedMinutes: 18, remainingMinutes: 1182, usedSessions: 0.72, remainingSessions: 47.28 }
+  const display = subjects.map((course) => ({ ...course, remainingSessions: Math.floor(course.remainingMinutes / course.minutesPerSession) }))
+  assert.equal(areCoursePackagesUnchanged(subjects, display), false)
+  assert.equal(areCoursePackagesUnchanged(subjects, subjects.map((course) => ({ ...course }))), true)
+})
+
+test('snapshot comparison rejects genuine concurrent top-up or attendance counter changes', () => {
+  const subjects = studentFixture().subjects!
+  for (const field of ['totalMinutes', 'usedMinutes', 'remainingMinutes', 'totalSessions', 'usedSessions', 'remainingSessions'] as const) {
+    const changed = subjects.map((course) => ({ ...course, [field]: course[field] + 1 }))
+    assert.equal(areCoursePackagesUnchanged(changed, subjects), false, field)
+  }
+})
+
+test('snapshot comparison rejects another operator changing SALE or course metadata', () => {
+  const subjects = studentFixture().subjects!
+  assert.equal(areCoursePackagesUnchanged(subjects.map((course) => ({ ...course, promoDiscountPercent: 30 })), subjects), false)
+  assert.equal(areCoursePackagesUnchanged(subjects.map((course) => ({ ...course, timetableNote: 'Changed by another operator' })), subjects), false)
+  assert.equal(areCoursePackagesUnchanged([], subjects), false)
+})
+
+test('snapshot comparison retains payment FIFO order as part of the stale-write guard', () => {
+  const subjects = studentFixture().subjects!
+  const changed = subjects.map((course) => ({ ...course, batches: [...(course.batches || [])].reverse() }))
+  assert.equal(areCoursePackagesUnchanged(changed, subjects), false)
+})
 
 function studentFixture(): Student {
   return {
