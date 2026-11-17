@@ -870,6 +870,13 @@ export function BookingSchedulesPage() {
     return selectedSlots.some((s) => s.dateISO === dateISO && s.time === time)
   }
 
+  useEffect(() => {
+    const course = selectedStudent?.subjects?.find((item) => item.subjectId === selectedSubjectId)
+    setPromoDiscountPercent(normalizeManualPromoDiscount(course?.promoDiscountPercent))
+    // A live snapshot must not erase the operator's explicit override.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStudent?.id, selectedSubjectId])
+
   const handleStudentSelect = (student: Student) => {
     setScheduleConflictMessage('')
     if (isGroupClass(student) && selectedTeacher && !teacherSupportsGroupClassDeliveryMode(selectedTeacher, student)) {

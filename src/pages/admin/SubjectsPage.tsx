@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -346,22 +347,38 @@ export function SubjectsPage() {
       return () => window.clearTimeout(timer)
     }
     let cancelled = false
-    Promise.all([
-      getDocs(query(collection(db, 'students'), where('subjectId', '==', deletingSubject.id))),
-      getDocs(query(collection(db, 'lessons'), where('subjectId', '==', deletingSubject.id))),
-      getDocs(query(collection(db, 'bookingRequests'), where('subjectId', '==', deletingSubject.id))),
-      getDocs(query(collection(db, 'topUpPackages'), where('subjectId', '==', deletingSubject.id))),
-      getDocs(query(collection(db, 'topUpRequests'), where('subjectId', '==', deletingSubject.id))),
-    ]).then(([sSnap, lSnap, bSnap, pSnap, rSnap]) => {
-      if (!cancelled) {
-        setDeleteInfo({
-          studentCount: sSnap.size,
-          lessonCount: lSnap.size,
-          bookingCount: bSnap.size,
-          packageCount: pSnap.size,
-          requestCount: rSnap.size,
-        })
+    void (async () => {
+      const catalogId = deletingSubject.id
+      // Wallet IDs can differ from the catalog ID. Discover concrete courses
+      // once, then query their references in bounded single-field groups.
+      const [studentSnapshot, packages, requests] = await Promise.all([
+        getDocs(collection(db, 'students')),
+        getDocs(query(collection(db, 'topUpPackages'), where('subjectId', '==', catalogId))),
+        getDocs(query(collection(db, 'topUpRequests'), where('subjectId', '==', catalogId))),
+      ])
+      const courseIds = new Set([catalogId])
+      const matchingStudents = studentSnapshot.docs.filter((document) => {
+        const student = document.data()
+        const courses = Array.isArray(student.subjects) ? student.subjects : []
+        const ids = [student.subjectId, ...courses.map((course) => course.subjectId)]
+          .filter((id): id is string => typeof id === 'string' && getCatalogSubjectId(id) === catalogId)
+        ids.forEach((id) => courseIds.add(id))
+        return ids.length > 0
+      })
+      const ids = [...courseIds]
+      const chunks = Array.from({ length: Math.ceil(ids.length / 10) }, (_, index) => ids.slice(index * 10, index * 10 + 10))
+      const [lessons, bookings] = await Promise.all(['lessons', 'bookingRequests'].map((name) =>
+        Promise.all(chunks.map((ids) => getDocs(query(collection(db, name), where('subjectId', 'in', ids))))),
+      ))
+      return {
+        studentCount: matchingStudents.length,
+        lessonCount: lessons.reduce((sum, snapshot) => sum + snapshot.size, 0),
+        bookingCount: bookings.reduce((sum, snapshot) => sum + snapshot.size, 0),
+        packageCount: packages.size,
+        requestCount: requests.size,
       }
+    })().then((info) => {
+      if (!cancelled) setDeleteInfo(info)
     }).catch((error) => {
       console.error('Unable to inspect all subject references:', error)
       if (!cancelled) {

@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState } from 'react'
 import { collection, query, where, onSnapshot, orderBy, getDocs, doc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -305,8 +306,8 @@ export function StudentsPage({ learningScheduleType = 'all' }: { learningSchedul
     const matchBranch = isExactCodeMatch || branchFilter === 'all' || s.branchId === branchFilter
     // Học viên có thể học nhiều gói môn -> khớp gói chính hoặc bất kỳ gói nào
     const matchSubject = isExactCodeMatch || subjectFilter === 'all'
-      || s.subjectId === subjectFilter
-      || (s.subjects || []).some(sub => sub.subjectId === subjectFilter)
+      || getCatalogSubjectId(s.subjectId || '') === subjectFilter
+      || (s.subjects || []).some(sub => getCatalogSubjectId(sub.subjectId) === subjectFilter)
     return matchScheduleType && matchSearch && matchStatus && matchBranch && matchSubject
   })
 

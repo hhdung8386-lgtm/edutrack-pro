@@ -21,7 +21,10 @@ export interface CountryPriceInfo {
 }
 
 export interface StudentSubject {
+  /** Stable course wallet key; courseIdentity resolves the catalog for repeated courses. */
   subjectId: string
+  /** Default SALE for new scheduling only; existing booking snapshots stay immutable. */
+  promoDiscountPercent?: number
   subjectName: string
   totalSessions: number
   usedSessions: number
@@ -281,6 +284,7 @@ export interface Lesson {
   teacherId: string
   teacherCode: string
   teacherName: string
+  /** Exact course wallet key; decode with courseIdentity only for catalog reads. */
   subjectId: string
   subjectName: string
   curriculumLink?: string
@@ -466,6 +470,7 @@ export interface BookingRequest {
   groupClassCode?: string
   groupClassName?: string
   groupClassMemberIds?: string[]
+  /** Exact course wallet key; keep intact for holds, approval and refunds. */
   subjectId?: string
   subjectName?: string
   requestedDay: DayOfWeek

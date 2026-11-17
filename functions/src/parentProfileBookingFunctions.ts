@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from './courseIdentity'
 import { FieldValue, Firestore, type DocumentData, type QueryDocumentSnapshot } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
@@ -219,7 +220,7 @@ export const createParentProfileBooking = onCall({
     if (teacher.status !== 'active') {
       throw callableError('failed-precondition', 'PARENT_BOOKING_TEACHER_INACTIVE', 'Gia sư hiện không còn nhận lịch.')
     }
-    if (!Array.isArray(teacher.subjectIds) || !teacher.subjectIds.includes(request.subjectId)) {
+    if (!Array.isArray(teacher.subjectIds) || !teacher.subjectIds.includes(getCatalogSubjectId(request.subjectId))) {
       throw callableError('failed-precondition', 'PARENT_BOOKING_SUBJECT_MISMATCH', 'Gia sư không còn được phân công môn học đã chọn.')
     }
     if (!teacherAvailabilityCoversParentBooking(availabilitySnapshot.data(), request)) {

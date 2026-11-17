@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useMemo, useState } from 'react'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
@@ -285,10 +286,11 @@ export function ReportsPage() {
   const subjects = useMemo(() => {
     const bySubject = new Map<string, SubjectFundSummary>()
     fundRows.forEach((row) => {
-      const key = `${row.subjectId}:${row.subjectName}`
+      const catalogName = getCatalogSubjectId(row.subjectId) === row.subjectId ? row.subjectName : row.subjectName.replace(/ · Khóa \d+$/, '')
+      const key = `${getCatalogSubjectId(row.subjectId)}:${catalogName}`
       const current = bySubject.get(key) || {
         id: key,
-        subjectName: row.subjectName,
+        subjectName: catalogName,
         studentCount: 0,
         availableMinutes: 0,
         bookedMinutes: 0,

@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -166,7 +167,7 @@ export function ApprovalsPage() {
             : []
 
         const resolvedSubjects = await Promise.all(subjects.map(async (sub) => {
-          const subjSnap = await getDoc(doc(db, 'subjects', sub.subjectId))
+          const subjSnap = await getDoc(doc(db, 'subjects', getCatalogSubjectId(sub.subjectId)))
           const data = subjSnap.exists() ? subjSnap.data() : null
           return {
             ...sub,
@@ -390,7 +391,7 @@ export function ApprovalsPage() {
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
           const [teacherSnap, subjectCatalogSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', approvingLesson.teacherId)),
-            tx.get(doc(db, 'subjects', approveSubjectId)),
+            tx.get(doc(db, 'subjects', getCatalogSubjectId(approveSubjectId))),
             ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])
           const teacherData = teacherSnap.data()

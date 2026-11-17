@@ -1,3 +1,4 @@
+import { getCatalogSubjectId, courseSubjectName } from './courseIdentity.ts'
 type UnknownRecord = Record<string, unknown>
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -11,16 +12,20 @@ export function buildStudentSubjectNamePatch(
 ): UnknownRecord | null {
   const patch: UnknownRecord = {}
 
-  if (String(data.subjectId || '') === subjectId && data.subjectName !== subjectName) {
-    patch.subjectName = subjectName
+  const courseId = String(data.subjectId || '')
+  const nextName = courseSubjectName(subjectName, courseId, String(data.subjectName || ''))
+  if (getCatalogSubjectId(courseId) === subjectId && data.subjectName !== nextName) {
+    patch.subjectName = nextName
   }
 
   if (Array.isArray(data.subjects)) {
     let changed = false
     const subjects = data.subjects.map((item) => {
-      if (!isRecord(item) || String(item.subjectId || '') !== subjectId || item.subjectName === subjectName) return item
+      if (!isRecord(item) || getCatalogSubjectId(String(item.subjectId || '')) !== subjectId) return item
+      const nextName = courseSubjectName(subjectName, String(item.subjectId || ''), String(item.subjectName || ''))
+      if (item.subjectName === nextName) return item
       changed = true
-      return { ...item, subjectName }
+      return { ...item, subjectName: nextName }
     })
     if (changed) patch.subjects = subjects
   }

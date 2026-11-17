@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { getStudentSubjects } from '@/lib/studentCourseLedger'
+import { getCanonicalSubjectRate } from '@/lib/countryPricing'
+import { isGroupClass } from '@/lib/groupClasses'
+import { createCourseSubjectId, getCatalogSubjectId } from '@/lib/courseIdentity'
+import { MANUAL_PROMO_DISCOUNT_OPTIONS } from '@/lib/manualPromoDiscount'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { doc, getDocs, collection, query, where, serverTimestamp, writeBatch, type DocumentReference } from 'firebase/firestore'
+import { doc, getDocs, collection, query, where, serverTimestamp, runTransaction, type DocumentReference } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Student, Subject, StudentSubject } from '@/types'
 import { Modal } from '@/components/ui/Modal'
@@ -17,7 +22,8 @@ import { MAX_ADDITIONAL_CURRICULUM_LINKS, parseAdditionalCurriculumRows } from '
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
-  totalMinutes: z.coerce.number().min(1, 'Tối thiểu 1 kim cương'),
+  totalMinutes: z.coerce.number().finite().min(1, 'Tối thiểu 1 kim cương'),
+  promoDiscountPercent: z.coerce.number().refine((value) => value === 0 || (MANUAL_PROMO_DISCOUNT_OPTIONS as readonly number[]).includes(value), 'Chọn mức giảm hợp lệ'),
   curriculumLink: z.string().optional(),
   supplementaryCurriculumLink: z.string().optional(),
   timetableNote: z.string().optional(),
@@ -98,7 +104,6 @@ interface Props {
   student: Student
   editingSubjectId?: string // If present, edit mode; otherwise, add mode
   onClose: () => void
-  /** Chọn môn học viên đã có: mở form cộng đợt thanh toán mới vào đúng khóa đó. */
   onAddToOwnedCourse?: (subjectId: string) => void
 }
 
@@ -110,9 +115,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   const [selectedRequests, setSelectedRequests] = useState<string[]>([])
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const isEdit = !!editingSubjectId
+  const [newCourseToken] = useState(() => crypto.randomUUID().replace(/-/g, ''))
 
-  // Extract current subjects already set up
-  const currentSubjects = useMemo(() => student.subjects || [], [student.subjects])
+  // Freeze the form baseline, including a materialized legacy wallet. A live
+  // snapshot must never turn stale form amounts into an accepted overwrite.
+  const [currentSubjects] = useState(() => getStudentSubjects(student))
 
   // Find the package being edited
   const editingPkg = isEdit
@@ -134,7 +141,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
     resolver: zodResolver(schema) as any,
     defaultValues: editingPkg
       ? {
-          subjectId: editingPkg.subjectId,
+          subjectId: getCatalogSubjectId(editingPkg.subjectId),
+          promoDiscountPercent: editingPkg.promoDiscountPercent || 0,
           totalMinutes: editingPkg.totalMinutes,
           curriculumLink: editingPkg.curriculumLink || '',
           supplementaryCurriculumLink: editingPkg.supplementaryCurriculumLink || '',
@@ -147,6 +155,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
         }
       : {
           subjectId: '',
+          promoDiscountPercent: 0,
           totalMinutes: 500,
           curriculumLink: '',
           supplementaryCurriculumLink: '',
@@ -161,19 +170,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
 
   const watchedSubjectId = watch('subjectId')
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
-  const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== editingSubjectId)
+  const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== getCatalogSubjectId(editingSubjectId))
   const transferableMinutes = editingPkg?.remainingMinutes || 0
   const transferredSessions = Math.round((transferableMinutes / 25) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
     subject.name.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
-  )
-
-  // Mỗi môn một quỹ: môn học viên đã có (kể cả học với nhiều gia sư) không tạo
-  // khóa thứ hai mà mở form cộng đợt thanh toán mới vào khóa có sẵn.
-  const ownedMatches = currentSubjects.filter((owned) =>
-    !isEdit
-    && owned.subjectId !== editingSubjectId
-    && owned.subjectName.toLocaleLowerCase('vi').includes(subjectSearch.trim().toLocaleLowerCase('vi')),
   )
 
   const subjectIdsKey = student.subjects?.map(s => s.subjectId).join(',') || ''
@@ -185,8 +186,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
         const list = sortSubjectsByName(
           snap.docs.map(d => ({ id: d.id, ...d.data() } as Subject)).filter(isSelectableSubject),
         )
-        const existingIds = currentSubjects.map(cs => cs.subjectId)
-        setSubjectsList(list.filter(s => s.id === editingSubjectId || !existingIds.includes(s.id)))
+        setSubjectsList(list)
       })
       .catch((err) => {
         console.error(err)
@@ -204,273 +204,296 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
     setLoading(true)
     try {
       const minutesPerSession = 25
-      const updatedSubjects: StudentSubject[] = [...currentSubjects]
-      let bookingSubjectTransfer: {
-        refs: DocumentReference[]
-        subjectId: string
-        subjectName: string
-      } | null = null
-      const today = new Date()
-      const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
-
-      const adjustBatches = (
-        currentBatches: any[] | undefined,
-        newTotal: number,
-        originalTotal: number
-      ) => {
-        const rawBatches = (currentBatches && currentBatches.length > 0)
-          ? currentBatches
-          : [{ id: '1', createdAt: dateString, totalSessions: originalTotal }]
-
-        const delta = newTotal - originalTotal
-        if (delta === 0) return rawBatches
-
-        if (delta > 0) {
-          return [
-            ...rawBatches,
-            { id: String(rawBatches.length + 1), createdAt: dateString, totalSessions: delta }
-          ]
-        } else {
-          let toRemove = -delta
-          const result = []
-          for (let i = rawBatches.length - 1; i >= 0; i--) {
-            const batch = rawBatches[i]
-            if (toRemove > 0) {
-              if (batch.totalSessions > toRemove) {
-                result.unshift({ ...batch, totalSessions: batch.totalSessions - toRemove })
-                toRemove = 0
-              } else {
-                toRemove -= batch.totalSessions
-              }
-            } else {
-              result.unshift(batch)
-            }
-          }
-          if (result.length === 0) {
-            return [{ id: '1', createdAt: dateString, totalSessions: newTotal }]
-          }
-          return result.map((b, idx) => ({ ...b, id: String(idx + 1) }))
+      const studentRef = doc(db, 'students', student.id)
+      // Optimistic transaction: never overwrite a package changed by attendance,
+      // a top-up, or another administrator while this form was open.
+      await runTransaction(db, async (transaction) => {
+        const studentSnapshot = await transaction.get(studentRef)
+        if (!studentSnapshot.exists()) throw new Error('Hồ sơ học viên không còn tồn tại')
+        const freshStudent = studentSnapshot.data() as Student
+        if (isEdit && !editingPkg) throw new Error('Khóa học không còn tồn tại; hãy mở lại hồ sơ')
+        if (JSON.stringify(getStudentSubjects(freshStudent)) !== JSON.stringify(currentSubjects)) {
+          throw new Error('Khóa học vừa thay đổi. Vui lòng đóng và mở lại form để lưu trên dữ liệu mới nhất.')
         }
-      }
+        const catalogSnapshot = await transaction.get(doc(db, 'subjects', data.subjectId))
+        if (!catalogSnapshot.exists() || !isSelectableSubject(catalogSnapshot.data())) {
+          throw new Error('Môn học đã tạm dừng hoặc bị xóa; hãy chọn lại môn học')
+        }
+        const catalogRate = getCanonicalSubjectRate(catalogSnapshot.data())
+        if (data.promoDiscountPercent > 0) {
+          const existingRate = editingPkg && data.subjectId === getCatalogSubjectId(editingPkg.subjectId)
+            ? getCanonicalSubjectRate(editingPkg) : null
+          const rate = existingRate && existingRate.price > 0 ? existingRate : catalogRate
+          if (isGroupClass(freshStudent) || !(rate.price > 0) || (rate.currency || 'VND').toUpperCase() !== 'VND') {
+            throw new Error('Ưu đãi SALE cần khóa 1 kèm 1 có đơn giá VND. Vui lòng kiểm tra cấu hình môn học.')
+          }
+        }
+        const updatedSubjects = getStudentSubjects(freshStudent)
+        const courseSettings = { promoDiscountPercent: data.promoDiscountPercent }
+        const matchingCourses = updatedSubjects.filter((pkg) => getCatalogSubjectId(pkg.subjectId) === data.subjectId)
+        const needsNewCourse = !isEdit || data.subjectId !== getCatalogSubjectId(editingSubjectId!)
+        const newCourseId = needsNewCourse && matchingCourses.length ? createCourseSubjectId(data.subjectId, newCourseToken) : data.subjectId
+        const nextCourseNumber = Math.max(1, ...matchingCourses.map((pkg) => Number(/ · Khóa (\d+)$/.exec(pkg.subjectName)?.[1]) || 1)) + 1
+        const newCourseName = (name: string) => matchingCourses.length ? `${name} · Khóa ${nextCourseNumber}` : name
+        let bookingSubjectTransfer: {
+          refs: DocumentReference[]
+          subjectId: string
+          subjectName: string
+        } | null = null
+        const today = new Date()
+        const dateString = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
 
-      if (isEdit && editingPkg) {
-        // Edit mode
-        const index = updatedSubjects.findIndex(s => s.subjectId === editingSubjectId)
-        if (index !== -1) {
-          const prevPkg = updatedSubjects[index]
-          const selectedSubjectObj = subjectsList.find(s => s.id === data.subjectId)
-          const isSubjectChanged = data.subjectId !== editingSubjectId
+        const adjustBatches = (
+          currentBatches: any[] | undefined,
+          newTotal: number,
+          originalTotal: number
+        ) => {
+          const rawBatches = (currentBatches && currentBatches.length > 0)
+            ? currentBatches
+            : [{ id: '1', createdAt: dateString, totalSessions: originalTotal }]
 
-          if (isSubjectChanged) {
-            if (!selectedSubjectObj) throw new Error('Môn học mới không hợp lệ')
-            if (updatedSubjects.some((pkg, pkgIndex) => pkgIndex !== index && pkg.subjectId === data.subjectId)) {
-              throw new Error('Học viên đã có gói môn học này')
-            }
+          const delta = newTotal - originalTotal
+          if (delta === 0) return rawBatches
 
-            if (prevPkg.usedMinutes > 0) {
-              if (prevPkg.remainingMinutes <= 0) {
-                throw new Error('Gói môn cũ không còn kim cương để chuyển sang môn mới')
-              }
-
-              const historicalSessions = prevPkg.usedSessions || Math.round(
-                (prevPkg.usedMinutes / (prevPkg.minutesPerSession || 50)) * 100,
-              ) / 100
-              const newSessions = Math.round((prevPkg.remainingMinutes / minutesPerSession) * 100) / 100
-
-              updatedSubjects[index] = {
-                ...prevPkg,
-                totalSessions: historicalSessions,
-                remainingSessions: 0,
-                totalMinutes: prevPkg.usedMinutes,
-                remainingMinutes: 0,
-                batches: adjustBatches(prevPkg.batches, historicalSessions, prevPkg.totalSessions)
-              }
-              updatedSubjects.push({
-                subjectId: selectedSubjectObj.id,
-                subjectName: selectedSubjectObj.name,
-                totalSessions: newSessions,
-                usedSessions: 0,
-                remainingSessions: newSessions,
-                minutesPerSession: minutesPerSession,
-                totalMinutes: prevPkg.remainingMinutes,
-                usedMinutes: 0,
-                remainingMinutes: prevPkg.remainingMinutes,
-                pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-                currency: selectedSubjectObj.currency || 'VND',
-                batches: [{
-                  id: '1',
-                  createdAt: dateString,
-                  totalSessions: newSessions
-                }],
-                curriculumLink: data.curriculumLink || '',
-                supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
-                additionalCurriculumLinks,
-                timetableNote: data.timetableNote || '',
-                studentRequests: selectedRequests,
-                focusSkills: selectedSkills
-              })
-            } else {
-              const newTotalMinutes = data.totalMinutes
-              const calculatedTotalSessions = Math.round(newTotalMinutes / minutesPerSession)
-              updatedSubjects[index] = {
-                ...prevPkg,
-                subjectId: selectedSubjectObj.id,
-                subjectName: selectedSubjectObj.name,
-                pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-                currency: selectedSubjectObj.currency || 'VND',
-                totalSessions: calculatedTotalSessions,
-                remainingSessions: calculatedTotalSessions,
-                minutesPerSession: minutesPerSession,
-                totalMinutes: newTotalMinutes,
-                remainingMinutes: newTotalMinutes,
-                batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
-                curriculumLink: data.curriculumLink || '',
-                supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
-                additionalCurriculumLinks,
-                timetableNote: data.timetableNote || '',
-                studentRequests: selectedRequests,
-                focusSkills: selectedSkills
-              }
-            }
-
-            // Read by studentId only so the transfer never depends on a composite index.
-            // The student package and every active booking are committed atomically below.
-            if (editingSubjectId && data.subjectId !== editingSubjectId && selectedSubjectObj) {
-              const bookingsSnap = await getDocs(query(
-                collection(db, 'bookingRequests'),
-                where('studentId', '==', student.id),
-              ))
-              const refs = bookingsSnap.docs
-                .filter((bookingDocument) => {
-                  const booking = bookingDocument.data()
-                  return booking.subjectId === editingSubjectId
-                    && (booking.status === 'confirmed' || booking.status === 'pending')
-                    && !booking.lessonId
-                })
-                .map((bookingDocument) => bookingDocument.ref)
-
-              if (refs.length > 499) {
-                throw new Error('Học viên có quá nhiều lịch đang giữ chỗ; vui lòng liên hệ kỹ thuật để chuyển môn an toàn')
-              }
-
-              bookingSubjectTransfer = {
-                refs,
-                subjectId: selectedSubjectObj.id,
-                subjectName: selectedSubjectObj.name,
-              }
-            }
+          if (delta > 0) {
+            return [
+              ...rawBatches,
+              { id: String(rawBatches.length + 1), createdAt: dateString, totalSessions: delta }
+            ]
           } else {
-            const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
-            const delta = calculatedTotalSessions - prevPkg.totalSessions
-            const newRemainingSessions = prevPkg.remainingSessions + delta
-            const newTotalMinutes = data.totalMinutes
-            const newRemainingMinutes = Math.max(0, newTotalMinutes - prevPkg.usedMinutes)
-
-            updatedSubjects[index] = {
-              ...prevPkg,
-              totalSessions: calculatedTotalSessions,
-              minutesPerSession: minutesPerSession,
-              remainingSessions: newRemainingSessions,
-              totalMinutes: newTotalMinutes,
-              remainingMinutes: newRemainingMinutes,
-              batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
-              curriculumLink: data.curriculumLink || '',
-              supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
-              additionalCurriculumLinks,
-              timetableNote: data.timetableNote || '',
-              studentRequests: selectedRequests,
-              focusSkills: selectedSkills
+            let toRemove = -delta
+            const result = []
+            for (let i = rawBatches.length - 1; i >= 0; i--) {
+              const batch = rawBatches[i]
+              if (toRemove > 0) {
+                if (batch.totalSessions > toRemove) {
+                  result.unshift({ ...batch, totalSessions: batch.totalSessions - toRemove })
+                  toRemove = 0
+                } else {
+                  toRemove -= batch.totalSessions
+                }
+              } else {
+                result.unshift(batch)
+              }
             }
+            if (result.length === 0) {
+              return [{ id: '1', createdAt: dateString, totalSessions: newTotal }]
+            }
+            return result.map((b, idx) => ({ ...b, id: String(idx + 1) }))
           }
         }
-      } else {
-        // Add mode
-        const selectedSubjectObj = subjectsList.find(s => s.id === data.subjectId)
-        if (!selectedSubjectObj) {
-          toast.error('Môn học không hợp lệ')
-          return
-        }
 
-        const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
-        const newPkg: StudentSubject = {
-          subjectId: data.subjectId,
-          subjectName: selectedSubjectObj.name,
-          totalSessions: calculatedTotalSessions,
-          usedSessions: 0,
-          remainingSessions: calculatedTotalSessions,
-          minutesPerSession: minutesPerSession,
-          totalMinutes: data.totalMinutes,
-          usedMinutes: 0,
-          remainingMinutes: data.totalMinutes,
-          pricePerMinute: selectedSubjectObj.pricePerMinute || 0,
-          currency: selectedSubjectObj.currency || 'VND',
-          batches: [{
-            id: '1',
-            createdAt: dateString,
+        if (isEdit && editingPkg) {
+          // Edit mode
+          const index = updatedSubjects.findIndex(s => s.subjectId === editingSubjectId)
+          if (index !== -1) {
+            const prevPkg = updatedSubjects[index]
+            const selectedSubjectObj = { id: catalogSnapshot.id, ...catalogSnapshot.data() } as Subject
+            const isSubjectChanged = data.subjectId !== getCatalogSubjectId(editingSubjectId!)
+
+            if (isSubjectChanged) {
+              if (!selectedSubjectObj) throw new Error('Môn học mới không hợp lệ')
+
+              if (prevPkg.usedMinutes > 0) {
+                if (prevPkg.remainingMinutes <= 0) {
+                  throw new Error('Gói môn cũ không còn kim cương để chuyển sang môn mới')
+                }
+
+                const historicalSessions = prevPkg.usedSessions || Math.round(
+                  (prevPkg.usedMinutes / (prevPkg.minutesPerSession || 50)) * 100,
+                ) / 100
+                const newSessions = Math.round((prevPkg.remainingMinutes / minutesPerSession) * 100) / 100
+
+                updatedSubjects[index] = {
+                  ...prevPkg,
+                  totalSessions: historicalSessions,
+                  remainingSessions: 0,
+                  totalMinutes: prevPkg.usedMinutes,
+                  remainingMinutes: 0,
+                  batches: adjustBatches(prevPkg.batches, historicalSessions, prevPkg.totalSessions)
+                }
+                updatedSubjects.push({
+                  subjectId: newCourseId,
+                  subjectName: newCourseName(selectedSubjectObj.name),
+                  totalSessions: newSessions,
+                  usedSessions: 0,
+                  remainingSessions: newSessions,
+                  minutesPerSession: minutesPerSession,
+                  totalMinutes: prevPkg.remainingMinutes,
+                  usedMinutes: 0,
+                  remainingMinutes: prevPkg.remainingMinutes,
+                  pricePerMinute: catalogRate.price,
+                  currency: catalogRate.currency,
+                  batches: [{
+                    id: '1',
+                    createdAt: dateString,
+                    totalSessions: newSessions
+                  }],
+                  ...courseSettings,
+                  curriculumLink: data.curriculumLink || '',
+                  supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                  additionalCurriculumLinks,
+                  timetableNote: data.timetableNote || '',
+                  studentRequests: selectedRequests,
+                  focusSkills: selectedSkills
+                })
+              } else {
+                const newTotalMinutes = data.totalMinutes
+                const calculatedTotalSessions = Math.round(newTotalMinutes / minutesPerSession)
+                updatedSubjects[index] = {
+                  ...prevPkg,
+                  subjectId: newCourseId,
+                  subjectName: newCourseName(selectedSubjectObj.name),
+                  pricePerMinute: catalogRate.price,
+                  currency: catalogRate.currency,
+                  totalSessions: calculatedTotalSessions,
+                  remainingSessions: calculatedTotalSessions,
+                  minutesPerSession: minutesPerSession,
+                  totalMinutes: newTotalMinutes,
+                  remainingMinutes: newTotalMinutes,
+                  batches: adjustBatches(prevPkg.batches, calculatedTotalSessions, prevPkg.totalSessions),
+                  ...courseSettings,
+                  curriculumLink: data.curriculumLink || '',
+                  supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                  additionalCurriculumLinks,
+                  timetableNote: data.timetableNote || '',
+                  studentRequests: selectedRequests,
+                  focusSkills: selectedSkills
+                }
+              }
+
+              // Read by studentId only so the transfer never depends on a composite index.
+              // The student package and every active booking are committed atomically below.
+              if (editingSubjectId && data.subjectId !== getCatalogSubjectId(editingSubjectId) && selectedSubjectObj) {
+                const bookingsSnap = await getDocs(query(
+                  collection(db, 'bookingRequests'),
+                  where('studentId', '==', student.id),
+                ))
+                const refs = bookingsSnap.docs
+                  .filter((bookingDocument) => {
+                    const booking = bookingDocument.data()
+                    return booking.subjectId === editingSubjectId
+                      && (booking.status === 'confirmed' || booking.status === 'pending')
+                      && !booking.lessonId
+                  })
+                  .map((bookingDocument) => bookingDocument.ref)
+
+                if (refs.length > 499) {
+                  throw new Error('Học viên có quá nhiều lịch đang giữ chỗ; vui lòng liên hệ kỹ thuật để chuyển môn an toàn')
+                }
+
+                bookingSubjectTransfer = {
+                  refs,
+                  subjectId: newCourseId,
+                  subjectName: newCourseName(selectedSubjectObj.name),
+                }
+              }
+            } else {
+              // This form edits metadata/default SALE. Quota changes belong to
+              // payment entries, and must not re-round legacy 50-minute counters.
+              updatedSubjects[index] = {
+                ...prevPkg,
+                ...(data.promoDiscountPercent > 0 && getCanonicalSubjectRate(prevPkg).price <= 0
+                  ? { pricePerMinute: catalogRate.price, currency: catalogRate.currency }
+                  : {}),
+                ...courseSettings,
+                curriculumLink: data.curriculumLink || '',
+                supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+                additionalCurriculumLinks,
+                timetableNote: data.timetableNote || '',
+                studentRequests: selectedRequests,
+                focusSkills: selectedSkills
+              }
+            }
+          }
+        } else {
+          // Add mode
+          const selectedSubjectObj = { id: catalogSnapshot.id, ...catalogSnapshot.data() } as Subject
+
+          const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
+          const newPkg: StudentSubject = {
+            subjectId: newCourseId,
+            subjectName: newCourseName(selectedSubjectObj.name),
             totalSessions: calculatedTotalSessions,
-            kind: 'payment',
-            learningMinutes: data.totalMinutes,
-            diamonds: data.totalMinutes,
-            content: data.paymentContent?.trim() || 'Thanh toán đợt 1',
-            paymentDate: inputDateToDisplay(data.paymentDate) || dateString,
-            note: data.paymentNote?.trim() || '',
-          }],
-          curriculumLink: data.curriculumLink || '',
-          supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
-          additionalCurriculumLinks,
-          timetableNote: data.timetableNote || '',
-          studentRequests: selectedRequests,
-          focusSkills: selectedSkills
+            usedSessions: 0,
+            remainingSessions: calculatedTotalSessions,
+            minutesPerSession: minutesPerSession,
+            totalMinutes: data.totalMinutes,
+            usedMinutes: 0,
+            remainingMinutes: data.totalMinutes,
+            pricePerMinute: catalogRate.price,
+            currency: catalogRate.currency,
+            batches: [{
+              id: '1',
+              createdAt: dateString,
+              totalSessions: calculatedTotalSessions,
+              kind: 'payment',
+              learningMinutes: data.totalMinutes,
+              diamonds: data.totalMinutes,
+              content: data.paymentContent?.trim() || 'Thanh toán đợt 1',
+              paymentDate: inputDateToDisplay(data.paymentDate) || dateString,
+              note: data.paymentNote?.trim() || '',
+            }],
+            ...courseSettings,
+            curriculumLink: data.curriculumLink || '',
+            supplementaryCurriculumLink: data.supplementaryCurriculumLink || '',
+            additionalCurriculumLinks,
+            timetableNote: data.timetableNote || '',
+            studentRequests: selectedRequests,
+            focusSkills: selectedSkills
+          }
+
+          updatedSubjects.push(newPkg)
         }
 
-        updatedSubjects.push(newPkg)
-      }
 
 
+        // Recalculate aggregates
+        const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
+        const aggUsedSessions = updatedSubjects.reduce((sum, s) => sum + s.usedSessions, 0)
+        const aggRemainingSessions = updatedSubjects.reduce((sum, s) => sum + s.remainingSessions, 0)
+        const aggTotalMinutes = updatedSubjects.reduce((sum, s) => sum + s.totalMinutes, 0)
+        const aggUsedMinutes = updatedSubjects.reduce((sum, s) => sum + s.usedMinutes, 0)
+        const aggRemainingMinutes = updatedSubjects.reduce((sum, s) => sum + s.remainingMinutes, 0)
 
-      // Recalculate aggregates
-      const aggTotalSessions = updatedSubjects.reduce((sum, s) => sum + s.totalSessions, 0)
-      const aggUsedSessions = updatedSubjects.reduce((sum, s) => sum + s.usedSessions, 0)
-      const aggRemainingSessions = updatedSubjects.reduce((sum, s) => sum + s.remainingSessions, 0)
-      const aggTotalMinutes = updatedSubjects.reduce((sum, s) => sum + s.totalMinutes, 0)
-      const aggUsedMinutes = updatedSubjects.reduce((sum, s) => sum + s.usedMinutes, 0)
-      const aggRemainingMinutes = updatedSubjects.reduce((sum, s) => sum + s.remainingMinutes, 0)
+        // Legacy fields point to a package that can still fund upcoming lessons.
+        const primarySubject = updatedSubjects.find((pkg) => pkg.remainingMinutes > 0) || updatedSubjects[0] || null
 
-      // Legacy fields point to a package that can still fund upcoming lessons.
-      const primarySubject = updatedSubjects.find((pkg) => pkg.remainingMinutes > 0) || updatedSubjects[0] || null
-
-      const batch = writeBatch(db)
-      batch.update(doc(db, 'students', student.id), {
-        subjects: updatedSubjects,
-        totalSessions: aggTotalSessions,
-        usedSessions: aggUsedSessions,
-        remainingSessions: aggRemainingSessions,
-        totalMinutes: aggTotalMinutes,
-        usedMinutes: aggUsedMinutes,
-        remainingMinutes: aggRemainingMinutes,
-        // Legacy fields mapping to primary subject
-        subjectId: primarySubject ? primarySubject.subjectId : '',
-        subjectName: primarySubject ? primarySubject.subjectName : '',
-        minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 25,
-        status: aggRemainingMinutes <= 0 ? 'expired' : 'active',
-        updatedAt: serverTimestamp(),
-      })
-
-      bookingSubjectTransfer?.refs.forEach((bookingRef) => {
-        batch.update(bookingRef, {
-          subjectId: bookingSubjectTransfer.subjectId,
-          subjectName: bookingSubjectTransfer.subjectName,
+        transaction.update(studentRef, {
+          subjects: updatedSubjects,
+          totalSessions: aggTotalSessions,
+          usedSessions: aggUsedSessions,
+          remainingSessions: aggRemainingSessions,
+          totalMinutes: aggTotalMinutes,
+          usedMinutes: aggUsedMinutes,
+          remainingMinutes: aggRemainingMinutes,
+          // Legacy fields mapping to primary subject
+          subjectId: primarySubject ? primarySubject.subjectId : '',
+          subjectName: primarySubject ? primarySubject.subjectName : '',
+          minutesPerSession: primarySubject ? primarySubject.minutesPerSession : 25,
+          status: freshStudent.status === 'reserved' || freshStudent.status === 'inactive' ? freshStudent.status : aggRemainingMinutes <= 0 ? 'expired' : 'active',
           updatedAt: serverTimestamp(),
         })
-      })
 
-      await batch.commit()
+        bookingSubjectTransfer?.refs.forEach((bookingRef) => {
+          transaction.update(bookingRef, {
+            subjectId: bookingSubjectTransfer.subjectId,
+            subjectName: bookingSubjectTransfer.subjectName,
+            updatedAt: serverTimestamp(),
+          })
+        })
+      })
 
       toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật khóa học' : 'Đã thêm khóa học mới')
       onClose()
     } catch (err) {
       console.error(err)
-      toast.error(err instanceof Error ? err.message : 'Lỗi khi lưu thông tin môn học')
+      const code = typeof err === 'object' && err && 'code' in err ? String(err.code) : ''
+      toast.error(code.includes('permission-denied')
+        ? 'Tài khoản không có quyền lưu khóa học. Vui lòng liên hệ quản trị viên.'
+        : code.includes('unavailable')
+          ? 'Chưa kết nối được hệ thống. Vui lòng kiểm tra mạng rồi thử lại.'
+          : err instanceof Error ? err.message : 'Lỗi khi lưu thông tin môn học')
     } finally {
       setLoading(false)
     }
@@ -479,7 +502,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => { if (!loading) onClose() }}
       title={isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
       footer={
         <div className="flex gap-3 justify-end">
@@ -524,7 +547,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
                   </div>
                 </div>
                 <div className="max-h-64 overflow-y-auto p-1.5">
-                  {filteredSubjects.length === 0 && ownedMatches.length === 0 ? (
+                  {filteredSubjects.length === 0 ? (
                     <p className="px-3 py-6 text-center text-sm text-slate-500">Không tìm thấy môn học.</p>
                   ) : filteredSubjects.map((subject) => (
                     <button
@@ -546,26 +569,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
                       {watchedSubjectId === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
                     </button>
                   ))}
-                  {ownedMatches.length > 0 && (
-                    <p className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Khóa học viên đang có</p>
-                  )}
-                  {ownedMatches.map((owned) => (
-                    <button
-                      key={`owned-${owned.subjectId}`}
-                      type="button"
-                      onClick={() => {
-                        if (onAddToOwnedCourse) onAddToOwnedCourse(owned.subjectId)
-                        else toast.info('Học viên đã có khóa này — bấm “+” trên dòng khóa ở mục Đang học để thêm đợt mới.')
-                      }}
-                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-violet-50 focus:bg-violet-50 focus:outline-none"
-                    >
-                      <span>
-                        <span className="block font-medium text-slate-800">{owned.subjectName}</span>
-                        <span className="text-xs font-semibold text-violet-700">Đã có khóa này — bấm để thêm đợt thanh toán mới vào khóa (học nhiều gia sư vẫn dùng chung khóa).</span>
-                      </span>
-                      <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">+ Thêm đợt</span>
-                    </button>
-                  ))}
+
                 </div>
               </div>
             )}
@@ -577,6 +581,28 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
                 ? `Lịch sử đã học vẫn thuộc môn cũ. Hệ thống chỉ chuyển ${transferableMinutes.toLocaleString('vi-VN')} kim cương còn lại sang môn mới.`
                 : 'Gói chưa phát sinh buổi học nên hệ thống sẽ đổi trực tiếp sang môn mới.'}
             </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="course-sale" className="block text-sm font-medium text-slate-600">Ưu đãi của khóa học</label>
+          <select id="course-sale" {...register('promoDiscountPercent')} className="min-h-[46px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-indigo-500">
+            <option value={0}>Khóa thông thường — Không giảm</option>
+            {MANUAL_PROMO_DISCOUNT_OPTIONS.map((percent) => <option key={percent} value={percent}>Khóa SALE — Giảm {percent}%</option>)}
+          </select>
+          <p className="text-xs leading-5 text-slate-500">Tự áp dụng khi tạo Class Hunting hoặc xếp lớp thủ công. Giáo vụ vẫn có thể chọn mức ưu đãi khác khi xếp lớp. Lịch đã đặt giữ nguyên mức đã chốt.</p>
+          {errors.promoDiscountPercent && <p className="text-xs text-rose-500">{errors.promoDiscountPercent.message}</p>}
+          {!isEdit && currentSubjects.some((pkg) => getCatalogSubjectId(pkg.subjectId) === watchedSubjectId) && (
+            <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">Học viên đã có môn này. Thêm mới sẽ tạo khóa riêng với quỹ kim cương, ưu đãi và lịch sử riêng. Để nạp thêm vào khóa cũ, dùng “Thêm đợt thanh toán” trong chi tiết khóa.</p>
+          )}
+          {!isEdit && onAddToOwnedCourse && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {currentSubjects.filter((pkg) => getCatalogSubjectId(pkg.subjectId) === watchedSubjectId).map((pkg) => (
+                <button key={pkg.subjectId} type="button" disabled={loading} onClick={() => onAddToOwnedCourse(pkg.subjectId)} className="min-h-9 text-left text-xs font-semibold text-indigo-700 underline underline-offset-4 hover:text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                  Thêm đợt vào {pkg.subjectName}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 

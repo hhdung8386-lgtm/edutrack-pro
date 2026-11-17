@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -305,7 +306,7 @@ export function AttendancePage() {
 
       const [tSnap, sSnap, freshStudentSnap] = await Promise.all([
         getDoc(doc(db, 'teachers', teacherId)),
-        getDoc(doc(db, 'subjects', selectedSubjectId)),
+        getDoc(doc(db, 'subjects', getCatalogSubjectId(selectedSubjectId))),
         getDoc(doc(db, 'students', student.id)),
       ])
 

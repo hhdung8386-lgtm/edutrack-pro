@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where, onSnapshot, addDoc } from 'firebase/firestore'
@@ -948,7 +949,7 @@ export function BookingSchedulesPage() {
       await runTransaction(db, async (tx) => {
         const studentRef = doc(db, 'students', studentId)
         const teacherRef = doc(db, 'teachers', teacherId)
-        const subjectRef = doc(db, 'subjects', expectedSubjectId)
+        const subjectRef = doc(db, 'subjects', getCatalogSubjectId(expectedSubjectId))
         const allAttendanceBookings = [...attendanceBookings, ...followUpBookings]
         const bookingRefs = allAttendanceBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
 

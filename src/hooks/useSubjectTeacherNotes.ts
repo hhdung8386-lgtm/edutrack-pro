@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useMemo, useState } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -10,10 +11,11 @@ const RETRY_AFTER_ERROR_MS = 60 * 1000
 const cache = new Map<string, { note: string; expiresAt: number }>()
 const inflight = new Map<string, Promise<void>>()
 
-function loadNote(subjectId: string) {
+function loadNote(courseId: string) {
+  const subjectId = getCatalogSubjectId(courseId)
   let pending = inflight.get(subjectId)
   if (!pending) {
-    pending = getDoc(doc(db, 'subjects', subjectId))
+    pending = getDoc(doc(db, 'subjects', getCatalogSubjectId(subjectId)))
       .then((snapshot) => {
         const note = snapshot.exists() ? normalizeSubjectTeacherNote(snapshot.data().teacherNote) : ''
         cache.set(subjectId, { note, expiresAt: Date.now() + CACHE_TTL_MS })
@@ -36,7 +38,7 @@ export function useSubjectTeacherNotes(subjectIds: Array<string | null | undefin
   useEffect(() => {
     if (!key) return
     const now = Date.now()
-    const missing = key.split('|').filter((id) => (cache.get(id)?.expiresAt ?? 0) <= now)
+    const missing = key.split('|').filter((id) => (cache.get(getCatalogSubjectId(id))?.expiresAt ?? 0) <= now)
     if (missing.length === 0) return
     let cancelled = false
     Promise.all(missing.map(loadNote)).then(() => {
@@ -49,7 +51,7 @@ export function useSubjectTeacherNotes(subjectIds: Array<string | null | undefin
     const notes: Record<string, string> = {}
     if (!key) return notes
     key.split('|').forEach((id) => {
-      const note = cache.get(id)?.note
+      const note = cache.get(getCatalogSubjectId(id))?.note
       if (note) notes[id] = note
     })
     return notes

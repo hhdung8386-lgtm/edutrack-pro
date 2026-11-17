@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState, useMemo } from 'react'
 import { doc, getDoc, collection, query, where, onSnapshot, orderBy, updateDoc, serverTimestamp, addDoc, runTransaction, getDocs } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
@@ -220,7 +221,7 @@ export function StudentDetailPage() {
     const teacherIds = Array.from(new Set(lessons.map(l => l.teacherId).filter(Boolean)))
     let cancelled = false
     Promise.all([
-      Promise.all(subjectIds.map(sid => getDoc(doc(db, 'subjects', sid)).then(s => {
+      Promise.all(subjectIds.map(sid => getDoc(doc(db, 'subjects', getCatalogSubjectId(sid))).then(s => {
         const data = s.data()
         return [sid, {
           pricePerMinute: data?.pricePerMinute ?? 0,
@@ -1154,7 +1155,7 @@ export function StudentDetailPage() {
       const teacherLevel = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
       // Đổi môn phải đổi cả TIỀN TỆ theo gói mới; trước đây chỉ đổi giá nên
       // buổi chuyển từ gói PHP sang gói VND vẫn bị ghi PHP trên lương.
-      const catalogData = (await getDoc(doc(db, 'subjects', nextSubjectId))).data()
+      const catalogData = (await getDoc(doc(db, 'subjects', getCatalogSubjectId(nextSubjectId)))).data()
       const catalogRate = catalogData ? getCanonicalSubjectRate(catalogData) : null
       const pricePerMinute = Number(nextSubject.pricePerMinute) || catalogRate?.price || 0
       const currency = nextSubject.currency || catalogRate?.currency || 'VND'

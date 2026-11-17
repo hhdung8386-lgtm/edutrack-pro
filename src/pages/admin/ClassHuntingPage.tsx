@@ -1,3 +1,4 @@
+import { classHuntPromoDiscountFrom } from '@/lib/classHunting'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import {
@@ -406,6 +407,14 @@ export function ClassHuntingPage() {
   const lookupStudent = lookup?.student
   const subjects = lookup?.subjects || []
   const selectedSubject = subjects.find((subject) => subject.id === subjectId)
+  const chooseCourse = (id: string, student = selectedStudent, options = subjects) => {
+    setSubjectId(id)
+    const percent = options.find((item) => item.id === id)?.defaultPromoDiscountPercent
+      ?? student?.subjects?.find((item) => item.subjectId === id)?.promoDiscountPercent
+    const valid = classHuntPromoDiscountFrom(percent)
+    setOfferType(valid ? 'promo' : 'standard')
+    setPromoDiscount(valid ? String(valid) : '')
+  }
   const availablePoints = selectedSubject?.availablePoints
   const promoDiscountPercent = offerType === 'promo' ? Number(promoDiscount) : NaN
   const promoDiscountValid = Number.isInteger(promoDiscountPercent)
@@ -474,11 +483,12 @@ export function ClassHuntingPage() {
       if (requestId !== lookupRequestRef.current) return
       setLookup(result)
       const eligible = result.subjects.filter((subject) => subject.eligibleForHunt !== false)
-      if (preferredSubjectId && eligible.some((subject) => subject.id === preferredSubjectId)) setSubjectId(preferredSubjectId)
-      else if (eligible.length === 1) setSubjectId(eligible[0].id)
+      if (preferredSubjectId && eligible.some((subject) => subject.id === preferredSubjectId)) chooseCourse(preferredSubjectId, student, result.subjects)
+      else if (eligible.length === 1) chooseCourse(eligible[0].id, student, result.subjects)
       if (result.student?.eligibleForHunt === false) {
         toast.warning(result.warnings?.[0] || 'Học viên này chưa đủ điều kiện mở CLASS HUNTING.')
       }
+      return requestId
     } catch (error) {
       if (requestId !== lookupRequestRef.current) return
       console.error('Class hunt lookup failed:', error)
@@ -520,7 +530,7 @@ export function ClassHuntingPage() {
         teacherTypes: CLASS_HUNT_TEACHER_TYPES.filter((type) => teacherTypes.includes(type)),
         gender,
       },
-      ...(offerType === 'promo' ? { promoDiscountPercent } : {}),
+      promoDiscountPercent: offerType === 'promo' ? promoDiscountPercent : null,
     }
   }
 
@@ -687,10 +697,11 @@ export function ClassHuntingPage() {
     setGender(hunt.teacherRequirements?.gender || 'any')
     setStudentAudience(hunt.studentAudience || '')
     setNote(hunt.note || '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    const loadedRequestId = await selectStudent(student, hunt.subject.id)
+    if (loadedRequestId === undefined || loadedRequestId !== lookupRequestRef.current) return
     setOfferType(hunt.promoDiscountPercent ? 'promo' : 'standard')
     setPromoDiscount(hunt.promoDiscountPercent ? String(hunt.promoDiscountPercent) : '')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    await selectStudent(student, hunt.subject.id)
     toast.success(hunt.weeklySlots
       ? 'Đã điền lại thông tin lớp. Kiểm tra ngày bắt đầu, slot học rồi bấm Đăng CLASS HUNTING.'
       : 'Đã điền lại học viên, gói và yêu cầu. Yêu cầu cũ dùng lịch dạng cũ nên hãy chọn lại slot học.')
@@ -760,7 +771,7 @@ export function ClassHuntingPage() {
                 <span className="mb-1.5 block text-xs font-bold text-slate-700">Gói học cần xếp</span>
                 <select
                   value={subjectId}
-                  onChange={(event) => setSubjectId(event.target.value)}
+                  onChange={(event) => chooseCourse(event.target.value)}
                   className={FIELD}
                   disabled={!lookup || lookingUp || subjects.length === 0}
                 >
@@ -1180,7 +1191,7 @@ export function ClassHuntingPage() {
               <strong className="text-slate-950">{selectedStudent?.name}</strong> · {confirm.preview.subject?.name || selectedSubject?.name}
             </p>
             <p className="font-bold text-slate-900">
-              {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * classHuntPromoPointsPer25Minutes(confirm.draft.promoDiscountPercent))} kim cương
+              {confirmSlots.length} buổi · {number(confirmSlots.length * CLASS_HUNT_SLOT_MINUTES)} phút · {number(confirmSlots.length * classHuntPromoPointsPer25Minutes(confirm.draft.promoDiscountPercent ?? undefined))} kim cương
             </p>
             <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">Đối tượng: <StudentAudienceTag audience={confirm.draft.studentAudience} /></p>
             {confirm.draft.promoDiscountPercent ? (

@@ -145,6 +145,7 @@ function CourseIdentity({ subject, paymentCount }: { subject: StudentSubject; pa
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-extrabold text-slate-950">{subject.subjectName}</p>
+        {subject.promoDiscountPercent ? <span className="mt-1 inline-flex rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">SALE −{subject.promoDiscountPercent}%</span> : null}
         <p className="mt-1 text-[11px] font-medium text-slate-500">{paymentCount} đợt thanh toán</p>
         {firstCurriculum && (
           <a

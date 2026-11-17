@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState } from 'react'
 import { runTransaction, doc, collection, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db, calculateSalary } from '@/lib/firebase'
@@ -66,7 +67,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
               : []
 
           const resolvedSubjects = await Promise.all(subjects.map(async (sub) => {
-            const subjSnap = await getDoc(doc(db, 'subjects', sub.subjectId))
+            const subjSnap = await getDoc(doc(db, 'subjects', getCatalogSubjectId(sub.subjectId)))
             const data = subjSnap.exists() ? subjSnap.data() : null
             return {
               ...sub,
@@ -144,7 +145,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const bookingRefs = matchedBookings.map((booking) => doc(db, 'bookingRequests', booking.id))
           const [teacherSnap, subjectCatalogSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
-            tx.get(doc(db, 'subjects', approveSubjectId)),
+            tx.get(doc(db, 'subjects', getCatalogSubjectId(approveSubjectId))),
             ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])
           const teacherData = teacherSnap.data()

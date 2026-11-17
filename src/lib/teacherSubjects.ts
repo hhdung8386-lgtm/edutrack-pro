@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from './courseIdentity.ts'
 const INTERNAL_SUBJECT_LABELS = new Set([
   'hoc vien bao luu',
   'hoc vien tam dung',
@@ -78,7 +79,7 @@ export function teacherMatchesSubjectFilter(
   option: TeacherSubjectFilterOption,
 ) {
   const teacherIds = new Set(Array.isArray(teacher.subjectIds) ? teacher.subjectIds : [])
-  if (option.subjectIds.some((subjectId) => teacherIds.has(subjectId))) return true
+  if (option.subjectIds.some((subjectId) => teacherIds.has(getCatalogSubjectId(subjectId)))) return true
 
   return teacherSubjectNameMap(teacher).has(option.normalizedName)
 }

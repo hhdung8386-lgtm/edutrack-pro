@@ -1,3 +1,4 @@
+import { getCatalogSubjectId, courseSubjectName } from '@/lib/courseIdentity'
 import {
   collection,
   doc,
@@ -69,10 +70,19 @@ async function updateTransactionalReferences(
   }))
 }
 
-async function updateStudents(subjectId: string, subjectName: string) {
+async function updateStudents(subjectId: string, subjectName: string, courseNames: Map<string, string>) {
   // Firestore không query được subjectId bên trong mảng object `subjects`, nên
   // đọc danh sách một lần rồi chỉ mở transaction cho hồ sơ thực sự liên quan.
   const snapshot = await getDocs(collection(db, 'students'))
+  snapshot.docs.forEach((document) => {
+    const subjects = document.data().subjects
+    if (!Array.isArray(subjects)) return
+    subjects.forEach((course) => {
+      if (typeof course?.subjectId === 'string' && getCatalogSubjectId(course.subjectId) === subjectId) {
+        courseNames.set(course.subjectId, courseSubjectName(subjectName, course.subjectId, String(course.subjectName || '')))
+      }
+    })
+  })
   const references = snapshot.docs
     .filter((document) => buildStudentSubjectNamePatch(document.data(), subjectId, subjectName))
     .map((document) => document.ref)
@@ -172,11 +182,17 @@ export async function syncSubjectNameReferences(subjectId: string, subjectName: 
   // cập nhật trước học viên, rồi học viên trước booking, booking trước lesson.
   const topUpPackages = await updateScalarReferences('topUpPackages', subjectId, subjectName)
   const topUpRequests = await updateScalarReferences('topUpRequests', subjectId, subjectName)
-  const students = await updateStudents(subjectId, subjectName)
+  const courseNames = new Map([[subjectId, subjectName]])
+  const students = await updateStudents(subjectId, subjectName, courseNames)
   const { teachers, publicTeacherProfiles } = await updateTeachers(subjectId, subjectName)
-  const bookingRequests = await updateScalarReferences('bookingRequests', subjectId, subjectName)
-  const lessons = await updateScalarReferences('lessons', subjectId, subjectName)
-  const publicLessons = await updatePublicLessonReferences(subjectId, subjectName)
+  let bookingRequests = 0
+  let lessons = 0
+  let publicLessons = 0
+  for (const [courseId, courseName] of courseNames) {
+    bookingRequests += await updateScalarReferences('bookingRequests', courseId, courseName)
+    lessons += await updateScalarReferences('lessons', courseId, courseName)
+    publicLessons += await updatePublicLessonReferences(courseId, courseName)
+  }
 
   const summary = {
     students,

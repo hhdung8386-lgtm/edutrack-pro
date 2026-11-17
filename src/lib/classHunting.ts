@@ -89,6 +89,7 @@ export interface ClassHuntStudent {
 }
 
 export interface ClassHuntSubject {
+  defaultPromoDiscountPercent?: number
   id: string
   name: string
   remainingPoints?: number
@@ -211,8 +212,8 @@ export interface ClassHuntDraftInput extends ClassHuntLookupInput {
   teacherRequirements: ClassHuntTeacherRequirements
   /** Omit when empty so a note-less publish keeps its original retry identity. */
   note?: string
-  /** "Lớp ưu đãi" only; omit for a regular class. */
-  promoDiscountPercent?: number
+  /** Absent inherits the course default; null selects regular; a number overrides. */
+  promoDiscountPercent?: number | null
   // No `compensationRatePerMinute`: tutor pay follows the subject price. The
   // key must be absent (not undefined/null) or the server treats it as a rate.
 }
@@ -434,6 +435,7 @@ function subjectFrom(value: unknown): ClassHuntSubject | undefined {
   return {
     id: id || '',
     name: name || 'Gói học',
+    ...(numberValue(data.defaultPromoDiscountPercent) !== undefined ? { defaultPromoDiscountPercent: classHuntPromoDiscountFrom(data.defaultPromoDiscountPercent) || 0 } : {}),
     ...(numberValue(data.remainingPoints ?? data.remainingMinutes) !== undefined
       ? { remainingPoints: numberValue(data.remainingPoints ?? data.remainingMinutes) }
       : {}),

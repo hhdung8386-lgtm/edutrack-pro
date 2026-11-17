@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { teacherLivingRegionLabel } from '@/lib/teacherLivingRegion'
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, updateDoc, serverTimestamp, addDoc, runTransaction, documentId, deleteDoc, deleteField, setDoc, writeBatch } from 'firebase/firestore'
@@ -607,7 +608,7 @@ export function TeacherDetailPage() {
           const rewardRef = doc(db, 'rewardTransactions', lesson.id)
           const [teacherSnap, subjectSnap, rewardSnap, ...bookingSnaps] = await Promise.all([
             tx.get(doc(db, 'teachers', lesson.teacherId)),
-            tx.get(doc(db, 'subjects', subjectId)),
+            tx.get(doc(db, 'subjects', getCatalogSubjectId(subjectId))),
             tx.get(rewardRef),
             ...bookingRefs.map((bookingRef) => tx.get(bookingRef)),
           ])

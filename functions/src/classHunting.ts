@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from './courseIdentity'
 import { createHash, randomBytes } from 'node:crypto'
 
 /**
@@ -550,6 +551,23 @@ export function normalizeClassHuntPromoDiscount(value: unknown): number | undefi
   return percent
 }
 
+/** The package default applies only when the caller omitted an override.
+ * null explicitly means a regular class. A stored 0 is also regular.
+ */
+export function coursePromoDiscount(
+  sources: Record<string, unknown>[],
+  subjectId: unknown,
+  input: Record<string, unknown>,
+): number | undefined {
+  if (Object.prototype.hasOwnProperty.call(input, 'promoDiscountPercent')) {
+    return normalizeClassHuntPromoDiscount(input.promoDiscountPercent)
+  }
+  const matching = sources.filter((row) => row.subjectId === subjectId)
+  if (matching.length !== 1) return undefined
+  const value = matching[0].promoDiscountPercent
+  return value === 0 ? undefined : normalizeClassHuntPromoDiscount(value)
+}
+
 /**
  * Tutor pay for a promo class, frozen at claim: the regular rate (subject price
  * x tutor level, the same formula payroll uses) reduced by the class discount.
@@ -1062,7 +1080,7 @@ export function isClassHuntTeacherProfileComplete(teacher: ClassHuntTeacherLike 
  * and claim a class, and decides from the subject name whether it fits.
  */
 export function teacherMatchesClassHuntSubject(teacher: ClassHuntTeacherLike | null | undefined, subjectId: string): boolean {
-  return Array.isArray(teacher?.subjectIds) && teacher.subjectIds.some((item) => item === subjectId)
+  return Array.isArray(teacher?.subjectIds) && teacher.subjectIds.some((item) => item === getCatalogSubjectId(subjectId))
 }
 
 export interface ClassHuntSubjectRate {

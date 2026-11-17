@@ -39,6 +39,7 @@ import {
   normalizeClassHuntStudentAudience,
   normalizeClassHuntPromoDiscount,
   classHuntPromoCompensation,
+  coursePromoDiscount,
   normalizeClassHuntTeacherRequirements,
   normalizeClassHuntWeeklySlots,
   resolveClassHuntSubjectFund,
@@ -152,6 +153,7 @@ type StoredClassHunt = {
   note?: string
   /** "Lớp ưu đãi": % giảm thù lao gia sư (10–50). Absent = lớp thông thường. */
   promoDiscountPercent?: number
+  coursePromoDefaultApplied?: boolean
   claimedByTeacherId?: string
   claimedByUid?: string
   claimedAtMs?: number
@@ -286,6 +288,7 @@ function requireStoredHunt(id: string, data: DocumentData): StoredClassHunt {
   const note = storedClassHuntNote(data.note)
   return {
     teacherRequirements,
+    ...(data.coursePromoDefaultApplied === true ? { coursePromoDefaultApplied: true } : {}),
     ...(studentAudience ? { studentAudience } : {}),
     ...(note ? { note } : {}),
     ...(promoDiscountPercent !== undefined ? { promoDiscountPercent } : {}),
@@ -387,6 +390,13 @@ function hasRequestedClassHuntCompensation(data: Record<string, unknown>): boole
  * schedule/fund preflight. Otherwise a teacher claim or a later booking could
  * make the same client request look invalid and invite a duplicate retry.
  */
+function publishRetryData(data: Record<string, unknown>, hunt: StoredClassHunt): Record<string, unknown> {
+  // Retry the immutable publish snapshot, even if the package default changed.
+  return hunt.coursePromoDefaultApplied && !Object.prototype.hasOwnProperty.call(data, 'promoDiscountPercent')
+    ? { ...data, promoDiscountPercent: hunt.promoDiscountPercent ?? null }
+    : data
+}
+
 async function existingPublishedHuntForRetry(
   actorUid: string,
   clientRequestId: string,
@@ -406,7 +416,7 @@ async function existingPublishedHuntForRetry(
     throw error('failed-precondition', 'CLASS_HUNT_PUBLISH_TARGET_MISSING', 'Yêu cầu đăng lớp cũ không còn dữ liệu để khôi phục.')
   }
   const hunt = requireStoredHunt(huntSnapshot.id, huntSnapshot.data() || {})
-  if (!classHuntPublishRetryMatches(data, hunt)) {
+  if (!classHuntPublishRetryMatches(publishRetryData(data, hunt), hunt)) {
     throw error('already-exists', 'CLASS_HUNT_PUBLISH_IDEMPOTENCY_CONFLICT', 'Mã gửi lớp này đã được dùng với nội dung khác.')
   }
   return hunt
@@ -494,7 +504,7 @@ function draftFromRequest(
         teacherRequirements: data.teacherRequirements,
         studentAudience: data.studentAudience,
         note: data.note,
-        promoDiscountPercent: data.promoDiscountPercent,
+        promoDiscountPercent: coursePromoDiscount(subjectSources(student), data.subjectId, data),
       }, nowMs)
     } catch (cause) {
       if (cause instanceof ClassHuntValidationError) {
@@ -749,6 +759,7 @@ function lookupSubjects(
     return [{
       id,
       name: fund.subjectName || 'Môn học',
+      defaultPromoDiscountPercent: coursePromoDiscount(subjectSources(student), id, {}) || 0,
       remainingPoints: fund.remainingMinutes,
       ...(fund.remainingSessions !== undefined ? { remainingSessions: fund.remainingSessions } : {}),
       minutesPerSession: fund.minutesPerSession,
@@ -1174,7 +1185,7 @@ export const publishClassHunt = onCall({
         throw error('failed-precondition', 'CLASS_HUNT_PUBLISH_TARGET_MISSING', 'Yêu cầu đăng lớp cũ không còn dữ liệu để khôi phục.')
       }
       const previousHunt = requireStoredHunt(previousHuntSnapshot.id, previousHuntSnapshot.data() || {})
-      if (!classHuntPublishRetryMatches(data, previousHunt)) {
+      if (!classHuntPublishRetryMatches(publishRetryData(data, previousHunt), previousHunt)) {
         throw error('already-exists', 'CLASS_HUNT_PUBLISH_IDEMPOTENCY_CONFLICT', 'Mã gửi lớp này đã được dùng với nội dung khác.')
       }
       return previousHunt
@@ -1228,6 +1239,7 @@ export const publishClassHunt = onCall({
     const fingerprint = classHuntPublishFingerprint(draft)
     const hunt = {
       schemaVersion: CLASS_HUNT_SCHEMA_VERSION,
+      coursePromoDefaultApplied: !Object.prototype.hasOwnProperty.call(data, 'promoDiscountPercent'),
       kind: 'class_hunt',
       status: 'open' as const,
       studentId: context.draft.studentId,

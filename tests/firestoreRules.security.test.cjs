@@ -1,3 +1,4 @@
+const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { after, before, beforeEach, test } = require('node:test')
@@ -29,6 +30,31 @@ const TEACHER_UID = 'teacher-rules-test'
 const INACTIVE_TEACHER_UID = 'inactive-teacher-rules-test'
 const RESIGNED_TEACHER_UID = 'resigned-teacher-rules-test'
 const LEGACY_RECOVERED_TEACHER_UID = 'legacy-recovered-teacher-rules-test'
+
+test('course SALE and repeated-course wallets use existing operator permissions; teacher and public cannot change them', async () => {
+  const adminDb = testEnvironment.authenticatedContext(ADMIN_UID).firestore()
+  const managerDb = testEnvironment.authenticatedContext(STUDENT_MANAGER_UID).firestore()
+  const teacherDb = testEnvironment.authenticatedContext(TEACHER_UID).firestore()
+  const guestDb = testEnvironment.unauthenticatedContext().firestore()
+  const secondId = `course__${'a'.repeat(32)}__english`
+  const subjects = [
+    { subjectId: 'english', subjectName: 'English', totalMinutes: 500, usedMinutes: 100, remainingMinutes: 400 },
+    { subjectId: secondId, subjectName: 'English · Khóa 2', totalMinutes: 250, usedMinutes: 0, remainingMinutes: 250, promoDiscountPercent: 30 },
+  ]
+  await assertSucceeds(setDoc(doc(adminDb, 'students', 'sale-courses'), {
+    code: 'HSSALE', status: 'active', subjectId: 'english', subjects,
+    totalMinutes: 750, usedMinutes: 100, remainingMinutes: 650,
+  }))
+  const updated = subjects.map((course) => course.subjectId === secondId ? { ...course, promoDiscountPercent: 50 } : course)
+  await assertSucceeds(updateDoc(doc(managerDb, 'students', 'sale-courses'), { subjects: updated }))
+  await assertFails(updateDoc(doc(teacherDb, 'students', 'sale-courses'), { subjects }))
+  await assertFails(updateDoc(doc(guestDb, 'students', 'sale-courses'), { subjects }))
+  const saved = (await getDoc(doc(adminDb, 'students', 'sale-courses'))).data()
+  assert.equal(saved.subjects.length, 2)
+  assert.equal(saved.subjects[1].promoDiscountPercent, 50)
+  assert.equal(saved.subjects[0].remainingMinutes, 400)
+  assert.equal(saved.remainingMinutes, 650)
+})
 
 let testEnvironment
 

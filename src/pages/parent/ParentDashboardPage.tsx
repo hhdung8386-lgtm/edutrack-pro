@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, serverTimestamp, setDoc, limit, orderBy, updateDoc, documentId } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -836,7 +837,7 @@ type RecommendationSubject = Pick<StudentSubject, 'subjectId' | 'subjectName'>
 
 function teacherMatchesStudentSubjects(teacher: Teacher, subjects: RecommendationSubject[]) {
   if (subjects.length === 0) return true
-  const subjectIds = new Set(subjects.map((item) => item.subjectId).filter(Boolean))
+  const subjectIds = new Set(subjects.map((item) => getCatalogSubjectId(item.subjectId)).filter(Boolean))
   if ((teacher.subjectIds || []).some((id) => subjectIds.has(id))) return true
 
   const studentNames = subjects.map((item) => normalizeRecommendationText(item.subjectName)).filter(Boolean)
@@ -848,7 +849,7 @@ function matchedRecommendationSubjects(teacher: Teacher, subjects: Recommendatio
   const teacherIds = new Set(teacher.subjectIds || [])
   const teacherNames = (teacher.subjectNames || []).map(normalizeRecommendationText)
   return subjects
-    .filter((item) => teacherIds.has(item.subjectId) || teacherNames.some((name) => {
+    .filter((item) => teacherIds.has(getCatalogSubjectId(item.subjectId)) || teacherNames.some((name) => {
       const studentName = normalizeRecommendationText(item.subjectName)
       return !!studentName && (name === studentName || name.includes(studentName) || studentName.includes(name))
     }))

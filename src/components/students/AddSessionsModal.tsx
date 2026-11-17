@@ -1,3 +1,4 @@
+import { getCatalogSubjectId } from '@/lib/courseIdentity'
 import { useEffect, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -94,7 +95,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
     let cancelled = false
     Promise.all(subjectIdsKey.split('|').filter(Boolean).map(async (subjectId) => {
       try {
-        const snap = await getDoc(doc(db, 'subjects', subjectId))
+        const snap = await getDoc(doc(db, 'subjects', getCatalogSubjectId(subjectId)))
         return !snap.exists() || !isSelectableSubject(snap.data()) ? subjectId : null
       } catch {
         return null // lỗi mạng: không ẩn môn, transaction vẫn kiểm tra lại khi lưu
@@ -120,7 +121,7 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
   const onSubmit = async (data: FormData) => {
     try {
       const studentRef = doc(db, 'students', student.id)
-      const subjectRef = doc(db, 'subjects', data.subjectId)
+      const subjectRef = doc(db, 'subjects', getCatalogSubjectId(data.subjectId))
       const logRef = doc(collection(db, 'adminLogs'))
 
       await runTransaction(db, async (tx) => {
