@@ -19,18 +19,20 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatMoney, formatPricePerMinute } from '@/lib/constants'
+import { formatMoney, formatPricePerMinute, getSessionLevel } from '@/lib/constants'
 import { ClipboardCheck, Image as ImageIcon, X, Search, AlertTriangle, Copy, Check, CalendarX2, CalendarCheck2, FileVideo2 } from 'lucide-react'
 import { bookingHoldMinutes, resolveLessonBookingsForApproval } from '@/lib/lessonBooking'
 import {
   defaultApprovalSubjectId,
   lessonApprovalClassHuntCompensation,
-  lessonApprovalPoints,
   pickApprovalSubjectPackageIndex,
+  resolveCourseSaleApprovalTerms,
   usableLessonApprovalBookings,
 } from '@/lib/lenientLessonApproval'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
-import { getCountryRate } from '@/lib/countryPricing'
+import { courseSalePricePerMinute, manualPromoPointsPer25Minutes, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
+import { calculateLessonPoints, normalizePointsPer25Minutes } from '@/lib/points'
+import { getStudentPackageMinuteSummary } from '@/lib/studentMinutes'
 import { buildLessonParentMessage, copyTextToClipboard } from '@/lib/lessonShare'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
@@ -105,7 +107,14 @@ export function ApprovalsPage() {
   // Independent counters so badges reflect real DB state, not just current tab's loaded set
   const [totalCounts, setTotalCounts] = useState({ pending: 0, approved: 0, rejected: 0 })
   const [limitVal, setLimitVal] = useState(30)
-  const [studentBalances, setStudentBalances] = useState<Record<string, { available: number; remaining: number }>>({})
+  const [studentBalances, setStudentBalances] = useState<Record<string, {
+    available: number
+    remaining: number
+    remainingSessions: number
+    isRunningLow: boolean
+    salePercentBySubject: Record<string, number>
+    singleCourseSalePercent: number
+  }>>({})
   const [recordingsByBooking, setRecordingsByBooking] = useState<Record<string, OnlineClassroomRecordingSummary>>({})
 
   const [approveSubjectId, setApproveSubjectId] = useState<string>('')
@@ -281,27 +290,49 @@ export function ApprovalsPage() {
   }, [refreshCounts])
 
   useEffect(() => {
-    const pendingStudentIds = Array.from(new Set(lessons.filter(l => l.status === 'pending').map(l => l.studentId)))
-    if (pendingStudentIds.length === 0) return
+    const visibleStudentIds = Array.from(new Set(lessons.map((l) => l.studentId).filter(Boolean)))
+    if (visibleStudentIds.length === 0) return
 
-    Promise.all(pendingStudentIds.map(sid => getDoc(doc(db, 'students', sid)))).then(snaps => {
-      const nextBalances: Record<string, { available: number; remaining: number }> = {}
-      snaps.forEach(snap => {
+    let active = true
+    Promise.all(visibleStudentIds.map((sid) => getDoc(doc(db, 'students', sid)))).then((snaps) => {
+      if (!active) return
+      const nextBalances: typeof studentBalances = {}
+      snaps.forEach((snap) => {
         if (snap.exists()) {
-          const s = snap.data() as Student
+          const s = { id: snap.id, ...snap.data() } as Student
           const mps = s.minutesPerSession || 50
           const total = s.totalMinutes ?? s.totalSessions * mps
           const used = s.usedMinutes ?? s.usedSessions * mps
           const remaining = s.remainingMinutes ?? Math.max(0, total - used)
           const held = s.reservedMinutes ?? s.heldMinutes ?? 0
           const available = Math.max(0, remaining - held)
-          nextBalances[snap.id] = { available, remaining }
+          const summaryRemainingMins = getStudentPackageMinuteSummary(s).remainingMinutes
+          const remainingSessions = Math.floor(Math.max(0, summaryRemainingMins) / 25)
+          const isRunningLow = s.status === 'active' && getSessionLevel(remainingSessions) === 'low'
+          const salePercentBySubject: Record<string, number> = {}
+          const subjects = s.subjects || []
+          subjects.forEach((sub) => {
+            const pct = normalizeManualPromoDiscount(sub.promoDiscountPercent)
+            if (pct > 0) salePercentBySubject[sub.subjectId] = pct
+          })
+          const singleCourseSalePercent = subjects.length === 1
+            ? normalizeManualPromoDiscount(subjects[0].promoDiscountPercent)
+            : 0
+          nextBalances[snap.id] = {
+            available,
+            remaining,
+            remainingSessions,
+            isRunningLow,
+            salePercentBySubject,
+            singleCourseSalePercent,
+          }
         }
       })
-      setStudentBalances(prev => ({ ...prev, ...nextBalances }))
-    }).catch(err => {
+      setStudentBalances((prev) => ({ ...prev, ...nextBalances }))
+    }).catch((err) => {
       console.error('Error loading student balances for approvals:', err)
     })
+    return () => { active = false }
   }, [lessons])
 
   // Tìm được cả theo nickname (đang hiển thị) lẫn tên thật/mã gia sư, tránh giáo vụ
@@ -410,10 +441,7 @@ export function ApprovalsPage() {
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           const bookingNow = bookingNows[0] || null
           const classHuntCompensation = lessonApprovalClassHuntCompensation(bookingNows, lessonNow)
-          const legacyTeacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
-
           const lessonMinutes = Number(lessonNow.minutes) || 0
-          const lessonPoints = lessonApprovalPoints(lessonNow, bookingNows, teacherData, zeroMinuteExcusedAbsenceNow)
 
           // Initialize subjects array for backward compatibility if needed
           const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
@@ -438,27 +466,43 @@ export function ApprovalsPage() {
                 }]
               : []
 
+          const prelimPkg = updatedSubjects.find((sub) => sub.subjectId === approveSubjectId) || chosenSubjectPkg
+          const prelimTerms = resolveCourseSaleApprovalTerms({
+            lesson: lessonNow,
+            bookings: bookingNows,
+            teacher: teacherData,
+            subjectPackage: prelimPkg,
+            classHuntCompensation,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
+
           // Deduct from the selected subject package
-          const sIdx = pickApprovalSubjectPackageIndex(updatedSubjects, approveSubjectId, lessonPoints)
+          const sIdx = pickApprovalSubjectPackageIndex(updatedSubjects, approveSubjectId, prelimTerms.lessonPoints)
           if (sIdx === -1) {
             throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
           }
 
           const subPkg = updatedSubjects[sIdx]
+          const terms = resolveCourseSaleApprovalTerms({
+            lesson: lessonNow,
+            bookings: bookingNows,
+            teacher: teacherData,
+            subjectPackage: subPkg,
+            classHuntCompensation,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
+          const lessonPoints = terms.lessonPoints
+          const approvedPointsPer25 = terms.pointsPer25Minutes
           if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
             throw new Error('NOT_ENOUGH_POINTS')
           }
           const freshSubjectPkg = subPkg
-          const legacyRate = getCountryRate(
-            freshSubjectPkg,
-            teacherData?.country || 'VN',
-          )
-          const pricePerMinute = classHuntCompensation?.ratePerMinute ?? legacyRate.price
-          const currency = classHuntCompensation?.currency ?? legacyRate.currency
-          const teacherLevel = classHuntCompensation ? 1 : legacyTeacherLevel
+          const pricePerMinute = terms.pricePerMinute
+          const currency = terms.currency
+          const teacherLevel = terms.teacherLevel
           const salary = classHuntCompensation
-            ? classHuntCompensationSalary(Number(lessonNow.minutes) || 0, classHuntCompensation)
-            : calculateSalary(Number(lessonNow.minutes) || 0, pricePerMinute, teacherLevel, currency)
+            ? classHuntCompensationSalary(lessonMinutes, classHuntCompensation)
+            : calculateSalary(lessonMinutes, pricePerMinute, teacherLevel, currency)
           const month = String(lessonNow.date || '').slice(0, 7)
           const newSubUsedMinutes = subPkg.usedMinutes + lessonPoints
           const newSubRemainingMinutes = subPkg.totalMinutes - newSubUsedMinutes
@@ -504,7 +548,7 @@ export function ApprovalsPage() {
             currency,
             ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             points: lessonPoints,
-            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
+            pointsPer25Minutes: approvedPointsPer25,
             subjectId: freshSubjectPkg.subjectId,
             subjectName: freshSubjectPkg.subjectName,
             sessionsBeforeApproval: subPkg.remainingSessions,
@@ -567,7 +611,7 @@ export function ApprovalsPage() {
             date: approvingLesson.date,
             minutes: lessonMinutes,
             points: lessonPoints,
-            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
+            pointsPer25Minutes: approvedPointsPer25,
             comment: approvingLesson.comment || '',
             homework: lessonHomeworkText(lessonNow),
             homeworkItems: lessonNow.homeworkItems || [],
@@ -815,6 +859,9 @@ export function ApprovalsPage() {
           {filteredLessons.map((lesson) => {
             const balance = studentBalances[lesson.studentId]
             const isOutOfMinutes = balance && balance.remaining <= 0
+            const salePercent = normalizeManualPromoDiscount(
+              (lesson as Lesson & { classHuntPromoDiscountPercent?: number }).classHuntPromoDiscountPercent,
+            ) || balance?.salePercentBySubject[lesson.subjectId] || balance?.singleCourseSalePercent || 0
             const homeworkText = lessonHomeworkText(lesson)
             const lessonRecording = [lesson.bookingRequestId, ...(lesson.bookingRequestIds || [])]
               .map((bookingId) => bookingId ? recordingsByBooking[bookingId] : undefined)
@@ -826,6 +873,20 @@ export function ApprovalsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-slate-700">{lesson.date}</span>
                       <StatusBadge status={lesson.status} />
+                      {salePercent > 0 && (
+                        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-700">
+                          SALE -{salePercent}%
+                        </span>
+                      )}
+                      {balance?.isRunningLow && (
+                        <span
+                          title={`Còn ${balance.remainingSessions} buổi trong gói (gồm cả buổi đã đặt lịch) — nên nhắc phụ huynh nạp thêm`}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/20 px-2.5 py-0.5 text-xs font-medium text-amber-600"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          Sắp hết buổi
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleCopyLesson(lesson)}
@@ -1059,9 +1120,11 @@ export function ApprovalsPage() {
                     <option value="">Chọn gói môn để trừ buổi</option>
                     {approveStudentSubjects.filter((sub, index, all) => all.findIndex((item) => item.subjectId === sub.subjectId) === index).map((sub) => {
                     const isOutOfSessions = sub.remainingMinutes <= 0
+                    const salePercent = normalizeManualPromoDiscount(sub.promoDiscountPercent)
+                    const displayPrice = courseSalePricePerMinute(sub.pricePerMinute ?? 0, salePercent, sub.currency)
                     return (
                       <option key={sub.subjectId} value={sub.subjectId}>
-                        {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
+                        {sub.subjectName}{salePercent > 0 ? ` [SALE -${salePercent}%]` : ''} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(displayPrice, sub.currency)}
                       </option>
                     )
                     })}
@@ -1083,19 +1146,35 @@ export function ApprovalsPage() {
               const isOutOfSessions = chosen.remainingMinutes <= 0 || chosen.remainingSessions <= 0
               const classHuntCompensation = classHuntCompensationFromLesson(approvingLesson)
               const previewCurrency = classHuntCompensation?.currency || chosen.currency || 'VND'
+              const salePercent = normalizeManualPromoDiscount(chosen.promoDiscountPercent)
+              const previewPrice = classHuntCompensation
+                ? classHuntCompensation.ratePerMinute
+                : courseSalePricePerMinute(chosen.pricePerMinute || 0, salePercent, previewCurrency)
               const previewSalary = classHuntCompensation
                 ? classHuntCompensationSalary(approvingLesson.minutes, classHuntCompensation)
-                : calculateSalary(approvingLesson.minutes, chosen.pricePerMinute || 0, approvingLesson.teacherLevel ?? 1, previewCurrency)
+                : calculateSalary(approvingLesson.minutes, previewPrice, approvingLesson.teacherLevel ?? 1, previewCurrency)
+              const previewRate = !classHuntCompensation && salePercent > 0 && previewCurrency.toUpperCase() === 'VND'
+                ? manualPromoPointsPer25Minutes(normalizePointsPer25Minutes(approvingLesson.pointsPer25Minutes), salePercent)
+                : normalizePointsPer25Minutes(approvingLesson.pointsPer25Minutes)
+              const previewDeduct = approvalIsZeroMinuteExcusedAbsence
+                ? 0
+                : calculateLessonPoints(approvingLesson.minutes, previewRate)
               return (
                 <div className="space-y-1.5 border-t border-slate-100 pt-2.5">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Số phút môn này còn lại</span>
+                    <span className="text-slate-500">Quỹ kim cương môn này còn lại</span>
                     <span className={`font-semibold ${isOutOfSessions ? 'text-rose-500 font-bold' : 'text-slate-700'}`}>
-                      {chosen.remainingMinutes} → {chosen.remainingMinutes - approvingLesson.minutes} phút
+                      {chosen.remainingMinutes} → {Math.max(0, chosen.remainingMinutes - previewDeduct)} kim cương
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">{classHuntCompensation ? 'Lương gia sư (rate lớp đã chốt)' : 'Lương gia sư (tính theo môn chọn)'}</span>
+                    <span className="text-slate-500">
+                      {classHuntCompensation
+                        ? 'Lương gia sư (rate lớp đã chốt)'
+                        : salePercent > 0 && previewCurrency.toUpperCase() === 'VND'
+                          ? `Lương gia sư (SALE -${salePercent}%)`
+                          : 'Lương gia sư (tính theo môn chọn)'}
+                    </span>
                     <span className="text-emerald-500 font-semibold">
                       +{formatMoney(previewSalary, previewCurrency)}
                     </span>

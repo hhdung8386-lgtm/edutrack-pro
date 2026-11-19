@@ -11,12 +11,12 @@ import { bookingHoldMinutes, resolveLessonBookingsForApproval } from '@/lib/less
 import {
   defaultApprovalSubjectId,
   lessonApprovalClassHuntCompensation,
-  lessonApprovalPoints,
   pickApprovalSubjectPackageIndex,
+  resolveCourseSaleApprovalTerms,
   usableLessonApprovalBookings,
 } from '@/lib/lenientLessonApproval'
 import { isZeroMinuteExcusedAbsence } from '@/lib/lessonAttendance'
-import { getCountryRate } from '@/lib/countryPricing'
+import { courseSalePricePerMinute, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { lessonHomeworkText } from './lessonReport'
 import {
@@ -164,9 +164,6 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const zeroMinuteExcusedAbsenceNow = isZeroMinuteExcusedAbsence(lessonNow)
           const bookingNow = bookingNows[0] || null
           const classHuntCompensation = lessonApprovalClassHuntCompensation(bookingNows, lessonNow)
-          const legacyTeacherLevel = (lessonNow.teacherLevel ?? teacherData?.level ?? 1) || 1
-
-          const lessonPoints = lessonApprovalPoints(lessonNow, bookingNows, teacherData, zeroMinuteExcusedAbsenceNow)
 
           // Initialize subjects array for backward compatibility if needed
           const updatedSubjects: StudentSubject[] = studentData.subjects && studentData.subjects.length > 0
@@ -191,24 +188,40 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                 }]
               : []
 
+          const prelimPkg = updatedSubjects.find((sub) => sub.subjectId === approveSubjectId) || chosenSubjectPkg
+          const prelimTerms = resolveCourseSaleApprovalTerms({
+            lesson: lessonNow,
+            bookings: bookingNows,
+            teacher: teacherData,
+            subjectPackage: prelimPkg,
+            classHuntCompensation,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
+
           // Deduct from the selected subject package
-          const sIdx = pickApprovalSubjectPackageIndex(updatedSubjects, approveSubjectId, lessonPoints)
+          const sIdx = pickApprovalSubjectPackageIndex(updatedSubjects, approveSubjectId, prelimTerms.lessonPoints)
           if (sIdx === -1) {
             throw new Error(`Không tìm thấy gói môn học ${chosenSubjectPkg.subjectName}`)
           }
 
           const subPkg = updatedSubjects[sIdx]
+          const terms = resolveCourseSaleApprovalTerms({
+            lesson: lessonNow,
+            bookings: bookingNows,
+            teacher: teacherData,
+            subjectPackage: subPkg,
+            classHuntCompensation,
+            isZeroMinuteExcusedAbsence: zeroMinuteExcusedAbsenceNow,
+          })
+          const lessonPoints = terms.lessonPoints
+          const approvedPointsPer25 = terms.pointsPer25Minutes
           if (Number(subPkg.remainingMinutes || 0) < lessonPoints) {
             throw new Error('NOT_ENOUGH_POINTS')
           }
           const freshSubjectPkg = subPkg
-          const legacyRate = getCountryRate(
-            freshSubjectPkg,
-            teacherData?.country || 'VN',
-          )
-          const pricePerMinute = classHuntCompensation?.ratePerMinute ?? legacyRate.price
-          const currency = classHuntCompensation?.currency ?? legacyRate.currency
-          const teacherLevel = classHuntCompensation ? 1 : legacyTeacherLevel
+          const pricePerMinute = terms.pricePerMinute
+          const currency = terms.currency
+          const teacherLevel = terms.teacherLevel
           const salary = classHuntCompensation
             ? classHuntCompensationSalary(lessonNow.minutes, classHuntCompensation)
             : calculateSalary(lessonNow.minutes, pricePerMinute, teacherLevel, currency)
@@ -257,7 +270,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             currency,
             ...(classHuntCompensation ? classHuntCompensationLegacyFields(classHuntCompensation) : {}),
             points: lessonPoints,
-            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
+            pointsPer25Minutes: approvedPointsPer25,
             subjectId: freshSubjectPkg.subjectId,
             subjectName: freshSubjectPkg.subjectName,
             ...(freshSubjectPkg.curriculumLink || bookingNow?.curriculumLink ? {
@@ -339,7 +352,7 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
             date: lesson.date,
             minutes: lesson.minutes,
             points: lessonPoints,
-            pointsPer25Minutes: Number(bookingNow?.pointsPer25Minutes ?? lessonNow.pointsPer25Minutes ?? teacherData?.pointsPer25Minutes) || 25,
+            pointsPer25Minutes: approvedPointsPer25,
             comment: lesson.comment || '',
             homework: lessonHomeworkText(lessonNow),
             homeworkItems: lessonNow.homeworkItems || [],
@@ -507,9 +520,11 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
                 .filter((sub, index, all) => all.findIndex((item) => item.subjectId === sub.subjectId) === index)
                 .map((sub) => {
                   const isOutOfSessions = sub.remainingMinutes <= 0
+                  const salePercent = normalizeManualPromoDiscount(sub.promoDiscountPercent)
+                  const displayPrice = courseSalePricePerMinute(sub.pricePerMinute ?? 0, salePercent, sub.currency)
                   return (
                     <option key={sub.subjectId} value={sub.subjectId}>
-                      {sub.subjectName} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(sub.pricePerMinute ?? 0, sub.currency)}
+                      {sub.subjectName}{salePercent > 0 ? ` [SALE -${salePercent}%]` : ''} {isOutOfSessions ? '(Hết buổi)' : `(Còn ${sub.remainingSessions}b / ${sub.remainingMinutes}m)`} - {formatPricePerMinute(displayPrice, sub.currency)}
                     </option>
                   )
                 })}
@@ -530,9 +545,13 @@ export function ApproveModal({ lesson, onClose }: ApproveModalProps) {
           const isOutOfSessions = chosen.remainingMinutes <= 0 || chosen.remainingSessions <= 0
           const classHuntCompensation = classHuntCompensationFromLesson(lesson)
           const previewCurrency = classHuntCompensation?.currency || chosen.currency || 'VND'
+          const salePercent = normalizeManualPromoDiscount(chosen.promoDiscountPercent)
+          const previewPrice = classHuntCompensation
+            ? classHuntCompensation.ratePerMinute
+            : courseSalePricePerMinute(chosen.pricePerMinute || 0, salePercent, previewCurrency)
           const previewSalary = classHuntCompensation
             ? classHuntCompensationSalary(lesson.minutes, classHuntCompensation)
-            : calculateSalary(lesson.minutes, chosen.pricePerMinute || 0, lesson.teacherLevel ?? 1, previewCurrency)
+            : calculateSalary(lesson.minutes, previewPrice, lesson.teacherLevel ?? 1, previewCurrency)
           return (
             <div className="border-t border-slate-200 pt-2 mt-2 space-y-1.5">
               <div className="flex justify-between">

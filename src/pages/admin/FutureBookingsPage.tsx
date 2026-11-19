@@ -202,7 +202,7 @@ export function FutureBookingsPage() {
     () => (scopeSingleStudentId
       ? bookings
         .filter((booking) => booking.studentId === scopeSingleStudentId)
-        .map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}`)
+        .map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}:${getBookingPoints(booking)}`)
         .sort()
         .join('|')
       : ''),

@@ -2,7 +2,9 @@ import type { BookingRequest, ClassHuntCompensation, Lesson, StudentSubject, Tea
 import { isActiveAttendanceBooking } from './bookingLogic.ts'
 import { bookingTimeToMinutes } from './bookingTime.ts'
 import { classHuntCompensationFromBookings, classHuntCompensationFromLesson } from './classHuntCompensation.ts'
-import { getBookingPoints, getLessonPoints } from './points.ts'
+import { getCountryRate } from './countryPricing.ts'
+import { courseSalePricePerMinute, manualPromoPointsPer25Minutes, normalizeManualPromoDiscount } from './manualPromoDiscount.ts'
+import { calculateLessonPoints, getBookingPoints, getLessonPoints, normalizePointsPer25Minutes } from './points.ts'
 
 /**
  * Duyệt buổi dạy (quyết định vận hành 2026-09-25): admin đã có bước xác nhận
@@ -157,4 +159,77 @@ export function defaultApprovalSubjectId(
   if (lessonSubjectId && subjects.some((subject) => subject.subjectId === lessonSubjectId)) return lessonSubjectId
   const uniqueIds = Array.from(new Set(subjects.map((subject) => subject.subjectId).filter(Boolean)))
   return uniqueIds.length === 1 ? uniqueIds[0] : ''
+}
+
+export interface ApprovalPricingTerms {
+  lessonPoints: number
+  pointsPer25Minutes: number
+  pricePerMinute: number
+  currency: string
+  teacherLevel: number
+  appliedCourseSalePercent: number
+}
+
+/**
+ * Chốt kim cương và đơn giá lương khi duyệt buổi học.
+ * - Nếu buổi đã có snapshot Class Hunting / Lớp ưu đãi (`classHuntCompensation`),
+ *   giữ nguyên snapshot đã chốt (không giảm hai lần).
+ * - Nếu không có snapshot nhưng gói môn đang chọn là khóa SALE VND, tự động giảm
+ *   cả kim cương/25' lẫn đơn giá lương/phút theo % SALE của khóa.
+ */
+export function resolveCourseSaleApprovalTerms(input: {
+  lesson: Pick<Lesson, 'minutes' | 'attendanceStatus'> & Partial<Pick<Lesson, 'points' | 'pointsPer25Minutes' | 'teacherLevel'>>
+  bookings: BookingRequest[]
+  teacher: Partial<Teacher> | null | undefined
+  subjectPackage: StudentSubject
+  classHuntCompensation: ClassHuntCompensation | null
+  isZeroMinuteExcusedAbsence: boolean
+}): ApprovalPricingTerms {
+  const { lesson, bookings, teacher, subjectPackage, classHuntCompensation, isZeroMinuteExcusedAbsence } = input
+  const legacyTeacherLevel = (lesson.teacherLevel ?? teacher?.level ?? 1) || 1
+  const bookingNow = bookings[0] || null
+  const baseRate = normalizePointsPer25Minutes(
+    bookingNow?.pointsPer25Minutes ?? lesson.pointsPer25Minutes ?? teacher?.pointsPer25Minutes,
+  )
+  const basePoints = lessonApprovalPoints(lesson, bookings, teacher, isZeroMinuteExcusedAbsence)
+  const legacyRate = getCountryRate(subjectPackage, teacher?.country || 'VN')
+
+  if (classHuntCompensation) {
+    return {
+      lessonPoints: basePoints,
+      pointsPer25Minutes: baseRate,
+      pricePerMinute: classHuntCompensation.ratePerMinute,
+      currency: classHuntCompensation.currency,
+      teacherLevel: 1,
+      appliedCourseSalePercent: 0,
+    }
+  }
+
+  const salePercent = normalizeManualPromoDiscount(subjectPackage.promoDiscountPercent)
+  const currency = legacyRate.currency || 'VND'
+  if (salePercent > 0 && currency.toUpperCase() === 'VND') {
+    const teacherBaseRate = normalizePointsPer25Minutes(teacher?.pointsPer25Minutes)
+    const discountedRate = manualPromoPointsPer25Minutes(teacherBaseRate, salePercent)
+    const minutes = Number(lesson.minutes) || 0
+    const lessonPoints = isZeroMinuteExcusedAbsence || minutes <= 0
+      ? 0
+      : calculateLessonPoints(minutes, discountedRate)
+    return {
+      lessonPoints,
+      pointsPer25Minutes: discountedRate,
+      pricePerMinute: courseSalePricePerMinute(legacyRate.price, salePercent, currency),
+      currency,
+      teacherLevel: legacyTeacherLevel,
+      appliedCourseSalePercent: salePercent,
+    }
+  }
+
+  return {
+    lessonPoints: basePoints,
+    pointsPer25Minutes: baseRate,
+    pricePerMinute: legacyRate.price,
+    currency,
+    teacherLevel: legacyTeacherLevel,
+    appliedCourseSalePercent: 0,
+  }
 }

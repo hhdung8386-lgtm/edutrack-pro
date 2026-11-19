@@ -1,7 +1,7 @@
-import type { BookingRequest, ClassHuntCompensation, StudentSubject } from '../types/index.ts'
+import type { BookingRequest, ClassHuntCompensation, Lesson, StudentSubject } from '../types/index.ts'
 import { isBookingHoldingStudentFund } from './bookingLogic.ts'
 import { MANUAL_PROMO_BATCH_PREFIX, manualPromoCompensation, manualPromoPointsPer25Minutes, normalizeManualPromoDiscount } from './manualPromoDiscount.ts'
-import { calculateLessonPoints, getBookingPoints } from './points.ts'
+import { calculateLessonPoints, getBookingPoints, getLessonPoints, normalizePointsPer25Minutes } from './points.ts'
 
 /**
  * Áp SALE của khóa cho các ca đã xếp tay giá thường mà chưa học xong (đang giữ
@@ -105,4 +105,94 @@ export function planCourseSaleBookingReprice({
   }
   const heldDelta = updates.reduce((sum, update) => sum + (update.holding ? update.pointsAfter - update.pointsBefore : 0), 0)
   return { updates, heldDelta, missingPriceBookingIds }
+}
+
+export interface CourseSaleApprovedLessonUpdate {
+  id: string
+  date: string
+  teacherId: string
+  teacherName: string
+  minutes: number
+  pointsBefore: number
+  pointsAfter: number
+  rateAfter: number
+}
+
+export interface CourseSaleApprovedLessonPlan {
+  percent: number
+  updates: CourseSaleApprovedLessonUpdate[]
+  totalBefore: number
+  totalAfter: number
+  refundDiamonds: number
+}
+
+type PlanApprovedLesson = Pick<Lesson, 'id' | 'status' | 'subjectId' | 'teacherId' | 'minutes' | 'date'> & {
+  teacherName?: string
+  points?: number | null
+  pointsPer25Minutes?: number | null
+  classHuntId?: unknown
+}
+
+/**
+ * Đồng bộ kim cương cho các buổi ĐÃ DUYỆT thuộc khóa SALE nhưng trước đó bị trừ
+ * kim cương theo giá thường (vd đổi sang khóa SALE trước khi đồng bộ kim cương,
+ * hoặc duyệt buổi không gắn ca ưu đãi).
+ *
+ * Chỉ giảm kim cương của buổi đang trừ cao hơn mức SALE của khóa (không đụng buổi
+ * Class Hunting có rate riêng, không tăng kim cương, không đổi lương gia sư đã chốt).
+ */
+export function planCourseSaleApprovedLessonReprice({
+  lessons,
+  course,
+  teacherPoints,
+}: {
+  lessons: PlanApprovedLesson[]
+  course: Pick<StudentSubject, 'subjectId' | 'promoDiscountPercent'>
+  teacherPoints: Readonly<Record<string, number>>
+}): CourseSaleApprovedLessonPlan {
+  const percent = normalizeManualPromoDiscount(course.promoDiscountPercent)
+  if (!percent) {
+    return { percent: 0, updates: [], totalBefore: 0, totalAfter: 0, refundDiamonds: 0 }
+  }
+
+  const updates: CourseSaleApprovedLessonUpdate[] = []
+  for (const lesson of lessons) {
+    if (lesson.status !== 'approved') continue
+    if (lesson.subjectId !== course.subjectId) continue
+    const minutes = Number(lesson.minutes)
+    if (!(minutes > 0)) continue
+    // Không đụng buổi Class Hunting thật (có rate thương lượng riêng).
+    const huntId = typeof lesson.classHuntId === 'string' ? lesson.classHuntId.trim() : ''
+    if (huntId && !huntId.startsWith(MANUAL_PROMO_BATCH_PREFIX)) continue
+
+    const teacherRate = teacherPoints[lesson.teacherId]
+    const pointsBefore = getLessonPoints(
+      {
+        minutes: lesson.minutes,
+        points: lesson.points ?? undefined,
+        pointsPer25Minutes: lesson.pointsPer25Minutes ?? undefined,
+      },
+      teacherRate ? { pointsPer25Minutes: teacherRate } : undefined,
+    )
+    const baseRate = normalizePointsPer25Minutes(teacherRate)
+    const rateAfter = manualPromoPointsPer25Minutes(baseRate, percent)
+    const pointsAfter = calculateLessonPoints(minutes, rateAfter)
+    if (pointsAfter >= pointsBefore) continue
+
+    updates.push({
+      id: lesson.id,
+      date: lesson.date || '',
+      teacherId: lesson.teacherId,
+      teacherName: lesson.teacherName || '',
+      minutes,
+      pointsBefore,
+      pointsAfter,
+      rateAfter,
+    })
+  }
+
+  const totalBefore = Math.round(updates.reduce((sum, u) => sum + u.pointsBefore, 0) * 100) / 100
+  const totalAfter = Math.round(updates.reduce((sum, u) => sum + u.pointsAfter, 0) * 100) / 100
+  const refundDiamonds = Math.max(0, Math.round((totalBefore - totalAfter) * 100) / 100)
+  return { percent, updates, totalBefore, totalAfter, refundDiamonds }
 }

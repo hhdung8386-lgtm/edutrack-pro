@@ -21,17 +21,17 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatMoney, formatPricePerMinute, getSessionLevel, SESSION_LEVEL_TEXT_CLASS } from '@/lib/constants'
 import { DiamondPointsIcon } from '@/components/shared/DiamondPointsIcon'
-import { getBookingPoints, getLessonPoints } from '@/lib/points'
+import { calculateLessonPoints, getBookingPoints, getLessonPoints, normalizePointsPer25Minutes } from '@/lib/points'
 import { courseDeletionBlock, courseDeletionBlockMessage, studentFieldsAfterCourseRemoval } from '@/lib/courseDeletion'
 import { getCanonicalSubjectRate, getCountryRate } from '@/lib/countryPricing'
 import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
-import { courseSalePricePerMinute, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
+import { courseSalePricePerMinute, manualPromoPointsPer25Minutes, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
 import { SaleSalaryAmount } from '@/components/shared/SaleSalary'
 import { promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
-import { planCourseSaleBookingReprice } from '@/lib/courseSaleBookings'
+import { planCourseSaleApprovedLessonReprice, planCourseSaleBookingReprice, type CourseSaleApprovedLessonPlan } from '@/lib/courseSaleBookings'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import { ONLINE_CLASSROOM_PILOT_ACTIVE } from '@/lib/classroomPilotSwitch'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -133,6 +133,8 @@ export function StudentDetailPage() {
   const [editCourseEntryContext, setEditCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
   const [deleteCourseEntryContext, setDeleteCourseEntryContext] = useState<{ subjectId: string; batchId: string } | null>(null)
   const [reconciling, setReconciling] = useState(false)
+  const [syncSaleLessonsTarget, setSyncSaleLessonsTarget] = useState<{ course: StudentSubject; plan: CourseSaleApprovedLessonPlan } | null>(null)
+  const [syncingSaleLessons, setSyncingSaleLessons] = useState(false)
   const [reversingLesson, setReversingLesson] = useState<Lesson | null>(null)
   const [actioning, setActioning] = useState(false)
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null)
@@ -851,6 +853,132 @@ export function StudentDetailPage() {
     }
   }
 
+  const handleSyncCourseSaleLessons = async () => {
+    if (!student || !syncSaleLessonsTarget) return
+    const { course, plan } = syncSaleLessonsTarget
+    if (plan.updates.length === 0) {
+      setSyncSaleLessonsTarget(null)
+      return
+    }
+    if (plan.updates.length > 400) {
+      toast.error('Quá nhiều buổi cần đồng bộ trong một lần; vui lòng liên hệ kỹ thuật.')
+      return
+    }
+    setSyncingSaleLessons(true)
+    try {
+      let appliedCount = 0
+      let actualRefund = 0
+      const appliedChanges: Array<{ lessonId: string; pointsBefore: number; pointsAfter: number; rateAfter: number }> = []
+
+      await runTransaction(db, async (tx) => {
+        const studentRef = doc(db, 'students', student.id)
+        const lessonRefs = plan.updates.map((u) => doc(db, 'lessons', u.id))
+        const [studentSnap, ...lessonSnaps] = await Promise.all([
+          tx.get(studentRef),
+          ...lessonRefs.map((ref) => tx.get(ref)),
+        ])
+        if (!studentSnap.exists()) throw new Error('Không tìm thấy học viên')
+        const freshStudent = { id: studentSnap.id, ...studentSnap.data() } as Student
+        const updatedSubjects: StudentSubject[] = freshStudent.subjects?.length
+          ? freshStudent.subjects.map((sub) => ({ ...sub }))
+          : activeSubjects.map((sub) => ({ ...sub }))
+        const courseIdx = updatedSubjects.findIndex((sub) => sub.subjectId === course.subjectId)
+        if (courseIdx === -1) throw new Error('Khóa học không còn tồn tại; hãy tải lại trang')
+
+        const freshPercent = normalizeManualPromoDiscount(updatedSubjects[courseIdx].promoDiscountPercent)
+        if (!freshPercent) throw new Error('Khóa học không còn áp dụng SALE')
+
+        const freshLessons: Lesson[] = lessonSnaps
+          .filter((snap) => snap.exists())
+          .map((snap) => ({ id: snap.id, ...snap.data() } as Lesson))
+        const freshPlan = planCourseSaleApprovedLessonReprice({
+          lessons: freshLessons,
+          course: updatedSubjects[courseIdx],
+          teacherPoints: liveRates.teacherPoints,
+        })
+        if (freshPlan.updates.length === 0) return
+
+        actualRefund = freshPlan.refundDiamonds
+        appliedCount = freshPlan.updates.length
+
+        const pkg = updatedSubjects[courseIdx]
+        const nextUsed = Math.max(0, Number(pkg.usedMinutes || 0) - actualRefund)
+        updatedSubjects[courseIdx] = withUsedMinutes(pkg, nextUsed)
+
+        const totalSessions = updatedSubjects.reduce((sum, sub) => sum + Number(sub.totalSessions || 0), 0)
+        const usedSessions = updatedSubjects.reduce((sum, sub) => sum + Number(sub.usedSessions || 0), 0)
+        const remainingSessions = updatedSubjects.reduce((sum, sub) => sum + Number(sub.remainingSessions || 0), 0)
+        const totalMinutes = updatedSubjects.reduce((sum, sub) => sum + Number(sub.totalMinutes || 0), 0)
+        const usedMinutes = updatedSubjects.reduce((sum, sub) => sum + Number(sub.usedMinutes || 0), 0)
+        const remainingMinutes = updatedSubjects.reduce((sum, sub) => sum + Number(sub.remainingMinutes || 0), 0)
+        const primarySubject = updatedSubjects.find((sub) => sub.remainingMinutes > 0) || updatedSubjects[0] || null
+        const nextStatus = freshStudent.status === 'reserved' || freshStudent.status === 'inactive'
+          ? freshStudent.status
+          : remainingMinutes > 0 ? 'active' : 'expired'
+
+        freshPlan.updates.forEach((u) => {
+          appliedChanges.push({
+            lessonId: u.id,
+            pointsBefore: u.pointsBefore,
+            pointsAfter: u.pointsAfter,
+            rateAfter: u.rateAfter,
+          })
+          tx.update(doc(db, 'lessons', u.id), {
+            points: u.pointsAfter,
+            pointsPer25Minutes: u.rateAfter,
+            updatedAt: serverTimestamp(),
+          })
+          tx.set(doc(db, 'publicLessons', u.id), {
+            points: u.pointsAfter,
+            pointsPer25Minutes: u.rateAfter,
+          }, { merge: true })
+        })
+
+        tx.update(studentRef, {
+          subjects: updatedSubjects,
+          totalSessions,
+          usedSessions,
+          remainingSessions,
+          totalMinutes,
+          usedMinutes,
+          remainingMinutes,
+          subjectId: primarySubject?.subjectId || '',
+          subjectName: primarySubject?.subjectName || '',
+          minutesPerSession: primarySubject?.minutesPerSession || mps,
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      if (appliedCount > 0) {
+        await addDoc(collection(db, 'adminLogs'), {
+          adminId: user?.uid || '',
+          action: 'SYNC_COURSE_SALE_LESSON_DIAMONDS',
+          targetType: 'student',
+          targetId: student.id,
+          changes: {
+            subjectId: course.subjectId,
+            subjectName: course.subjectName,
+            promoDiscountPercent: plan.percent,
+            lessonCount: appliedCount,
+            refundDiamonds: actualRefund,
+            lessons: appliedChanges,
+          },
+          createdAt: serverTimestamp(),
+        })
+        toast.success(`Đã đồng bộ kim cương ${appliedCount} buổi theo SALE -${plan.percent}% (hoàn lại +${actualRefund.toLocaleString('vi-VN')} kim cương vào quỹ).`)
+      } else {
+        toast.info('Các buổi đã được đồng bộ trước đó.')
+      }
+      setSyncSaleLessonsTarget(null)
+    } catch (error) {
+      console.error('Sync course SALE lesson diamonds failed:', error)
+      toast.error(error instanceof Error ? error.message : 'Đồng bộ kim cương theo SALE thất bại')
+    } finally {
+      setSyncingSaleLessons(false)
+    }
+  }
+
   const courseDeleteBlockFor = (subjectId: string) => courseDeletionBlock(
     subjectId,
     lessons,
@@ -1208,7 +1336,7 @@ export function StudentDetailPage() {
       const catalogData = (await getDoc(doc(db, 'subjects', getCatalogSubjectId(nextSubjectId)))).data()
       const catalogRate = catalogData ? getCanonicalSubjectRate(catalogData) : null
       const currency = nextSubject.currency || catalogRate?.currency || 'VND'
-      // Chuyển buổi sang khóa SALE thì lương theo giá gói đã giảm, đúng giá hiện ở ô chọn khóa.
+      // Chuyển buổi sang khóa SALE thì lương và kim cương cùng theo mức giảm của khóa.
       const pricePerMinute = courseSalePricePerMinute(
         Number(nextSubject.pricePerMinute) || catalogRate?.price || 0,
         nextSubject.promoDiscountPercent,
@@ -1217,7 +1345,24 @@ export function StudentDetailPage() {
       const salary = lesson.status === 'approved'
         ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
         : 0
-      const lessonPoints = lessonFundPoints(lesson)
+      const oldLessonPoints = lessonFundPoints(lesson)
+      const oldSubject = activeSubjects.find((subject) => subject.subjectId === lesson.subjectId)
+      const oldSalePercent = normalizeManualPromoDiscount(oldSubject?.promoDiscountPercent)
+      const nextSalePercent = normalizeManualPromoDiscount(nextSubject.promoDiscountPercent)
+      const teacherBaseRate = normalizePointsPer25Minutes(liveRates.teacherPoints[lesson.teacherId])
+      let nextPointsPer25: number | undefined
+      let newLessonPoints = oldLessonPoints
+      if ((nextSalePercent > 0 || oldSalePercent > 0) && currency.toUpperCase() === 'VND') {
+        const baseRate = oldSalePercent === 0 && Number(lesson.pointsPer25Minutes) > 0
+          ? Number(lesson.pointsPer25Minutes)
+          : teacherBaseRate
+        nextPointsPer25 = nextSalePercent > 0
+          ? manualPromoPointsPer25Minutes(baseRate, nextSalePercent)
+          : teacherBaseRate
+        newLessonPoints = Number(lesson.minutes) > 0
+          ? calculateLessonPoints(lesson.minutes, nextPointsPer25)
+          : 0
+      }
 
       await runTransaction(db, async (tx) => {
         const lessonRef = doc(db, 'lessons', lesson.id)
@@ -1266,19 +1411,19 @@ export function StudentDetailPage() {
           if (newIndex === -1) throw new Error(`Không tìm thấy gói môn ${nextSubject.subjectName}`)
 
           const availableForNewSubject = updatedSubjects[newIndex].remainingMinutes || 0
-          if (availableForNewSubject < lessonPoints) {
-            throw new Error(`Môn ${nextSubject.subjectName} không đủ ${lessonPoints} kim cương khả dụng`)
+          if (availableForNewSubject < newLessonPoints) {
+            throw new Error(`Môn ${nextSubject.subjectName} không đủ ${newLessonPoints} kim cương khả dụng`)
           }
 
           updatedSubjects[oldIndex] = withUsedMinutes(
             updatedSubjects[oldIndex],
-            updatedSubjects[oldIndex].usedMinutes - lessonPoints,
+            updatedSubjects[oldIndex].usedMinutes - oldLessonPoints,
           )
           sessionsBeforeApproval = updatedSubjects[newIndex].remainingSessions
           minutesBeforeApproval = updatedSubjects[newIndex].remainingMinutes
           updatedSubjects[newIndex] = withUsedMinutes(
             updatedSubjects[newIndex],
-            updatedSubjects[newIndex].usedMinutes + lessonPoints,
+            updatedSubjects[newIndex].usedMinutes + newLessonPoints,
           )
           sessionsAfterApproval = updatedSubjects[newIndex].remainingSessions
           minutesAfterApproval = updatedSubjects[newIndex].remainingMinutes
@@ -1314,6 +1459,7 @@ export function StudentDetailPage() {
           currency,
           teacherLevel,
           salary,
+          ...(nextPointsPer25 !== undefined ? { points: newLessonPoints, pointsPer25Minutes: nextPointsPer25 } : {}),
           sessionsBeforeApproval,
           sessionsAfterApproval,
           minutesBeforeApproval,
@@ -1325,6 +1471,7 @@ export function StudentDetailPage() {
           tx.set(doc(db, 'publicLessons', lesson.id), {
             subjectId: nextSubject.subjectId,
             subjectName: nextSubject.subjectName,
+            ...(nextPointsPer25 !== undefined ? { points: newLessonPoints, pointsPer25Minutes: nextPointsPer25 } : {}),
           }, { merge: true })
         }
 
@@ -1636,6 +1783,39 @@ export function StudentDetailPage() {
                   }}
                 >
                   Áp SALE cho các ca này
+                </Button>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* Khóa SALE có buổi đã duyệt nhưng bị trừ kim cương giá thường: cho phép đồng bộ kim cương hoàn lại quỹ. */}
+      {(() => {
+        const syncHints = storedSubjects.flatMap((course) => {
+          if (isGroupClass(student)) return []
+          const plan = planCourseSaleApprovedLessonReprice({
+            lessons,
+            course,
+            teacherPoints: liveRates.teacherPoints,
+          })
+          if (plan.updates.length === 0 || plan.refundDiamonds <= 0) return []
+          return [{ course, plan }]
+        })
+        if (syncHints.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {syncHints.map(({ course, plan }) => (
+              <div key={`sale-lessons-${course.subjectId}`} className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+                <p className="leading-6">
+                  <strong>{course.subjectName}</strong> (<strong>SALE -{plan.percent}%</strong>) có <strong>{plan.updates.length} buổi đã duyệt</strong> đang trừ kim cương theo giá thường ({plan.totalBefore.toLocaleString('vi-VN')} → {plan.totalAfter.toLocaleString('vi-VN')} kim cương, nhiều hơn <strong>{plan.refundDiamonds.toLocaleString('vi-VN')} kim cương</strong>). Đồng bộ để hoàn lại quỹ kim cương cho học viên (không đổi lương gia sư).
+                </p>
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setSyncSaleLessonsTarget({ course, plan })}
+                >
+                  Đồng bộ kim cương theo SALE
                 </Button>
               </div>
             ))}
@@ -1977,7 +2157,7 @@ export function StudentDetailPage() {
       {id && (
         <StudentHoldLedgerPanel
           studentId={id}
-          refreshKey={bookingRequests.map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}`).join('|')}
+          refreshKey={bookingRequests.map((booking) => `${booking.id}:${booking.status}:${booking.lessonId || ''}:${getBookingPoints(booking)}`).join('|')}
           futureLocation="link"
         />
       )}
@@ -2417,6 +2597,37 @@ export function StudentDetailPage() {
               </p>
             </div>
           )}
+        </ConfirmDialog>
+      )}
+
+      {syncSaleLessonsTarget && (
+        <ConfirmDialog
+          open
+          onClose={() => { if (!syncingSaleLessons) setSyncSaleLessonsTarget(null) }}
+          onConfirm={handleSyncCourseSaleLessons}
+          title={`Đồng bộ kim cương theo SALE -${syncSaleLessonsTarget.plan.percent}%?`}
+          description={`Khóa ${syncSaleLessonsTarget.course.subjectName} · ${syncSaleLessonsTarget.plan.updates.length} buổi đã duyệt`}
+          confirmLabel="Đồng bộ kim cương"
+          confirmVariant="primary"
+          loading={syncingSaleLessons}
+        >
+          <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="flex justify-between">
+              <span className="text-slate-600">Kim cương đã trừ (cũ → mới)</span>
+              <span className="font-bold tabular-nums">
+                {syncSaleLessonsTarget.plan.totalBefore.toLocaleString('vi-VN')} → {syncSaleLessonsTarget.plan.totalAfter.toLocaleString('vi-VN')} kim cương
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Hoàn lại vào quỹ khóa</span>
+              <span className="font-bold text-emerald-700 tabular-nums">
+                +{syncSaleLessonsTarget.plan.refundDiamonds.toLocaleString('vi-VN')} kim cương
+              </span>
+            </div>
+            <p className="pt-1 text-xs text-slate-600">
+              Lương gia sư đã chốt của các buổi này được giữ nguyên. Thao tác có ghi nhật ký hệ thống.
+            </p>
+          </div>
         </ConfirmDialog>
       )}
 
