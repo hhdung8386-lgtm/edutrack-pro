@@ -69,3 +69,14 @@ export function courseSaleDiamonds(baseDiamonds: unknown, discountPercent: unkno
   const rate = manualPromoPointsPer25Minutes(COURSE_SALE_BASE_POINTS_PER_25_MINUTES, percent)
   return Math.max(1, Math.round(base * rate / COURSE_SALE_BASE_POINTS_PER_25_MINUTES))
 }
+
+/**
+ * Đơn giá/phút (lương gia sư) của khóa SALE: giá gói giảm %, làm tròn đồng.
+ * Chỉ áp cho VND (SALE chỉ cho khóa VND); không SALE hoặc tiền tệ khác → giữ nguyên.
+ */
+export function courseSalePricePerMinute(price: unknown, discountPercent: unknown, currency?: string): number {
+  const value = Number(price) || 0
+  const percent = normalizeManualPromoDiscount(discountPercent)
+  if (!percent || value <= 0 || (currency || 'VND').toUpperCase() !== 'VND') return value
+  return Math.max(1, Math.round(value * (100 - percent) / 100))
+}

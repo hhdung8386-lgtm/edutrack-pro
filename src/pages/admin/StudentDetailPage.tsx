@@ -28,6 +28,7 @@ import { teacherDisplayName } from '@/lib/teacherDisplay'
 import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
+import { courseSalePricePerMinute, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import { ONLINE_CLASSROOM_PILOT_ACTIVE } from '@/lib/classroomPilotSwitch'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -270,9 +271,12 @@ export function StudentDetailPage() {
   const expectedSalary = (lesson: Lesson) => {
     const country = liveRates.teacherCountry[lesson.teacherId] ?? 'VN'
     const rates = liveRates.subjectPrice[lesson.subjectId]
-    const { price, currency } = rates
+    const { price: basePrice, currency } = rates
       ? getCountryRate(rates, country)
       : { price: lesson.pricePerMinute ?? 0, currency: lesson.currency || 'VND' }
+    // Khóa SALE: giá hiện tại của buổi là giá gói đã giảm % (giống ô chọn khóa).
+    const lessonCourse = student?.subjects?.find((subject) => subject.subjectId === lesson.subjectId)
+    const price = rates ? courseSalePricePerMinute(basePrice, lessonCourse?.promoDiscountPercent, currency) : basePrice
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
     return salaryForLesson(lesson, { pricePerMinute: price, currency, level, calculate: calculateSalary })
   }
@@ -1117,6 +1121,13 @@ export function StudentDetailPage() {
     status: actualRemainingMinutes <= 0 ? 'expired' : student.status,
   }
 
+  // Nhãn khóa trong ô chọn: khóa SALE hiện giá đã giảm để giáo vụ thấy đúng lương sẽ tính.
+  const courseOptionLabel = (subject: StudentSubject) => {
+    const percent = normalizeManualPromoDiscount(subject.promoDiscountPercent)
+    const price = courseSalePricePerMinute(subject.pricePerMinute, percent, subject.currency)
+    return `${subject.subjectName}${percent > 0 ? ` · SALE -${percent}%` : ''} · ${formatPricePerMinute(price, subject.currency)}`
+  }
+
   const handleChangeLessonSubject = async (lesson: Lesson, nextSubjectId: string, silent = false): Promise<boolean> => {
     if (!student || !nextSubjectId || nextSubjectId === lesson.subjectId) return false
     if (classHuntCompensationFromLesson(lesson) || lesson.classHuntCompensation !== undefined) {
@@ -1157,8 +1168,13 @@ export function StudentDetailPage() {
       // buổi chuyển từ gói PHP sang gói VND vẫn bị ghi PHP trên lương.
       const catalogData = (await getDoc(doc(db, 'subjects', getCatalogSubjectId(nextSubjectId)))).data()
       const catalogRate = catalogData ? getCanonicalSubjectRate(catalogData) : null
-      const pricePerMinute = Number(nextSubject.pricePerMinute) || catalogRate?.price || 0
       const currency = nextSubject.currency || catalogRate?.currency || 'VND'
+      // Chuyển buổi sang khóa SALE thì lương theo giá gói đã giảm, đúng giá hiện ở ô chọn khóa.
+      const pricePerMinute = courseSalePricePerMinute(
+        Number(nextSubject.pricePerMinute) || catalogRate?.price || 0,
+        nextSubject.promoDiscountPercent,
+        currency,
+      )
       const salary = lesson.status === 'approved'
         ? calculateSalary(lesson.minutes, pricePerMinute, teacherLevel, currency)
         : 0
@@ -1681,7 +1697,8 @@ export function StudentDetailPage() {
                   </div>
                   <div className="flex flex-col gap-1 mt-1 text-[11px]">
                     <p className="text-slate-400">
-                      Đơn giá gói: {formatPricePerMinute(pkg.pricePerMinute ?? 0, pkg.currency)}
+                      Đơn giá gói: {formatPricePerMinute(courseSalePricePerMinute(pkg.pricePerMinute ?? 0, pkg.promoDiscountPercent, pkg.currency), pkg.currency)}
+                      {normalizeManualPromoDiscount(pkg.promoDiscountPercent) > 0 && ` (SALE -${normalizeManualPromoDiscount(pkg.promoDiscountPercent)}%, giá gốc ${formatPricePerMinute(pkg.pricePerMinute ?? 0, pkg.currency)})`}
                     </p>
                     {pkg.curriculumLink && (
                       <div className="flex items-center gap-1">
@@ -1929,7 +1946,7 @@ export function StudentDetailPage() {
                 <option value="">Chọn giáo trình mới</option>
                 {activeSubjects.map((subject) => (
                   <option key={subject.subjectId} value={subject.subjectId}>
-                    {subject.subjectName} · {formatPricePerMinute(subject.pricePerMinute, subject.currency)}
+                    {courseOptionLabel(subject)}
                   </option>
                 ))}
               </select>
@@ -2071,7 +2088,7 @@ export function StudentDetailPage() {
                           )}
                           {activeSubjects.map((subject) => (
                             <option key={subject.subjectId} value={subject.subjectId}>
-                              {subject.subjectName} · {formatPricePerMinute(subject.pricePerMinute, subject.currency)}
+                              {courseOptionLabel(subject)}
                             </option>
                           ))}
                         </select>

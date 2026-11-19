@@ -64,3 +64,13 @@ test('course SALE diamonds keep the minutes and match the per-session charge', a
   assert.equal(courseSaleDiamonds(1, 50), 1)
   assert.equal(courseSaleDiamonds(510, 30), 367)
 })
+
+test('course SALE price per minute drops by the percent for VND only', async () => {
+  const { courseSalePricePerMinute } = await import('../src/lib/manualPromoDiscount.ts')
+  assert.equal(courseSalePricePerMinute(1333, 40, 'VND'), 800) // CAP3 Khóa 2 SALE -40%
+  assert.equal(courseSalePricePerMinute(1167, 30), 817) // khớp lương lớp ưu đãi Vy Kim
+  assert.equal(courseSalePricePerMinute(1333, 0, 'VND'), 1333)
+  assert.equal(courseSalePricePerMinute(1333, undefined, 'VND'), 1333)
+  assert.equal(courseSalePricePerMinute(0.5, 40, 'USD'), 0.5)
+  assert.equal(courseSalePricePerMinute(0, 40, 'VND'), 0)
+})
