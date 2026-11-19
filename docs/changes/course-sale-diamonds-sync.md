@@ -40,3 +40,8 @@ Không đổi Cloud Functions, Rules, index, không sửa dữ liệu production
   2. Áp SALE cho các ca đã xếp tay giá thường chưa duyệt (ca đang giữ + ca của buổi chờ duyệt/bị từ chối): cùng snapshot như Xếp lớp nhanh có giảm giá (`classHuntId manual-promo-…`, kim cương/25' và lương giảm %); số kim cương đang giữ giảm theo. Không đụng ca Class Hunting, ca đã có ưu đãi, buổi đã duyệt.
   Không chặn khi lịch đang giữ vượt quỹ mới (giáo vụ xử lý ở đối soát quỹ buổi). Một transaction, log `REPRICE_COURSE_SALE`.
 - Kiểm chứng: build đạt, 310/310 test; harness: khóa 1.500 KC + 4 ca giữ + 1 ca buổi bị từ chối + 1 ca Class Hunting + 1 ca buổi đã duyệt → ghi quỹ 1.080, giữ 100 → 72, đúng 5 ca 18 KC & 583đ/phút, log đầy đủ.
+
+## Bổ sung 19/11 (đợt 3): trang gia sư vẫn hiện lương cũ
+
+- Nguyên nhân: (1) khóa Phuong Thuy (HSYMNEQA) đã là SALE -50% nhưng 30 ca đã xếp tay vẫn giá thường (25 KC, 833đ/phút) — chưa ai áp SALE cho ca; (2) trang gia sư ước lương buổi chưa duyệt theo giá ghi trên buổi, kể cả khi ca đã có snapshot SALE.
+- Sửa: trang gia sư ước lương buổi chưa duyệt theo snapshot ca ưu đãi (đúng số sẽ chốt khi duyệt) → hiện giá gốc gạch ngang + SALE. Trang học viên có thanh đỏ "khóa SALE còn N ca tính giá thường" + nút "Áp SALE cho các ca này" (mở Sửa khóa, ô áp SALE cho ca mặc định tick). Chạy thử chỉ đọc trên dữ liệu thật Phuong Thuy: 30 ca → 13 KC & 417đ/phút, giữ chỗ 600 → 312.

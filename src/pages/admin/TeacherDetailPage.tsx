@@ -49,6 +49,7 @@ import {
   classHuntCompensationLegacyFields,
   classHuntCompensationSalary,
   classHuntPayrollCompensationFields,
+  isClassHuntCompensation,
   salaryForLesson,
 } from '@/lib/classHuntCompensation'
 import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
@@ -1347,12 +1348,25 @@ export function TeacherDetailPage() {
   const monthCurrency = approvedInMonth.find((lesson) => lesson.currency)?.currency
     || pendingInMonth.find((lesson) => lesson.currency)?.currency
     || fallbackCurrency
-  const estimatedLessonSalary = (lesson: Lesson) => salaryForLesson(lesson, {
-    pricePerMinute: lesson.pricePerMinute || 0,
-    level: lesson.teacherLevel ?? teacher?.level ?? 1,
-    currency: lesson.currency || monthCurrency,
-    calculate: calculateSalary,
-  })
+  // Buổi chưa duyệt gắn ca ưu đãi (Class Hunting / khóa SALE): ước lương theo snapshot
+  // của ca, đúng số sẽ chốt khi duyệt, thay vì giá thường còn ghi trên buổi.
+  const promoBookingById = new Map(promoBookings.map((booking) => [booking.id, booking]))
+  const linkedPromoCompensation = (lesson: Lesson) => {
+    for (const bookingId of [...(lesson.bookingRequestIds || []), lesson.bookingRequestId || '']) {
+      const compensation = promoBookingById.get(bookingId)?.classHuntCompensation
+      if (isClassHuntCompensation(compensation)) return compensation
+    }
+    return null
+  }
+  const estimatedLessonSalary = (lesson: Lesson) => {
+    const promoCompensation = lesson.status !== 'approved' && !lesson.classHuntCompensation ? linkedPromoCompensation(lesson) : null
+    return salaryForLesson(promoCompensation ? { ...lesson, classHuntCompensation: promoCompensation } : lesson, {
+      pricePerMinute: lesson.pricePerMinute || 0,
+      level: lesson.teacherLevel ?? teacher?.level ?? 1,
+      currency: lesson.currency || monthCurrency,
+      calculate: calculateSalary,
+    })
+  }
 
   // Tính thẳng (không dùng hook) vì đoạn này nằm sau lệnh return sớm của trang.
   const promoPercentByKey = new Map<string, number>()

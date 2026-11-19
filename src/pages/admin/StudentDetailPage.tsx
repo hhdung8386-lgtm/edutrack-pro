@@ -31,6 +31,7 @@ import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHun
 import { courseSalePricePerMinute, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
 import { SaleSalaryAmount } from '@/components/shared/SaleSalary'
 import { promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
+import { planCourseSaleBookingReprice } from '@/lib/courseSaleBookings'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import { ONLINE_CLASSROOM_PILOT_ACTIVE } from '@/lib/classroomPilotSwitch'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -124,6 +125,8 @@ export function StudentDetailPage() {
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
   // % SALE của từng ca ưu đãi (mọi trạng thái) để gắn nhãn lương buổi đã giảm.
   const [promoPercentByBookingId, setPromoPercentByBookingId] = useState<Map<string, number>>(() => new Map())
+  // Mọi ca của học viên (kể cả đã đóng) để nhắc khóa SALE còn ca tính giá thường.
+  const [allStudentBookings, setAllStudentBookings] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
   const [addSessionsContext, setAddSessionsContext] = useState<{ mode: 'payment' | 'gift'; subjectId?: string } | null>(null)
@@ -213,6 +216,7 @@ export function StudentDetailPage() {
         if (booking.lessonId) promoPercents.set(`lesson:${booking.lessonId}`, percent)
       })
       setPromoPercentByBookingId(promoPercents)
+      setAllStudentBookings(allDocs)
       const docs = allDocs.filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       setBookingRequests(docs)
     }, (error) => {
@@ -1595,6 +1599,49 @@ export function StudentDetailPage() {
           </div>
         </Card>
       )}
+
+      {/* Khóa SALE còn ca xếp tay giá thường chưa duyệt: học/duyệt sẽ trừ đủ và trả lương gốc. */}
+      {(() => {
+        const approvedLessonIds = new Set(lessons.filter((lesson) => lesson.status === 'approved').map((lesson) => lesson.id))
+        const hints = storedSubjects.flatMap((course) => {
+          const percent = normalizeManualPromoDiscount(course.promoDiscountPercent)
+          if (!percent || isGroupClass(student)) return []
+          const plan = planCourseSaleBookingReprice({
+            bookings: allStudentBookings,
+            course,
+            discountPercent: percent,
+            approvedLessonIds,
+            teacherLevels: {},
+            batchId: 'preview',
+          })
+          if (plan.updates.length === 0) return []
+          const holding = plan.updates.filter((update) => update.holding).length
+          return [{ course, percent, total: plan.updates.length, holding, settled: plan.updates.length - holding }]
+        })
+        if (hints.length === 0) return null
+        return (
+          <div className="space-y-2">
+            {hints.map(({ course, percent, total, holding, settled }) => (
+              <div key={course.subjectId} className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between">
+                <p className="leading-6">
+                  <strong>{course.subjectName}</strong> là khóa <strong>SALE -{percent}%</strong> nhưng còn <strong>{total} ca</strong> đang tính giá thường
+                  {holding > 0 ? ` (${holding} ca đang giữ chỗ` : ' ('}{holding > 0 && settled > 0 ? ', ' : ''}{settled > 0 ? `${settled} ca của buổi chờ duyệt / bị từ chối` : ''}). Nếu để nguyên, khi học sẽ trừ đủ kim cương và trả lương giá gốc.
+                </p>
+                <Button
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    setEditingSubjectId(course.subjectId)
+                    setShowSubjectPkg(true)
+                  }}
+                >
+                  Áp SALE cho các ca này
+                </Button>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Quản lý quyền học — bảng mới bám dữ liệu quỹ hiện hữu; nhánh cũ giữ làm rollback an toàn. */}
       {COURSE_TABLE_V2 ? (

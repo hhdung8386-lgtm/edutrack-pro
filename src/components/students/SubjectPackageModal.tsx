@@ -256,7 +256,8 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   }, [bookingContext, editingPkg, isTransferringSubject, saleBookingBatchId, watchedPromoPercent])
   const [saleBookingChoice, setSaleBookingChoice] = useState<boolean | null>(null)
   useEffect(() => { setSaleBookingChoice(null) }, [watchedPromoPercent])
-  const applySaleToBookings = Boolean(saleBookingPlan?.updates.length) && (saleBookingChoice ?? editedSaleChanged)
+  // Khóa SALE mà còn ca giá thường gần như luôn là sót: mặc định tick, giáo vụ bỏ tick nếu cố ý.
+  const applySaleToBookings = Boolean(saleBookingPlan?.updates.length) && (saleBookingChoice ?? true)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
   const transferredSessions = Math.round((transferableMinutes / 25) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
