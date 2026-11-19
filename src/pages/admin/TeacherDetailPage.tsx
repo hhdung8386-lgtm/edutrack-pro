@@ -53,6 +53,8 @@ import {
 } from '@/lib/classHuntCompensation'
 import { getTeacherIntroductionAudioURL } from '@/lib/imageUploader'
 import { lessonHomeworkText } from '@/components/lessons/lessonReport'
+import { SaleSalaryAmount } from '@/components/shared/SaleSalary'
+import { promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
 
 const DAYS: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -83,6 +85,22 @@ export function TeacherDetailPage() {
   const [students, setStudents] = useState<Student[]>([])
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
+  // Ca ưu đãi (SALE) của gia sư: gắn nhãn lương buổi đã giảm. Index teacherId + % đã có.
+  const [promoBookings, setPromoBookings] = useState<BookingRequest[]>([])
+  useEffect(() => {
+    if (!id) return
+    const promoQuery = query(
+      collection(db, 'bookingRequests'),
+      where('teacherId', '==', id),
+      where('classHuntPromoDiscountPercent', '>', 0),
+    )
+    return onSnapshot(promoQuery, (snap) => {
+      setPromoBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest)))
+    }, (error) => {
+      // Chỉ mất nhãn SALE ở cột lương; số lương và thao tác duyệt không đổi.
+      console.error('[teacher-detail:promo]', error)
+    })
+  }, [id])
   const [availability, setAvailability] = useState<TeacherAvailability | null>(null)
   const [loading, setLoading] = useState(true)
   const [certImageView, setCertImageView] = useState<string | null>(null)
@@ -1336,6 +1354,30 @@ export function TeacherDetailPage() {
     calculate: calculateSalary,
   })
 
+  // Tính thẳng (không dùng hook) vì đoạn này nằm sau lệnh return sớm của trang.
+  const promoPercentByKey = new Map<string, number>()
+  promoBookings.forEach((booking) => {
+    const percent = promoDiscountPercentOf(booking)
+    if (percent === undefined) return
+    promoPercentByKey.set(booking.id, percent)
+    if (booking.lessonId) promoPercentByKey.set(`lesson:${booking.lessonId}`, percent)
+  })
+
+  // Buổi SALE: lương giá gốc (giá gói hiện tại x cấp gia sư) để gạch ngang cạnh lương đã giảm.
+  const lessonSaleSalary = (lesson: Lesson, shownSalary: number): { percent: number; regularSalary: number } | null => {
+    if (!(shownSalary > 0)) return null
+    const percent = [...(lesson.bookingRequestIds || []), lesson.bookingRequestId || '']
+      .map((bookingId) => promoPercentByKey.get(bookingId))
+      .find((value) => value !== undefined) ?? promoPercentByKey.get(`lesson:${lesson.id}`)
+    if (!percent) return null
+    const subject = subjects.find((item) => item.id === getCatalogSubjectId(lesson.subjectId))
+    if (!subject) return null
+    const { price, currency } = getCountryRate(subject, teacher?.country || 'VN')
+    if (!(price > 0)) return null
+    const regularSalary = calculateSalary(lesson.minutes, price, teacher?.level ?? lesson.teacherLevel ?? 1, currency)
+    return regularSalary > shownSalary ? { percent, regularSalary } : null
+  }
+
   const approvedSalaryMonthLabel = formatMoneyTotals(
     approvedInMonth.map((lesson) => ({ amount: lesson.salary || 0, currency: lesson.currency })),
     monthCurrency,
@@ -2455,7 +2497,17 @@ export function TeacherDetailPage() {
                       <td className="px-4 py-3 text-slate-600 italic max-w-[150px] truncate" title={l.book || ''}>{l.book || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 font-medium">{l.minutes}'</td>
                       <td className="px-4 py-3 text-slate-700 font-bold whitespace-nowrap">
-                        {formatMoney(estSalary, l.currency || monthCurrency)}
+                        {(() => {
+                          const sale = lessonSaleSalary(l, estSalary)
+                          return (
+                            <SaleSalaryAmount
+                              salary={estSalary}
+                              regularSalary={sale?.regularSalary}
+                              percent={sale?.percent}
+                              currency={l.currency || monthCurrency}
+                            />
+                          )
+                        })()}
                       </td>
                       
                       {/* Interactive Status Selector Dropdown */}

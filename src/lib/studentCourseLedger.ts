@@ -1,4 +1,5 @@
 import type { Student, StudentSubject, TopUpBatch } from '../types'
+import { courseSaleDiamonds } from './manualPromoDiscount.ts'
 
 /** Firestore map key order is not a change; array order and every value are. */
 export function areCoursePackagesUnchanged(current: StudentSubject[], baseline: StudentSubject[]): boolean {
@@ -340,4 +341,86 @@ export function deleteCourseEntry({
     : totals.remainingMinutes > 0 ? 'active' : 'expired'
 
   return { subjects, totals, primarySubject, deletedBatch, status }
+}
+
+export interface CourseSaleRepriceBatchChange {
+  batchId: string
+  learningMinutes: number
+  diamondsBefore: number
+  diamondsAfter: number
+}
+
+export interface CourseSaleRepriceResult {
+  subjects: StudentSubject[]
+  totals: CourseLedgerTotals
+  primarySubject: StudentSubject | null
+  status: Student['status']
+  totalBefore: number
+  totalAfter: number
+  remainingAfter: number
+  changes: CourseSaleRepriceBatchChange[]
+}
+
+/**
+ * Quy lại kim cương của khóa theo ưu đãi SALE: mỗi đợt giữ nguyên số phút học,
+ * kim cương = phút quy theo mức trừ mỗi ca đã giảm (0% → kim cương = phút).
+ * Không chặn khi quỹ còn lại thấp hơn lịch đang giữ: giáo vụ tự đối soát quỹ buổi.
+ * Đợt gắn giao dịch nạp tự động (`lockedBatchIds`) giữ nguyên để không lệch sổ giao dịch.
+ */
+export function repriceCourseForSale({
+  student,
+  subjectId,
+  discountPercent,
+  lockedBatchIds = [],
+}: {
+  student: Student
+  subjectId: string
+  discountPercent: number
+  lockedBatchIds?: string[]
+}): CourseSaleRepriceResult {
+  const subjects = getStudentSubjects(student)
+  const subjectIndex = subjects.findIndex((item) => item.subjectId === subjectId)
+  if (subjectIndex === -1) throw new Error('Khóa học không còn tồn tại; hãy tải lại trang')
+  const previousSubject = subjects[subjectIndex]
+  if (!previousSubject.batches?.length) {
+    throw new Error('Khóa học cũ chưa tách từng đợt nên chưa tự quy đổi được. Hãy sửa kim cương ở chi tiết khóa học.')
+  }
+
+  const locked = new Set(lockedBatchIds)
+  const changes: CourseSaleRepriceBatchChange[] = []
+  const batches = previousSubject.batches.map((batch) => {
+    const learningMinutes = getBatchLearningMinutes(batch, previousSubject)
+    const diamondsBefore = getBatchDiamonds(batch, previousSubject)
+    const diamondsAfter = courseSaleDiamonds(learningMinutes, discountPercent)
+    if (locked.has(batch.id) || !(learningMinutes > 0) || diamondsAfter === diamondsBefore) return { ...batch }
+    changes.push({ batchId: batch.id, learningMinutes, diamondsBefore, diamondsAfter })
+    return {
+      ...batch,
+      learningMinutes,
+      diamonds: diamondsAfter,
+      totalSessions: roundSessions(diamondsAfter / Number(previousSubject.minutesPerSession || 25)),
+    }
+  })
+
+  const delta = changes.reduce((sum, change) => sum + change.diamondsAfter - change.diamondsBefore, 0)
+  const totalBefore = Number(previousSubject.totalMinutes || 0)
+  const totalAfter = totalBefore + delta
+  // Quỹ âm được giữ về 0 như trạng thái học vượt quỹ hiện hữu; số đã dùng không đổi.
+  const remainingAfter = Math.max(0, getRemainingAfterFundChange(previousSubject, delta))
+  const minutesPerSession = Number(previousSubject.minutesPerSession || 25)
+  subjects[subjectIndex] = {
+    ...previousSubject,
+    batches,
+    totalMinutes: totalAfter,
+    remainingMinutes: remainingAfter,
+    totalSessions: roundSessions(totalAfter / minutesPerSession),
+    remainingSessions: roundSessions(remainingAfter / minutesPerSession),
+  }
+
+  const totals = totalCourseLedger(subjects)
+  const primarySubject = subjects.find((subject) => subject.remainingMinutes > 0) || subjects[0] || null
+  const status = student.status === 'reserved' || student.status === 'inactive'
+    ? student.status
+    : totals.remainingMinutes > 0 ? 'active' : 'expired'
+  return { subjects, totals, primarySubject, status, totalBefore, totalAfter, remainingAfter, changes }
 }

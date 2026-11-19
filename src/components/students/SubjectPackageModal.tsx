@@ -1,4 +1,6 @@
-import { areCoursePackagesUnchanged, getStudentSubjects } from '@/lib/studentCourseLedger'
+import { areCoursePackagesUnchanged, getStudentSubjects, repriceCourseForSale } from '@/lib/studentCourseLedger'
+import { useAuthStore } from '@/stores/authStore'
+import { planCourseSaleBookingReprice } from '@/lib/courseSaleBookings'
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isGroupClass } from '@/lib/groupClasses'
 import { createCourseSubjectId, getCatalogSubjectId } from '@/lib/courseIdentity'
@@ -6,16 +8,17 @@ import {
   COURSE_SALE_BASE_POINTS_PER_25_MINUTES,
   MANUAL_PROMO_DISCOUNT_OPTIONS,
   courseSaleDiamonds,
+  courseSalePricePerMinute,
   manualPromoPointsPer25Minutes,
   normalizeManualPromoDiscount,
 } from '@/lib/manualPromoDiscount'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { doc, getDocs, collection, query, where, serverTimestamp, runTransaction, type DocumentReference } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, query, where, serverTimestamp, runTransaction, type DocumentReference } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Student, Subject, StudentSubject } from '@/types'
+import { Student, Subject, StudentSubject, type BookingRequest } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -184,7 +187,76 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   const appliesSaleToNewFund = !isEdit && watchedPromoPercent > 0
   const saleFundDiamonds = courseSaleDiamonds(watchedBaseDiamonds, watchedPromoPercent)
   const salePointsPer25 = manualPromoPointsPer25Minutes(COURSE_SALE_BASE_POINTS_PER_25_MINUTES, watchedPromoPercent)
-  const editedSaleChanged = isEdit && !!editingPkg && watchedPromoPercent !== normalizeManualPromoDiscount(editingPkg.promoDiscountPercent)
+  const originalPromoPercent = normalizeManualPromoDiscount(editingPkg?.promoDiscountPercent)
+  const editedSaleChanged = isEdit && !!editingPkg && watchedPromoPercent !== originalPromoPercent
+  // Sửa khóa: quy lại kim cương theo SALE (phút giữ nguyên). Chỉ đề xuất khi khóa
+  // đang/đã là SALE để không đụng khóa thường có đơn giá riêng (vd 35 KC/25 phút).
+  const salePreview = useMemo(() => {
+    if (!isEdit || !editingPkg || isTransferringSubject) return null
+    if (watchedPromoPercent === 0 && originalPromoPercent === 0) return null
+    try {
+      const result = repriceCourseForSale({
+        student: { ...student, subjects: currentSubjects },
+        subjectId: editingPkg.subjectId,
+        discountPercent: watchedPromoPercent,
+      })
+      return result.totalAfter === result.totalBefore ? null : { result, error: '' }
+    } catch (error) {
+      return { result: null, error: error instanceof Error ? error.message : 'Chưa quy đổi được kim cương' }
+    }
+  }, [currentSubjects, editingPkg, isEdit, isTransferringSubject, originalPromoPercent, student, watchedPromoPercent])
+  // Mặc định: đổi mức SALE thì tự giảm kim cương; mức không đổi (khóa nhập sai trước đây) thì giáo vụ tự tick.
+  const [saleFundChoice, setSaleFundChoice] = useState<boolean | null>(null)
+  useEffect(() => { setSaleFundChoice(null) }, [watchedPromoPercent])
+  const applySaleToFund = Boolean(salePreview?.result) && (saleFundChoice ?? editedSaleChanged)
+  const user = useAuthStore((state) => state.user)
+
+  // Ca đã xếp tay giá thường của khóa (chưa học xong) để áp SALE cùng lúc.
+  const [bookingContext, setBookingContext] = useState<{
+    bookings: BookingRequest[]
+    approvedLessonIds: Set<string>
+    teacherLevels: Record<string, number>
+  } | null>(null)
+  const [bookingContextError, setBookingContextError] = useState('')
+  const editingCourseId = isEdit ? editingPkg?.subjectId || '' : ''
+  useEffect(() => {
+    if (!editingCourseId) return
+    let cancelled = false
+    Promise.all([
+      getDocs(query(collection(db, 'bookingRequests'), where('studentId', '==', student.id))),
+      getDocs(query(collection(db, 'lessons'), where('studentId', '==', student.id))),
+    ]).then(async ([bookingSnap, lessonSnap]) => {
+      const bookings = bookingSnap.docs.map((item) => ({ id: item.id, ...item.data() }) as BookingRequest)
+        .filter((booking) => booking.subjectId === editingCourseId)
+      const approvedLessonIds = new Set(lessonSnap.docs.filter((item) => item.data().status === 'approved').map((item) => item.id))
+      const teacherIds = Array.from(new Set(bookings.map((booking) => booking.teacherId).filter(Boolean)))
+      const levels = await Promise.all(teacherIds.map(async (teacherId) => {
+        const teacher = await getDoc(doc(db, 'teachers', teacherId))
+        return [teacherId, Number(teacher.data()?.level) > 0 ? Number(teacher.data()?.level) : 1] as const
+      }))
+      if (!cancelled) setBookingContext({ bookings, approvedLessonIds, teacherLevels: Object.fromEntries(levels) })
+    }).catch((error) => {
+      console.error(error)
+      if (!cancelled) setBookingContextError('Chưa tải được lịch đã xếp của khóa này, nên chưa áp SALE cho ca đã xếp được.')
+    })
+    return () => { cancelled = true }
+  }, [editingCourseId, student.id])
+  const [saleBookingBatchId] = useState(() => doc(collection(db, 'bookingRequests')).id)
+  const saleBookingPlan = useMemo(() => {
+    if (!bookingContext || !editingPkg || isTransferringSubject || watchedPromoPercent <= 0) return null
+    const plan = planCourseSaleBookingReprice({
+      bookings: bookingContext.bookings,
+      course: editingPkg,
+      discountPercent: watchedPromoPercent,
+      approvedLessonIds: bookingContext.approvedLessonIds,
+      teacherLevels: bookingContext.teacherLevels,
+      batchId: saleBookingBatchId,
+    })
+    return plan.updates.length > 0 || plan.missingPriceBookingIds.length > 0 ? plan : null
+  }, [bookingContext, editingPkg, isTransferringSubject, saleBookingBatchId, watchedPromoPercent])
+  const [saleBookingChoice, setSaleBookingChoice] = useState<boolean | null>(null)
+  useEffect(() => { setSaleBookingChoice(null) }, [watchedPromoPercent])
+  const applySaleToBookings = Boolean(saleBookingPlan?.updates.length) && (saleBookingChoice ?? editedSaleChanged)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
   const transferredSessions = Math.round((transferableMinutes / 25) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
@@ -469,6 +541,86 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
         // Metadata/default SALE edits have no financial transition. Preserve
         // all stored aggregate counters, status and hold fields verbatim.
         if (isEdit && data.subjectId === getCatalogSubjectId(editingSubjectId!)) {
+          if ((applySaleToFund || applySaleToBookings) && editingPkg) {
+            // Không chặn khi lịch đang giữ vượt quỹ mới: giáo vụ đối soát quỹ buổi sau.
+            const pctNow = normalizeManualPromoDiscount(data.promoDiscountPercent)
+            const repriceInput = { student: { ...freshStudent, subjects: updatedSubjects }, subjectId: editingPkg.subjectId, discountPercent: pctNow }
+            // Mọi lệnh đọc trước lệnh ghi (quy tắc transaction Firestore).
+            const fundDraft = applySaleToFund ? repriceCourseForSale(repriceInput) : null
+            const linkedSnapshots = fundDraft
+              ? await Promise.all(fundDraft.changes.map((change) => transaction.get(doc(db, 'topUpTransactions', change.batchId))))
+              : []
+            const plannedIds = applySaleToBookings ? saleBookingPlan?.updates.map((update) => update.id) || [] : []
+            if (plannedIds.length > 450) throw new Error('Khóa có quá nhiều ca cần áp SALE trong một lần; vui lòng liên hệ kỹ thuật.')
+            const bookingSnapshots = await Promise.all(plannedIds.map((id) => transaction.get(doc(db, 'bookingRequests', id))))
+
+            // Đợt tạo từ giao dịch nạp tự động giữ nguyên để không lệch sổ giao dịch.
+            const lockedBatchIds = linkedSnapshots.filter((snapshot) => snapshot.exists()).map((snapshot) => snapshot.id)
+            const fundResult = applySaleToFund ? repriceCourseForSale({ ...repriceInput, lockedBatchIds }) : null
+            // Tính lại trên dữ liệu ca mới nhất: ca vừa được nhả/duyệt sẽ tự bị loại.
+            const bookingResult = applySaleToBookings && bookingContext
+              ? planCourseSaleBookingReprice({
+                  bookings: bookingSnapshots.filter((snapshot) => snapshot.exists()).map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }) as BookingRequest),
+                  course: { ...editingPkg, ...(updatedSubjects.find((pkg) => pkg.subjectId === editingPkg.subjectId) || {}) },
+                  discountPercent: pctNow,
+                  approvedLessonIds: bookingContext.approvedLessonIds,
+                  teacherLevels: bookingContext.teacherLevels,
+                  batchId: saleBookingBatchId,
+                })
+              : null
+
+            const heldBefore = Number(freshStudent.reservedMinutes ?? freshStudent.heldMinutes ?? 0) || 0
+            const heldAfter = Math.max(0, heldBefore + (bookingResult?.heldDelta || 0))
+            transaction.update(studentRef, {
+              ...(fundResult
+                ? {
+                    subjects: fundResult.subjects,
+                    ...fundResult.totals,
+                    subjectId: fundResult.primarySubject?.subjectId || '',
+                    subjectName: fundResult.primarySubject?.subjectName || '',
+                    minutesPerSession: fundResult.primarySubject?.minutesPerSession || 25,
+                    status: fundResult.status,
+                  }
+                : { subjects: updatedSubjects }),
+              ...(bookingResult && bookingResult.heldDelta !== 0 ? { reservedMinutes: heldAfter, heldMinutes: heldAfter } : {}),
+              updatedAt: serverTimestamp(),
+            })
+            bookingResult?.updates.forEach((update) => {
+              transaction.update(doc(db, 'bookingRequests', update.id), {
+                ...update.fields,
+                coursePromoRepricedAt: serverTimestamp(),
+                coursePromoRepricedBy: user?.uid || '',
+                updatedAt: serverTimestamp(),
+              })
+            })
+            transaction.set(doc(collection(db, 'adminLogs')), {
+              adminId: user?.uid || '',
+              action: 'REPRICE_COURSE_SALE',
+              targetType: 'student',
+              targetId: student.id,
+              changes: {
+                subjectId: editingPkg.subjectId,
+                subjectName: editingPkg.subjectName,
+                promoDiscountPercentBefore: originalPromoPercent,
+                promoDiscountPercentAfter: pctNow,
+                ...(fundResult ? {
+                  totalDiamondsBefore: fundResult.totalBefore,
+                  totalDiamondsAfter: fundResult.totalAfter,
+                  remainingDiamondsAfter: fundResult.remainingAfter,
+                  batches: fundResult.changes,
+                  lockedBatchIds,
+                } : {}),
+                ...(bookingResult ? {
+                  manualPromoBatchId: `manual-promo-${saleBookingBatchId}`,
+                  bookings: bookingResult.updates.map((update) => ({ id: update.id, pointsBefore: update.pointsBefore, pointsAfter: update.pointsAfter, ratePerMinute: update.fields.classHuntCompensation.ratePerMinute })),
+                  heldBefore,
+                  heldAfter,
+                } : {}),
+              },
+              createdAt: serverTimestamp(),
+            })
+            return
+          }
           transaction.update(studentRef, {
             subjects: updatedSubjects,
             updatedAt: serverTimestamp(),
@@ -515,7 +667,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
       toast.success(isTransferringSubject
         ? 'Đã chuyển số kim cương còn lại sang môn mới'
         : isEdit
-          ? 'Đã cập nhật khóa học'
+          ? [
+              'Đã cập nhật khóa học',
+              applySaleToFund && salePreview?.result ? `kim cương ${salePreview.result.totalBefore.toLocaleString('vi-VN')} → ${salePreview.result.totalAfter.toLocaleString('vi-VN')}` : '',
+              applySaleToBookings && saleBookingPlan ? `áp SALE cho ${saleBookingPlan.updates.length} ca đã xếp` : '',
+            ].filter(Boolean).join(', ')
           : data.promoDiscountPercent > 0
             ? `Đã thêm khóa SALE -${data.promoDiscountPercent}%: ${courseSaleDiamonds(data.totalMinutes, data.promoDiscountPercent).toLocaleString('vi-VN')} kim cương cho ${Number(data.totalMinutes).toLocaleString('vi-VN')} phút học`
             : 'Đã thêm khóa học mới')
@@ -660,9 +816,80 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
               </p>
             </div>
           )}
-          {editedSaleChanged && (
+          {salePreview?.result && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800" aria-live="polite">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={applySaleToFund}
+                  onChange={(event) => setSaleFundChoice(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                />
+                <span>
+                  <span className="block text-xs font-semibold text-rose-700">
+                    {watchedPromoPercent > 0 ? `Giảm kim cương theo SALE -${watchedPromoPercent}%` : 'Trả kim cương về giá gốc (bỏ SALE)'}
+                  </span>
+                  <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 font-bold">
+                    <span className="text-slate-400 line-through">{salePreview.result.totalBefore.toLocaleString('vi-VN')}</span>
+                    <span className="text-lg text-rose-700">{salePreview.result.totalAfter.toLocaleString('vi-VN')} kim cương</span>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5">
+                    Số phút học của từng đợt giữ nguyên; còn lại sau khi đổi: {salePreview.result.remainingAfter.toLocaleString('vi-VN')} kim cương. Nếu lịch đã đặt vượt quỹ mới, hệ thống vẫn lưu, giáo vụ xử lý ở phần đối soát quỹ buổi.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+          {saleBookingPlan && saleBookingPlan.updates.length > 0 && (() => {
+            const held = saleBookingPlan.updates.filter((update) => update.holding)
+            const settled = saleBookingPlan.updates.length - held.length
+            const heldBefore = held.reduce((sum, update) => sum + update.pointsBefore, 0)
+            const heldAfter = held.reduce((sum, update) => sum + update.pointsAfter, 0)
+            const regularPrice = Number(editingPkg?.pricePerMinute) || 0
+            const salePrice = courseSalePricePerMinute(regularPrice, watchedPromoPercent, editingPkg?.currency)
+            return (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={applySaleToBookings}
+                    onChange={(event) => setSaleBookingChoice(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold text-rose-700">
+                      Áp SALE -{watchedPromoPercent}% cho {saleBookingPlan.updates.length} ca đã xếp giá thường (chưa duyệt)
+                    </span>
+                    {held.length > 0 && (
+                      <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 font-bold">
+                        <span className="text-xs font-semibold">{held.length} ca đang giữ:</span>
+                        <span className="text-slate-400 line-through">{heldBefore.toLocaleString('vi-VN')}</span>
+                        <span className="text-rose-700">{heldAfter.toLocaleString('vi-VN')} kim cương</span>
+                      </span>
+                    )}
+                    <span className="mt-1 block text-xs leading-5">
+                      Lương gia sư các ca này: <span className="line-through">{regularPrice.toLocaleString('vi-VN')}đ</span> → {salePrice.toLocaleString('vi-VN')}đ/phút (gia sư cấp 1).
+                      {settled > 0 ? ` Gồm ${settled} ca của buổi đang chờ duyệt hoặc bị từ chối: duyệt lại sẽ tính giá SALE.` : ''} Ca Class Hunting và buổi đã duyệt giữ nguyên.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )
+          })()}
+          {saleBookingPlan && saleBookingPlan.missingPriceBookingIds.length > 0 && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-              Đổi ưu đãi chỉ áp cho lịch xếp mới (Class Hunting, xếp lớp thủ công). Quỹ kim cương đã nạp và lịch đã đặt giữ nguyên; nếu cần giảm quỹ, sửa kim cương ở từng đợt thanh toán.
+              {saleBookingPlan.missingPriceBookingIds.length} ca chưa áp SALE được vì khóa chưa có đơn giá VND.
+            </p>
+          )}
+          {bookingContextError && watchedPromoPercent > 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{bookingContextError}</p>
+          )}
+          {salePreview?.error && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{salePreview.error}</p>
+          )}
+          {editedSaleChanged && !applySaleToFund && !applySaleToBookings && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              Chỉ đổi ưu đãi cho lịch xếp mới (Class Hunting, xếp lớp thủ công). Quỹ kim cương giữ nguyên.
             </p>
           )}
           <p className="text-xs leading-5 text-slate-500">Tự áp dụng khi tạo Class Hunting hoặc xếp lớp thủ công. Giáo vụ vẫn có thể chọn mức ưu đãi khác khi xếp lớp. Lịch đã đặt giữ nguyên mức đã chốt.</p>

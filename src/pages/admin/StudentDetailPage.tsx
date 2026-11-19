@@ -29,6 +29,8 @@ import { buildPayrollApprovalFields } from '@/lib/payrollReapproval'
 import { isGroupClass } from '@/lib/groupClasses'
 import { classHuntCompensationFromLesson, salaryForLesson } from '@/lib/classHuntCompensation'
 import { courseSalePricePerMinute, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
+import { SaleSalaryAmount } from '@/components/shared/SaleSalary'
+import { promoDiscountPercentOf } from '@/components/shared/ClassHuntPromo'
 import { OnlineClassroomPilotCard } from '@/components/admin/OnlineClassroomPilotCard'
 import { ONLINE_CLASSROOM_PILOT_ACTIVE } from '@/lib/classroomPilotSwitch'
 import { StudentHoldLedgerPanel } from '@/components/bookings/StudentHoldLedgerPanel'
@@ -120,6 +122,8 @@ export function StudentDetailPage() {
   const [student, setStudent] = useState<Student | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([])
+  // % SALE của từng ca ưu đãi (mọi trạng thái) để gắn nhãn lương buổi đã giảm.
+  const [promoPercentByBookingId, setPromoPercentByBookingId] = useState<Map<string, number>>(() => new Map())
   const [loading, setLoading] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
   const [addSessionsContext, setAddSessionsContext] = useState<{ mode: 'payment' | 'gift'; subjectId?: string } | null>(null)
@@ -200,9 +204,16 @@ export function StudentDetailPage() {
       where('studentId', '==', id),
     )
     const unsubBookings = onSnapshot(qBookings, (snap) => {
-      const docs = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
-        .filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
+      const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingRequest))
+      const promoPercents = new Map<string, number>()
+      allDocs.forEach((booking) => {
+        const percent = promoDiscountPercentOf(booking)
+        if (percent === undefined) return
+        promoPercents.set(booking.id, percent)
+        if (booking.lessonId) promoPercents.set(`lesson:${booking.lessonId}`, percent)
+      })
+      setPromoPercentByBookingId(promoPercents)
+      const docs = allDocs.filter((booking) => booking.status === 'confirmed' || booking.status === 'pending')
       setBookingRequests(docs)
     }, (error) => {
       console.error('Error loading student booking requests:', error)
@@ -279,6 +290,30 @@ export function StudentDetailPage() {
     const price = rates ? courseSalePricePerMinute(basePrice, lessonCourse?.promoDiscountPercent, currency) : basePrice
     const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
     return salaryForLesson(lesson, { pricePerMinute: price, currency, level, calculate: calculateSalary })
+  }
+
+  // Buổi SALE: lương giá gốc (giá gói hiện tại x cấp gia sư) để gạch ngang cạnh lương đã giảm.
+  const lessonSaleSalary = (lesson: Lesson): { percent: number; regularSalary: number } | null => {
+    if (!(Number(lesson.salary) > 0)) return null
+    const course = student?.subjects?.find((subject) => subject.subjectId === lesson.subjectId)
+    const coursePercent = normalizeManualPromoDiscount(course?.promoDiscountPercent)
+    const rates = liveRates.subjectPrice[lesson.subjectId]
+    const { price, currency } = rates
+      ? getCountryRate(rates, liveRates.teacherCountry[lesson.teacherId] ?? 'VN')
+      : { price: 0, currency: lesson.currency || 'VND' }
+    const bookingPercent = [...(lesson.bookingRequestIds || []), lesson.bookingRequestId || '']
+      .map((bookingId) => promoPercentByBookingId.get(bookingId))
+      .find((percent) => percent !== undefined) ?? promoPercentByBookingId.get(`lesson:${lesson.id}`)
+    // Buổi không có ca ưu đãi nhưng đã tính theo giá khóa SALE (vd đổi sang khóa SALE).
+    const percent = bookingPercent ?? (
+      coursePercent > 0 && price > 0 && Number(lesson.pricePerMinute) === courseSalePricePerMinute(price, coursePercent, currency)
+        ? coursePercent
+        : undefined
+    )
+    if (!percent || !(price > 0)) return null
+    const level = liveRates.teacherLevel[lesson.teacherId] ?? lesson.teacherLevel ?? 1
+    const regularSalary = calculateSalary(lesson.minutes, price, level, currency)
+    return regularSalary > Number(lesson.salary) ? { percent, regularSalary } : null
   }
 
   // Open recalc dialog after checking payroll paid status
@@ -2101,11 +2136,16 @@ export function StudentDetailPage() {
                           (() => {
                             const exp = expectedSalary(lesson)
                             const drift = exp.salary !== lesson.salary && exp.salary > 0
+                            const sale = lessonSaleSalary(lesson)
                             return (
                               <div>
-                                <span className={drift ? 'text-amber-600 font-medium' : ''}>
-                                  {formatMoney(lesson.salary, lesson.currency)}
-                                </span>
+                                <SaleSalaryAmount
+                                  salary={lesson.salary}
+                                  regularSalary={sale?.regularSalary}
+                                  percent={sale?.percent}
+                                  currency={lesson.currency}
+                                  className={drift ? 'text-amber-600 font-medium' : ''}
+                                />
                                 {drift && (
                                   <div className="text-[11px] text-amber-600 mt-0.5 font-normal">
                                     Giá hiện tại: {formatMoney(exp.salary, lesson.currency)}

@@ -450,3 +450,45 @@ test('deleting a safe entry preserves a reserved student status', () => {
   })
   assert.equal(result.status, 'reserved')
 })
+
+test('SALE repricing keeps minutes, lowers diamonds per batch and never blocks on holds', async () => {
+  const { repriceCourseForSale } = await import('../src/lib/studentCourseLedger.ts')
+  const student = {
+    id: 's', status: 'active',
+    subjects: [
+      {
+        subjectId: 'cap3', subjectName: 'CAP3', minutesPerSession: 25, pricePerMinute: 1333, currency: 'VND',
+        totalMinutes: 1550, usedMinutes: 100, remainingMinutes: 1450, totalSessions: 62, usedSessions: 4, remainingSessions: 58,
+        batches: [
+          { id: '1', kind: 'payment', createdAt: '01/11/2026', totalSessions: 60, learningMinutes: 1500, diamonds: 1500 },
+          { id: '2', kind: 'gift', createdAt: '02/11/2026', totalSessions: 2, learningMinutes: 50, diamonds: 50 },
+        ],
+      },
+      { subjectId: 'other', subjectName: 'Other', minutesPerSession: 25, totalMinutes: 100, usedMinutes: 0, remainingMinutes: 100, totalSessions: 4, usedSessions: 0, remainingSessions: 4 },
+    ],
+  } as unknown as Student
+  const result = repriceCourseForSale({ student, subjectId: 'cap3', discountPercent: 30 })
+  const course = result.subjects[0]
+  assert.equal(course.batches?.[0].diamonds, 1080)
+  assert.equal(course.batches?.[0].learningMinutes, 1500)
+  assert.equal(course.batches?.[1].diamonds, 36)
+  assert.equal(course.totalMinutes, 1116)
+  assert.equal(course.usedMinutes, 100)
+  assert.equal(course.remainingMinutes, 1016)
+  assert.equal(result.totals.totalMinutes, 1216)
+  assert.equal(result.changes.length, 2)
+  // Bỏ SALE: kim cương quay về bằng số phút.
+  const back = repriceCourseForSale({ student: { ...student, subjects: result.subjects } as Student, subjectId: 'cap3', discountPercent: 0 })
+  assert.equal(back.subjects[0].totalMinutes, 1550)
+  assert.equal(back.subjects[0].remainingMinutes, 1450)
+  // Đợt nạp tự động giữ nguyên; đợt đã đúng không bị ghi lại.
+  const locked = repriceCourseForSale({ student, subjectId: 'cap3', discountPercent: 30, lockedBatchIds: ['1'] })
+  assert.equal(locked.subjects[0].batches?.[0].diamonds, 1500)
+  assert.equal(locked.changes.length, 1)
+  // Quỹ đã dùng nhiều hơn quỹ mới: còn lại về 0, không ném lỗi.
+  const heavy = { ...student, subjects: [{ ...(student.subjects![0]), usedMinutes: 1200, remainingMinutes: 350 }] } as Student
+  const over = repriceCourseForSale({ student: heavy, subjectId: 'cap3', discountPercent: 50 })
+  assert.equal(over.subjects[0].totalMinutes, 806)
+  assert.equal(over.subjects[0].remainingMinutes, 0)
+  assert.equal(over.status, 'expired')
+})

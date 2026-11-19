@@ -30,3 +30,13 @@ Không đổi Cloud Functions, Rules, index, không sửa dữ liệu production
 
 - `npm run build` đạt; `node --experimental-strip-types --test tests/*.test.ts`: 305/305 đạt (thêm test `courseSaleDiamonds` khớp 5 khóa giáo vụ đã tính tay).
 - Harness giao diện (Firestore giả lập): thêm khóa 300 KC + SALE 30% → ghi 216 KC, đợt 300 phút/216 KC; cộng quyền học mặc định 250 phút/180 KC; Class Hunting tự điền 50%, chọn "Lớp thông thường" hiện cảnh báo, bấm nút về lại 50%; mobile 375px không tràn ngang.
+
+## Bổ sung 19/11 (chị Trang, đợt 2)
+
+- **Ô chọn khóa ở Lịch sử buổi học** hiện giá SALE (vd CAP3 Khóa 2 SALE -40%: 1.333 → 800đ/phút); đổi buổi sang khóa SALE tính lương theo giá đó.
+- **Cột Lương buổi** (trang học viên + trang gia sư trong admin): buổi SALE hiện lương giá gốc gạch ngang, lương đã giảm và nhãn SALE -X%. % lấy từ ca ưu đãi của buổi (Class Hunting / xếp lớp SALE), hoặc từ khóa SALE khi buổi đã tính theo giá khóa.
+- **Chỉnh sửa khóa học** (khóa đang/đã là SALE) có 2 ô tick, mặc định tick khi đổi mức SALE:
+  1. Giảm kim cương theo SALE: mỗi đợt giữ số phút, kim cương = phút quy theo mức trừ mỗi ca (1.500 → 1.080 khi -30%). Đợt từ giao dịch nạp tự động giữ nguyên.
+  2. Áp SALE cho các ca đã xếp tay giá thường chưa duyệt (ca đang giữ + ca của buổi chờ duyệt/bị từ chối): cùng snapshot như Xếp lớp nhanh có giảm giá (`classHuntId manual-promo-…`, kim cương/25' và lương giảm %); số kim cương đang giữ giảm theo. Không đụng ca Class Hunting, ca đã có ưu đãi, buổi đã duyệt.
+  Không chặn khi lịch đang giữ vượt quỹ mới (giáo vụ xử lý ở đối soát quỹ buổi). Một transaction, log `REPRICE_COURSE_SALE`.
+- Kiểm chứng: build đạt, 310/310 test; harness: khóa 1.500 KC + 4 ca giữ + 1 ca buổi bị từ chối + 1 ca Class Hunting + 1 ca buổi đã duyệt → ghi quỹ 1.080, giữ 100 → 72, đúng 5 ca 18 KC & 583đ/phút, log đầy đủ.
