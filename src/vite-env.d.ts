@@ -24,3 +24,6 @@ declare module '*.svg?no-inline' {
   const src: string
   export default src
 }
+
+/** Mã bản build hiện tại (commit Vercel); so với /version.json để nhắc tải lại. */
+declare const __APP_BUILD_ID__: string

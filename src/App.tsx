@@ -1,5 +1,6 @@
 import { Suspense, useEffect, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AppUpdateBanner } from '@/components/shared/AppUpdateBanner'
 import { useAuthStore } from '@/stores/authStore'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
@@ -100,6 +101,8 @@ const AdminIndexRedirect = () => {
 function App() {
   const initAuth = useAuthStore((state) => state.initAuth)
   const initialized = useAuthStore((state) => state.initialized)
+  // Chỉ nhắc tải lại cho người dùng đã đăng nhập (giáo vụ, gia sư...), không làm phiền khách xem trang.
+  const signedIn = useAuthStore((state) => Boolean(state.user))
 
   useEffect(() => {
     const unsubscribe = initAuth()
@@ -116,6 +119,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      {signedIn && <AppUpdateBanner />}
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
           {/* Public Routes */}

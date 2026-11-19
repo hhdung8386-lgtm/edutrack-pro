@@ -2723,6 +2723,7 @@ export function BookingSchedulesPage() {
                     ? manualPromoCompensation(pkg, selectedTeacher?.level, effectivePromoPercent)
                     : null
                   const baseRate = getTeacherPointsPer25Minutes(selectedTeacher)
+                  const coursePromo = normalizeManualPromoDiscount(pkg?.promoDiscountPercent)
                   return (
                     <div className="space-y-1.5">
                       <label htmlFor="schedule-promo-discount" className="block text-xs font-bold text-slate-600">Giảm giá</label>
@@ -2737,6 +2738,21 @@ export function BookingSchedulesPage() {
                           <option key={percent} value={percent}>Lớp ưu đãi SALE -{percent}%</option>
                         ))}
                       </select>
+                      {coursePromo > 0 && effectivePromoPercent !== coursePromo && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold leading-5 text-amber-800">
+                          <span>Khóa này là khóa SALE -{coursePromo}% nhưng đang chọn {effectivePromoPercent > 0 ? `giảm ${effectivePromoPercent}%` : 'không giảm'}. Ca sẽ tính kim cương và lương theo mức đang chọn.</span>
+                          <button
+                            type="button"
+                            onClick={() => setPromoDiscountPercent(coursePromo)}
+                            className="min-h-8 rounded-md border border-amber-300 bg-white px-2 font-bold text-amber-800 hover:bg-amber-100"
+                          >
+                            Dùng SALE -{coursePromo}% của khóa
+                          </button>
+                        </div>
+                      )}
+                      {coursePromo > 0 && effectivePromoPercent === coursePromo && (
+                        <p className="text-[11px] font-semibold text-rose-600">Đã tự chọn theo ưu đãi của khóa (SALE -{coursePromo}%).</p>
+                      )}
                       {effectivePromoPercent > 0 && (
                         <div className="rounded-lg border border-rose-100 bg-rose-50 px-2.5 py-2 text-[11px] font-semibold leading-5 text-rose-700">
                           <p>Học viên: {baseRate} → {schedulePointsPer25} kim cương / 25 phút (số phút học giữ nguyên).</p>

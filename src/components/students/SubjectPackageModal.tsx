@@ -2,7 +2,13 @@ import { areCoursePackagesUnchanged, getStudentSubjects } from '@/lib/studentCou
 import { getCanonicalSubjectRate } from '@/lib/countryPricing'
 import { isGroupClass } from '@/lib/groupClasses'
 import { createCourseSubjectId, getCatalogSubjectId } from '@/lib/courseIdentity'
-import { MANUAL_PROMO_DISCOUNT_OPTIONS } from '@/lib/manualPromoDiscount'
+import {
+  COURSE_SALE_BASE_POINTS_PER_25_MINUTES,
+  MANUAL_PROMO_DISCOUNT_OPTIONS,
+  courseSaleDiamonds,
+  manualPromoPointsPer25Minutes,
+  normalizeManualPromoDiscount,
+} from '@/lib/manualPromoDiscount'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -171,6 +177,14 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
   const watchedSubjectId = watch('subjectId')
   const selectedSubject = subjectsList.find((subject) => subject.id === watchedSubjectId)
   const isTransferringSubject = Boolean(isEdit && editingSubjectId && watchedSubjectId !== getCatalogSubjectId(editingSubjectId))
+  // Khóa mới: ô kim cương là giá gốc; chọn SALE thì quỹ ghi vào khóa tự giảm theo
+  // đúng mức trừ mỗi ca, số phút học giữ nguyên (300 KC gốc, -30% → 216 KC).
+  const watchedPromoPercent = normalizeManualPromoDiscount(watch('promoDiscountPercent'))
+  const watchedBaseDiamonds = Number(watch('totalMinutes')) || 0
+  const appliesSaleToNewFund = !isEdit && watchedPromoPercent > 0
+  const saleFundDiamonds = courseSaleDiamonds(watchedBaseDiamonds, watchedPromoPercent)
+  const salePointsPer25 = manualPromoPointsPer25Minutes(COURSE_SALE_BASE_POINTS_PER_25_MINUTES, watchedPromoPercent)
+  const editedSaleChanged = isEdit && !!editingPkg && watchedPromoPercent !== normalizeManualPromoDiscount(editingPkg.promoDiscountPercent)
   const transferableMinutes = editingPkg?.remainingMinutes || 0
   const transferredSessions = Math.round((transferableMinutes / 25) * 100) / 100
   const filteredSubjects = subjectsList.filter((subject) =>
@@ -410,7 +424,11 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
           // Add mode
           const selectedSubjectObj = { id: catalogSnapshot.id, ...catalogSnapshot.data() } as Subject
 
-          const calculatedTotalSessions = Math.round(data.totalMinutes / minutesPerSession)
+          // Ô nhập là kim cương giá gốc (= phút học). Khóa SALE ghi quỹ đã giảm theo
+          // mức trừ mỗi ca; không giảm thì quỹ = số đã nhập như trước.
+          const fundDiamonds = courseSaleDiamonds(data.totalMinutes, data.promoDiscountPercent)
+          if (!(fundDiamonds > 0)) throw new Error('Tổng số kim cương không hợp lệ')
+          const calculatedTotalSessions = Math.round(fundDiamonds / minutesPerSession)
           const newPkg: StudentSubject = {
             subjectId: newCourseId,
             subjectName: newCourseName(selectedSubjectObj.name),
@@ -418,9 +436,9 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
             usedSessions: 0,
             remainingSessions: calculatedTotalSessions,
             minutesPerSession: minutesPerSession,
-            totalMinutes: data.totalMinutes,
+            totalMinutes: fundDiamonds,
             usedMinutes: 0,
-            remainingMinutes: data.totalMinutes,
+            remainingMinutes: fundDiamonds,
             pricePerMinute: catalogRate.price,
             currency: catalogRate.currency,
             batches: [{
@@ -429,7 +447,7 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
               totalSessions: calculatedTotalSessions,
               kind: 'payment',
               learningMinutes: data.totalMinutes,
-              diamonds: data.totalMinutes,
+              diamonds: fundDiamonds,
               content: data.paymentContent?.trim() || 'Thanh toán đợt 1',
               paymentDate: inputDateToDisplay(data.paymentDate) || dateString,
               note: data.paymentNote?.trim() || '',
@@ -494,7 +512,13 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
         })
       })
 
-      toast.success(isTransferringSubject ? 'Đã chuyển số kim cương còn lại sang môn mới' : isEdit ? 'Đã cập nhật khóa học' : 'Đã thêm khóa học mới')
+      toast.success(isTransferringSubject
+        ? 'Đã chuyển số kim cương còn lại sang môn mới'
+        : isEdit
+          ? 'Đã cập nhật khóa học'
+          : data.promoDiscountPercent > 0
+            ? `Đã thêm khóa SALE -${data.promoDiscountPercent}%: ${courseSaleDiamonds(data.totalMinutes, data.promoDiscountPercent).toLocaleString('vi-VN')} kim cương cho ${Number(data.totalMinutes).toLocaleString('vi-VN')} phút học`
+            : 'Đã thêm khóa học mới')
       onClose()
     } catch (err) {
       console.error(err)
@@ -594,12 +618,53 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
           )}
         </div>
 
+        {isTransferringSubject && editingPkg && editingPkg.usedMinutes > 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+            <p className="text-xs font-medium text-slate-500">Quỹ chuyển sang môn mới</p>
+            <p className="mt-1 font-semibold text-slate-800">
+              {transferableMinutes.toLocaleString('vi-VN')} kim cương · tương đương {transferredSessions.toLocaleString('vi-VN')} buổi
+            </p>
+          </div>
+        ) : (
+          <Input
+            label={isEdit ? 'Tổng số kim cương *' : 'Tổng số kim cương (giá gốc) *'}
+            type="number"
+            placeholder="500"
+            error={errors.totalMinutes?.message}
+            disabled={isEdit && !isTransferringSubject}
+            {...register('totalMinutes')}
+          />
+        )}
+        {isEdit && !isTransferringSubject && (
+          <p className="-mt-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
+            Sửa số phút hoặc kim cương tại từng đợt trong “Chi tiết khóa học” để lịch sử và quỹ còn lại được đồng bộ an toàn.
+          </p>
+        )}
+
         <div className="space-y-2">
           <label htmlFor="course-sale" className="block text-sm font-medium text-slate-600">Ưu đãi của khóa học</label>
-          <select id="course-sale" {...register('promoDiscountPercent')} className="min-h-[46px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-indigo-500">
+          <select id="course-sale" {...register('promoDiscountPercent')} className={`min-h-[46px] w-full rounded-lg border bg-white px-3 text-sm focus:ring-2 focus:ring-indigo-500 ${watchedPromoPercent > 0 ? 'border-rose-300 font-semibold text-rose-700' : 'border-slate-300'}`}>
             <option value={0}>Khóa thông thường — Không giảm</option>
             {MANUAL_PROMO_DISCOUNT_OPTIONS.map((percent) => <option key={percent} value={percent}>Khóa SALE — Giảm {percent}%</option>)}
           </select>
+          {appliesSaleToNewFund && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800" aria-live="polite">
+              <p className="text-xs font-medium text-rose-700">Kim cương ghi vào khóa sau ưu đãi</p>
+              <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 font-bold">
+                <span className="text-slate-400 line-through">{watchedBaseDiamonds.toLocaleString('vi-VN')}</span>
+                <span className="text-lg text-rose-700">{saleFundDiamonds.toLocaleString('vi-VN')} kim cương</span>
+                <span className="text-xs font-semibold">(giảm {watchedPromoPercent}%)</span>
+              </p>
+              <p className="mt-1 text-xs leading-5">
+                Học viên vẫn học đủ {watchedBaseDiamonds.toLocaleString('vi-VN')} phút; mỗi ca 25 phút trừ {salePointsPer25} kim cương thay vì {COURSE_SALE_BASE_POINTS_PER_25_MINUTES}.
+              </p>
+            </div>
+          )}
+          {editedSaleChanged && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              Đổi ưu đãi chỉ áp cho lịch xếp mới (Class Hunting, xếp lớp thủ công). Quỹ kim cương đã nạp và lịch đã đặt giữ nguyên; nếu cần giảm quỹ, sửa kim cương ở từng đợt thanh toán.
+            </p>
+          )}
           <p className="text-xs leading-5 text-slate-500">Tự áp dụng khi tạo Class Hunting hoặc xếp lớp thủ công. Giáo vụ vẫn có thể chọn mức ưu đãi khác khi xếp lớp. Lịch đã đặt giữ nguyên mức đã chốt.</p>
           {errors.promoDiscountPercent && <p className="text-xs text-rose-500">{errors.promoDiscountPercent.message}</p>}
           {!isEdit && currentSubjects.some((pkg) => getCatalogSubjectId(pkg.subjectId) === watchedSubjectId) && (
@@ -672,29 +737,6 @@ export function SubjectPackageModal({ student, editingSubjectId, onClose, onAddT
             )}
           </div>
         </div>
-
-        {isTransferringSubject && editingPkg && editingPkg.usedMinutes > 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-            <p className="text-xs font-medium text-slate-500">Quỹ chuyển sang môn mới</p>
-            <p className="mt-1 font-semibold text-slate-800">
-              {transferableMinutes.toLocaleString('vi-VN')} kim cương · tương đương {transferredSessions.toLocaleString('vi-VN')} buổi
-            </p>
-          </div>
-        ) : (
-          <Input
-            label="Tổng số kim cương *"
-            type="number"
-            placeholder="500"
-            error={errors.totalMinutes?.message}
-            disabled={isEdit && !isTransferringSubject}
-            {...register('totalMinutes')}
-          />
-        )}
-        {isEdit && !isTransferringSubject && (
-          <p className="-mt-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
-            Sửa số phút hoặc kim cương tại từng đợt trong “Chi tiết khóa học” để lịch sử và quỹ còn lại được đồng bộ an toàn.
-          </p>
-        )}
 
         {!isEdit && (
           <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">

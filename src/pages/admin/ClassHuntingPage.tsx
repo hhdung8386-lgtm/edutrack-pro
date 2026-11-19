@@ -415,6 +415,11 @@ export function ClassHuntingPage() {
     setOfferType(valid ? 'promo' : 'standard')
     setPromoDiscount(valid ? String(valid) : '')
   }
+  // Ưu đãi mặc định của khóa (đặt ở hồ sơ học viên) để giáo vụ thấy lớp đang theo khóa nào.
+  const courseDefaultPromo = selectedSubject
+    ? classHuntPromoDiscountFrom(selectedSubject.defaultPromoDiscountPercent
+      ?? selectedStudent?.subjects?.find((item) => item.subjectId === selectedSubject.id)?.promoDiscountPercent) || 0
+    : 0
   const availablePoints = selectedSubject?.availablePoints
   const promoDiscountPercent = offerType === 'promo' ? Number(promoDiscount) : NaN
   const promoDiscountValid = Number.isInteger(promoDiscountPercent)
@@ -795,6 +800,24 @@ export function ClassHuntingPage() {
               discount={promoDiscount}
               onDiscountChange={setPromoDiscount}
             />
+            {selectedSubject && courseDefaultPromo > 0 && (
+              offerType === 'promo' && promoDiscountValid && promoDiscountPercent === courseDefaultPromo ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
+                  Đã tự điền theo ưu đãi của khóa: SALE -{courseDefaultPromo}% (mỗi ca 25 phút trừ {classHuntPromoPointsPer25Minutes(courseDefaultPromo)} kim cương, gia sư giảm {courseDefaultPromo}% thù lao).
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
+                  <span>Khóa này là khóa SALE -{courseDefaultPromo}% nhưng lớp đang chọn {offerType === 'promo' ? `giảm ${promoDiscount || '?'}%` : 'không ưu đãi'}. Kim cương và lương sẽ tính theo mức đang chọn.</span>
+                  <button
+                    type="button"
+                    onClick={() => { setOfferType('promo'); setPromoDiscount(String(courseDefaultPromo)) }}
+                    className="min-h-9 rounded-lg border border-amber-300 bg-white px-2.5 font-bold text-amber-800 hover:bg-amber-100"
+                  >
+                    Dùng SALE -{courseDefaultPromo}% của khóa
+                  </button>
+                </div>
+              )
+            )}
           </Card>
 
           <Card className="space-y-4">

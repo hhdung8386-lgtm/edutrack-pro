@@ -15,6 +15,7 @@ import { toast } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { isSelectableSubject } from '@/lib/subjectLifecycle'
 import { appendCourseBatch, getRemainingAfterFundChange, getStatusAfterCourseRightsAdded, isCourseOverdrawn } from '@/lib/studentCourseLedger'
+import { COURSE_SALE_BASE_POINTS_PER_25_MINUTES, courseSaleDiamonds, manualPromoPointsPer25Minutes, normalizeManualPromoDiscount } from '@/lib/manualPromoDiscount'
 
 const schema = z.object({
   subjectId: z.string().min(1, 'Chọn môn học'),
@@ -83,7 +84,8 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
     defaultValues: {
       subjectId: initialSubject?.subjectId || '',
       minutes: 250,
-      diamonds: 250,
+      // Khóa SALE: kim cương mặc định đã giảm theo ưu đãi của khóa, phút giữ nguyên.
+      diamonds: courseSaleDiamonds(250, initialSubject?.promoDiscountPercent) || 250,
       content: mode === 'payment' ? `Thanh toán đợt ${nextPaymentNumber}` : 'Buổi tặng',
       paymentDate: todayISO(),
       note: '',
@@ -116,6 +118,9 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
   const selectedPkg = studentSubjects.find((subject) => subject.subjectId === selectedSubjectId)
   const minutesToAdd = Math.max(0, Number(useWatch({ control, name: 'minutes' }) || 0))
   const diamondsToAdd = Math.max(0, Number(useWatch({ control, name: 'diamonds' }) || 0))
+  const selectedSalePercent = normalizeManualPromoDiscount(selectedPkg?.promoDiscountPercent)
+  const selectedSalePointsPer25 = manualPromoPointsPer25Minutes(COURSE_SALE_BASE_POINTS_PER_25_MINUTES, selectedSalePercent)
+  const saleDiamondsForMinutes = courseSaleDiamonds(minutesToAdd, selectedSalePercent)
   const nextRemainingDiamonds = selectedPkg ? Math.max(0, getRemainingAfterFundChange(selectedPkg, diamondsToAdd)) : diamondsToAdd
 
   const onSubmit = async (data: FormData) => {
@@ -271,7 +276,23 @@ export function AddSessionsModal({ student, onClose, initialSubjectId, mode = 'g
           <p className="mt-1 text-xs leading-5 text-slate-600">
             Mỗi buổi 25 phút trừ kim cương theo đơn giá của gia sư dạy (gia sư Việt Nam/Philippines thường 25 KC, gia sư Nam Phi 35 KC). Bấm để tính kim cương từ số phút đã nhập.
           </p>
+          {selectedSalePercent > 0 && (
+            <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700">
+              Khóa này là khóa SALE -{selectedSalePercent}%: mỗi ca 25 phút trừ {selectedSalePointsPer25} KC. Bấm nút SALE để kim cương tự giảm theo ưu đãi, số phút giữ nguyên.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
+            {selectedSalePercent > 0 && (
+              <button
+                type="button"
+                onClick={() => setValue('diamonds', saleDiamondsForMinutes, { shouldValidate: true, shouldDirty: true })}
+                disabled={minutesToAdd <= 0}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <DiamondPointsIcon className="h-3.5 w-3.5" />
+                SALE -{selectedSalePercent}% · {selectedSalePointsPer25} KC / 25 phút: {saleDiamondsForMinutes.toLocaleString('vi-VN')} KC
+              </button>
+            )}
             {[25, 35].map((rate) => {
               const converted = Math.round((minutesToAdd * rate) / 25)
               return (

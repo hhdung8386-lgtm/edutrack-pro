@@ -51,3 +51,21 @@ export function manualPromoCompensation(
   if (!Number.isSafeInteger(ratePerMinute)) return null
   return { version: 1, ratePerMinute, currency: 'VND', formula: 'flat_per_minute' }
 }
+
+/** Đơn giá chuẩn của khóa SALE: 25 KC / 25 phút (1 kim cương giá gốc = 1 phút học). */
+export const COURSE_SALE_BASE_POINTS_PER_25_MINUTES = 25
+
+/**
+ * Kim cương ghi vào quỹ khóa SALE, quy từ kim cương giá gốc. Dùng đúng mức trừ
+ * mỗi ca đã làm tròn (25 → 18 khi giảm 30%) để số phút học giữ nguyên:
+ * 300 KC gốc, giảm 30% → 216 KC = vẫn đủ 300 phút (12 ca x 18 KC).
+ * Không giảm → giữ nguyên số đã nhập.
+ */
+export function courseSaleDiamonds(baseDiamonds: unknown, discountPercent: unknown): number {
+  const base = Number(baseDiamonds)
+  if (!Number.isFinite(base) || base <= 0) return 0
+  const percent = normalizeManualPromoDiscount(discountPercent)
+  if (!percent) return base
+  const rate = manualPromoPointsPer25Minutes(COURSE_SALE_BASE_POINTS_PER_25_MINUTES, percent)
+  return Math.max(1, Math.round(base * rate / COURSE_SALE_BASE_POINTS_PER_25_MINUTES))
+}

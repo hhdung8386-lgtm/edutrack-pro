@@ -45,3 +45,22 @@ test('payroll reads the snapshot from a manual promo booking', () => {
   // Ca thường không bị ảnh hưởng.
   assert.equal(classHuntCompensationFromBookings([{}]), null)
 })
+
+test('course SALE diamonds keep the minutes and match the per-session charge', async () => {
+  const { courseSaleDiamonds } = await import('../src/lib/manualPromoDiscount.ts')
+  // Khớp đúng các khóa giáo vụ đã tự tính tay trên production.
+  assert.equal(courseSaleDiamonds(300, 30), 216) // Vy Kim: 12 ca x 18 KC
+  assert.equal(courseSaleDiamonds(600, 30), 432)
+  assert.equal(courseSaleDiamonds(1200, 40), 720)
+  assert.equal(courseSaleDiamonds(750, 50), 390)
+  assert.equal(courseSaleDiamonds(1500, 50), 780)
+  assert.equal(courseSaleDiamonds(500, 10), 460)
+  // Không giảm / mức không hợp lệ → giữ nguyên số đã nhập.
+  assert.equal(courseSaleDiamonds(500, 0), 500)
+  assert.equal(courseSaleDiamonds('500', '7'), 500)
+  assert.equal(courseSaleDiamonds(0, 30), 0)
+  assert.equal(courseSaleDiamonds('abc', 30), 0)
+  // Số không chia hết 25 vẫn làm tròn nguyên, tối thiểu 1.
+  assert.equal(courseSaleDiamonds(1, 50), 1)
+  assert.equal(courseSaleDiamonds(510, 30), 367)
+})
